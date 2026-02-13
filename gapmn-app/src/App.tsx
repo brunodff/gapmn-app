@@ -1,6 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
+import RequireAuth from "./routes/RequireAuth";
+
+// ⬇️ TROQUE aqui se o seu chat tiver outro nome/caminho
+import AppChat from "./pages/AppChat";
 
 export default function App() {
   return (
@@ -30,14 +34,29 @@ export default function App() {
           </div>
         </header>
 
-        {/* Área central (card fica CENTRALIZADO verticalmente) */}
+        {/* Área central */}
         <main className="flex-1 flex items-center justify-center px-4 pb-10">
           <div className="w-full max-w-xl">
             <Routes>
-              <Route path="/" element={<Navigate to="/signup" replace />} />
+              {/* Default do app: área logada */}
+              <Route path="/" element={<Navigate to="/app" replace />} />
+
+              {/* Auth */}
               <Route path="/signup" element={<Signup />} />
               <Route path="/login" element={<Login />} />
-              <Route path="*" element={<Navigate to="/signup" replace />} />
+
+              {/* Chat (protegido) */}
+              <Route
+                path="/app"
+                element={
+                  <RequireAuth>
+                    <AppChat />
+                  </RequireAuth>
+                }
+              />
+
+              {/* Qualquer rota desconhecida manda pra /app */}
+              <Route path="*" element={<Navigate to="/app" replace />} />
             </Routes>
           </div>
         </main>
