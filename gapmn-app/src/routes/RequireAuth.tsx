@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+
 
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -8,26 +9,25 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
   const loc = useLocation();
 
   useEffect(() => {
-    let mounted = true;
+    let isMounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
+      if (!isMounted) return;
       setHasSession(!!data.session);
       setLoading(false);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setHasSession(!!session);
     });
 
     return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
+      isMounted = false;
+      authListener?.subscription?.unsubscribe();
     };
   }, []);
 
-  if (loading) return <div className="text-slate-500">Carregando...</div>;
+  if (loading) return <div style={{ padding: 24 }}>Carregando...</div>;
   if (!hasSession) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
-
   return <>{children}</>;
 }
