@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/appshell.tsx","./src/components/card.tsx","./src/lib/supabase.ts","./src/lib/validators.ts","./src/pages/appchat.tsx","./src/pages/bi.tsx","./src/pages/chiefpanel.tsx","./src/pages/login.tsx","./src/pages/signup.tsx","./src/routes/requireauth.tsx","./src/routes/requirechief.tsx"],"version":"5.9.3"}

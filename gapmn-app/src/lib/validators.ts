@@ -1,4 +1,4 @@
+// src/lib/validators.ts
 export function isFabEmail(email: string) {
-  const e = email.trim().toLowerCase();
-  return e.endsWith("@fab.mil.br");
+  return email.trim().toLowerCase().endsWith("@fab.mil.br");
 }

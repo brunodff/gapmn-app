@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+// src/pages/Signup.tsx
+import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { isFabEmail } from "../lib/validators";
@@ -21,6 +22,7 @@ const AVATARS = ["a1", "a2", "a3", "a4", "a5", "a6"] as const;
 
 export default function Signup() {
   const nav = useNavigate();
+
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [nomeGuerra, setNomeGuerra] = useState("");
@@ -36,11 +38,13 @@ export default function Signup() {
     return unidadeOutro.trim() ? `Outro: ${unidadeOutro.trim()}` : "Outro";
   }, [unidade, unidadeOutro]);
 
-  async function handleSignup(e: React.FormEvent) {
+  async function handleSignup(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr(null);
 
-    if (!isFabEmail(email)) {
+    // validações
+    const emailNorm = email.trim().toLowerCase();
+    if (!isFabEmail(emailNorm)) {
       setErr("Use um e-mail institucional @fab.mil.br.");
       return;
     }
@@ -55,33 +59,28 @@ export default function Signup() {
 
     setLoading(true);
     try {
+      // 1) cria usuário no auth
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+        email: emailNorm,
         password: senha,
       });
       if (error) throw error;
 
+      // 2) cria perfil (isso VAI falhar se não existir policy de INSERT no profiles)
       const user = data.user;
-      if (!user) {
-        setErr("Conta criada. Verifique seu e-mail para confirmar e depois faça login.");
-        nav("/login");
-        return;
+      if (user?.id) {
+        const { error: pErr } = await supabase.from("profiles").insert({
+          id: user.id,
+          email: user.email,
+          nome_guerra: nomeGuerra.trim(),
+          unidade: unidadeFinal,
+          avatar_key: avatarKey,
+          role: "user",
+        });
+        if (pErr) throw pErr;
       }
 
-      // Cria o perfil (RLS permite inserir? não criamos policy de insert; então usamos upsert via RPC? Melhor:
-      // Solução prática do MVP: criar uma policy de insert own profile OR usar service role em backend.
-      // Para manter 100% no cliente, vamos criar policy de INSERT no profiles.
-      // -> Você vai rodar o SQL extra abaixo.
-      const { error: pErr } = await supabase.from("profiles").insert({
-        id: user.id,
-        email: user.email,
-        nome_guerra: nomeGuerra.trim(),
-        unidade: unidadeFinal,
-        avatar_key: avatarKey,
-        role: "user",
-      });
-      if (pErr) throw pErr;
-
+      // 3) redireciona
       nav("/login");
     } catch (e: any) {
       setErr(e?.message ?? "Erro ao criar conta.");
@@ -177,7 +176,11 @@ export default function Signup() {
             </p>
           </div>
 
-          {err && <div className="rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
+          {err && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {err}
+            </div>
+          )}
 
           <button
             disabled={loading}
@@ -187,7 +190,10 @@ export default function Signup() {
           </button>
 
           <p className="text-center text-sm text-slate-600">
-            Já tem conta? <Link className="text-sky-700" to="/login">Entrar</Link>
+            Já tem conta?{" "}
+            <Link className="text-sky-700" to="/login">
+              Entrar
+            </Link>
           </p>
         </form>
       </Card>
