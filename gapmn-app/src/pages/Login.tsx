@@ -1,17 +1,36 @@
-import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { Card } from "../components/Card";
+
+function traduzErroAuth(msg?: string) {
+  const m = (msg || "").toLowerCase();
+  if (m.includes("invalid login credentials")) return "E-mail ou senha inválidos.";
+  if (m.includes("email not confirmed")) return "Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.";
+  if (m.includes("too many requests")) return "Muitas tentativas. Aguarde um pouco e tente novamente.";
+  if (m.includes("invalid email")) return "E-mail inválido.";
+  return msg || "Erro ao entrar.";
+}
 
 export default function Login() {
   const nav = useNavigate();
   const loc = useLocation() as any;
   const redirectTo = loc.state?.from || "/app";
 
+  const [sp] = useSearchParams();
+  const showCheckEmail = sp.get("check_email") === "1";
+  const showConfirmed = sp.get("confirmed") === "1";
+  const showPasswordReset = sp.get("password_reset") === "1";
+
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const canSend = useMemo(
+    () => email.trim().length > 0 && senha.trim().length > 0 && !loading,
+    [email, senha, loading]
+  );
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -23,9 +42,10 @@ export default function Login() {
         password: senha,
       });
       if (error) throw error;
-      nav(redirectTo);
+
+      nav(redirectTo, { replace: true });
     } catch (e: any) {
-      setErr(e?.message ?? "Erro ao entrar.");
+      setErr(traduzErroAuth(e?.message));
     } finally {
       setLoading(false);
     }
@@ -37,40 +57,67 @@ export default function Login() {
         <h1 className="text-xl font-semibold">Entrar</h1>
         <p className="mt-1 text-sm text-slate-600">Use suas credenciais para acessar o chat.</p>
 
+        {showCheckEmail && (
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">
+            Enviamos um e-mail de confirmação. Abra sua caixa de entrada e confirme para liberar o acesso.
+          </div>
+        )}
+
+        {showConfirmed && (
+          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-2 text-sm text-green-800">
+            E-mail confirmado com sucesso ✅ Agora você pode entrar.
+          </div>
+        )}
+
+        {showPasswordReset && (
+          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-2 text-sm text-green-800">
+            Senha redefinida com sucesso ✅ Entre com sua nova senha.
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="mt-4 space-y-3">
-          <div>
-            <label className="text-sm text-slate-700">E-mail</label>
-            <input
-              className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-sky-200"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              type="email"
-              autoComplete="email"
-            />
-          </div>
+          <input
+            className="w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-sky-200"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            autoComplete="email"
+            placeholder="E-mail"
+          />
 
-          <div>
-            <label className="text-sm text-slate-700">Senha</label>
-            <input
-              className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-sky-200"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              type="password"
-              autoComplete="current-password"
-            />
-          </div>
+          <input
+            className="w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-sky-200"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            type="password"
+            autoComplete="current-password"
+            placeholder="Senha"
+          />
 
-          {err && <div className="rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
+          {err && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {err}
+            </div>
+          )}
 
           <button
-            disabled={loading}
+            disabled={!canSend}
             className="w-full rounded-xl bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-60"
           >
             {loading ? "Entrando..." : "Entrar"}
           </button>
 
           <p className="text-center text-sm text-slate-600">
-            Não tem conta? <Link className="text-sky-700" to="/signup">Criar</Link>
+            Não tem conta?{" "}
+            <Link className="text-sky-700" to="/signup">
+              Criar
+            </Link>
+          </p>
+
+          <p className="pt-2 text-center text-xs text-slate-500">
+            <Link className="text-sky-700" to="/forgot-password">
+              Esqueceu sua senha?
+            </Link>
           </p>
         </form>
       </Card>

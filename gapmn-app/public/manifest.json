@@ -1,0 +1,25 @@
+{
+  "name": "GAP-MN App",
+  "short_name": "GAP-MN",
+  "description": "Sistema de Gestão do Grupamento de Aviação do Exército — Manaus",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e3a5f",
+  "icons": [
+    {
+      "src": "/gapmn.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/gapmn.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

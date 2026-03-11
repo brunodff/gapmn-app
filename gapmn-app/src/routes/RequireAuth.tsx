@@ -2,17 +2,16 @@ import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [hasSession, setHasSession] = useState(false);
   const loc = useLocation();
 
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
-      if (!isMounted) return;
+      if (!mounted) return;
       setHasSession(!!data.session);
       setLoading(false);
     });
@@ -22,12 +21,16 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     });
 
     return () => {
-      isMounted = false;
+      mounted = false;
       authListener?.subscription?.unsubscribe();
     };
   }, []);
 
   if (loading) return <div style={{ padding: 24 }}>Carregando...</div>;
-  if (!hasSession) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
+
+  if (!hasSession) {
+    return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
+  }
+
   return <>{children}</>;
 }
