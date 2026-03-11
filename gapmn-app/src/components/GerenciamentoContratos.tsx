@@ -29,6 +29,7 @@ type Contrato = {
   prazo_fin_1: string | null;
   prazo_fin_2: string | null;
   cnpj: string | null;
+  fiscal: string | null;
   fonte: string;
   created_at: string;
 };
@@ -264,8 +265,15 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
   const [selected, setSelected] = useState<Contrato | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
-  // Rola para o painel de detalhes ao selecionar (mobile)
+  // Fiscal
+  const [editingFiscal, setEditingFiscal] = useState(false);
+  const [fiscalInput, setFiscalInput]     = useState("");
+  const [savingFiscal, setSavingFiscal]   = useState(false);
+
+  // Rola para o painel de detalhes ao selecionar (mobile) e reseta edição de fiscal
   useEffect(() => {
+    setEditingFiscal(false);
+    setFiscalInput("");
     if (selected && detailRef.current) {
       setTimeout(() => {
         detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -284,11 +292,12 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
   const [savingForm, setSavingForm] = useState(false);
 
   // Filtros
-  const [filtroTexto, setFiltroTexto]   = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("todos");
-  const [filtroAno, setFiltroAno]       = useState("todos");
-  const [filtroUgr, setFiltroUgr]       = useState("todos");
-  const [sortBy, setSortBy]             = useState<"none" | "saldo_asc" | "saldo_desc" | "vencimento_asc">("none");
+  const [filtroTexto, setFiltroTexto]     = useState("");
+  const [filtroStatus, setFiltroStatus]   = useState("todos");
+  const [filtroAno, setFiltroAno]         = useState("todos");
+  const [filtroUgr, setFiltroUgr]         = useState("todos");
+  const [filtroFiscal, setFiltroFiscal]   = useState("todos");
+  const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "vencimento_asc">("none");
 
   // ── Carga ────────────────────────────────────────────────────────────────
   useEffect(() => { load(); }, []);
@@ -427,6 +436,24 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
     }
   }
 
+  // ── Salvar fiscal ────────────────────────────────────────────────────────
+  async function saveFiscal() {
+    if (!selected) return;
+    setSavingFiscal(true);
+    const novoFiscal = fiscalInput.trim() || null;
+    const { error } = await supabase
+      .from("contratos_scon")
+      .update({ fiscal: novoFiscal })
+      .eq("id", selected.id);
+    if (!error) {
+      const atualizado = { ...selected, fiscal: novoFiscal };
+      setSelected(atualizado);
+      setContratos((prev) => prev.map((c) => c.id === selected.id ? atualizado : c));
+      setEditingFiscal(false);
+    }
+    setSavingFiscal(false);
+  }
+
   // ── Derivados ────────────────────────────────────────────────────────────
   const anos = useMemo(
     () => [...new Set(contratos.map((c) => c.data_inicio?.slice(0, 4)).filter(Boolean) as string[])].sort().reverse(),
@@ -440,12 +467,17 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
     () => [...new Set(contratos.map((c) => c.status).filter(Boolean) as string[])].sort(),
     [contratos]
   );
+  const fiscais = useMemo(
+    () => [...new Set(contratos.map((c) => c.fiscal).filter(Boolean) as string[])].sort(),
+    [contratos]
+  );
 
   const filtered = useMemo(() => {
     const q = filtroTexto.trim().toLowerCase();
     return contratos.filter((c) => {
       if (filtroAno !== "todos" && !c.data_inicio?.startsWith(filtroAno)) return false;
       if (filtroUgr !== "todos" && c.ugr !== filtroUgr) return false;
+      if (filtroFiscal !== "todos" && c.fiscal !== filtroFiscal) return false;
       if (filtroStatus === "pendentes_encerramento") {
         if (!isVencido(c.data_final)) return false;
       } else if (filtroStatus !== "todos") {
@@ -458,7 +490,7 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
       }
       return true;
     });
-  }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus]);
+  }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -719,6 +751,17 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
             {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
 
+          {fiscais.length > 0 && (
+            <select
+              value={filtroFiscal}
+              onChange={(e) => setFiltroFiscal(e.target.value)}
+              className="rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+            >
+              <option value="todos">Todos os fiscais</option>
+              {fiscais.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          )}
+
           <input
             value={filtroTexto}
             onChange={(e) => setFiltroTexto(e.target.value)}
@@ -869,6 +912,53 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
                 : <span className="text-slate-400 italic">Sem descrição cadastrada.</span>
               }
             </p>
+
+            {/* Fiscal do contrato */}
+            <div className="mb-3 border-b pb-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-semibold text-slate-700">Fiscal do Contrato</span>
+                {!editingFiscal && (
+                  <button
+                    onClick={() => { setFiscalInput(selected.fiscal ?? ""); setEditingFiscal(true); }}
+                    className="text-xs text-sky-600 hover:text-sky-800 border border-sky-200 rounded-lg px-2 py-0.5"
+                  >
+                    {selected.fiscal ? "Editar" : "+ Definir fiscal"}
+                  </button>
+                )}
+              </div>
+              {editingFiscal ? (
+                <div className="flex gap-2 items-center">
+                  <input
+                    autoFocus
+                    value={fiscalInput}
+                    onChange={(e) => setFiscalInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") saveFiscal(); if (e.key === "Escape") setEditingFiscal(false); }}
+                    placeholder="Nome do fiscal..."
+                    className="flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+                  />
+                  <button
+                    onClick={saveFiscal}
+                    disabled={savingFiscal}
+                    className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs text-white hover:bg-sky-700 disabled:opacity-60"
+                  >
+                    {savingFiscal ? "..." : "Salvar"}
+                  </button>
+                  <button
+                    onClick={() => setEditingFiscal(false)}
+                    className="rounded-xl border px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <div className="text-sm">
+                  {selected.fiscal
+                    ? <span className="font-medium text-slate-800">{selected.fiscal}</span>
+                    : <span className="text-slate-400 italic text-xs">Nenhum fiscal definido.</span>
+                  }
+                </div>
+              )}
+            </div>
 
             {/* Fornecedor / Identificação */}
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600">
