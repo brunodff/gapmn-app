@@ -243,8 +243,8 @@ function parseExcelBuffer(buf: ArrayBuffer): Partial<Contrato>[] {
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
-interface GerContratoProps { canImport?: boolean; }
-export default function GerenciamentoContratos({ canImport = true }: GerContratoProps) {
+interface GerContratoProps { canImport?: boolean; canEdit?: boolean; }
+export default function GerenciamentoContratos({ canImport = true, canEdit = true }: GerContratoProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Dados
@@ -917,7 +917,7 @@ export default function GerenciamentoContratos({ canImport = true }: GerContrato
             <div className="mb-3 border-b pb-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-slate-700">Fiscal do Contrato</span>
-                {!editingFiscal && (
+                {!editingFiscal && canEdit && (
                   <button
                     onClick={() => { setFiscalInput(selected.fiscal ?? ""); setEditingFiscal(true); }}
                     className="text-xs text-sky-600 hover:text-sky-800 border border-sky-200 rounded-lg px-2 py-0.5"

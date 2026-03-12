@@ -74,6 +74,8 @@ export default function SetorInbox() {
   const canImportIndicadores = me?.setor === "SEO"   || me?.setor === "ADMIN";
   const canImportContratos   = me?.setor === "SCON"  || me?.setor === "ADMIN";
   const canImportProcessos   = me?.setor === "SLIC"  || me?.setor === "ADMIN";
+  // Permissão de edição geral: qualquer setor cadastrado (não visitante)
+  const canEdit              = isAgent(me);
 
   const canAnswer = useMemo(() => reply.trim().length > 0 && !saving && !!active, [reply, saving, active]);
 
@@ -264,7 +266,7 @@ export default function SetorInbox() {
       {tab === "processos" && <GerenciamentoProcessos canImport={canImportProcessos} />}
 
       {/* Conteúdo da aba Gerenciamento de Contratos */}
-      {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} />}
+      {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEdit} />}
 
       {/* Conteúdo da aba Prestação de Contas */}
       {tab === "prestacao" && showPrestacaoTab && (

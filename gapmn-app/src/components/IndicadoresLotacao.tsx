@@ -893,12 +893,14 @@ export default function IndicadoresLotacao({ canImport }: Props) {
                                 <span><span className="font-medium text-slate-600">NC:</span> {ag.notasCount}</span>
                               </div>
                               {/* Sub-linhas por nota de crédito */}
-                              {ag.rows.length > 1 && (
+                              {ag.rows.length >= 1 && (
                                 <div className="space-y-1">
-                                  <div className="text-xs font-semibold text-slate-500 mb-1">Notas de Crédito ({ag.rows.length})</div>
+                                  <div className="text-xs font-semibold text-slate-500 mb-1">
+                                    Nota{ag.rows.length !== 1 ? "s" : ""} de Crédito ({ag.rows.length})
+                                  </div>
                                   {ag.rows.map((r) => (
                                     <div key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs bg-white/70 rounded-lg px-3 py-1.5 border border-emerald-100">
-                                      <span className="font-medium text-emerald-700">{r.nota_credito ?? "–"}</span>
+                                      <span className="font-mono font-semibold text-emerald-700">{r.nota_credito ?? "–"}</span>
                                       <span className="text-slate-400">{r.ug_cred ?? "–"}</span>
                                       <span className="text-slate-400">{r.natureza ?? "–"}</span>
                                       <span className="hidden sm:inline text-slate-400">PTRES: {r.ptres ?? "–"}</span>
