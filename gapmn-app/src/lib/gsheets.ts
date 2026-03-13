@@ -370,55 +370,46 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
   return result;
 }
 
-/** Transforma linhas CSV em EmpenhoNF[] (Sheet 1 — notas de empenho) */
+/** Transforma linhas CSV em EmpenhoNF[] (Sheet 1 — notas de empenho)
+ *
+ * A planilha NÃO tem linha de cabeçalho — apenas título na linha 0.
+ * Posições fixas (confirmadas pela estrutura real do CSV):
+ *   col 0 = Data (DD/MM/YYYY)
+ *   col 1 = NE completo (ex: 120630000012026NE000001) → últimos 12 = chave SIAFI
+ *   col 2 = Descrição
+ *   col 3 = UGR código
+ *   col 4 = UGR nome
+ *   col 5 = Natureza código
+ *   col 6 = Natureza nome
+ *   col 7 = PI código
+ *   col 8 = PI nome
+ *   col 9 = Valor
+ */
 export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
-  const KEYS = ["DATA", "EMPENH", "DESCR", "UGR", "NATUR", "PI"];
-  const hi = findHeaderRow(rows, KEYS);
-
-  let iData = -1, iNota = -1, iDesc = -1, iUgr = -1, iNatureza = -1, iPi = -1;
-
-  if (hi >= 0) {
-    const cm = colMap(rows[hi]);
-    iData     = findCol(cm, "DATA", "DT EMPENHO", "DT");
-    iNota     = findCol(cm, "EMPENH", "NOTA EMPENH", "NE", "SIAFI");
-    iDesc     = findCol(cm, "DESCR", "OBJETO", "HISTORICO", "ESPECIF");
-    iUgr      = findCol(cm, "UGR", "UG RESP", "UNID GEST RESP");
-    iNatureza = findCol(cm, "NATUR", "ND", "NATUREZA DESP");
-    iPi       = findCol(cm, "PI", "PLANO INTERNO", "PLANO INT");
-  }
-
-  // Posições reais da planilha (confirmadas pela estrutura do CSV):
-  // col 0=Data, 1=NE(full), 2=Descrição, 3=UGR código, 4=UGR nome, 5=Natureza código,
-  // 6=Natureza nome, 7=PI código, 8=PI nome, 9=Valor
-  const fb = { data: 0, nota: 1, desc: 2, ugr: 4, natureza: 5, pi: 7 };
-  const getC = (idx: number, fallback: number, row: string[]) =>
-    (idx >= 0 ? row[idx] : row[fallback]) ?? "";
-
-  const dataStart = hi >= 0 ? hi + 1 : 1;
   const result: EmpenhoNF[] = [];
 
-  for (let i = dataStart; i < rows.length; i++) {
+  for (let i = 1; i < rows.length; i++) { // linha 0 = título "Notas de Empenho"
     const row = rows[i];
     if (row.length < 3) continue;
 
-    const rawData = getC(iData, fb.data, row).trim();
-    // Ignorar linhas sem data ou que sejam repetição do header
-    if (!rawData || rawData.toUpperCase() === "DATA") continue;
+    const rawData = (row[0] ?? "").trim();
+    // Aceitar apenas linhas com data no formato DD/MM/YYYY
+    if (!rawData.match(/^\d{2}\/\d{2}\/\d{4}$/)) continue;
 
-    const rawNota = getC(iNota, fb.nota, row).trim();
-    if (!rawNota) continue;
+    const rawNota = (row[1] ?? "").trim();
+    // NE completo deve ter pelo menos 12 caracteres
+    if (rawNota.length < 12) continue;
 
     result.push({
       data:         rawData,
       nota_empenho: rawNota.slice(-12),
-      descricao:    getC(iDesc,     fb.desc,    row),
-      ugr:          getC(iUgr,      fb.ugr,     row),
-      natureza:     getC(iNatureza, fb.natureza, row),
-      pi:           getC(iPi,       fb.pi,       row),
+      descricao:    (row[2] ?? "").trim(),
+      ugr:          (row[4] ?? "").trim(),   // UGR nome
+      natureza:     (row[5] ?? "").trim(),   // Natureza código
+      pi:           (row[7] ?? "").trim(),   // PI código
     });
   }
 
-  // Ordenar cronologicamente (data pode ser DD/MM/YYYY ou YYYY-MM-DD)
   result.sort((a, b) => normDate(a.data).localeCompare(normDate(b.data)));
   return result;
 }
