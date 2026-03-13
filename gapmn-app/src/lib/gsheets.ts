@@ -387,9 +387,10 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
     iPi       = findCol(cm, "PI", "PLANO INTERNO", "PLANO INT");
   }
 
-  // Fallback posicional conforme descrição do usuário:
-  // col 0=Data, 1=NotaEmpenho, 2=Descrição, 3=UGR, 4=Natureza, 5..7=outros, 8=PI
-  const fb = { data: 0, nota: 1, desc: 2, ugr: 3, natureza: 4, pi: 8 };
+  // Posições reais da planilha (confirmadas pela estrutura do CSV):
+  // col 0=Data, 1=NE(full), 2=Descrição, 3=UGR código, 4=UGR nome, 5=Natureza código,
+  // 6=Natureza nome, 7=PI código, 8=PI nome, 9=Valor
+  const fb = { data: 0, nota: 1, desc: 2, ugr: 4, natureza: 5, pi: 7 };
   const getC = (idx: number, fallback: number, row: string[]) =>
     (idx >= 0 ? row[idx] : row[fallback]) ?? "";
 
@@ -420,6 +421,17 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   // Ordenar cronologicamente (data pode ser DD/MM/YYYY ou YYYY-MM-DD)
   result.sort((a, b) => normDate(a.data).localeCompare(normDate(b.data)));
   return result;
+}
+
+/**
+ * Normaliza código NE removendo zeros à esquerda do número
+ * ex: "2026NE000001" e "2026NE0001" e "2026NE1" → todos iguais "2026NE1"
+ * Permite join entre Sheet1 (últimos 12 do código completo) e Sheet2 (siafi)
+ */
+export function normalizeNE(s: string): string {
+  const m = (s ?? "").match(/(\d{4})NE(\d+)/i);
+  if (m) return `${m[1]}NE${parseInt(m[2], 10)}`;
+  return (s ?? "").trim().toUpperCase();
 }
 
 /** Normaliza data para YYYY-MM-DD (para ordenação) */

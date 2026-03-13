@@ -4,6 +4,7 @@ import {
   fetchCSV,
   toEmpenhosNF,
   toControleEmpenhos,
+  normalizeNE,
   SHEET_URLS,
   EmpenhoNF,
   ControleEmpenho,
@@ -85,7 +86,8 @@ export default function GerenciamentoEmpenhos({ canSync = false }: Props) {
   // ── Derivados ─────────────────────────────────────────────────────────────
   const joined = useMemo<EmpenhoRow[]>(() => {
     return empenhos.map((e) => {
-      const extra = controle.find((c) => c.siafi.slice(-12) === e.nota_empenho);
+      const keyE = normalizeNE(e.nota_empenho);
+      const extra = controle.find((c) => normalizeNE(c.siafi) === keyE);
       return extra ? { ...e, ...extra } : e;
     });
   }, [empenhos, controle]);
