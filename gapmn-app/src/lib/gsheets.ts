@@ -10,10 +10,11 @@
 
 // ─── URLs ─────────────────────────────────────────────────────────────────────
 export const SHEET_URLS = {
-  credito1: "https://docs.google.com/spreadsheets/d/1kB9CUbvSKzZj_ue6Ppi4u_q7ubKSULh2ctp3KP5ntoI/export?format=csv&gid=946298877",
-  credito2: "https://docs.google.com/spreadsheets/d/1u_C28gNt0klzmSaaTWg9wK9YJAvnSImmvDmc65V8aDo/export?format=csv&gid=0",
-  rp:       "https://docs.google.com/spreadsheets/d/1-_2ZqIaKjuzCf5dbujD9V3wP3gt3vtGanjxXqUGLlZ8/export?format=csv&gid=0",
-  empenhos: "https://docs.google.com/spreadsheets/d/1Gb-2Q1b6VJQff-MHTZyzwUIKvQI-sZnYwNB0ZU__Vb4/export?format=csv&gid=0",
+  credito1:   "https://docs.google.com/spreadsheets/d/1kB9CUbvSKzZj_ue6Ppi4u_q7ubKSULh2ctp3KP5ntoI/export?format=csv&gid=946298877",
+  credito2:   "https://docs.google.com/spreadsheets/d/1u_C28gNt0klzmSaaTWg9wK9YJAvnSImmvDmc65V8aDo/export?format=csv&gid=0",
+  rp:         "https://docs.google.com/spreadsheets/d/1-_2ZqIaKjuzCf5dbujD9V3wP3gt3vtGanjxXqUGLlZ8/export?format=csv&gid=0",
+  empenhos:   "https://docs.google.com/spreadsheets/d/1Gb-2Q1b6VJQff-MHTZyzwUIKvQI-sZnYwNB0ZU__Vb4/export?format=csv&gid=0",
+  empenhosNF: "https://docs.google.com/spreadsheets/d/1XQ5CGcB0dTVADeEGfKjtXRhqtHxsNf1J1H_9VKjBklM/export?format=csv&gid=0",
 } as const;
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ export interface ResumoOM {
   linhas:     LinhaCredito[];
 }
 
-/** Linha de controle de empenho */
+/** Linha de controle de empenho (Sheet 2 — join via siafi) */
 export interface ControleEmpenho {
   solicitacao: string;
   subprocesso: string;
@@ -49,6 +50,18 @@ export interface ControleEmpenho {
   ugcred:      string;
   valor:       number;
   dias:        number;
+  renomeado:   string;  // "Sim" | "Não" | "–"
+  incluido:    string;  // "Sim" | "Não" | "–"
+}
+
+/** Linha de nota de empenho (Sheet 1 — tabela principal de empenhos) */
+export interface EmpenhoNF {
+  data:         string;  // col 0 — data do empenho (YYYY-MM-DD ou DD/MM/YYYY)
+  nota_empenho: string;  // col 1 — últimos 12 dígitos do código SIAFI
+  descricao:    string;  // col 2 — descrição completa (exibida ao expandir)
+  ugr:          string;  // col 3 — UGR (filtro)
+  natureza:     string;  // col 4 — Natureza de Despesa (filtro)
+  pi:           string;  // col 8 — Plano Interno (filtro)
 }
 
 /** Linha de Restos a Pagar por OM */
@@ -291,6 +304,15 @@ export function agregaPorOM(linhas: LinhaCredito[]): ResumoOM[] {
   return [...map.values()].sort((a, b) => b.credito - a.credito);
 }
 
+/** Normaliza booleano de planilha → "Sim" | "Não" | "–" */
+function toBool(v: string): string {
+  const u = (v ?? "").trim().toUpperCase();
+  if (!u) return "–";
+  if (["TRUE", "1", "SIM", "YES", "X"].includes(u)) return "Sim";
+  if (["FALSE", "0", "NAO", "NÃO", "NO"].includes(u)) return "Não";
+  return "–";
+}
+
 /** Transforma linhas CSV em ControleEmpenho[] */
 export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
   // Tenta detectar header com keywords
@@ -299,17 +321,20 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
 
   let iSol = -1, iSub = -1, iSiafi = -1, iSiloms = -1;
   let iData = -1, iUg = -1, iValor = -1, iDias = -1;
+  let iRenomeado = -1, iIncluido = -1;
 
   if (hi >= 0) {
     const cm = colMap(rows[hi]);
-    iSol    = findCol(cm, "SOLICIT", "NUMERO SOLICIT");
-    iSub    = findCol(cm, "SUBPROC", "SUB PROC", "SP");
-    iSiafi  = findCol(cm, "SIAFI", "NE", "EMPENHO SIAFI");
-    iSiloms = findCol(cm, "SILOMS", "PEDIDO", "EMPENHO SILOMS");
-    iData   = findCol(cm, "DATA", "DT");
-    iUg     = findCol(cm, "UG", "UGCRED", "UG CRED", "UNIDADE");
-    iValor  = findCol(cm, "VALOR", "VL");
-    iDias   = findCol(cm, "DIAS", "DIAS EM ABERTO", "PENDENTE");
+    iSol       = findCol(cm, "SOLICIT", "NUMERO SOLICIT");
+    iSub       = findCol(cm, "SUBPROC", "SUB PROC", "SP");
+    iSiafi     = findCol(cm, "SIAFI", "NE", "EMPENHO SIAFI");
+    iSiloms    = findCol(cm, "SILOMS", "PEDIDO", "EMPENHO SILOMS");
+    iData      = findCol(cm, "DATA", "DT");
+    iUg        = findCol(cm, "UG", "UGCRED", "UG CRED", "UNIDADE");
+    iValor     = findCol(cm, "VALOR", "VL");
+    iDias      = findCol(cm, "DIAS", "DIAS EM ABERTO", "PENDENTE");
+    iRenomeado = findCol(cm, "RENOME", "RENOMEAD");
+    iIncluido  = findCol(cm, "INCLUI", "INCLUIDO");
   }
 
   // Fallback positions (common format: Data | UGCred | Solicitacao | Subprocesso | SIAFI | SILOMS | Valor | Dias)
@@ -337,10 +362,73 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
       ugcred:      getC(iUg,     fb.ug,    row),
       valor:       toNum(getC(iValor, fb.valor, row)),
       dias:        parseInt(getC(iDias, fb.dias, row)) || 0,
+      renomeado:   toBool(iRenomeado >= 0 ? (row[iRenomeado] ?? "") : ""),
+      incluido:    toBool(iIncluido  >= 0 ? (row[iIncluido]  ?? "") : ""),
     });
   }
 
   return result;
+}
+
+/** Transforma linhas CSV em EmpenhoNF[] (Sheet 1 — notas de empenho) */
+export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
+  const KEYS = ["DATA", "EMPENH", "DESCR", "UGR", "NATUR", "PI"];
+  const hi = findHeaderRow(rows, KEYS);
+
+  let iData = -1, iNota = -1, iDesc = -1, iUgr = -1, iNatureza = -1, iPi = -1;
+
+  if (hi >= 0) {
+    const cm = colMap(rows[hi]);
+    iData     = findCol(cm, "DATA", "DT EMPENHO", "DT");
+    iNota     = findCol(cm, "EMPENH", "NOTA EMPENH", "NE", "SIAFI");
+    iDesc     = findCol(cm, "DESCR", "OBJETO", "HISTORICO", "ESPECIF");
+    iUgr      = findCol(cm, "UGR", "UG RESP", "UNID GEST RESP");
+    iNatureza = findCol(cm, "NATUR", "ND", "NATUREZA DESP");
+    iPi       = findCol(cm, "PI", "PLANO INTERNO", "PLANO INT");
+  }
+
+  // Fallback posicional conforme descrição do usuário:
+  // col 0=Data, 1=NotaEmpenho, 2=Descrição, 3=UGR, 4=Natureza, 5..7=outros, 8=PI
+  const fb = { data: 0, nota: 1, desc: 2, ugr: 3, natureza: 4, pi: 8 };
+  const getC = (idx: number, fallback: number, row: string[]) =>
+    (idx >= 0 ? row[idx] : row[fallback]) ?? "";
+
+  const dataStart = hi >= 0 ? hi + 1 : 1;
+  const result: EmpenhoNF[] = [];
+
+  for (let i = dataStart; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length < 3) continue;
+
+    const rawData = getC(iData, fb.data, row).trim();
+    // Ignorar linhas sem data ou que sejam repetição do header
+    if (!rawData || rawData.toUpperCase() === "DATA") continue;
+
+    const rawNota = getC(iNota, fb.nota, row).trim();
+    if (!rawNota) continue;
+
+    result.push({
+      data:         rawData,
+      nota_empenho: rawNota.slice(-12),
+      descricao:    getC(iDesc,     fb.desc,    row),
+      ugr:          getC(iUgr,      fb.ugr,     row),
+      natureza:     getC(iNatureza, fb.natureza, row),
+      pi:           getC(iPi,       fb.pi,       row),
+    });
+  }
+
+  // Ordenar cronologicamente (data pode ser DD/MM/YYYY ou YYYY-MM-DD)
+  result.sort((a, b) => normDate(a.data).localeCompare(normDate(b.data)));
+  return result;
+}
+
+/** Normaliza data para YYYY-MM-DD (para ordenação) */
+function normDate(d: string): string {
+  if (!d) return "";
+  // DD/MM/YYYY → YYYY-MM-DD
+  const m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return d;
 }
 
 /** Transforma linhas CSV em LinhaRP[] */

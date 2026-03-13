@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { Card } from "../components/Card";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
+import GerenciamentoEmpenhos from "../components/GerenciamentoEmpenhos";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import PainelDashboard from "../components/PainelDashboard";
 
@@ -62,7 +63,7 @@ export default function SetorInbox() {
 
   // Aba ativa — todos os usuários logados veem contratos/processos/indicadores
   const defaultTab = me?.setor === "SEO" ? "indicadores" : "contratos";
-  const [tab, setTab] = useState<"processos" | "prestacao" | "contratos" | "indicadores">(defaultTab as any);
+  const [tab, setTab] = useState<"processos" | "prestacao" | "contratos" | "indicadores" | "empenhos">(defaultTab as any);
   const showProcessosTab   = true;
   const showContratosTab   = true;
   const showIndicadoresTab = true;
@@ -76,6 +77,8 @@ export default function SetorInbox() {
   const canImportProcessos   = me?.setor === "SLIC"  || me?.setor === "ADMIN";
   // Permissão de edição geral: qualquer setor cadastrado (não visitante)
   const canEdit              = isAgent(me);
+  // Permissão de sync de empenhos: SEO e ADMIN
+  const canSyncEmpenhos      = me?.setor === "SEO" || me?.setor === "ADMIN";
 
   const canAnswer = useMemo(() => reply.trim().length > 0 && !saving && !!active, [reply, saving, active]);
 
@@ -226,11 +229,12 @@ export default function SetorInbox() {
         {/* Abas */}
         {showAnyExtraTab && (
           <div className="mt-3 flex flex-wrap gap-1 border-b border-slate-200">
-            {(["contratos", "processos", "indicadores", ...(showPrestacaoTab ? ["prestacao" as const] : [])] as const).map((t) => {
+            {(["contratos", "processos", "indicadores", "empenhos", ...(showPrestacaoTab ? ["prestacao" as const] : [])] as const).map((t) => {
               const labels: Record<string, string> = {
                 indicadores: "Indicadores de Lotação",
                 contratos:   "Contratos",
                 processos:   "Processos",
+                empenhos:    "Empenhos",
                 prestacao:   "Prestação de Contas",
               };
               return (
@@ -267,6 +271,9 @@ export default function SetorInbox() {
 
       {/* Conteúdo da aba Gerenciamento de Contratos */}
       {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEdit} />}
+
+      {/* Conteúdo da aba Empenhos */}
+      {tab === "empenhos" && <GerenciamentoEmpenhos canSync={canSyncEmpenhos} />}
 
       {/* Conteúdo da aba Prestação de Contas */}
       {tab === "prestacao" && showPrestacaoTab && (
