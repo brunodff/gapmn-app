@@ -441,9 +441,10 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     try {
       const resp = await fetch("http://localhost:3333/dados");
       if (!resp.ok) throw new Error(`Servidor retornou ${resp.status}`);
-      const { registros } = await resp.json();
+      const { registros, docs } = await resp.json();
       if (!registros || registros.length === 0) { setImportMsg("⚠️ Nenhum dado no servidor local."); return; }
 
+      // ── Passo 1+2: upsert de solicitações ─────────────────────────────────
       const { data: exist } = await supabase
         .from("siloms_solicitacoes_empenho").select("solicitacao,status");
       const mapa = new Map((exist ?? []).map((r: { solicitacao: string; status: string }) => [r.solicitacao, r.status]));
@@ -462,7 +463,22 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       for (const r of mudados)
         await supabase.from("siloms_solicitacoes_empenho").update({ status: r.status }).eq("solicitacao", r.solicitacao);
 
-      setImportMsg(`✅ Bot: ${novosComResp.length} novos, ${mudados.length} atualizados`);
+      // ── Passo 3: atualiza subprocesso + perfil_atual via docs ─────────────
+      let docsOk = 0, docsErr = 0;
+      if (docs && docs.length > 0) {
+        for (const doc of docs as { solicitacao: string; nr_documento: string; perfil_atual: string }[]) {
+          const campos: Record<string, string> = { perfil_atual: doc.perfil_atual };
+          if (doc.nr_documento) campos.subprocesso = doc.nr_documento;
+          const { error } = await supabase.from("siloms_solicitacoes_empenho")
+            .update(campos).eq("solicitacao", doc.solicitacao);
+          if (error) docsErr++; else docsOk++;
+        }
+      }
+
+      setImportMsg(
+        `✅ Bot: ${novosComResp.length} novos, ${mudados.length} status atualizados` +
+        (docs?.length ? ` · Docs: ${docsOk} subprocesso/perfil atualizados${docsErr ? `, ${docsErr} erros` : ""}` : "")
+      );
       await carregarSiloms();
     } catch (err: unknown) {
       setImportMsg(`❌ ${err instanceof Error ? err.message : String(err)}`);
