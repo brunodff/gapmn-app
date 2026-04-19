@@ -297,7 +297,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [filtroAno, setFiltroAno]         = useState("todos");
   const [filtroUgr, setFiltroUgr]         = useState("todos");
   const [filtroFiscal, setFiltroFiscal]   = useState("todos");
-  const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "vencimento_asc">("none");
+  const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "liquidar_asc" | "liquidar_desc" | "vencimento_asc">("none");
 
   // ── Carga ────────────────────────────────────────────────────────────────
   useEffect(() => { load(); }, []);
@@ -494,8 +494,10 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
-    if (sortBy === "saldo_asc")  arr.sort((a, b) => (a.vl_a_empenhar ?? 0) - (b.vl_a_empenhar ?? 0));
+    if (sortBy === "saldo_asc")       arr.sort((a, b) => (a.vl_a_empenhar ?? 0) - (b.vl_a_empenhar ?? 0));
     else if (sortBy === "saldo_desc") arr.sort((a, b) => (b.vl_a_empenhar ?? 0) - (a.vl_a_empenhar ?? 0));
+    else if (sortBy === "liquidar_asc")  arr.sort((a, b) => (a.saldo ?? 0) - (b.saldo ?? 0));
+    else if (sortBy === "liquidar_desc") arr.sort((a, b) => (b.saldo ?? 0) - (a.saldo ?? 0));
     else if (sortBy === "vencimento_asc") {
       arr.sort((a, b) => {
         const da = a.data_final ? new Date(a.data_final).getTime() : Infinity;
@@ -771,10 +773,12 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
           <div className="flex gap-1 flex-wrap">
             {([
-              { key: "none",          label: "Padrão" },
-              { key: "saldo_asc",     label: "Saldo ↑" },
-              { key: "saldo_desc",    label: "Saldo ↓" },
-              { key: "vencimento_asc",label: "Vencimento" },
+              { key: "none",           label: "Padrão" },
+              { key: "saldo_asc",      label: "A empenhar ↑" },
+              { key: "saldo_desc",     label: "A empenhar ↓" },
+              { key: "liquidar_asc",   label: "A liquidar ↑" },
+              { key: "liquidar_desc",  label: "A liquidar ↓" },
+              { key: "vencimento_asc", label: "Vencimento" },
             ] as const).map(({ key, label }) => (
               <button
                 key={key}
@@ -855,7 +859,12 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                       )}
                       {c.vl_a_empenhar != null && (
                         <div className={c.vl_a_empenhar > 0 ? "text-green-700" : "text-red-600"}>
-                          Saldo: {fmtMoney(c.vl_a_empenhar)}
+                          A empenhar: {fmtMoney(c.vl_a_empenhar)}
+                        </div>
+                      )}
+                      {c.saldo != null && (
+                        <div className={c.saldo > 0 ? "text-amber-700" : "text-red-600"}>
+                          A liquidar: {fmtMoney(c.saldo)}
                         </div>
                       )}
                       {c.status && (

@@ -439,10 +439,24 @@ export default function IndicadoresLotacao({ canImport }: Props) {
     finally { setClearingEmp(false); }
   }
 
-  // ── Derived: filter options ───────────────────────────────────────────────
-  const naturezas = useMemo(() => [...new Set(indicadores.map((r) => r.natureza).filter(Boolean) as string[])].sort(), [indicadores]);
-  const pis       = useMemo(() => [...new Set(indicadores.map((r) => r.plano_interno).filter(Boolean) as string[])].sort(), [indicadores]);
-  const ugCreds   = useMemo(() => [...new Set(indicadores.map((r) => r.ug_cred).filter(Boolean) as string[])].sort(), [indicadores]);
+  // ── Derived: filter options (cascata) ────────────────────────────────────
+  const ugCreds = useMemo(() =>
+    [...new Set(indicadores.map((r) => r.ug_cred).filter(Boolean) as string[])].sort(),
+  [indicadores]);
+
+  const naturezas = useMemo(() => {
+    const base = filtroUgCred === "todos" ? indicadores : indicadores.filter((r) => r.ug_cred === filtroUgCred);
+    return [...new Set(base.map((r) => r.natureza).filter(Boolean) as string[])].sort();
+  }, [indicadores, filtroUgCred]);
+
+  const pis = useMemo(() => {
+    const base = indicadores.filter((r) => {
+      if (filtroUgCred   !== "todos" && r.ug_cred  !== filtroUgCred)   return false;
+      if (filtroNatureza !== "todos" && r.natureza !== filtroNatureza)  return false;
+      return true;
+    });
+    return [...new Set(base.map((r) => r.plano_interno).filter(Boolean) as string[])].sort();
+  }, [indicadores, filtroUgCred, filtroNatureza]);
 
   // ── Derived: chaves duplicadas (mesma UG + NATUREZA + PTRES + PI + AÇÃO) ──
   const duplicateKeys = useMemo(() => {
@@ -769,12 +783,12 @@ export default function IndicadoresLotacao({ canImport }: Props) {
                   )}
                 </span>
               </label>
-              <select value={filtroUgCred} onChange={(e) => setFiltroUgCred(e.target.value)}
+              <select value={filtroUgCred} onChange={(e) => { setFiltroUgCred(e.target.value); setFiltroNatureza("todos"); setFiltroPI("todos"); }}
                 className="rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200">
                 <option value="todos">Todas as UG CRED</option>
                 {ugCreds.map((u) => <option key={u} value={u}>{u}</option>)}
               </select>
-              <select value={filtroNatureza} onChange={(e) => setFiltroNatureza(e.target.value)}
+              <select value={filtroNatureza} onChange={(e) => { setFiltroNatureza(e.target.value); setFiltroPI("todos"); }}
                 className="rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200">
                 <option value="todos">Todas as Naturezas</option>
                 {naturezas.map((n) => <option key={n} value={n}>{n}</option>)}

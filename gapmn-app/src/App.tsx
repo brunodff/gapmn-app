@@ -8,6 +8,7 @@ import ResetPassword from "./pages/ResetPassword";
 import AppChat from "./pages/AppChat";
 import SetorInbox from "./pages/SetorInbox";
 import ControleOrcamentario from "./pages/ControleOrcamentario";
+import MeusAcompanhamentos from "./pages/MeusAcompanhamentos";
 import RequireAuth from "./routes/RequireAuth";
 import RequireAgent from "./routes/RequireAgent";
 import ManualSite from "./components/ManualSite";
@@ -29,7 +30,7 @@ const AppTitle = () => (
 
 function Shell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
-  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento");
+  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/acompanhamentos");
   const [showManual, setShowManual] = useState(false);
 
   // Páginas de auth: título + card centralizados juntos na tela
@@ -39,7 +40,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         {showManual && <ManualSite onClose={() => setShowManual(false)} />}
         <main className="flex-1 flex flex-col items-center justify-center px-4 gap-6">
           <AppTitle />
-          <div className="w-full max-w-md">{children}</div>
+          <div className="w-full max-w-3xl">{children}</div>
         </main>
         <footer className="py-4 text-center text-xs text-slate-400">
           Desenvolvido por 2T Bruno | GAP-MN
@@ -107,6 +108,16 @@ export default function App() {
               </RequireAuth>
             }
           />
+
+          <Route
+            path="/acompanhamentos"
+            element={
+              <RequireAuth>
+                <MeusAcompanhamentos />
+              </RequireAuth>
+            }
+          />
+
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

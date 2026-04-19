@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+
 import { supabase } from "../lib/supabase";
 import { Card } from "../components/Card";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
@@ -8,7 +9,7 @@ import GerenciamentoEmpenhos from "../components/GerenciamentoEmpenhos";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import PainelDashboard from "../components/PainelDashboard";
 
-type Setor = "SEO" | "SCON" | "SLIC" | "ADMIN";
+type Setor = "SEO" | "SCON" | "SLIC" | "ADMIN" | "DEV";
 
 type TicketStatus = "open" | "answered" | "closed";
 
@@ -37,7 +38,7 @@ type Ticket = {
 
 function isAgent(profile?: Profile | null) {
   const setor = profile?.setor?.toUpperCase();
-  return setor === "ADMIN" || setor === "SEO" || setor === "SCON" || setor === "SLIC";
+  return setor === "ADMIN" || setor === "DEV" || setor === "SEO" || setor === "SCON" || setor === "SLIC";
 }
 
 function formatSetor(s: string | null | undefined): string {
@@ -61,8 +62,10 @@ export default function SetorInbox() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const [sp] = useSearchParams();
+
   // Aba ativa — todos os usuários logados veem contratos/processos/indicadores
-  const defaultTab = me?.setor === "SEO" ? "indicadores" : "contratos";
+  const defaultTab = sp.get("tab") || (me?.setor === "SEO" ? "indicadores" : "contratos");
   const [tab, setTab] = useState<"processos" | "prestacao" | "contratos" | "indicadores" | "empenhos">(defaultTab as any);
   const showProcessosTab   = true;
   const showContratosTab   = true;
@@ -267,13 +270,13 @@ export default function SetorInbox() {
       )}
 
       {/* Conteúdo da aba Gerenciamento de Processos */}
-      {tab === "processos" && <GerenciamentoProcessos canImport={canImportProcessos} />}
+      {tab === "processos" && <GerenciamentoProcessos canImport={canImportProcessos} canEdit={canEdit} canEditElaboracao={canImportProcessos} />}
 
       {/* Conteúdo da aba Gerenciamento de Contratos */}
       {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEdit} />}
 
       {/* Conteúdo da aba Empenhos */}
-      {tab === "empenhos" && <GerenciamentoEmpenhos canSync={canSyncEmpenhos} />}
+      {tab === "empenhos" && <GerenciamentoEmpenhos canSync={canSyncEmpenhos} userRole={me?.setor ?? undefined} />}
 
       {/* Conteúdo da aba Prestação de Contas */}
       {tab === "prestacao" && showPrestacaoTab && (

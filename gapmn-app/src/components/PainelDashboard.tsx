@@ -22,6 +22,8 @@ type Processo = {
   situacao_api: string | null;
   valor_estimado: number | null;
   valor_homologado: number | null;
+  homologado_manual: boolean | null;
+  valor_homologado_manual: number | null;
   data_publicacao: string | null;
   objeto: string | null;
   ano: number | null;
@@ -31,7 +33,7 @@ type ObsContrato  = { contrato: Contrato;  nota: string };
 type ObsProcesso  = { processo: Processo;  nota: string };
 
 interface PainelProps {
-  setor: "SEO" | "SCON" | "SLIC" | null;
+  setor: "SEO" | "SCON" | "SLIC" | "DEV" | null;
   isAdmin: boolean;
 }
 
@@ -53,9 +55,17 @@ function isoToday():        string { return new Date().toISOString().slice(0, 10
 function isoInDays(n: number): string { return new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10); }
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+function KpiCard({ label, value, sub, color, onClick, active }: {
+  label: string; value: string; sub?: string; color?: string;
+  onClick?: () => void; active?: boolean;
+}) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+    <div
+      onClick={onClick}
+      className={`rounded-xl border p-4 text-center shadow-sm transition-colors ${
+        onClick ? "cursor-pointer hover:border-sky-300 hover:bg-sky-50/50" : ""
+      } ${active ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100" : "border-slate-200 bg-white"}`}
+    >
       <div className="text-xs text-slate-500 mb-1">{label}</div>
       <div className={`text-xl font-bold ${color ?? "text-slate-800"}`}>{value}</div>
       {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
@@ -99,6 +109,9 @@ export default function PainelDashboard({ setor, isAdmin }: PainelProps) {
   // ── Em Andamento: ocultar linhas ───────────────────────────────────────────
   const [andOcultos, setAndOcultos] = useState<Set<string>>(new Set());
 
+  // ── KPI card ativo (SLIC) ─────────────────────────────────────────────────
+  const [activeKpiSLIC, setActiveKpiSLIC] = useState<"andamento" | "homologados" | "revogados" | null>(null);
+
   // ── Observações SCON ─────────────────────────────────────────────────────
   const [obsContratos,    setObsContratos]    = useState<ObsContrato[]>([]);
   const [buscarContrato,  setBuscarContrato]  = useState("");
@@ -124,7 +137,7 @@ export default function PainelDashboard({ setor, isAdmin }: PainelProps) {
         promises.push(
           supabase
             .from("processos_licitatorios")
-            .select("numero_processo, modalidade, situacao_api, valor_estimado, valor_homologado, data_publicacao, objeto, ano")
+            .select("numero_processo, modalidade, situacao_api, valor_estimado, valor_homologado, homologado_manual, valor_homologado_manual, data_publicacao, objeto, ano")
             .then(({ data }) => { setProcessos((data ?? []) as Processo[]); })
         );
       }
@@ -175,20 +188,33 @@ export default function PainelDashboard({ setor, isAdmin }: PainelProps) {
   const kpiP = useMemo(() => {
     if (!processosFiltrados.length) return null;
 
-    const homologados = processosFiltrados.filter(p => p.valor_homologado != null).length;
-    const revogados   = processosFiltrados.filter(p => (p.situacao_api ?? "").toLowerCase().match(/revogad|suspens/)).length;
+    const isHom = (p: Processo) => {
+      if (p.homologado_manual === true) return true;
+      const sit = (p.situacao_api ?? "").toLowerCase();
+      return p.valor_homologado != null || sit.includes("homolog") || sit.includes("adjudic");
+    };
+    const isRevog = (p: Processo) =>
+      (p.situacao_api ?? "").toLowerCase().match(/revogad|suspens|anulad/) != null;
+
+    const homologados = processosFiltrados.filter(isHom).length;
+    const revogados   = processosFiltrados.filter(isRevog).length;
     const andamento   = processosFiltrados.length - homologados - revogados;
 
-    const totalHom       = processosFiltrados.reduce((s, p) => s + (p.valor_homologado ?? 0), 0);
-    const totalEstComHom = processosFiltrados.filter(p => p.valor_homologado != null).reduce((s, p) => s + (p.valor_estimado ?? 0), 0);
+    const totalHom       = processosFiltrados.filter(isHom).reduce((s, p) => s + (p.valor_homologado ?? 0), 0);
+    const totalEstComHom = processosFiltrados.filter(isHom).reduce((s, p) => s + (p.valor_estimado ?? 0), 0);
     const economia = totalEstComHom > 0 ? totalEstComHom - totalHom : 0;
     const pctEco   = totalEstComHom > 0 ? (economia / totalEstComHom) * 100 : 0;
 
     const andamentoList = processosFiltrados
-      .filter(p => {
-        const sit = (p.situacao_api ?? "").toLowerCase();
-        return !sit.includes("revogad") && !sit.includes("suspens") && p.valor_homologado == null;
-      })
+      .filter(p => !isHom(p) && !isRevog(p))
+      .sort((a, b) => (b.data_publicacao ?? "").localeCompare(a.data_publicacao ?? ""));
+
+    const homologadosList = processosFiltrados
+      .filter(isHom)
+      .sort((a, b) => (b.data_publicacao ?? "").localeCompare(a.data_publicacao ?? ""));
+
+    const revogadosList = processosFiltrados
+      .filter(isRevog)
       .sort((a, b) => (b.data_publicacao ?? "").localeCompare(a.data_publicacao ?? ""));
 
     const byModal: Record<string, number> = {};
@@ -198,7 +224,7 @@ export default function PainelDashboard({ setor, isAdmin }: PainelProps) {
     }
     const modalRows = Object.entries(byModal).sort(([, a], [, b]) => b - a);
 
-    return { homologados, revogados, andamento, totalHom, economia, pctEco, andamentoList, modalRows };
+    return { homologados, revogados, andamento, totalHom, economia, pctEco, andamentoList, homologadosList, revogadosList, modalRows };
   }, [processosFiltrados]);
 
   // ── Busca para Observações SCON ───────────────────────────────────────────
@@ -563,18 +589,76 @@ ${conteudo}
               <>
                 {/* KPI cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  <KpiCard label="Total"            value={String(processosFiltrados.length)} />
-                  <KpiCard label="Em Andamento"      value={String(kpiP.andamento)}   color="text-sky-700" />
-                  <KpiCard label="Homologados"       value={String(kpiP.homologados)} color="text-emerald-700" />
-                  <KpiCard label="Revogados/Susp."   value={String(kpiP.revogados)}   color={kpiP.revogados > 0 ? "text-purple-700" : "text-slate-800"} />
-                  <KpiCard label="Valor Homologado"  value={fmtMoney(kpiP.totalHom)}  color="text-emerald-700" />
+                  <KpiCard label="Total"           value={String(processosFiltrados.length)} />
+                  <KpiCard label="Em Andamento"    value={String(kpiP.andamento)}   color="text-sky-700"
+                    onClick={() => setActiveKpiSLIC(v => v === "andamento"   ? null : "andamento")}
+                    active={activeKpiSLIC === "andamento"} />
+                  <KpiCard label="Homologados"     value={String(kpiP.homologados)} color="text-emerald-700"
+                    onClick={() => setActiveKpiSLIC(v => v === "homologados" ? null : "homologados")}
+                    active={activeKpiSLIC === "homologados"} />
+                  <KpiCard label="Revogados/Susp." value={String(kpiP.revogados)}   color={kpiP.revogados > 0 ? "text-purple-700" : "text-slate-800"}
+                    onClick={() => setActiveKpiSLIC(v => v === "revogados"   ? null : "revogados")}
+                    active={activeKpiSLIC === "revogados"} />
+                  <KpiCard label="Valor Homologado" value={fmtMoney(kpiP.totalHom)} color="text-emerald-700" />
                 </div>
+
+                {/* Painel de detalhes do KPI selecionado */}
+                {activeKpiSLIC && (() => {
+                  const lista =
+                    activeKpiSLIC === "andamento"   ? kpiP.andamentoList   :
+                    activeKpiSLIC === "homologados" ? kpiP.homologadosList :
+                    kpiP.revogadosList;
+                  const titulo =
+                    activeKpiSLIC === "andamento"   ? "Em Andamento" :
+                    activeKpiSLIC === "homologados" ? "Homologados"  : "Revogados / Suspensos";
+                  return (
+                    <div className="rounded-xl border border-sky-200 bg-white shadow-sm overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-sky-100 bg-sky-50">
+                        <div className="text-xs font-semibold text-sky-800">{titulo} — {lista.length} processo{lista.length !== 1 ? "s" : ""}</div>
+                        <button onClick={() => setActiveKpiSLIC(null)} className="text-xs text-slate-400 hover:text-slate-700">✕ Fechar</button>
+                      </div>
+                      <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-white border-b border-slate-100">
+                            <tr>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-600 whitespace-nowrap">Processo</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-600">Objeto</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-600 whitespace-nowrap">Situação</th>
+                              <th className="text-right py-2 px-3 font-semibold text-slate-600 whitespace-nowrap">
+                                {activeKpiSLIC === "homologados" ? "Vl. Homologado" : "Vl. Estimado"}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {lista.map((p, i) => (
+                              <tr key={i} className="hover:bg-slate-50">
+                                <td className="py-1.5 px-3 font-medium text-slate-800 whitespace-nowrap">
+                                  {p.numero_processo ?? "–"}
+                                  {p.ano && <span className="ml-1 text-slate-400 font-normal">({p.ano})</span>}
+                                </td>
+                                <td className="py-1.5 px-3 text-slate-600 max-w-xs whitespace-normal break-words leading-relaxed">
+                                  {p.objeto ?? "–"}
+                                </td>
+                                <td className="py-1.5 px-3 text-slate-500 whitespace-nowrap">{p.situacao_api ?? "–"}</td>
+                                <td className="py-1.5 px-3 text-right text-slate-700 whitespace-nowrap font-medium">
+                                  {activeKpiSLIC === "homologados"
+                                    ? fmtMoney(p.valor_homologado)
+                                    : fmtMoney(p.valor_estimado)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Banner economia */}
                 {kpiP.economia > 0 && (
                   <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 flex flex-wrap items-center gap-4">
                     <div>
-                      <div className="text-xs text-teal-600 font-medium">Economia Gerada</div>
+                      <div className="text-xs text-teal-600 font-medium">Diferença de</div>
                       <div className="text-lg font-bold text-teal-800">{fmtMoney(kpiP.economia)}</div>
                     </div>
                     <div className="text-sm font-semibold text-teal-700">

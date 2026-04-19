@@ -56,12 +56,23 @@ export interface ControleEmpenho {
 
 /** Linha de nota de empenho (Sheet 1 — tabela principal de empenhos) */
 export interface EmpenhoNF {
-  data:         string;  // col 0 — data do empenho (YYYY-MM-DD ou DD/MM/YYYY)
-  nota_empenho: string;  // col 1 — últimos 12 dígitos do código SIAFI
-  descricao:    string;  // col 2 — descrição completa (exibida ao expandir)
-  ugr:          string;  // col 3 — UGR (filtro)
-  natureza:     string;  // col 4 — Natureza de Despesa (filtro)
-  pi:           string;  // col 8 — Plano Interno (filtro)
+  data:              string;  // col 0 — data do empenho (DD/MM/YYYY)
+  nota_empenho:      string;  // col 1 — últimos 14 dígitos ex: 2026NE000001
+  nota_empenho_full: string;  // col 1 — código completo SIAFI
+  descricao:         string;  // col 2 — descrição completa
+  ugcred_code:       string;  // col 3 — código UG credora (ex: 120630)
+  ugr:               string;  // col 4 — UGR nome (filtro)
+  natureza:          string;  // col 5 — Natureza código
+  pi:                string;  // col 7 — PI código
+  pi_desc:           string;  // col 8 — PI descrição
+  valor:             number;  // col 9 — valor do empenho (R$)
+  solicitacao?:      string;  // extraído de descricao via regex /26S\d+/i
+}
+
+/** Extrai código de solicitação SILOMS de uma descrição de NE */
+export function extractSolicitacao(descricao: string): string {
+  const m = descricao.match(/26S\d{4}/i);
+  return m ? m[0].toUpperCase() : "";
 }
 
 /** Linha de Restos a Pagar por OM */
@@ -179,7 +190,7 @@ function findCol(map: Record<string, number>, ...candidates: string[]): number {
   for (const c of candidates) {
     const up = c.toUpperCase();
     for (const [key, idx] of Object.entries(map)) {
-      if (key.includes(up) || up.includes(key)) return idx;
+      if (key.includes(up)) return idx;
     }
   }
   return -1;
@@ -393,24 +404,31 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
     if (row.length < 3) continue;
 
     const rawData = (row[0] ?? "").trim();
-    // Aceitar apenas linhas com data no formato DD/MM/YYYY
     if (!rawData.match(/^\d{2}\/\d{2}\/\d{4}$/)) continue;
 
     const rawNota = (row[1] ?? "").trim();
-    // NE completo deve ter pelo menos 12 caracteres
     if (rawNota.length < 12) continue;
 
+    const descricao = (row[2] ?? "").trim();
+    const neMatch = rawNota.match(/(\d{4}NE\d+)$/i);
     result.push({
-      data:         rawData,
-      nota_empenho: rawNota.slice(-12),
-      descricao:    (row[2] ?? "").trim(),
-      ugr:          (row[4] ?? "").trim(),   // UGR nome
-      natureza:     (row[5] ?? "").trim(),   // Natureza código
-      pi:           (row[7] ?? "").trim(),   // PI código
+      data:              rawData,
+      nota_empenho:      neMatch ? neMatch[1] : rawNota.slice(-12), // ex: 2026NE000001
+      nota_empenho_full: rawNota,
+      descricao,
+      ugcred_code:       (row[3] ?? "").trim(),
+      ugr:               (row[4] ?? "").trim(),
+      natureza:          (row[5] ?? "").trim(),
+      pi:                (row[7] ?? "").trim(),
+      pi_desc:           (row[8] ?? "").trim(),
+      valor:             toNum((row[9] ?? "").trim()),
+      solicitacao:       extractSolicitacao(descricao),
     });
   }
 
-  result.sort((a, b) => normDate(a.data).localeCompare(normDate(b.data)));
+  // Ordena pelo número da NE (parte numérica após "NE")
+  const neNum = (ne: string) => parseInt(ne.replace(/.*NE0*/i, "") || "0", 10);
+  result.sort((a, b) => neNum(a.nota_empenho) - neNum(b.nota_empenho));
   return result;
 }
 

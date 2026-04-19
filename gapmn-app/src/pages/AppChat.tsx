@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { Card } from "../components/Card";
 import { usePush } from "../lib/usePush";
+import FeedNoticias from "../components/FeedNoticias";
 
 type UserHeader = {
   id?: string;
@@ -28,6 +29,9 @@ export default function AppChat() {
 
   const { state: pushState, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePush(me.id ?? null);
 
+  const isAgent = !!(me.setor);
+  const canCreateFeed = me.setor === "ADMIN" || me.setor === "SCON" || me.setor === "SLIC" || me.setor === "SEO";
+
   useEffect(() => {
     (async () => {
       const { data: sess } = await supabase.auth.getSession();
@@ -40,10 +44,10 @@ export default function AppChat() {
         .eq("id", user.id)
         .maybeSingle();
 
-      const email  = user.email ?? null;
-      const nome   = (prof as any)?.nome_guerra || (user.user_metadata as any)?.nome_guerra || (email ? email.split("@")[0] : "Usuário");
-      const avatarKey  = (prof as any)?.avatar_key  || (user.user_metadata as any)?.avatar_key  || null;
-      const setorP = ((prof as any)?.setor as UserHeader["setor"]) ?? null;
+      const email    = user.email ?? null;
+      const nome     = (prof as any)?.nome_guerra || (user.user_metadata as any)?.nome_guerra || (email ? email.split("@")[0] : "Usuário");
+      const avatarKey = (prof as any)?.avatar_key || (user.user_metadata as any)?.avatar_key || null;
+      const setorP   = ((prof as any)?.setor as UserHeader["setor"]) ?? null;
 
       setMe({ id: user.id, nome, avatarKey, setor: setorP });
     })();
@@ -59,6 +63,11 @@ export default function AppChat() {
     }
   }
 
+  // Navega para /setor abrindo uma tab específica
+  function goToTab(tab: string) {
+    nav(`/setor?tab=${tab}`);
+  }
+
   const avatarSrc = me.avatarKey ? `/${me.avatarKey}.png` : "/grad_homem.png";
 
   return (
@@ -67,7 +76,6 @@ export default function AppChat() {
       {/* Header */}
       <Card>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
           <div className="flex items-center gap-3 min-w-0">
             <img
               src={avatarSrc}
@@ -85,7 +93,6 @@ export default function AppChat() {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            {/* Sino push */}
             {pushState !== "unsupported" && (
               <button
                 title={
@@ -119,32 +126,49 @@ export default function AppChat() {
         </div>
       </Card>
 
-      {/* Cards de navegação */}
-      <div className="mx-auto w-full max-w-lg space-y-4">
-        <button
-          onClick={() => nav("/setor")}
-          className="w-full rounded-2xl border-2 border-sky-200 bg-sky-50 p-6 text-left hover:bg-sky-100 active:bg-sky-200 transition-colors"
-        >
-          <div className="text-3xl mb-2">📋</div>
-          <div className="text-lg font-semibold text-sky-800">Gerenciamentos</div>
-          <div className="text-sm text-sky-600 mt-1">Contratos · Processos · Indicadores de Lotação</div>
-        </button>
+      {/* Layout: nav + feed lado a lado em telas grandes */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
 
-        <button
-          onClick={() => nav("/orcamento")}
-          className="w-full rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6 text-left hover:bg-emerald-100 active:bg-emerald-200 transition-colors"
-        >
-          <div className="text-3xl mb-2">💰</div>
-          <div className="text-lg font-semibold text-emerald-800">Painel Orçamentário</div>
-          <div className="text-sm text-emerald-600 mt-1">Crédito disponível · Empenhos · Restos a Pagar</div>
-        </button>
+        {/* Cards de navegação */}
+        <div className="space-y-3">
+          <button
+            onClick={() => nav("/setor")}
+            className="w-full rounded-2xl border-2 border-sky-200 bg-sky-50 p-6 text-left hover:bg-sky-100 active:bg-sky-200 transition-colors"
+          >
+            <div className="text-3xl mb-2">📋</div>
+            <div className="text-lg font-semibold text-sky-800">Gerenciamentos</div>
+            <div className="text-sm text-sky-600 mt-1">Contratos · Processos · Indicadores de Lotação</div>
+          </button>
+
+          <button
+            onClick={() => nav("/orcamento")}
+            className="w-full rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6 text-left hover:bg-emerald-100 active:bg-emerald-200 transition-colors"
+          >
+            <div className="text-3xl mb-2">💰</div>
+            <div className="text-lg font-semibold text-emerald-800">Painel Orçamentário</div>
+            <div className="text-sm text-emerald-600 mt-1">Crédito disponível · Empenhos · Restos a Pagar</div>
+          </button>
+
+          <button
+            onClick={() => nav("/acompanhamentos")}
+            className="w-full rounded-2xl border-2 border-violet-200 bg-violet-50 p-6 text-left hover:bg-violet-100 active:bg-violet-200 transition-colors"
+          >
+            <div className="text-3xl mb-2">👤</div>
+            <div className="text-lg font-semibold text-violet-800">Meus Acompanhamentos</div>
+            <div className="text-sm text-violet-600 mt-1">Contratos · Processos · Empenhos · Indicadores</div>
+          </button>
+
+        </div>
+
+        {/* Feed de notícias */}
+        <Card>
+          <FeedNoticias
+            isLoggedIn
+            canCreate={canCreateFeed}
+            onNavigate={goToTab}
+          />
+        </Card>
       </div>
-
-      {/* ── CHATBOT_HIDDEN — reativar quando necessário ──────────────────────────
-      Todo o código do chatbot (chips, histórico, input, encaminhamento,
-      minhas dúvidas, toast de tickets) foi ocultado aqui.
-      Para reativar: restaurar a versão anterior do AppChat.tsx do git.
-      ─────────────────────────────────────────────────────────────────────── */}
     </div>
   );
 }

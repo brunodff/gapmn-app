@@ -28,7 +28,7 @@ export default function RequireAgent({ children }: { children: React.ReactNode }
 
       const setor = ((p as any)?.setor as string | undefined)?.toUpperCase();
       const allowed =
-        setor === "ADMIN" ||
+        setor === "ADMIN" || setor === "DEV" ||
         setor === "SEO" || setor === "SCON" || setor === "SLIC";
 
       if (mounted) {
