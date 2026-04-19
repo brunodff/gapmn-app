@@ -466,12 +466,24 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       // ── Passo 3: atualiza subprocesso + perfil_atual via docs ─────────────
       let docsOk = 0, docsErr = 0;
       if (docs && docs.length > 0) {
-        for (const doc of docs as { solicitacao: string; nr_documento: string; perfil_atual: string }[]) {
-          const campos: Record<string, string> = { perfil_atual: doc.perfil_atual };
-          if (doc.nr_documento) campos.subprocesso = doc.nr_documento;
-          const { error } = await supabase.from("siloms_solicitacoes_empenho")
-            .update(campos).eq("solicitacao", doc.solicitacao);
-          if (error) docsErr++; else docsOk++;
+        type DocEntry = { nota_empenho: string; nr_documento: string; perfil_atual: string; solicitacao: string };
+        for (const doc of docs as DocEntry[]) {
+          if (doc.nr_documento === "s/ subprocesso") {
+            const { error } = await supabase.from("siloms_solicitacoes_empenho")
+              .update({ subprocesso: "s/ subprocesso" }).eq("empenho_siafi", doc.nota_empenho);
+            if (error) docsErr++; else docsOk++;
+            continue;
+          }
+          const campos: Record<string, string> = { subprocesso: doc.nr_documento };
+          if (doc.perfil_atual) campos.perfil_atual = doc.perfil_atual;
+          if (doc.solicitacao) {
+            const { error } = await supabase.from("siloms_solicitacoes_empenho")
+              .update(campos).eq("solicitacao", doc.solicitacao);
+            if (error) docsErr++; else docsOk++;
+          }
+          // Também atualiza por empenho_siafi
+          await supabase.from("siloms_solicitacoes_empenho")
+            .update(campos).eq("empenho_siafi", doc.nota_empenho);
         }
       }
 
