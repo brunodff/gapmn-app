@@ -194,10 +194,16 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   }, [botAutoTrigger]); // eslint-disable-line
 
   // Filtros
-  const [filtroUG,   setFiltroUG]   = useState("");
-  const [filtroResp, setFiltroResp] = useState("");
-  const [semNE,      setSemNE]      = useState(false);
-  const [busca,      setBusca]      = useState("");
+  const [filtroUG,     setFiltroUG]     = useState("");
+  const [filtroResp,   setFiltroResp]   = useState("");
+  const [filtroPerfil, setFiltroPerfil] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
+  const [semNE,        setSemNE]        = useState(false);
+  const [busca,        setBusca]        = useState("");
+
+  // Perfil derivado: status ASSINADA → "EMISSÃO DE EMPENHO" quando perfil_atual vazio
+  const perfilDisplay = (r: FullRow) =>
+    r.perfil_atual || (r.status?.toUpperCase() === "ASSINADA" ? "EMISSÃO DE EMPENHO" : "");
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   async function carregarSiloms() {
@@ -271,12 +277,29 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     if (!botCpf || !botSenha) return;
     if (botAutoRef.current) { clearInterval(botAutoRef.current); setBotCountdown(null); }
     setBotRunning(true);
-    setBotLog(["⏳ Iniciando robô — 3 passos..."]);
+    setBotLog(["⏳ Calculando NEs pendentes..."]);
+
+    // NEs que JÁ estão concluídas e não precisam ser pesquisadas novamente:
+    // 1. perfil = DA|EMPENHOS + subprocesso preenchido + empenho_siafi preenchido
+    // 2. status = ASSINADA (perfil derivado = EMISSÃO DE EMPENHO)
+    const { data: dbState } = await supabase
+      .from("siloms_solicitacoes_empenho")
+      .select("empenho_siafi, subprocesso, perfil_atual, status");
+    const nesFeitas = (dbState ?? [])
+      .filter((r: { empenho_siafi: string | null; subprocesso: string | null; perfil_atual: string | null; status: string | null }) =>
+        r.empenho_siafi && (
+          (r.perfil_atual === "DA|EMPENHOS" && r.subprocesso && r.subprocesso !== "s/ subprocesso") ||
+          r.status?.toUpperCase() === "ASSINADA"
+        )
+      )
+      .map((r: { empenho_siafi: string }) => r.empenho_siafi);
+
+    setBotLog([`⏳ Iniciando robô — ${nesFeitas.length} NEs já concluídas serão puladas...`]);
     try {
       await fetch("http://localhost:3333/rodar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cpf: botCpf, senha: botSenha, ano: botAno }),
+        body: JSON.stringify({ cpf: botCpf, senha: botSenha, ano: botAno, nesFeitas }),
       });
       if (botPollRef.current) clearInterval(botPollRef.current);
       botPollRef.current = setInterval(async () => {
@@ -373,27 +396,41 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     [...new Set(rows.map(r => r.ug_cred || r.ne?.ugcred_code).filter(Boolean))].sort() as string[], [rows]);
   const respOpts = useMemo(() =>
     [...new Set(rows.map(r => r.responsavel).filter(Boolean))].sort() as string[], [rows]);
+  const perfilOpts = useMemo(() =>
+    [...new Set(rows.map(r => perfilDisplay(r)).filter(Boolean))].sort() as string[], [rows]); // eslint-disable-line
+  const statusOpts = useMemo(() =>
+    [...new Set(rows.map(r => r.status).filter(Boolean))].sort() as string[], [rows]);
 
   const filtrado = useMemo(() => {
     const q = busca.trim().toUpperCase();
     return sorted.filter(r => {
-      if (filtroUG   && (r.ug_cred || r.ne?.ugcred_code) !== filtroUG) return false;
-      if (filtroResp && r.responsavel !== filtroResp) return false;
-      if (semNE      && (r.ne?.nota_empenho || r.empenho_siafi)) return false;
+      if (filtroUG     && (r.ug_cred || r.ne?.ugcred_code) !== filtroUG) return false;
+      if (filtroResp   && r.responsavel !== filtroResp) return false;
+      if (filtroPerfil && perfilDisplay(r) !== filtroPerfil) return false;
+      if (filtroStatus && (r.status ?? "") !== filtroStatus) return false;
+      if (semNE        && (r.ne?.nota_empenho || r.empenho_siafi)) return false;
       // Apenas NEs do ano corrente (2026NE...) — ignora 2024/2025
       const neStr = ((r.ne?.nota_empenho || r.empenho_siafi) ?? "").toUpperCase();
       if (neStr && !neStr.startsWith("2026NE")) return false;
 
       if (q) {
-        const txt = [r.solicitacao, r.ne?.nota_empenho, r.empenho_siafi,
-          r.responsavel, r.subprocesso, r.perfil_atual, r.status, r.oc_gerada,
-          r.fornecedor, r.historico]
-          .join(" ").toUpperCase();
-        if (!txt.includes(q)) return false;
+        // Busca exata por NE (ex: "2026NE000300") → só mostra essa NE
+        const isNEExact = /^\d{4}NE\d{4,8}$/i.test(q);
+        if (isNEExact) {
+          const neMatch = (r.ne?.nota_empenho ?? "").toUpperCase() === q
+                       || (r.empenho_siafi ?? "").toUpperCase() === q;
+          if (!neMatch) return false;
+        } else {
+          const txt = [r.solicitacao, r.ne?.nota_empenho, r.empenho_siafi,
+            r.responsavel, r.subprocesso, perfilDisplay(r), r.status, r.oc_gerada,
+            r.fornecedor, r.historico]
+            .join(" ").toUpperCase();
+          if (!txt.includes(q)) return false;
+        }
       }
       return true;
     });
-  }, [sorted, filtroUG, filtroResp, semNE, busca]);
+  }, [sorted, filtroUG, filtroResp, filtroPerfil, filtroStatus, semNE, busca]); // eslint-disable-line
 
   // Total das linhas com NE (positivos + negativos)
   const totalComNE = useMemo(() =>
@@ -786,6 +823,22 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
               {respOpts.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           )}
+          {perfilOpts.length > 0 && (
+            <select value={filtroPerfil} onChange={e => setFiltroPerfil(e.target.value)}
+              className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200">
+              <option value="">Todos perfis</option>
+              {perfilOpts.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          )}
+          <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
+            className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200">
+            <option value="">Todos status</option>
+            <option value="AGUARDA ASSINATURA">AGUARDA ASSINATURA</option>
+            <option value="ASSINADA">ASSINADA</option>
+            {statusOpts.filter(s => s !== "AGUARDA ASSINATURA" && s !== "ASSINADA").map(s =>
+              <option key={s} value={s}>{s}</option>
+            )}
+          </select>
         </div>
       </Card>
 
@@ -902,7 +955,12 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                           onChange={e => setEditBuf(b => ({ ...b, perfil_atual: e.target.value }))}
                           placeholder="DA|EMPENHOS"
                           className="rounded-lg border px-1.5 py-1 text-[11px] outline-none focus:ring-2 focus:ring-sky-200 w-24 font-mono" />
-                      ) : <span className={`text-[11px] ${row.perfil_atual ? "font-mono text-slate-600" : "text-slate-300"}`}>{row.perfil_atual || "–"}</span>}
+                      ) : (() => {
+                          const pd = perfilDisplay(row);
+                          const isFinal = pd === "DA|EMPENHOS";
+                          const isDerived = !row.perfil_atual && pd;
+                          return <span className={`text-[11px] ${isFinal ? "font-mono font-semibold text-emerald-700" : isDerived ? "font-mono text-amber-600 italic" : pd ? "font-mono text-slate-600" : "text-slate-300"}`}>{pd || "–"}</span>;
+                        })()}
                     </td>
 
                     {/* Status / OC — editável */}
