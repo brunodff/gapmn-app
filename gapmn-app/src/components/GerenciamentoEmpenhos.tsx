@@ -418,7 +418,8 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
         const isNEExact = /^\d{4}NE\d{4,8}$/i.test(q);
         if (isNEExact) {
           const neMatch = (r.ne?.nota_empenho ?? "").toUpperCase() === q
-                       || (r.empenho_siafi ?? "").toUpperCase() === q;
+                       || (r.empenho_siafi ?? "").toUpperCase() === q
+                       || r.solicitacao?.toUpperCase() === q; // bot usa NE como chave primária
           if (!neMatch) return false;
         } else {
           const txt = [r.solicitacao, r.ne?.nota_empenho, r.empenho_siafi,
