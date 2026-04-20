@@ -304,20 +304,31 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   // ── Join: planilha como fonte das linhas, SILOMS como enriquecimento ──────
   // Cada linha da planilha = uma linha na tabela (mesmo NE repetido = linhas separadas)
   const rows = useMemo<FullRow[]>(() => {
-    // Índice SILOMS por solicitação (para lookup rápido)
+    // Índice primário: por solicitacao; secundário: por empenho_siafi
+    // (Bot pode inserir solicitacao = nota_empenho quando doc.solicitacao é vazio)
     const silomsMap = new Map(
       siloms
         .filter(r => r.solicitacao && /\d/.test(r.solicitacao))
         .map(r => [r.solicitacao.toUpperCase(), r])
     );
+    const silomsMapNE = new Map(
+      siloms
+        .filter(r => r.empenho_siafi)
+        .map(r => [r.empenho_siafi!.toUpperCase(), r])
+    );
 
     const matchedSols = new Set<string>();
+    const matchedNEs  = new Set<string>();
 
     // Cada linha da planilha NE = uma linha na tabela
     const sheetRows: FullRow[] = empenhos.map(ne => {
       const solKey = (ne.solicitacao ?? "").toUpperCase();
-      const silom  = solKey ? silomsMap.get(solKey) : undefined;
-      if (silom) matchedSols.add(silom.solicitacao);
+      const silom  = (solKey ? silomsMap.get(solKey) : undefined)
+                  ?? silomsMapNE.get(ne.nota_empenho.toUpperCase());
+      if (silom) {
+        matchedSols.add(silom.solicitacao);
+        if (silom.empenho_siafi) matchedNEs.add(silom.empenho_siafi.toUpperCase());
+      }
       return { ...(silom ?? { solicitacao: ne.solicitacao || ne.nota_empenho }), ne };
     });
 
@@ -325,12 +336,14 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     const sheetNESet = new Set(empenhos.map(e => e.nota_empenho));
 
     // Pendentes: solicitações do Supabase ainda sem NE gerada
-    // Exclui: solicitação já matched pela planilha OU empenho_siafi já existe na planilha
+    // Exclui: solicitação já matched pela planilha, NE já matched pelo JOIN duplo,
+    //         ou empenho_siafi já existe na planilha
     const pending: FullRow[] = siloms
       .filter(s =>
         s.solicitacao &&
         /\d/.test(s.solicitacao) &&
         !matchedSols.has(s.solicitacao) &&
+        !matchedNEs.has((s.empenho_siafi ?? "").toUpperCase()) &&
         !sheetNESet.has(s.empenho_siafi ?? "")
       )
       .map(s => ({ ...s }));
@@ -367,9 +380,14 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       if (filtroUG   && (r.ug_cred || r.ne?.ugcred_code) !== filtroUG) return false;
       if (filtroResp && r.responsavel !== filtroResp) return false;
       if (semNE      && (r.ne?.nota_empenho || r.empenho_siafi)) return false;
+      // Apenas NEs do ano corrente (2026NE...) — ignora 2024/2025
+      const neStr = ((r.ne?.nota_empenho || r.empenho_siafi) ?? "").toUpperCase();
+      if (neStr && !neStr.startsWith("2026NE")) return false;
+
       if (q) {
         const txt = [r.solicitacao, r.ne?.nota_empenho, r.empenho_siafi,
-          r.responsavel, r.subprocesso, r.perfil_atual, r.status, r.oc_gerada]
+          r.responsavel, r.subprocesso, r.perfil_atual, r.status, r.oc_gerada,
+          r.fornecedor, r.historico]
           .join(" ").toUpperCase();
         if (!txt.includes(q)) return false;
       }
@@ -442,7 +460,9 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       const resp = await fetch("http://localhost:3333/dados");
       if (!resp.ok) throw new Error(`Servidor retornou ${resp.status}`);
       const { registros, docs } = await resp.json();
-      if (!registros || registros.length === 0) { setImportMsg("⚠️ Nenhum dado no servidor local."); return; }
+      if ((!registros || registros.length === 0) && (!docs || docs.length === 0)) {
+        setImportMsg("⚠️ Nenhum dado no servidor local."); return;
+      }
 
       // ── Passo 1+2: upsert de solicitações ─────────────────────────────────
       const { data: exist } = await supabase
@@ -463,33 +483,55 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       for (const r of mudados)
         await supabase.from("siloms_solicitacoes_empenho").update({ status: r.status }).eq("solicitacao", r.solicitacao);
 
-      // ── Passo 3: atualiza subprocesso + perfil_atual via docs ─────────────
+      // ── Passo 3: upsert de todas as NEs com subprocesso + perfil_atual ──────
       let docsOk = 0, docsErr = 0;
       if (docs && docs.length > 0) {
         type DocEntry = { nota_empenho: string; nr_documento: string; perfil_atual: string; solicitacao: string };
+
+        // Busca quais NEs já existem na tabela (para decidir insert vs update)
+        const { data: existentes } = await supabase
+          .from("siloms_solicitacoes_empenho")
+          .select("solicitacao, empenho_siafi");
+        const porNE  = new Map((existentes ?? []).filter((r: { empenho_siafi: string | null }) => r.empenho_siafi)
+          .map((r: { solicitacao: string; empenho_siafi: string }) => [r.empenho_siafi, r.solicitacao]));
+        const porSol = new Set((existentes ?? []).map((r: { solicitacao: string }) => r.solicitacao));
+
         for (const doc of docs as DocEntry[]) {
-          if (doc.nr_documento === "s/ subprocesso") {
+          if (!doc.nota_empenho.toUpperCase().startsWith("2026NE")) continue;
+          const isSemSubproc = doc.nr_documento === "s/ subprocesso";
+          const neExiste = porNE.has(doc.nota_empenho);
+
+          if (neExiste) {
+            // Registro já existe → só atualiza campos
+            const campos: Record<string, string | null> = {
+              subprocesso: isSemSubproc ? "s/ subprocesso" : doc.nr_documento,
+            };
+            if (!isSemSubproc && doc.perfil_atual) campos.perfil_atual = doc.perfil_atual;
             const { error } = await supabase.from("siloms_solicitacoes_empenho")
-              .update({ subprocesso: "s/ subprocesso" }).eq("empenho_siafi", doc.nota_empenho);
+              .update(campos).eq("empenho_siafi", doc.nota_empenho);
             if (error) docsErr++; else docsOk++;
-            continue;
-          }
-          const campos: Record<string, string> = { subprocesso: doc.nr_documento };
-          if (doc.perfil_atual) campos.perfil_atual = doc.perfil_atual;
-          if (doc.solicitacao) {
+          } else {
+            // NE não existe na tabela → insere registro mínimo
+            const solicitacaoKey = (doc.solicitacao && !porSol.has(doc.solicitacao))
+              ? doc.solicitacao
+              : doc.nota_empenho; // usa própria NE como chave se solicitacao já existe ou vazia
             const { error } = await supabase.from("siloms_solicitacoes_empenho")
-              .update(campos).eq("solicitacao", doc.solicitacao);
+              .upsert({
+                solicitacao:    solicitacaoKey,
+                empenho_siafi:  doc.nota_empenho,
+                subprocesso:    isSemSubproc ? "s/ subprocesso" : doc.nr_documento,
+                perfil_atual:   isSemSubproc ? null : (doc.perfil_atual || null),
+                ano:            2026,
+                importado_em:   new Date().toISOString(),
+              }, { onConflict: "solicitacao" });
             if (error) docsErr++; else docsOk++;
           }
-          // Também atualiza por empenho_siafi
-          await supabase.from("siloms_solicitacoes_empenho")
-            .update(campos).eq("empenho_siafi", doc.nota_empenho);
         }
       }
 
       setImportMsg(
         `✅ Bot: ${novosComResp.length} novos, ${mudados.length} status atualizados` +
-        (docs?.length ? ` · Docs: ${docsOk} subprocesso/perfil atualizados${docsErr ? `, ${docsErr} erros` : ""}` : "")
+        (docs?.length ? ` · NEs (Passo 3): ${docsOk} salvas${docsErr ? `, ${docsErr} erros` : ""}` : "")
       );
       await carregarSiloms();
     } catch (err: unknown) {

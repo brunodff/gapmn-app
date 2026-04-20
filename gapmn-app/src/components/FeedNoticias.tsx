@@ -29,6 +29,7 @@ const TIPO_ICONS: Record<string, string> = {
   empenhos:    "💰",
   indicador:   "📊",
   indicadores: "📊",
+  solicitacao: "📥",
   geral:       "📢",
 };
 
