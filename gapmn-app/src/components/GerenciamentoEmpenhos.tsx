@@ -14,6 +14,13 @@ interface NeIdent {
 
 interface Props { canSync?: boolean; userRole?: string; }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmtValor(v?: number | null) {
+  if (!v && v !== 0) return "–";
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 // ─── Parser planilha de controle ─────────────────────────────────────────────
 // Col A (índice 0) = Identificador (26E...)
 // Col C (índice 2) = NE SIAFI (2026NE...)  ← chave de ligação com a planilha
@@ -58,10 +65,11 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   }
 
   async function carregarNeIdentificadores() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("siloms_ne_identificadores")
       .select("*")
       .limit(2000);
+    if (error) console.error("[NE Idents]", error.message);
     if (data) setNeIdents(data as NeIdent[]);
   }
 
@@ -75,18 +83,37 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     const file = e.target.files?.[0];
     if (!file) return;
     setImportando(true);
-    setImportMsg("⏳ Lendo planilha de controle...");
+    setImportMsg("⏳ Lendo planilha...");
     try {
       const buf = await file.arrayBuffer();
       const wb  = XLSX.read(buf);
       const registros = parsePlanilhaControle(wb);
-      if (!registros.length) { setImportMsg("⚠️ Nenhuma NE encontrada na planilha."); return; }
+      if (!registros.length) {
+        setImportMsg("⚠️ Nenhuma NE encontrada. Verifique se a coluna C tem o formato 2026NE...");
+        return;
+      }
 
-      await supabase.from("siloms_ne_identificadores").delete().gte("ne_siafi", "");
-      for (let i = 0; i < registros.length; i += 100)
-        await supabase.from("siloms_ne_identificadores").insert(registros.slice(i, i + 100));
+      setImportMsg(`⏳ Salvando ${registros.length} registros...`);
 
-      setImportMsg(`✅ ${registros.length} NEs importadas`);
+      // Remove todos os existentes
+      const { error: delErr } = await supabase
+        .from("siloms_ne_identificadores")
+        .delete()
+        .gte("ne_siafi", "");
+      if (delErr) throw new Error(`Erro ao limpar tabela: ${delErr.message}`);
+
+      // Insere em lotes de 100
+      let salvos = 0;
+      for (let i = 0; i < registros.length; i += 100) {
+        const lote = registros.slice(i, i + 100);
+        const { error: insErr } = await supabase
+          .from("siloms_ne_identificadores")
+          .insert(lote);
+        if (insErr) throw new Error(`Erro ao inserir lote ${i / 100 + 1}: ${insErr.message}`);
+        salvos += lote.length;
+      }
+
+      setImportMsg(`✅ ${salvos} NEs importadas com sucesso`);
       await carregarNeIdentificadores();
     } catch (err: unknown) {
       setImportMsg(`❌ ${err instanceof Error ? err.message : String(err)}`);
@@ -96,13 +123,15 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     }
   }
 
-  // ── Join: NE SIAFI (planilha) + Identificador/SE (siloms_ne_identificadores) ──
+  // ── Join: NE SIAFI (planilha GSheets) + Identificador/SE (Supabase) ──────
   const rows = useMemo(() => {
     const neIdentsMap = new Map(neIdents.map(r => [r.ne_siafi.toUpperCase(), r]));
     return empenhos.map(ne => {
       const ident = neIdentsMap.get(ne.nota_empenho.toUpperCase());
       return {
         nota_empenho:  ne.nota_empenho,
+        data:          ne.data,
+        valor:         ne.valor,
         identificador: ident?.identificador ?? "",
         solicitacao:   ident?.solicitacao   ?? "",
       };
@@ -118,6 +147,11 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       (r.solicitacao ?? "").toUpperCase().includes(q)
     );
   }, [rows, busca]);
+
+  const totalValor = useMemo(
+    () => filtrado.reduce((s, r) => s + (r.valor ?? 0), 0),
+    [filtrado]
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -189,15 +223,19 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="max-h-[72vh] overflow-y-auto overflow-x-auto rounded-2xl">
-          <table className="w-full text-xs border-collapse table-fixed" style={{ minWidth: "400px" }}>
+          <table className="w-full text-xs border-collapse table-fixed" style={{ minWidth: "600px" }}>
             <colgroup>
               <col style={{ width: "150px" }} />
+              <col style={{ width: "90px" }} />
+              <col style={{ width: "110px" }} />
               <col style={{ width: "130px" }} />
               <col style={{ width: "130px" }} />
             </colgroup>
             <thead className="bg-slate-50 text-left sticky top-0 z-20">
               <tr className="border-b border-slate-200">
                 <th className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">NE SIAFI</th>
+                <th className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">Dt. Emissão</th>
+                <th className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap text-right">Valor</th>
                 <th className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">Identificador</th>
                 <th className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">SE</th>
               </tr>
@@ -205,7 +243,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
             <tbody>
               {filtrado.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
                     {rows.length === 0
                       ? "Carregando NEs da planilha..."
                       : "Sem resultados para a busca aplicada."}
@@ -216,6 +254,12 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                   <td className="px-3 py-1.5 font-mono font-semibold text-sky-700 text-[11px] whitespace-nowrap">
                     {row.nota_empenho}
                   </td>
+                  <td className="px-3 py-1.5 text-slate-500 text-[11px] whitespace-nowrap">
+                    {row.data || <span className="text-slate-300">–</span>}
+                  </td>
+                  <td className="px-3 py-1.5 font-mono text-slate-700 text-[11px] whitespace-nowrap text-right">
+                    {fmtValor(row.valor)}
+                  </td>
                   <td className="px-3 py-1.5 font-mono text-indigo-600 text-[11px] whitespace-nowrap">
                     {row.identificador || <span className="text-slate-300">–</span>}
                   </td>
@@ -225,6 +269,17 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50 sticky bottom-0">
+                <td colSpan={2} className="px-3 py-2 text-xs font-semibold text-slate-500 text-right">
+                  Total
+                </td>
+                <td className="px-3 py-2 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                  {fmtValor(totalValor)}
+                </td>
+                <td colSpan={2} />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
