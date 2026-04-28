@@ -242,12 +242,37 @@ async function rasparPrimeiraLinha(page) {
   return null;
 }
 
-// ── Step 3: Documentos na Unidade — busca NE por NE ──────────────────────────
-async function navegarParaDocumentosNaUnidade(page, onStatus = log, neList = []) {
-  if (!neList.length) { onStatus("⚠️  Lista de NEs vazia — Passo 3 ignorado."); return []; }
-  onStatus(`Iniciando Passo 3 com ${neList.length} NEs...`);
+// ── Busca a última NE registrada no Supabase para o ano ──────────────────────
+async function buscarUltimaNE(ano, onStatus = log) {
+  try {
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data } = await sb
+      .from("siloms_solicitacoes_empenho")
+      .select("empenho_siafi")
+      .like("empenho_siafi", `${ano}NE%`)
+      .not("empenho_siafi", "is", null);
+    if (!data || !data.length) { onStatus(`Nenhuma NE ${ano} no Supabase — começando do 1`); return 0; }
+    let max = 0;
+    for (const r of data) {
+      const m = (r.empenho_siafi || "").match(/NE0*(\d+)$/i);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    onStatus(`Última NE registrada: ${ano}NE${String(max).padStart(6, "0")} — buscando a partir da ${max + 1}`);
+    return max;
+  } catch (err) {
+    onStatus(`⚠️  Não foi possível consultar Supabase: ${err.message} — começando do 1`);
+    return 0;
+  }
+}
 
-  // 2. Navega para Documentos na Unidade e salva a URL do formulário
+// ── Step 3: Documentos na Unidade — busca NEs sequencialmente a partir da última ──
+async function navegarParaDocumentosNaUnidade(page, onStatus = log, ultimaNeNum = 0, ano = "2026") {
+  const MAX_FALHAS_CONSECUTIVAS = 5; // para quando N NEs seguidas não forem encontradas
+  const fmtNE = (n) => `${ano}NE${String(n).padStart(6, "0")}`;
+
+  onStatus(`Passo 3: buscando NEs a partir de ${fmtNE(ultimaNeNum + 1)} (para após ${MAX_FALHAS_CONSECUTIVAS} falhas consecutivas)`);
+
+  // Navega para Documentos na Unidade e salva a URL do formulário
   onStatus("Navegando para Documentos > Documentos na Unidade...");
   await page.goto(SILOMS_MAC_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(2000);
@@ -258,27 +283,25 @@ async function navegarParaDocumentosNaUnidade(page, onStatus = log, neList = [])
   await page.waitForTimeout(3000);
   await screenshot(page, "11_docs_unidade_form");
 
-  const formUrl = page.url(); // ex: https://mac1.siloms.intraer/siloms_mac/servlet/aqs01104w?S
+  const formUrl = page.url();
 
-  // 3. Busca cada NE individualmente
   const results = [];
-  let comSubproc = 0, semSubproc = 0;
+  let neNum = ultimaNeNum + 1;
+  let falhasConsecutivas = 0;
+  let comSubproc = 0, semSubproc = 0, total = 0;
 
-  for (let i = 0; i < neList.length; i++) {
-    const ne = neList[i];
-    onStatus(`[${i + 1}/${neList.length}] Buscando ${ne}...`);
+  while (falhasConsecutivas < MAX_FALHAS_CONSECUTIVAS) {
+    const ne = fmtNE(neNum);
+    onStatus(`[${total + 1}] Buscando ${ne} (${falhasConsecutivas} falha(s) consec.)...`);
 
     let achado = null;
 
     for (const status of ["Ativo", "Arquivado"]) {
-      // Recarrega o formulário
       await page.goto(formUrl, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
       await page.waitForTimeout(800);
 
-      // Preenche campo Nome com o número da NE
       const frame = await preencherCampoNome(page, ne);
 
-      // Desmarca "meu perfil"
       await frame.evaluate(() => {
         for (const cb of document.querySelectorAll("input[type='checkbox']")) {
           const lbl = (cb.labels?.[0]?.textContent || cb.closest("label")?.textContent || cb.nextSibling?.textContent || "").toLowerCase();
@@ -286,7 +309,6 @@ async function navegarParaDocumentosNaUnidade(page, onStatus = log, neList = [])
         }
       });
 
-      // Seleciona Status (Ativo ou Arquivado)
       await frame.evaluate((st) => {
         for (const sel of document.querySelectorAll("select")) {
           const opts = Array.from(sel.options);
@@ -296,26 +318,30 @@ async function navegarParaDocumentosNaUnidade(page, onStatus = log, neList = [])
       }, status);
 
       await submeterPesquisa(frame, page);
-
       achado = await rasparPrimeiraLinha(page);
       if (achado) break;
     }
 
     if (achado) {
       results.push({ nota_empenho: ne, ...achado });
-      onStatus(`  ✅ ${ne} → subproc: ${achado.nr_documento} | perfil: ${achado.perfil_atual} | sol: ${achado.solicitacao}`);
+      onStatus(`  ✅ ${ne} → subproc: ${achado.nr_documento} | perfil: ${achado.perfil_atual}`);
       comSubproc++;
+      falhasConsecutivas = 0; // zera a contagem de falhas ao achar
     } else {
       results.push({ nota_empenho: ne, nr_documento: "s/ subprocesso", perfil_atual: "", solicitacao: "" });
-      onStatus(`  ⚪ ${ne} → s/ subprocesso`);
+      onStatus(`  ⚪ ${ne} → não encontrada (falha ${falhasConsecutivas + 1}/${MAX_FALHAS_CONSECUTIVAS})`);
       semSubproc++;
+      falhasConsecutivas++;
     }
 
-    if ((i + 1) % 10 === 0)
-      await screenshot(page, `14_progresso_${i + 1}`);
+    total++;
+    neNum++;
+
+    if (total % 10 === 0)
+      await screenshot(page, `14_progresso_${total}`);
   }
 
-  onStatus(`Passo 3 concluído: ${comSubproc} com subprocesso · ${semSubproc} sem`);
+  onStatus(`Passo 3 concluído: ${comSubproc} encontradas · ${semSubproc} sem subprocesso · parou em ${fmtNE(neNum - 1)}`);
   return results;
 }
 
@@ -755,9 +781,6 @@ async function executarBot({ cpf, senha, ano = "2026", nesFeitas = [], onStatus 
   let excelFile1, excelFile2, allRegistros = [], docs = [];
 
   try {
-    // ── Pré-passo: baixa NEs ANTES do SILOMS (browser ainda tem internet) ────
-    const neListPre = await baixarListaNEs(page, onStatus);
-
     // ── Passo 1: Login + Solicitações de Empenho (Recebidas) ─────────────────
     onStatus("━━ PASSO 1: Solicitações de Empenho (Recebidas) ━━");
     await fazerLogin(page, cpf, senha);
@@ -789,15 +812,11 @@ async function executarBot({ cpf, senha, ano = "2026", nesFeitas = [], onStatus 
       onStatus(`⚠️  Passo 2 falhou: ${err2.message} — continuando com Passo 3`);
     }
 
-    // ── Passo 3: Documentos na Unidade (Perfil Atual) ────────────────────────
+    // ── Passo 3: Documentos na Unidade — busca sequencial a partir da última NE ─
     onStatus("━━ PASSO 3: Documentos na Unidade (Perfil Atual) ━━");
     try {
-      // Filtra NEs que já estão em DA|EMPENHOS ou ASSINADA (enviadas pelo app)
-      const feitas = new Set((nesFeitas || []).map(ne => String(ne).toUpperCase()));
-      const neListFinal = neListPre.filter(ne => !feitas.has(ne.toUpperCase()));
-      if (feitas.size > 0)
-        onStatus(`⏭  ${feitas.size} NEs já concluídas puladas — processando ${neListFinal.length}`);
-      docs = await navegarParaDocumentosNaUnidade(page, onStatus, neListFinal);
+      const ultimaNeNum = await buscarUltimaNE(ano, onStatus);
+      docs = await navegarParaDocumentosNaUnidade(page, onStatus, ultimaNeNum, ano);
     } catch (err3) {
       onStatus(`⚠️  Passo 3 falhou: ${err3.message}`);
       docs = [];

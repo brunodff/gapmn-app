@@ -67,21 +67,21 @@ export default function SetorInbox() {
   // Aba ativa — todos os usuários logados veem contratos/processos/indicadores
   const defaultTab = sp.get("tab") || (me?.setor === "SEO" ? "indicadores" : "contratos");
   const [tab, setTab] = useState<"processos" | "prestacao" | "contratos" | "indicadores" | "empenhos">(defaultTab as any);
+  const isDev = me?.setor === "DEV";
   const showProcessosTab   = true;
   const showContratosTab   = true;
   const showIndicadoresTab = true;
   const showAnyExtraTab    = true;
-  // Painel de prestação: apenas SCON, SLIC e admin (SEO já tem seu painel integrado)
-  const showPrestacaoTab   = me?.setor === "SCON" || me?.setor === "SLIC" || me?.setor === "ADMIN";
-
-  // Permissões de importação: apenas o setor responsável + admin
-  const canImportIndicadores = me?.setor === "SEO"   || me?.setor === "ADMIN";
-  const canImportContratos   = me?.setor === "SCON"  || me?.setor === "ADMIN";
-  const canImportProcessos   = me?.setor === "SLIC"  || me?.setor === "ADMIN";
+  // Painel de prestação: SCON, SLIC, ADMIN e DEV (acesso total)
+  const showPrestacaoTab   = isDev || me?.setor === "SCON" || me?.setor === "SLIC" || me?.setor === "ADMIN";
+  // Permissões de importação: setor responsável + admin + DEV (acesso total)
+  const canImportIndicadores = isDev || me?.setor === "SEO"   || me?.setor === "ADMIN";
+  const canImportContratos   = isDev || me?.setor === "SCON"  || me?.setor === "ADMIN";
+  const canImportProcessos   = isDev || me?.setor === "SLIC"  || me?.setor === "ADMIN";
   // Permissão de edição geral: qualquer setor cadastrado (não visitante)
   const canEdit              = isAgent(me);
-  // Permissão de sync de empenhos: SEO e ADMIN
-  const canSyncEmpenhos      = me?.setor === "SEO" || me?.setor === "ADMIN";
+  // Permissão de sync de empenhos: SEO, ADMIN e DEV
+  const canSyncEmpenhos      = isDev || me?.setor === "SEO" || me?.setor === "ADMIN";
 
   const canAnswer = useMemo(() => reply.trim().length > 0 && !saving && !!active, [reply, saving, active]);
 

@@ -25,6 +25,13 @@ interface SilomsRow {
   usuario?:        string;
   codemp?:         string;
   ug_exec?:        string;
+  identificador?:  string;
+}
+
+interface NeIdent {
+  ne_siafi:     string;
+  identificador: string;
+  solicitacao:  string | null;
 }
 
 type FullRow = SilomsRow & { ne?: EmpenhoNF };
@@ -73,6 +80,22 @@ function solNum(sol?: string) {
 }
 
 const RESP = ["Ten Bruno", "3S Anne", "3S Elaine"] as const;
+
+// ─── Parser planilha de controle (cols A=0 Identificador, C=2 NE SIAFI, P=15 Solicitação) ──
+
+function parsePlanilhaControle(wb: XLSX.WorkBook): NeIdent[] {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, raw: false });
+  const out: NeIdent[] = [];
+  for (const row of rows) {
+    const identificador = String(row[0] ?? "").trim();
+    const ne_siafi      = String(row[2] ?? "").trim();
+    const solicitacao   = String(row[15] ?? "").trim() || null;
+    if (!ne_siafi.match(/\d{4}NE\d+/i)) continue;
+    out.push({ ne_siafi, identificador, solicitacao });
+  }
+  return out;
+}
 
 // ─── Parser planilha SILOMS Excel ────────────────────────────────────────────
 
@@ -133,6 +156,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
 
   const [siloms,   setSiloms]   = useState<SilomsRow[]>([]);
   const [empenhos, setEmpenhos] = useState<EmpenhoNF[]>([]);
+  const [neIdents, setNeIdents] = useState<NeIdent[]>([]);
   const [loading,  setLoading]  = useState(false);
 
   // Edição inline — ponto 3
@@ -152,6 +176,10 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   const fileRef = useRef<HTMLInputElement>(null);
   const [importando, setImportando] = useState(false);
   const [importMsg,  setImportMsg]  = useState<string | null>(null);
+
+  // Importar planilha de controle (Identificador / NE SIAFI / Solicitação)
+  const planilhaControlRef = useRef<HTMLInputElement>(null);
+  const [importandoControle, setImportandoControle] = useState(false);
 
   // Upload do bot local (localhost:3333/dados)
   const [uploadBot,     setUploadBot]     = useState(false);
@@ -177,9 +205,16 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   const [seguindo,  setSeguindo]  = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetch("http://localhost:3333/status", { signal: AbortSignal.timeout(1500) })
-      .then(r => r.ok ? setBotDisponivel(true) : null)
-      .catch(() => null);
+    const check = () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2500);
+      fetch("http://localhost:3333/status", { signal: ctrl.signal })
+        .then(r => { clearTimeout(timer); setBotDisponivel(r.ok); })
+        .catch(() => { clearTimeout(timer); setBotDisponivel(false); });
+    };
+    check();
+    const t = setInterval(check, 4000);
+    return () => clearInterval(t);
   }, []);
 
   // Persiste CPF/senha no localStorage (apenas DEV)
@@ -201,9 +236,9 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   const [semNE,        setSemNE]        = useState(false);
   const [busca,        setBusca]        = useState("");
 
-  // Perfil derivado: status ASSINADA → "EMISSÃO DE EMPENHO" quando perfil_atual vazio
+  // Perfil derivado: status ASSINADA (inclui "Assinada OD") → "EMISSÃO DE EMPENHO" quando perfil_atual vazio
   const perfilDisplay = (r: FullRow) =>
-    r.perfil_atual || (r.status?.toUpperCase() === "ASSINADA" ? "EMISSÃO DE EMPENHO" : "");
+    r.perfil_atual || (r.status?.toUpperCase().includes("ASSINADA") ? "EMISSÃO DE EMPENHO" : "");
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   async function carregarSiloms() {
@@ -223,9 +258,18 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     setLoading(false);
   }
 
+  async function carregarNeIdentificadores() {
+    const { data } = await supabase
+      .from("siloms_ne_identificadores")
+      .select("*")
+      .limit(2000);
+    if (data) setNeIdents(data as NeIdent[]);
+  }
+
   useEffect(() => {
     carregarSiloms();
     carregarPlanilha();
+    carregarNeIdentificadores();
     supabase.auth.getSession().then(({ data }) => {
       const uid = data.session?.user.id ?? null;
       setUserId(uid);
@@ -275,6 +319,12 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   // ── Bot: rodar extração SILOMS ─────────────────────────────────────────────
   async function rodarBot() {
     if (!botCpf || !botSenha) return;
+    // Verifica servidor antes de prosseguir
+    try {
+      const ok = await fetch("http://localhost:3333/status").then(r => r.ok).catch(() => false);
+      if (!ok) { setBotLog(["❌ Servidor não encontrado. Execute: node server.js"]); return; }
+      setBotDisponivel(true);
+    } catch { setBotLog(["❌ Servidor não encontrado. Execute: node server.js"]); return; }
     if (botAutoRef.current) { clearInterval(botAutoRef.current); setBotCountdown(null); }
     setBotRunning(true);
     setBotLog(["⏳ Calculando NEs pendentes..."]);
@@ -324,11 +374,10 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     }
   }
 
-  // ── Join: planilha como fonte das linhas, SILOMS como enriquecimento ──────
-  // Cada linha da planilha = uma linha na tabela (mesmo NE repetido = linhas separadas)
+  // ── Join: planilha Google Sheets = fonte primária (527 NEs)
+  // SILOMS Supabase = enriquecimento (perfil, subprocesso, status…)
+  // siloms_ne_identificadores = coluna Identificador (26E...)
   const rows = useMemo<FullRow[]>(() => {
-    // Índice primário: por solicitacao; secundário: por empenho_siafi
-    // (Bot pode inserir solicitacao = nota_empenho quando doc.solicitacao é vazio)
     const silomsMap = new Map(
       siloms
         .filter(r => r.solicitacao && /\d/.test(r.solicitacao))
@@ -339,40 +388,22 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
         .filter(r => r.empenho_siafi)
         .map(r => [r.empenho_siafi!.toUpperCase(), r])
     );
+    const neIdentsMap = new Map(
+      neIdents.map(r => [r.ne_siafi.toUpperCase(), r])
+    );
 
-    const matchedSols = new Set<string>();
-    const matchedNEs  = new Set<string>();
-
-    // Cada linha da planilha NE = uma linha na tabela
-    const sheetRows: FullRow[] = empenhos.map(ne => {
+    return empenhos.map(ne => {
       const solKey = (ne.solicitacao ?? "").toUpperCase();
       const silom  = (solKey ? silomsMap.get(solKey) : undefined)
                   ?? silomsMapNE.get(ne.nota_empenho.toUpperCase());
-      if (silom) {
-        matchedSols.add(silom.solicitacao);
-        if (silom.empenho_siafi) matchedNEs.add(silom.empenho_siafi.toUpperCase());
-      }
-      return { ...(silom ?? { solicitacao: ne.solicitacao || ne.nota_empenho }), ne };
+      const ident  = neIdentsMap.get(ne.nota_empenho.toUpperCase());
+      return {
+        ...(silom ?? { solicitacao: ne.solicitacao || ne.nota_empenho }),
+        identificador: ident?.identificador || undefined,
+        ne,
+      };
     });
-
-    // Conjunto dos NE numbers já cobertos pela planilha
-    const sheetNESet = new Set(empenhos.map(e => e.nota_empenho));
-
-    // Pendentes: solicitações do Supabase ainda sem NE gerada
-    // Exclui: solicitação já matched pela planilha, NE já matched pelo JOIN duplo,
-    //         ou empenho_siafi já existe na planilha
-    const pending: FullRow[] = siloms
-      .filter(s =>
-        s.solicitacao &&
-        /\d/.test(s.solicitacao) &&
-        !matchedSols.has(s.solicitacao) &&
-        !matchedNEs.has((s.empenho_siafi ?? "").toUpperCase()) &&
-        !sheetNESet.has(s.empenho_siafi ?? "")
-      )
-      .map(s => ({ ...s }));
-
-    return [...sheetRows, ...pending];
-  }, [siloms, empenhos]);
+  }, [siloms, empenhos, neIdents]);
 
   // ── Sort: NE crescente → mesma NE por data → sem NE por solicitação ──────
   const sorted = useMemo<FullRow[]>(() => {
@@ -414,12 +445,17 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       if (neStr && !neStr.startsWith("2026NE")) return false;
 
       if (q) {
-        // Busca exata por NE (ex: "2026NE000300") → só mostra essa NE
-        const isNEExact = /^\d{4}NE\d{4,8}$/i.test(q);
-        if (isNEExact) {
-          const neMatch = (r.ne?.nota_empenho ?? "").toUpperCase() === q
-                       || (r.empenho_siafi ?? "").toUpperCase() === q
-                       || r.solicitacao?.toUpperCase() === q; // bot usa NE como chave primária
+        // Normaliza NE: "2026NE000283" e "2026NE283" → "2026NE283" (elimina zeros)
+        const normNE = (s?: string | null) => {
+          const m = (s ?? "").toUpperCase().match(/^(\d{4}NE)0*(\d+)$/);
+          return m ? m[1] + m[2] : "";
+        };
+        const isNEFmt = /^\d{4}NE\d+$/i.test(q);
+        if (isNEFmt) {
+          const qn = normNE(q);
+          const neMatch = (normNE(r.ne?.nota_empenho) === qn)
+                       || (normNE(r.empenho_siafi) === qn)
+                       || (normNE(r.solicitacao) === qn);
           if (!neMatch) return false;
         } else {
           const txt = [r.solicitacao, r.ne?.nota_empenho, r.empenho_siafi,
@@ -490,12 +526,40 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     }
   }
 
+  // ── Importar planilha de controle (cols A/C/P) ───────────────────────────
+  async function onPlanilhaControleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportandoControle(true);
+    setImportMsg("⏳ Lendo planilha de controle...");
+    try {
+      const buf = await file.arrayBuffer();
+      const wb  = XLSX.read(buf);
+      const registros = parsePlanilhaControle(wb);
+      if (!registros.length) { setImportMsg("⚠️ Nenhuma NE encontrada na planilha."); return; }
+
+      // Remove tudo e reinserere
+      await supabase.from("siloms_ne_identificadores").delete().gte("ne_siafi", "");
+      for (let i = 0; i < registros.length; i += 100)
+        await supabase.from("siloms_ne_identificadores").insert(registros.slice(i, i + 100));
+
+      setImportMsg(`✅ Planilha controle: ${registros.length} NEs importadas`);
+      await carregarNeIdentificadores();
+    } catch (err: unknown) {
+      setImportMsg(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setImportandoControle(false);
+      if (planilhaControlRef.current) planilhaControlRef.current.value = "";
+    }
+  }
+
   // ── Upload do servidor bot local ──────────────────────────────────────────
   async function uploadDoBotLocal() {
     setUploadBot(true);
     setImportMsg("⏳ Buscando dados do bot local...");
     try {
-      const resp = await fetch("http://localhost:3333/dados");
+      const resp = await fetch("http://localhost:3333/dados").catch(() => null);
+      if (!resp) { setImportMsg("❌ Servidor offline. Execute: node server.js"); setBotDisponivel(false); return; }
       if (!resp.ok) throw new Error(`Servidor retornou ${resp.status}`);
       const { registros, docs } = await resp.json();
       if ((!registros || registros.length === 0) && (!docs || docs.length === 0)) {
@@ -723,16 +787,21 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                 {importando ? "Importando..." : "⬆ Importar SILOMS"}
               </button>
               <input ref={fileRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={onFileChange} />
-              {isDev && botDisponivel && (
+              <button onClick={() => planilhaControlRef.current?.click()} disabled={importandoControle}
+                className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
+                {importandoControle ? "Importando..." : "📥 Planilha Controle"}
+              </button>
+              <input ref={planilhaControlRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={onPlanilhaControleChange} />
+              {isDev && (
                 <>
                   <button onClick={() => setShowBotModal(true)} disabled={botRunning}
-                    title="Abre o Chrome e extrai dados do SILOMS automaticamente (3 passos)"
-                    className="rounded-xl border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-50">
-                    {botRunning ? "🔄 Rodando..." : "🤖 Rodar Bot"}
+                    title={botDisponivel ? "Abre o Chrome e extrai dados do SILOMS" : "Servidor offline — inicie: node server.js"}
+                    className={`rounded-xl border px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${botDisponivel ? "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100" : "border-slate-300 bg-slate-50 text-slate-400 hover:bg-slate-100"}`}>
+                    {botRunning ? "🔄 Rodando..." : botDisponivel ? "🤖 Rodar Bot" : "🤖 Bot (offline)"}
                   </button>
                   <button onClick={uploadDoBotLocal} disabled={uploadBot}
-                    title="Envia ao Supabase os dados já extraídos pelo robô"
-                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+                    title={botDisponivel ? "Envia ao Supabase os dados já extraídos pelo robô" : "Servidor offline — inicie: node server.js"}
+                    className={`rounded-xl border px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${botDisponivel ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-slate-300 bg-slate-50 text-slate-400 hover:bg-slate-100"}`}>
                     {uploadBot ? "Enviando..." : "⬆ Upload Bot"}
                   </button>
                   {botCountdown !== null && (
@@ -831,46 +900,60 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
               {perfilOpts.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           )}
-          <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
-            className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200">
-            <option value="">Todos status</option>
-            <option value="AGUARDA ASSINATURA">AGUARDA ASSINATURA</option>
-            <option value="ASSINADA">ASSINADA</option>
-            {statusOpts.filter(s => s !== "AGUARDA ASSINATURA" && s !== "ASSINADA").map(s =>
-              <option key={s} value={s}>{s}</option>
-            )}
-          </select>
+          {statusOpts.length > 0 && (
+            <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
+              className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200">
+              <option value="">Todos status</option>
+              {statusOpts.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
         </div>
       </Card>
 
       {/* Tabela — sticky header, sem scroll horizontal */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="max-h-[68vh] overflow-y-auto overflow-x-hidden rounded-2xl">
-          <table className="w-full text-xs border-collapse">
+        <div className="max-h-[68vh] overflow-y-auto overflow-x-auto rounded-2xl">
+          <table className="w-full text-xs border-collapse table-fixed" style={{minWidth:"900px"}}>
+            <colgroup>
+              <col style={{width:"18px"}} />
+              <col style={{width:"108px"}} />
+              <col style={{width:"72px"}} />
+              <col style={{width:"72px"}} />
+              <col style={{width:"76px"}} />
+              <col style={{width:"64px"}} />
+              <col style={{width:"88px"}} />
+              <col style={{width:"84px"}} />
+              <col style={{width:"68px"}} />
+              <col style={{width:"96px"}} />
+              <col style={{width:"126px"}} />
+              <col style={{width:"76px"}} />
+            </colgroup>
             <thead className="bg-slate-50 text-left sticky top-0 z-20">
               <tr className="border-b border-slate-200">
-                <th className="px-1.5 py-2 w-4"></th>
+                <th className="px-1 py-2"></th>
                 <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">NE SIAFI</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">Solicitação</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">Dt. Empenho</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">UGCred</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap text-right">Valor</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">Responsável</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">Subprocesso</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">Perfil Atual</th>
-                <th className="px-2 py-2 font-semibold text-slate-600 whitespace-nowrap">Status / OC</th>
-                <th className="px-1.5 py-2 w-16"></th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">Ident.</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">Solicitação</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">Dt. Emp.</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">UGCred</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap text-right">Valor</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">Responsável</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">Subproc.</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">Perfil Atual</th>
+                <th className="px-1 py-2 font-semibold text-slate-600 whitespace-nowrap">Status / OC</th>
+                <th className="px-1 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {filtrado.length === 0 ? (
-                <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400">
+                <tr><td colSpan={12} className="px-4 py-10 text-center text-slate-400">
                   {rows.length === 0
                     ? "Nenhuma solicitação. Importe a planilha SILOMS ou crie manualmente."
                     : "Sem resultados para os filtros aplicados."}
                 </td></tr>
               ) : filtrado.map(row => {
-                const isEdit = editKey === row.solicitacao;
+                const rowKey = `${row.solicitacao}||${row.ne?.nota_empenho || ""}||${row.ne?.data || ""}`;
+                const isEdit = editKey === rowKey;
                 const st = getStatusInfo(row.status, row.oc_gerada);
                 const ne = row.ne;
                 const neLabel = ne?.nota_empenho || row.empenho_siafi;
@@ -892,16 +975,16 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                 } : null);
 
                 return (
-                  <tr key={row.solicitacao}
+                  <tr key={rowKey}
                     className={`border-b last:border-0 transition-colors ${isEdit ? "bg-sky-50 ring-1 ring-sky-200 ring-inset" : "hover:bg-slate-50/60"}`}>
 
                     {/* Dot */}
-                    <td className="px-1.5 py-1.5">
+                    <td className="px-1 py-1">
                       <span className={`inline-block w-2 h-2 rounded-full ${st.dot}`} title={row.status || "sem status"} />
                     </td>
 
                     {/* NE SIAFI — clicável para expandir detalhes */}
-                    <td className="px-2 py-1.5 whitespace-nowrap">
+                    <td className="px-2 py-1 whitespace-nowrap overflow-hidden">
                       {neLabel ? (
                         <button onClick={() => modalNE && setNeModal(modalNE)}
                           className={`font-mono font-semibold text-[11px] ${modalNE ? "text-sky-600 hover:underline cursor-pointer" : "text-slate-500 cursor-default"}`}>
@@ -910,30 +993,35 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                       ) : <span className="text-slate-300">–</span>}
                     </td>
 
+                    {/* Identificador SILOMS (26E...) */}
+                    <td className="px-1 py-1 whitespace-nowrap overflow-hidden font-mono text-indigo-600 text-[11px]">
+                      {row.identificador || <span className="text-slate-300">–</span>}
+                    </td>
+
                     {/* Solicitação */}
-                    <td className="px-2 py-1.5 whitespace-nowrap font-mono font-semibold text-sky-700 text-[11px]">
+                    <td className="px-1 py-1 whitespace-nowrap overflow-hidden font-mono font-semibold text-sky-700 text-[11px]">
                       {row.solicitacao}
                     </td>
 
                     {/* Data do Empenho (planilha NE) */}
-                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-500 text-[11px]">
+                    <td className="px-1 py-1 whitespace-nowrap text-slate-500 text-[11px]">
                       {ne?.data || <span className="text-slate-300">–</span>}
                     </td>
 
                     {/* UGCred */}
-                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-500 font-mono text-[11px]">{ugLabel}</td>
+                    <td className="px-1 py-1 whitespace-nowrap text-slate-500 font-mono text-[11px]">{ugLabel}</td>
 
                     {/* Valor */}
-                    <td className="px-2 py-1.5 whitespace-nowrap text-right font-mono text-slate-700 text-[11px]">
+                    <td className="px-1 py-1 whitespace-nowrap text-right font-mono text-slate-700 text-[11px]">
                       {neLabel ? fmtValor(valor) : <span className="text-slate-300">–</span>}
                     </td>
 
                     {/* Responsável — editável */}
-                    <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+                    <td className="px-1 py-1" onClick={e => e.stopPropagation()}>
                       {isEdit && canEdit ? (
                         <select value={editBuf.responsavel ?? row.responsavel ?? ""}
                           onChange={e => setEditBuf(b => ({ ...b, responsavel: e.target.value }))}
-                          className="rounded-lg border px-1.5 py-1 text-[11px] outline-none focus:ring-2 focus:ring-sky-200 w-24">
+                          className="rounded border px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-sky-200 w-full">
                           <option value="">–</option>
                           {RESP.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
@@ -941,21 +1029,21 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                     </td>
 
                     {/* Subprocesso — editável */}
-                    <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+                    <td className="px-1 py-1" onClick={e => e.stopPropagation()}>
                       {isEdit && canEdit ? (
                         <input value={editBuf.subprocesso ?? row.subprocesso ?? ""}
                           onChange={e => setEditBuf(b => ({ ...b, subprocesso: e.target.value }))}
-                          className="rounded-lg border px-1.5 py-1 text-[11px] outline-none focus:ring-2 focus:ring-sky-200 w-20 font-mono" />
+                          className="rounded border px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-sky-200 w-full font-mono" />
                       ) : <span className={`text-[11px] ${row.subprocesso ? "font-mono text-slate-600" : "text-slate-300"}`}>{row.subprocesso || "–"}</span>}
                     </td>
 
                     {/* Perfil Atual — editável */}
-                    <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+                    <td className="px-1 py-1" onClick={e => e.stopPropagation()}>
                       {isEdit && canEdit ? (
                         <input value={editBuf.perfil_atual ?? row.perfil_atual ?? ""}
                           onChange={e => setEditBuf(b => ({ ...b, perfil_atual: e.target.value }))}
                           placeholder="DA|EMPENHOS"
-                          className="rounded-lg border px-1.5 py-1 text-[11px] outline-none focus:ring-2 focus:ring-sky-200 w-24 font-mono" />
+                          className="rounded border px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-sky-200 w-full font-mono" />
                       ) : (() => {
                           const pd = perfilDisplay(row);
                           const isFinal = pd === "DA|EMPENHOS";
@@ -965,20 +1053,20 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                     </td>
 
                     {/* Status / OC — editável */}
-                    <td className="px-2 py-1.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                    <td className="px-1 py-1" onClick={e => e.stopPropagation()}>
                       {isEdit && canEdit ? (
-                        <div className="space-y-1">
+                        <div className="flex flex-col gap-0.5">
                           <select value={editBuf.status ?? row.status ?? ""}
                             onChange={e => setEditBuf(b => ({ ...b, status: e.target.value }))}
-                            className="rounded-lg border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-sky-200 w-32">
+                            className="rounded border px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-sky-200 w-full">
                             <option value="">–</option>
                             <option value="Aguarda Assinat ACI">Aguarda Assinat ACI</option>
                             <option value="Assinada OD">Assinada OD</option>
                           </select>
                           <input value={editBuf.oc_gerada ?? row.oc_gerada ?? ""}
                             onChange={e => setEditBuf(b => ({ ...b, oc_gerada: e.target.value }))}
-                            placeholder="OC: 26OC000123"
-                            className="rounded-lg border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-sky-200 w-32 font-mono" />
+                            placeholder="26OC000123"
+                            className="rounded border px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-sky-200 w-full font-mono" />
                         </div>
                       ) : (
                         st.text !== "–"
@@ -988,15 +1076,15 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                     </td>
 
                     {/* Botões editar + acompanhar */}
-                    <td className="px-1.5 py-1.5" onClick={e => e.stopPropagation()}>
+                    <td className="px-1 py-1" onClick={e => e.stopPropagation()}>
                       {isEdit ? (
                         <div className="flex gap-1">
                           <button onClick={() => salvar(row.solicitacao)} disabled={saving}
-                            className="rounded-lg bg-sky-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-sky-700 disabled:opacity-50">
-                            {saving ? "..." : "💾"}
+                            className="rounded bg-sky-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-sky-700 disabled:opacity-50 whitespace-nowrap">
+                            {saving ? "..." : "Salvar"}
                           </button>
                           <button onClick={() => { setEditKey(null); setEditBuf({}); }}
-                            className="rounded-lg border px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100">✕</button>
+                            className="rounded border px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-100">✕</button>
                         </div>
                       ) : (
                         <div className="flex gap-1 items-center">
@@ -1008,7 +1096,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                           </button>
                           {canEdit && (
                             <button onClick={() => {
-                              setEditKey(row.solicitacao);
+                              setEditKey(rowKey);
                               setEditBuf({
                                 responsavel:  row.responsavel,
                                 subprocesso:  row.subprocesso,
@@ -1028,7 +1116,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
             {/* Ponto 2: soma apenas linhas com NE */}
             <tfoot>
               <tr className="border-t-2 border-slate-200 bg-slate-50 sticky bottom-0 z-10">
-                <td colSpan={5} className="px-2 py-2 text-xs font-semibold text-slate-500 text-right">
+                <td colSpan={6} className="px-2 py-2 text-xs font-semibold text-slate-500 text-right">
                   Total (com NE)
                 </td>
                 <td className="px-2 py-2 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
