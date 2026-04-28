@@ -6,6 +6,7 @@ import { Card } from "../components/Card";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
 import GerenciamentoEmpenhos from "../components/GerenciamentoEmpenhos";
+import SicafBot from "../components/SicafBot";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import PainelDashboard from "../components/PainelDashboard";
 
@@ -66,7 +67,7 @@ export default function SetorInbox() {
 
   // Aba ativa — todos os usuários logados veem contratos/processos/indicadores
   const defaultTab = sp.get("tab") || (me?.setor === "SEO" ? "indicadores" : "contratos");
-  const [tab, setTab] = useState<"processos" | "prestacao" | "contratos" | "indicadores" | "empenhos">(defaultTab as any);
+  const [tab, setTab] = useState<"processos" | "prestacao" | "contratos" | "indicadores" | "empenhos" | "sicaf">(defaultTab as any);
   const isDev = me?.setor === "DEV";
   const showProcessosTab   = true;
   const showContratosTab   = true;
@@ -205,6 +206,7 @@ export default function SetorInbox() {
             <div className="text-lg font-semibold text-slate-900">
               {tab === "processos"   ? "Processos"
                 : tab === "prestacao"   ? "Prestação de Contas"
+                : tab === "sicaf"       ? "SICAF"
                 : tab === "contratos"   ? "Contratos"
                 : "Indicadores de Lotação"}
             </div>
@@ -232,12 +234,13 @@ export default function SetorInbox() {
         {/* Abas */}
         {showAnyExtraTab && (
           <div className="mt-3 flex flex-wrap gap-1 border-b border-slate-200">
-            {(["contratos", "processos", "indicadores", "empenhos", ...(showPrestacaoTab ? ["prestacao" as const] : [])] as const).map((t) => {
+            {(["contratos", "processos", "indicadores", "empenhos", "sicaf", ...(showPrestacaoTab ? ["prestacao" as const] : [])] as const).map((t) => {
               const labels: Record<string, string> = {
                 indicadores: "Indicadores de Lotação",
                 contratos:   "Contratos",
                 processos:   "Processos",
                 empenhos:    "Empenhos",
+                sicaf:       "SICAF",
                 prestacao:   "Prestação de Contas",
               };
               return (
@@ -277,6 +280,8 @@ export default function SetorInbox() {
 
       {/* Conteúdo da aba Empenhos */}
       {tab === "empenhos" && <GerenciamentoEmpenhos canSync={canSyncEmpenhos} userRole={me?.setor ?? undefined} />}
+
+      {tab === "sicaf" && <SicafBot />}
 
       {/* Conteúdo da aba Prestação de Contas */}
       {tab === "prestacao" && showPrestacaoTab && (

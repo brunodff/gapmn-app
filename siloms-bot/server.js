@@ -1,22 +1,32 @@
 /**
- * SILOMS Local Server — Fase única (split-tunnel VPN, Linux)
- * Porta 3333 — mantém abertura para o app web se comunicar.
+ * Local Server — porta 3333
+ * Bots disponíveis:
+ *   SILOMS  — busca subprocesso de NEs (requer VPN)
+ *   SICAF   — baixa Situação do Fornecedor (internet pública)
+ *
  * Iniciar: node server.js
  */
 
 const http   = require("http");
 const fs     = require("fs");
 const path   = require("path");
-const { executarBot } = require("./bot");
+const { executarBot }      = require("./bot");
+const { executarBotSicaf } = require("./sicaf-bot");
 
 const PORT       = 3333;
 const OUTPUT_DIR = path.join(__dirname, "output");
 
-// ── Estado global ─────────────────────────────────────────────────────────
+// ── Estado SILOMS ─────────────────────────────────────────────────────────────
 let botRunning = false;
 let botLog     = [];
-let botResult  = null;   // { jsonFile, excelFile, registros }
+let botResult  = null;
 let botError   = null;
+
+// ── Estado SICAF ──────────────────────────────────────────────────────────────
+let sicafRunning = false;
+let sicafLog     = [];
+let sicafResult  = null;
+let sicafError   = null;
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -31,9 +41,14 @@ function json(res, data, status = 200) {
   res.end(JSON.stringify(data));
 }
 
-function log(msg) {
-  console.log("[BOT]", msg);
+function logSiloms(msg) {
+  console.log("[SILOMS]", msg);
   botLog.push({ ts: new Date().toISOString(), msg });
+}
+
+function logSicaf(msg) {
+  console.log("[SICAF]", msg);
+  sicafLog.push({ ts: new Date().toISOString(), msg });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -41,7 +56,11 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // ── GET /status ───────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════════════
+  //  SILOMS
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // GET /status
   if (req.method === "GET" && url.pathname === "/status") {
     const jsonAnterior = fs.existsSync(OUTPUT_DIR)
       ? (fs.readdirSync(OUTPUT_DIR).find(f => f.startsWith("siloms_") && f.endsWith(".json")) ?? null)
@@ -55,21 +74,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // ── GET /download ─────────────────────────────────────────────────────────
-  if (req.method === "GET" && url.pathname === "/download") {
-    const arquivo = botResult?.excelFile
-      ?? (fs.existsSync(OUTPUT_DIR) ? fs.readdirSync(OUTPUT_DIR).map(f => path.join(OUTPUT_DIR, f)).find(f => f.endsWith(".xlsx")) : null);
-    if (!arquivo || !fs.existsSync(arquivo)) return json(res, { error: "Arquivo não encontrado" }, 404);
-    cors(res);
-    res.writeHead(200, {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${path.basename(arquivo)}"`,
-    });
-    fs.createReadStream(arquivo).pipe(res);
-    return;
-  }
-
-  // ── GET /dados — retorna registros + docs do JSON salvo (browser faz upload ao Supabase) ──
+  // GET /dados
   if (req.method === "GET" && url.pathname === "/dados") {
     const jsonFile = fs.existsSync(OUTPUT_DIR)
       ? fs.readdirSync(OUTPUT_DIR).map(f => path.join(OUTPUT_DIR, f)).find(f => /siloms_.*\.json$/.test(path.basename(f)))
@@ -81,9 +86,9 @@ const server = http.createServer(async (req, res) => {
     } catch { return json(res, { registros: [], docs: [] }); }
   }
 
-  // ── POST /rodar — extrai do SILOMS e envia ao Supabase (fase única) ───────
+  // POST /rodar
   if (req.method === "POST" && url.pathname === "/rodar") {
-    if (botRunning) return json(res, { error: "Robô já está em execução." }, 409);
+    if (botRunning) return json(res, { error: "Robô SILOMS já está em execução." }, 409);
 
     let body = "";
     req.on("data", c => { body += c; });
@@ -91,23 +96,77 @@ const server = http.createServer(async (req, res) => {
       let params;
       try { params = JSON.parse(body); } catch { return json(res, { error: "JSON inválido" }, 400); }
 
-      const { cpf, senha, ano = "2026", nesFeitas = [] } = params;
+      const { cpf, senha, ano = "2026" } = params;
       if (!cpf || !senha) return json(res, { error: "CPF e senha são obrigatórios." }, 400);
 
-      botRunning = true;
-      botLog     = [];
-      botResult  = null;
-      botError   = null;
-      json(res, { ok: true, message: "Robô iniciado." });
+      botRunning = true; botLog = []; botResult = null; botError = null;
+      json(res, { ok: true, message: "Robô SILOMS iniciado." });
 
       try {
-        botResult = await executarBot({ cpf, senha, ano, nesFeitas, onStatus: log });
-        log(`✅ Concluído! ${botResult.registros} registros prontos — o site fará o upload ao Supabase.`);
+        botResult = await executarBot({ cpf, senha, ano, onStatus: logSiloms });
+        logSiloms(`✅ Concluído! ${botResult.registros} NEs processadas.`);
       } catch (err) {
         botError = err.message;
-        log(`❌ Erro: ${err.message}`);
+        logSiloms(`❌ Erro: ${err.message}`);
       } finally {
         botRunning = false;
+      }
+    });
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  SICAF
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // GET /status-sicaf
+  if (req.method === "GET" && url.pathname === "/status-sicaf") {
+    return json(res, {
+      running: sicafRunning,
+      log: sicafLog,
+      result: sicafResult,
+      error: sicafError,
+    });
+  }
+
+  // GET /download-sicaf — serve o PDF gerado
+  if (req.method === "GET" && url.pathname === "/download-sicaf") {
+    const arquivo = sicafResult?.pdfFile;
+    if (!arquivo || !fs.existsSync(arquivo))
+      return json(res, { error: "PDF não encontrado. Execute o bot primeiro." }, 404);
+    cors(res);
+    res.writeHead(200, {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${path.basename(arquivo)}"`,
+    });
+    fs.createReadStream(arquivo).pipe(res);
+    return;
+  }
+
+  // POST /rodar-sicaf
+  if (req.method === "POST" && url.pathname === "/rodar-sicaf") {
+    if (sicafRunning) return json(res, { error: "Bot SICAF já está em execução." }, 409);
+
+    let body = "";
+    req.on("data", c => { body += c; });
+    req.on("end", async () => {
+      let params;
+      try { params = JSON.parse(body); } catch { return json(res, { error: "JSON inválido" }, 400); }
+
+      const { cpf, senha, cnpj } = params;
+      if (!cpf || !senha || !cnpj) return json(res, { error: "CPF, senha e CNPJ são obrigatórios." }, 400);
+
+      sicafRunning = true; sicafLog = []; sicafResult = null; sicafError = null;
+      json(res, { ok: true, message: "Bot SICAF iniciado." });
+
+      try {
+        sicafResult = await executarBotSicaf({ cpf, senha, cnpj, onStatus: logSicaf });
+        logSicaf(`✅ PDF gerado: ${path.basename(sicafResult.pdfFile)}`);
+      } catch (err) {
+        sicafError = err.message;
+        logSicaf(`❌ Erro: ${err.message}`);
+      } finally {
+        sicafRunning = false;
       }
     });
     return;
@@ -119,6 +178,7 @@ const server = http.createServer(async (req, res) => {
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`\n🤖 SILOMS Bot Server · http://localhost:${PORT}`);
-  console.log("   Mantenha este terminal aberto enquanto usa o app.\n");
+  console.log(`\n🤖 Bot Server · http://localhost:${PORT}`);
+  console.log("   SILOMS: /rodar  /status  /dados");
+  console.log("   SICAF:  /rodar-sicaf  /status-sicaf  /download-sicaf\n");
 });
