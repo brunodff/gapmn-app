@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 import { Card } from "./Card";
+import CnetRoboGapmn from "./CnetRoboGapmn";
 
 // ─── Constantes ─────────────────────────────────────────────────────────────
 const STATUS_LIVRE_OPCOES = [
@@ -285,7 +286,7 @@ async function fetchElaboracao(url: string): Promise<LinhaElaboracao[]> {
 interface GerProcessosProps { canImport?: boolean; canEdit?: boolean; canEditElaboracao?: boolean; }
 export default function GerenciamentoProcessos({ canImport = true, canEdit = false, canEditElaboracao = false }: GerProcessosProps) {
   // Sub-aba
-  const [subTab, setSubTab] = useState<"publicados" | "elaboracao">("publicados");
+  const [subTab, setSubTab] = useState<"publicados" | "elaboracao" | "robo">("publicados");
 
   // Dados PNCP (Supabase)
   const [processos, setProcessos]   = useState<Processo[]>([]);
@@ -756,6 +757,7 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
           {[
             { id: "publicados", label: `Publicados — PNCP (${processos.length})` },
             { id: "elaboracao", label: `Em Elaboração${elaboracaoRows.length > 0 ? ` (${elaboracaoRows.length})` : ""}` },
+            { id: "robo",       label: "🤖 Robô CNET" },
           ].map((t) => (
             <button
               key={t.id}
@@ -1369,6 +1371,13 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
               </div>
             </div>
           )}
+        </Card>
+      )}
+
+      {/* ══════════════════ SUB-ABA: ROBÔ CNET ══════════════════ */}
+      {subTab === "robo" && (
+        <Card>
+          <CnetRoboGapmn canImport={canImport} />
         </Card>
       )}
     </div>
