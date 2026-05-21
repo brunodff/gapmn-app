@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  console.log('[CNET Bot] v2026-05-21c — detailUrl+retry fix');
+  console.log('[CNET Bot] v2026-05-21d — modalidade normTxt fix');
   var UASG = '120630';
   var LSKEY = 'cnet_bot_cfg';
 
@@ -402,9 +402,14 @@
       return b.offsetWidth > 0 && re.test([...b.attributes].map(function (a) { return a.value; }).join(' '));
     });
   }
+  function normTxt(s) {
+    return (s || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/\s+/g, ' ');
+  }
+
   function findAcompBtn(num, ano, modalidade) {
     var pat = num + '/' + ano;
-    // Coleta todos os cards de resultado que contêm num/ano
     var candidates = [];
     var walker = makeWalker(); var node;
     var seen = new Set();
@@ -420,17 +425,29 @@
       }
     }
     if (!candidates.length) {
-      // fallback simples: primeiro botão "Acompanhar" na página
       var b = findAttr(document, 'companhar');
       return b || null;
     }
     if (candidates.length === 1 || !modalidade) return candidates[0].btn;
-    // Filtra pelo texto da modalidade (ex: "Pregão Eletrônico", "Dispensa")
-    var modLower = modalidade.toLowerCase();
-    var match = candidates.find(function(c) {
-      return (c.card.innerText || '').toLowerCase().includes(modLower);
-    });
-    return (match || candidates[0]).btn;
+
+    // Sobe até 10 níveis a partir do card para encontrar um container com o texto da modalidade.
+    // Necessário porque o card imediato pode ser um container pequeno que não inclui "Pregão Eletrônico".
+    var modNorm = normTxt(modalidade);
+    function cardHasMod(card) {
+      var el = card;
+      for (var i = 0; i < 10; i++) {
+        if (!el || el === document.body) break;
+        if (normTxt(el.innerText || '').includes(modNorm)) return true;
+        el = el.parentElement;
+      }
+      return false;
+    }
+    var match = candidates.find(function(c) { return cardHasMod(c.card); });
+    if (match) return match.btn;
+
+    // fallback: usa o primeiro candidato mas loga aviso para diagnóstico
+    console.warn('[CNET findAcompBtn] modalidade "' + modalidade + '" não encontrada em nenhum card — usando candidates[0]. Cards:', candidates.map(function(c){ return (c.card.innerText||'').slice(0,80); }));
+    return candidates[0].btn;
   }
   function findGrupos() {
     var res = []; var seen = new Set();
