@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  console.log('[CNET Bot] v2026-05-21f — waitDOMStable 8s + CNPJ poll 15s');
+  console.log('[CNET Bot] v2026-05-21g — cardHasMod para em container compartilhado');
   var UASG = '120630';
   var LSKEY = 'cnet_bot_cfg';
 
@@ -430,13 +430,20 @@
     }
     if (!modalidade) return candidates[0].btn;
 
-    // Sobe até 10 níveis para encontrar um container que contenha o nome da modalidade.
-    // Necessário porque o card imediato pode ser pequeno demais para incluir "Pregão Eletrônico".
+    // Verifica se o card (ou um ancestral próximo) contém o texto da modalidade.
+    // Para de subir quando encontra um container com mais de 1 botão "Acompanhar"
+    // (isso indica que chegamos no container compartilhado de todos os cards).
     var modNorm = normTxt(modalidade);
+    function nAcompBtns(el) {
+      return [...el.querySelectorAll('button,a,[role=button]')].filter(function(b) {
+        return /companhar/i.test((b.textContent||'') + [...b.attributes].map(function(a){return a.value;}).join(' '));
+      }).length;
+    }
     function cardHasMod(card) {
       var el = card;
-      for (var i = 0; i < 10; i++) {
+      for (var i = 0; i < 12; i++) {
         if (!el || el === document.body) break;
+        if (i > 0 && nAcompBtns(el) > 1) break; // container compartilhado — para
         if (normTxt(el.innerText || '').includes(modNorm)) return true;
         el = el.parentElement;
       }
@@ -445,9 +452,9 @@
     var match = candidates.find(function(c) { return cardHasMod(c.card); });
     if (match) return match.btn;
 
-    // Nenhum card contém a modalidade pedida — loga diagnóstico e usa candidates[0]
-    console.warn('[CNET findAcompBtn] modalidade "' + modalidade + '" não encontrada. Cards encontrados:',
-      candidates.map(function(c){ return normTxt(c.card.innerText||'').slice(0,120); }));
+    // Nenhum card isolado contém a modalidade — loga diagnóstico e usa candidates[0]
+    console.warn('[CNET findAcompBtn] "' + modalidade + '" nao encontrado em card isolado. Cards:',
+      candidates.map(function(c){ return normTxt(c.card.innerText||'').slice(0,100); }));
     return candidates[0].btn;
   }
   function findGrupos() {
