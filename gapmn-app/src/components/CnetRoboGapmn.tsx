@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -71,8 +71,6 @@ function statusCls(s: string): string {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const LS_SHEET = 'cnet_gapmn_sheet_id';
-const LS_TAB   = 'cnet_gapmn_tab_name';
 const DEF_TAB  = 'PNCP - 120630';
 
 const ENDPOINT_CODE = `function doPost(e) {
@@ -110,73 +108,49 @@ const LAYOUT_CODE = `function aplicarLayoutFABEmTodasAsAbas() {
 export default function CnetRoboGapmn({ canImport = false }: { canImport?: boolean }) {
   const [rows, setRows]           = useState<CnetRow[]>([]);
   const [loading, setLoading]     = useState(true);
-  const [importing, setImporting] = useState(false);
-  const [importErr, setImportErr] = useState<string | null>(null);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
-  const [sheetId, setSheetId]     = useState(() => { try { return localStorage.getItem(LS_SHEET) ?? ''; } catch { return ''; } });
-  const [tabName, setTabName]     = useState(() => { try { return localStorage.getItem(LS_TAB) ?? DEF_TAB; } catch { return DEF_TAB; } });
-  const [showCfg, setShowCfg]     = useState(false);
+  const [loadErr, setLoadErr]     = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [expandedProcs, setExpandedProcs] = useState<Set<string>>(new Set());
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [search, setSearch]       = useState('');
   const [filtroSit, setFiltroSit] = useState('');
+  const [filtroAno, setFiltroAno] = useState('');
+  const [filtroProc, setFiltroProc] = useState('');
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     setLoading(true);
-    const { data } = await supabase
+    setLoadErr(null);
+    const { data, error } = await supabase
       .from('cnet_propostas_gapmn')
       .select('*')
       .order('processo')
       .order('grupo')
       .order('item');
+    if (error) setLoadErr(error.message);
     setRows((data ?? []) as CnetRow[]);
     setLoading(false);
   }
 
-  async function importar() {
-    if (!sheetId.trim()) { setImportErr('Informe o ID da planilha Google Sheets.'); return; }
-    setImporting(true); setImportErr(null); setImportMsg(null);
-    try {
-      const url = `https://docs.google.com/spreadsheets/d/${sheetId.trim()}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
-      const resp = await fetch(url, { redirect: 'follow' });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} — verifique se a planilha é pública`);
-      const text = await resp.text();
-      if (text.trimStart().startsWith('<')) throw new Error('Planilha não pública ou aba não encontrada');
-      const csvRows = parseCSVSimple(text);
-      if (csvRows.length < 2) throw new Error('Planilha vazia ou sem dados');
-      const headers = csvRows[0].map(h => h.trim());
-      const get = (r: string[], col: string) => r[headers.indexOf(col)]?.trim() ?? '';
-      const newRows = csvRows.slice(1).filter(r => get(r, 'Processo')).map(r => ({
-        processo: get(r, 'Processo'), ano: get(r, 'Ano'), uasg: get(r, 'UASG'),
-        grupo: get(r, 'Grupo'), item: get(r, 'Item'), nome_item: get(r, 'Nome Item'),
-        cnpj: get(r, 'CNPJ'), razao_social: get(r, 'Razão Social'), uf: get(r, 'UF'),
-        status: get(r, 'Status'), me_epp: get(r, 'ME/EPP'),
-        valor_ofertado: get(r, 'Valor Ofertado'), valor_negociado: get(r, 'Valor Negociado'),
-        situacao_item: get(r, 'Situação Item'), qtde_solicitada: get(r, 'Qtde Solicitada'),
-        descricao_item: get(r, 'Descrição Item'), criterio_julgamento: get(r, 'Critério Julgamento'),
-        sit_processo: get(r, 'Sit. Processo'), valor_estimado: get(r, 'Valor Estimado'),
-      }));
-      if (!newRows.length) throw new Error('Nenhum dado encontrado na planilha');
-      const processos = [...new Set(newRows.map(r => r.processo))];
-      await supabase.from('cnet_propostas_gapmn').delete().in('processo', processos);
-      const { error } = await supabase.from('cnet_propostas_gapmn').insert(newRows);
-      if (error) throw new Error(error.message);
-      setImportMsg(`✓ ${newRows.length} linhas · ${processos.length} processo(s) importados`);
-      try { localStorage.setItem(LS_SHEET, sheetId.trim()); localStorage.setItem(LS_TAB, tabName); } catch {}
-      await loadData();
-    } catch (e) { setImportErr(String(e)); }
-    finally { setImporting(false); }
-  }
+  const lastUpdate = useMemo(() => {
+    const dates = rows.map(r => r.importado_em).filter(Boolean) as string[];
+    if (!dates.length) return null;
+    const max = dates.reduce((a, b) => (a > b ? a : b));
+    return new Date(max).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }, [rows]);
+
+  const allAnos  = useMemo(() => [...new Set(rows.map(r => r.ano).filter(Boolean))].sort(), [rows]);
+  const allProcs = useMemo(() => [...new Set(rows.map(r => r.processo))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })), [rows]);
 
   const grouped = useMemo((): ProcGroup[] => {
     const s = search.toLowerCase();
     const filtered = rows.filter(r => {
-      if (filtroSit && !r.sit_processo.toLowerCase().includes(filtroSit.toLowerCase())) return false;
-      if (s && !r.processo.toLowerCase().includes(s) && !r.nome_item.toLowerCase().includes(s) &&
-          !r.razao_social.toLowerCase().includes(s) && !r.cnpj.includes(s)) return false;
+      if (filtroSit  && !(r.sit_processo || '').toLowerCase().includes(filtroSit.toLowerCase())) return false;
+      if (filtroAno  && r.ano !== filtroAno) return false;
+      if (filtroProc && r.processo !== filtroProc) return false;
+      if (s && !(r.processo || '').toLowerCase().includes(s) && !(r.nome_item || '').toLowerCase().includes(s) &&
+          !(r.razao_social || '').toLowerCase().includes(s) && !(r.cnpj || '').includes(s)) return false;
       return true;
     });
     const procMap = new Map<string, CnetRow[]>();
@@ -192,24 +166,39 @@ export default function CnetRoboGapmn({ canImport = false }: { canImport?: boole
         situacao_item: iRows[0].situacao_item, qtde_solicitada: iRows[0].qtde_solicitada,
         valor_estimado: iRows[0].valor_estimado, descricao_item: iRows[0].descricao_item,
         fornecedores: iRows,
-      }));
+      })).sort((a, b) => {
+        const ga = parseInt(a.grupo) || 0, gb = parseInt(b.grupo) || 0;
+        if (ga !== gb) return ga - gb;
+        return (parseInt(a.item) || 0) - (parseInt(b.item) || 0);
+      });
       const totalForn = items.reduce((a, i) => a + i.fornecedores.filter(f => f.cnpj !== 'DESERTO').length, 0);
       const totalEst  = items.reduce((a, i) => {
         const unit = parseMoney(i.valor_estimado);
-        const qtde = parseFloat(i.qtde_solicitada.replace(',', '.')) || 1;
+        const qtde = parseFloat((i.qtde_solicitada || '').replace(',', '.')) || 1;
         return a + unit * qtde;
       }, 0);
       return { proc, sit_processo: pRows[0].sit_processo, criterio: pRows[0].criterio_julgamento, ano: pRows[0].ano, items, totalForn, totalEst };
     }).sort((a, b) => a.proc.localeCompare(b.proc, 'pt-BR', { numeric: true }));
-  }, [rows, search, filtroSit]);
+  }, [rows, search, filtroSit, filtroAno, filtroProc]);
 
   const allSits = useMemo(() => [...new Set(rows.map(r => r.sit_processo).filter(Boolean))].sort(), [rows]);
+
+  const [deletingProc, setDeletingProc] = useState<string | null>(null);
 
   function toggleProc(p: string) {
     setExpandedProcs(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
   }
   function toggleItem(k: string) {
     setExpandedItems(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  }
+
+  async function deleteProcesso(proc: string) {
+    if (!window.confirm(`Apagar todos os dados do processo "${proc}" do Supabase?`)) return;
+    setDeletingProc(proc);
+    await supabase.from('cnet_propostas_gapmn').delete().eq('processo', proc);
+    setDeletingProc(null);
+    setExpandedProcs(prev => { const n = new Set(prev); n.delete(proc); return n; });
+    await loadData();
   }
 
   return (
@@ -219,7 +208,9 @@ export default function CnetRoboGapmn({ canImport = false }: { canImport?: boole
         <div>
           <h3 className="text-base font-semibold text-gray-800">Robô CNET — Processos GAP-MN</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            {rows.length > 0 ? `${rows.length} registros · UASG 120630` : 'UASG 120630 · Nenhum dado importado ainda'}
+            {rows.length > 0
+              ? `${rows.length} registros · UASG 120630${lastUpdate ? ` · Atualizado em ${lastUpdate}` : ''}`
+              : 'UASG 120630 · Nenhum dado ainda — execute o robô com UASG 120630'}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -229,70 +220,40 @@ export default function CnetRoboGapmn({ canImport = false }: { canImport?: boole
           >
             📖 {showManual ? 'Ocultar manual' : 'Manual de uso'}
           </button>
-          {canImport && (
-            <button
-              onClick={() => { setShowCfg(v => !v); setImportErr(null); setImportMsg(null); }}
-              className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-700 hover:bg-sky-100"
-            >
-              ⬆ Importar dados
-            </button>
-          )}
+          <button
+            onClick={loadData}
+            className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            ↺ Atualizar
+          </button>
         </div>
       </div>
+
+      {/* ── Erro de carregamento ───────────────────────────────────────────── */}
+      {loadErr && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          Erro ao carregar dados: {loadErr}
+        </div>
+      )}
 
       {/* ── Manual ─────────────────────────────────────────────────────────── */}
       {showManual && <ManualRobo />}
 
-      {/* ── Import config ──────────────────────────────────────────────────── */}
-      {showCfg && canImport && (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
-          <h4 className="text-sm font-semibold text-gray-700">Importar planilha do robô para o Supabase</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ID da planilha Google Sheets</label>
-              <input
-                value={sheetId}
-                onChange={e => setSheetId(e.target.value)}
-                placeholder="Cole o ID da planilha (parte da URL)"
-                className="w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
-              />
-              <p className="text-xs text-gray-400 mt-0.5">Ex: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms</p>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Nome da aba</label>
-              <input
-                value={tabName}
-                onChange={e => setTabName(e.target.value)}
-                placeholder={DEF_TAB}
-                className="w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
-              />
-              <p className="text-xs text-gray-400 mt-0.5">Padrão: {DEF_TAB}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={importar} disabled={importing}
-              className="rounded-xl bg-sky-600 px-4 py-1.5 text-xs text-white hover:bg-sky-700 disabled:opacity-60"
-            >
-              {importing ? 'Importando...' : '⬆ Importar'}
-            </button>
-            {importMsg && <span className="text-xs text-green-600 font-medium">{importMsg}</span>}
-            {importErr && <span className="text-xs text-red-600">{importErr}</span>}
-          </div>
-          <p className="text-xs text-gray-400">
-            A planilha deve estar pública. Os dados importados substituem os registros existentes dos mesmos processos.
-          </p>
-        </div>
-      )}
-
       {/* ── Filters ────────────────────────────────────────────────────────── */}
-      {(rows.length > 0 || search || filtroSit) && (
+      {(rows.length > 0 || search || filtroSit || filtroAno || filtroProc) && (
         <div className="flex gap-2 flex-wrap items-center">
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Buscar processo, item, CNPJ, empresa…"
-            className="flex-1 min-w-52 rounded-xl border border-gray-200 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
+            className="flex-1 min-w-40 rounded-xl border border-gray-200 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
           />
+          <select
+            value={filtroProc} onChange={e => setFiltroProc(e.target.value)}
+            className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs bg-white outline-none focus:ring-2 focus:ring-sky-200"
+          >
+            <option value="">Todos os processos</option>
+            {allProcs.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
           <select
             value={filtroSit} onChange={e => setFiltroSit(e.target.value)}
             className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs bg-white outline-none focus:ring-2 focus:ring-sky-200"
@@ -300,6 +261,20 @@ export default function CnetRoboGapmn({ canImport = false }: { canImport?: boole
             <option value="">Todas as situações</option>
             {allSits.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          <select
+            value={filtroAno} onChange={e => setFiltroAno(e.target.value)}
+            className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs bg-white outline-none focus:ring-2 focus:ring-sky-200"
+          >
+            <option value="">Todos os anos</option>
+            {allAnos.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          {(search || filtroSit || filtroAno || filtroProc) && (
+            <button
+              onClick={() => { setSearch(''); setFiltroSit(''); setFiltroAno(''); setFiltroProc(''); }}
+              className="rounded-xl border border-gray-200 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+              title="Limpar filtros"
+            >✕</button>
+          )}
           <span className="text-xs text-gray-400">{grouped.length} processo(s)</span>
         </div>
       )}
@@ -311,7 +286,7 @@ export default function CnetRoboGapmn({ canImport = false }: { canImport?: boole
         <div className="rounded-xl border border-dashed border-gray-200 py-14 text-center">
           <p className="text-sm text-gray-400">Nenhum dado ainda.</p>
           <p className="text-xs text-gray-300 mt-1">
-            Execute o robô com UASG 120630 e importe a planilha usando o botão acima.
+            Execute o robô com UASG 120630. Os dados serão gravados automaticamente.
           </p>
         </div>
       ) : grouped.length === 0 ? (
@@ -347,6 +322,14 @@ export default function CnetRoboGapmn({ canImport = false }: { canImport?: boole
                     {g.totalEst > 0 && (
                       <span className="font-medium text-gray-700">{fmtMoney(g.totalEst)}</span>
                     )}
+                    <button
+                      onClick={e => { e.stopPropagation(); deleteProcesso(g.proc); }}
+                      disabled={deletingProc === g.proc}
+                      className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-600 hover:bg-red-100 disabled:opacity-50"
+                      title="Apagar processo do Supabase"
+                    >
+                      {deletingProc === g.proc ? '…' : '🗑'}
+                    </button>
                     <span className="text-gray-400 text-base leading-none">{procExpanded ? '▲' : '▼'}</span>
                   </div>
                 </div>
@@ -456,10 +439,19 @@ export default function CnetRoboGapmn({ canImport = false }: { canImport?: boole
   );
 }
 
+const BOOKMARKLET = `javascript:(function(){var s=document.createElement('script');s.src='https://gapmn.app/cnet-bot.js?_='+Date.now();document.head.appendChild(s);}())`;
+
 // ─── Manual ───────────────────────────────────────────────────────────────────
 function ManualRobo() {
   const [copiedEp, setCopiedEp]   = useState(false);
   const [copiedLay, setCopiedLay] = useState(false);
+  const [copiedBm, setCopiedBm]   = useState(false);
+  const bmRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    // React bloqueia javascript: em href — setar via DOM bypassa a sanitização
+    if (bmRef.current) bmRef.current.setAttribute('href', BOOKMARKLET);
+  }, []);
 
   function copy(text: string, set: (v: boolean) => void) {
     navigator.clipboard.writeText(text).then(() => { set(true); setTimeout(() => set(false), 2000); });
@@ -476,34 +468,41 @@ function ManualRobo() {
     <div className="rounded-xl border border-sky-100 bg-sky-50/40 p-5 space-y-6 text-sm">
       <h4 className="font-bold text-gray-800 text-base">Manual do Robô CNET — GAP-MN</h4>
 
+      {/* Bookmarklet */}
+      <section>
+        <h5 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
+          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">★</span>
+          Instalar o robô no navegador
+        </h5>
+        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 space-y-2">
+          <p className="text-xs text-gray-700 leading-relaxed">
+            Arraste o botão abaixo para a <strong>barra de favoritos</strong> do seu navegador.
+            Sempre que estiver numa página do ComprasNet, clique nele para iniciar o robô.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* href="#" no React — o useEffect seta o href real via DOM */}
+            <a
+              ref={bmRef}
+              href="#"
+              className="inline-block rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-sky-700 cursor-grab active:cursor-grabbing select-none"
+              onClick={e => { e.preventDefault(); copy(BOOKMARKLET, setCopiedBm); }}
+              title="Clique para copiar a URL — depois crie o favorito manualmente. Ou arraste para a barra de favoritos."
+            >
+              {copiedBm ? '✓ URL copiada!' : '🤖 Robô CNET'}
+            </a>
+            <span className="text-xs text-gray-500">← clique para copiar ou arraste para a barra</span>
+          </div>
+          <p className="text-xs text-gray-400">
+            <strong>Para instalar:</strong> clique o botão acima para copiar a URL → pressione <strong>Ctrl+Shift+B</strong> para mostrar a barra de favoritos → clique com botão direito na barra → <em>Adicionar marcador/página…</em> → cole no campo URL → salvar.<br />
+            Ou arraste diretamente o botão para a barra.
+          </p>
+        </div>
+      </section>
+
       {/* 1 */}
       <section>
         <h5 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">1</span>
-          Acesso ao Dashboard
-        </h5>
-        <table className="w-full border border-gray-200 rounded-xl overflow-hidden">
-          <tbody>
-            <TRow label="Link do dashboard">
-              <a href="https://processoscae.vercel.app/" target="_blank" rel="noreferrer"
-                className="text-sky-600 hover:underline font-mono">
-                processoscae.vercel.app
-              </a>
-            </TRow>
-            <TRow label="Conta de administrador">
-              <span className="font-mono">Usuário: <strong>caedo</strong> · Senha: <strong>cae2026</strong></span>
-            </TRow>
-            <TRow label="Observação">
-              Na conta de administrador é possível criar novas contas de usuários ou excluir contas existentes.
-            </TRow>
-          </tbody>
-        </table>
-      </section>
-
-      {/* 2 */}
-      <section>
-        <h5 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">2</span>
           Orientação geral
         </h5>
         <table className="w-full border border-gray-200 rounded-xl overflow-hidden">
@@ -518,10 +517,10 @@ function ManualRobo() {
         </table>
       </section>
 
-      {/* 3 */}
+      {/* 2 */}
       <section>
         <h5 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">3</span>
+          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">2</span>
           Passo a passo para gerar o link do Apps Script
         </h5>
         <div className="space-y-2">
@@ -547,10 +546,10 @@ function ManualRobo() {
         </div>
       </section>
 
-      {/* 4 */}
+      {/* 3 */}
       <section>
         <h5 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">4</span>
+          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">3</span>
           Código do endpoint Apps Script
         </h5>
         <div className="space-y-4">
@@ -585,10 +584,10 @@ function ManualRobo() {
         </div>
       </section>
 
-      {/* 5 */}
+      {/* 4 */}
       <section>
         <h5 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">5</span>
+          <span className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center text-xs">4</span>
           Uso do botão PNCP no robô
         </h5>
         <table className="w-full border border-gray-200 rounded-xl overflow-hidden">
@@ -606,16 +605,15 @@ function ManualRobo() {
         </table>
       </section>
 
-      {/* 6 */}
-      <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
-        <h5 className="font-semibold text-amber-800 mb-1 text-xs flex items-center gap-1">
-          <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs">6</span>
-          Importar para o GAP-MN
+      {/* 5 */}
+      <div className="rounded-xl bg-green-50 border border-green-200 p-3">
+        <h5 className="font-semibold text-green-800 mb-1 text-xs flex items-center gap-1">
+          <span className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-xs">5</span>
+          Gravação automática no GAP-MN
         </h5>
-        <p className="text-xs text-amber-700 leading-relaxed">
-          Após o robô completar, publique a planilha como pública (compartilhar → "Qualquer pessoa com o link" pode visualizar).
-          Em seguida, use o botão <strong>⬆ Importar dados</strong>, informe o ID da planilha e a aba <strong>PNCP - 120630</strong>.
-          Os dados serão salvos no sistema e aparecerão na tabela abaixo.
+        <p className="text-xs text-green-700 leading-relaxed">
+          Ao rodar o robô com UASG <strong>120630</strong>, os dados são gravados automaticamente na base do GAP-MN.
+          Após a conclusão, clique em <strong>↺ Atualizar</strong> para ver os novos registros na tabela abaixo.
         </p>
       </div>
     </div>
