@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  console.log('[CNET Bot] v2026-05-21d — modalidade normTxt fix');
+  console.log('[CNET Bot] v2026-05-21e — modalidade: remove bypass candidates=1');
   var UASG = '120630';
   var LSKEY = 'cnet_bot_cfg';
 
@@ -428,10 +428,10 @@
       var b = findAttr(document, 'companhar');
       return b || null;
     }
-    if (candidates.length === 1 || !modalidade) return candidates[0].btn;
+    if (!modalidade) return candidates[0].btn;
 
-    // Sobe até 10 níveis a partir do card para encontrar um container com o texto da modalidade.
-    // Necessário porque o card imediato pode ser um container pequeno que não inclui "Pregão Eletrônico".
+    // Sobe até 10 níveis para encontrar um container que contenha o nome da modalidade.
+    // Necessário porque o card imediato pode ser pequeno demais para incluir "Pregão Eletrônico".
     var modNorm = normTxt(modalidade);
     function cardHasMod(card) {
       var el = card;
@@ -445,8 +445,9 @@
     var match = candidates.find(function(c) { return cardHasMod(c.card); });
     if (match) return match.btn;
 
-    // fallback: usa o primeiro candidato mas loga aviso para diagnóstico
-    console.warn('[CNET findAcompBtn] modalidade "' + modalidade + '" não encontrada em nenhum card — usando candidates[0]. Cards:', candidates.map(function(c){ return (c.card.innerText||'').slice(0,80); }));
+    // Nenhum card contém a modalidade pedida — loga diagnóstico e usa candidates[0]
+    console.warn('[CNET findAcompBtn] modalidade "' + modalidade + '" não encontrada. Cards encontrados:',
+      candidates.map(function(c){ return normTxt(c.card.innerText||'').slice(0,120); }));
     return candidates[0].btn;
   }
   function findGrupos() {
