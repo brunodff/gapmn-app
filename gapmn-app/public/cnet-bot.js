@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  console.log('[CNET Bot] v2026-05-21e — modalidade: remove bypass candidates=1');
+  console.log('[CNET Bot] v2026-05-21f — waitDOMStable 8s + CNPJ poll 15s');
   var UASG = '120630';
   var LSKEY = 'cnet_bot_cfg';
 
@@ -1435,15 +1435,12 @@
                   // Passo 1: URL muda (Angular roteou para página de propostas deste item)
                   try { await poll(function(){ return location.href !== urlAntesProp; }, 150, 8000); } catch(e) {}
                   log('propURL: …' + location.href.slice(-50));
-                  // Passo 2: aguarda DOM estabilizar COMPLETAMENTE antes de ler
-                  // (evita ler conteúdo da página anterior em cache do Angular)
-                  await waitDOMStable(700, 18000);
-                  // Passo 3: Angular pode estabilizar DOM antes de renderizar a lista de CNPJs
-                  // — aguarda explicitamente um CNPJ aparecer antes de declarar hasCnpjs=false
+                  // Aguarda DOM estabilizar (max 8s) e depois busca CNPJs por até 15s
+                  await waitDOMStable(500, 8000);
                   var CNPJ_RE_P = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|ESTRANG\d{5,}/;
                   if (!CNPJ_RE_P.test(appTxt())) {
                     log('Aguardando CNPJs item ' + g.num + '...', 'warn');
-                    try { await poll(function(){ return CNPJ_RE_P.test(appTxt()); }, 200, 8000); } catch(e) {}
+                    try { await poll(function(){ return CNPJ_RE_P.test(appTxt()); }, 200, 15000); } catch(e) {}
                   }
                   var hasCnpjs = CNPJ_RE_P.test(appTxt());
                   if (!hasCnpjs) log('Sem CNPJs item ' + g.num + ' — item sem licitantes ou deserto', 'warn');
