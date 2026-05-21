@@ -1,4 +1,6 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
+
+const BOOKMARKLET_URL = `javascript:(function(){var s=document.createElement('script');s.src='https://processoscae.vercel.app/cnet-bot.js?_='+Date.now();document.head.appendChild(s);}())`;
 
 interface Props {
   onClose: () => void;
@@ -6,6 +8,23 @@ interface Props {
 
 export default function ManualSite({ onClose }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
+  const bmRef    = useRef<HTMLAnchorElement>(null);
+  const [copiedBm, setCopiedBm] = useState(false);
+
+  useEffect(() => {
+    if (bmRef.current) bmRef.current.setAttribute('href', BOOKMARKLET_URL);
+  }, []);
+
+  function copyBm() {
+    navigator.clipboard.writeText(BOOKMARKLET_URL)
+      .then(() => { setCopiedBm(true); setTimeout(() => setCopiedBm(false), 2500); })
+      .catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = BOOKMARKLET_URL;
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+        setCopiedBm(true); setTimeout(() => setCopiedBm(false), 2500);
+      });
+  }
 
   function handlePrint() {
     const conteudo = printRef.current?.innerHTML ?? "";
@@ -337,6 +356,71 @@ export default function ManualSite({ onClose }: Props) {
                 <tr><td>"Ajuda"</td><td>Lista completa de perguntas suportadas</td></tr>
               </tbody>
             </table>
+          </section>
+
+          {/* 10. Robô CNET */}
+          <section>
+            <h2 className="text-base font-bold text-emerald-700 border-l-4 border-emerald-600 pl-3 py-0.5 mb-3">
+              10. Robô CNET — Captura de Propostas do ComprasNet
+            </h2>
+            <p className="mb-3">
+              O <strong>Robô CNET</strong> é um bookmarklet que roda direto no navegador enquanto você está no ComprasNet.
+              Ele navega automaticamente pelos itens/grupos de um processo, captura as propostas dos fornecedores e envia os dados para o sistema GAP-MN.
+            </p>
+
+            {/* Instalação */}
+            <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 mb-4 space-y-3">
+              <h3 className="font-semibold text-slate-800 text-sm">Instalar o robô no navegador</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Arraste o botão abaixo para a <strong>barra de favoritos</strong> do seu navegador.
+                Sempre que estiver numa página do ComprasNet, clique nele para iniciar o robô.
+              </p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <a
+                  ref={bmRef}
+                  href="#"
+                  className="inline-block rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-sky-700 cursor-grab active:cursor-grabbing select-none no-underline"
+                  onClick={e => { e.preventDefault(); copyBm(); }}
+                  title="Clique para copiar a URL — depois crie o favorito manualmente. Ou arraste para a barra de favoritos."
+                >
+                  {copiedBm ? '✓ URL copiada!' : '🤖 Robô CNET'}
+                </a>
+                <span className="text-xs text-slate-500">← clique para copiar ou arraste para a barra</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                <strong>Para instalar:</strong> clique o botão acima para copiar a URL → pressione <strong>Ctrl+Shift+B</strong> para mostrar a barra de favoritos → clique com botão direito na barra → <em>Adicionar marcador/página…</em> → cole no campo URL → salvar.<br />
+                Ou arraste diretamente o botão para a barra.
+              </p>
+            </div>
+
+            {/* Como usar */}
+            <h3 className="font-semibold text-slate-800 mb-2">Como usar</h3>
+            <ol className="list-decimal pl-5 space-y-1 mb-3">
+              <li>Acesse o <strong>ComprasNet</strong> e vá para a tela de busca de compras (<em>comprasnet-web/public/compras</em>).</li>
+              <li>Clique no favorito <strong>Robô CNET</strong> na barra do navegador.</li>
+              <li>No painel que aparecer, informe os <strong>números dos processos</strong> (um por linha, ex: <code className="bg-slate-100 px-1 rounded">900602025</code>) e selecione a modalidade se necessário.</li>
+              <li>Clique em <strong>▶ Executar</strong>. O robô navegará automaticamente — não mexa na tela.</li>
+              <li>Ao concluir, os dados estarão disponíveis na aba <strong>Robô CNET</strong> do Gerenciamento de Processos.</li>
+            </ol>
+
+            {/* O que captura */}
+            <h3 className="font-semibold text-slate-800 mb-2">O que o robô captura</h3>
+            <table>
+              <thead><tr><th>Dado</th><th>Descrição</th></tr></thead>
+              <tbody>
+                <tr><td>Grupos / Itens</td><td>Estrutura do processo (grupos/lotes ou itens avulsos)</td></tr>
+                <tr><td>Nome e Descrição do Item</td><td>Texto do item e descrição detalhada</td></tr>
+                <tr><td>Propostas</td><td>CNPJ, Razão Social, Valor Ofertado, Valor Negociado, Status (Adjudicado, Desclassificado…)</td></tr>
+                <tr><td>Situação do Item</td><td>Homologado, Fracassado, Deserto, Aguardando…</td></tr>
+                <tr><td>Critério de Julgamento</td><td>Menor Preço, Maior Desconto…</td></tr>
+                <tr><td>ME/EPP</td><td>Indicador de Microempresa / Empresa de Pequeno Porte</td></tr>
+              </tbody>
+            </table>
+
+            <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+              <strong>⚠️ Atenção:</strong> Não feche a aba do ComprasNet nem navegue para outra página enquanto o robô estiver rodando.
+              O robô processa um item por vez — processos com muitos itens podem levar alguns minutos.
+            </div>
           </section>
 
           {/* Rodapé */}
