@@ -13,6 +13,7 @@ export const SHEET_URLS = {
   credito1:   "https://docs.google.com/spreadsheets/d/1kB9CUbvSKzZj_ue6Ppi4u_q7ubKSULh2ctp3KP5ntoI/export?format=csv&gid=946298877",
   credito2:   "https://docs.google.com/spreadsheets/d/1u_C28gNt0klzmSaaTWg9wK9YJAvnSImmvDmc65V8aDo/export?format=csv&gid=0",
   rp:         "https://docs.google.com/spreadsheets/d/1-_2ZqIaKjuzCf5dbujD9V3wP3gt3vtGanjxXqUGLlZ8/export?format=csv&gid=0",
+  rpNE:       "https://docs.google.com/spreadsheets/d/1-_2ZqIaKjuzCf5dbujD9V3wP3gt3vtGanjxXqUGLlZ8/export?format=csv&gid=792698456",
   empenhos:   "https://docs.google.com/spreadsheets/d/1Gb-2Q1b6VJQff-MHTZyzwUIKvQI-sZnYwNB0ZU__Vb4/export?format=csv&gid=0",
   empenhosNF: "https://docs.google.com/spreadsheets/d/1XQ5CGcB0dTVADeEGfKjtXRhqtHxsNf1J1H_9VKjBklM/export?format=csv&gid=1297815245",
 } as const;
@@ -64,14 +65,19 @@ export interface EmpenhoNF {
   ugr:               string;  // col 4 — UGR nome (filtro)
   natureza:          string;  // col 5 — Natureza código
   pi:                string;  // col 7 — PI código
-  pi_desc:           string;  // col 8 — PI descrição
-  valor:             number;  // col 9 — valor do empenho (R$)
+  pi_desc:           string;  // col 8  (I) — PI descrição
+  pag:               string;  // col 9  (J) — PAG (processo administrativo)
+  cnpj:              string;  // col 10 (K) — CNPJ do favorecido
+  nome_fantasia:     string;  // col 11 (L) — Nome Fantasia do favorecido
+  assinatura:        string;  // col 13 (N) — assinante OD ou "SEM INFORMACAO"
+  pendente_od:       string;  // col 14 (O) — "Pendente" se aguardando ratificação OD
+  valor:             number;  // col 15 (P) — valor do empenho (R$)
   solicitacao?:      string;  // extraído de descricao via regex /26S\d+/i
 }
 
-/** Extrai código de solicitação SILOMS de uma descrição de NE */
+/** Extrai código de solicitação SILOMS (26SXXXX ou 26MXXXX) de uma descrição de NE */
 export function extractSolicitacao(descricao: string): string {
-  const m = descricao.match(/26S\d{4}/i);
+  const m = descricao.match(/\b26[SM]\d{4,6}\b/i);
   return m ? m[0].toUpperCase() : "";
 }
 
@@ -394,7 +400,13 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
  *   col 6 = Natureza nome
  *   col 7 = PI código
  *   col 8 = PI nome
- *   col 9 = Valor
+ *   col 9  (J) = PAG
+ *   col 10 (K) = CNPJ
+ *   col 11 (L) = Nome Fantasia
+ *   col 12 (M) = CPF (ignorado)
+ *   col 13 (N) = Assinatura OD (nome ou "SEM INFORMACAO")
+ *   col 14 (O) = Pendente OD ("Pendente" ou vazio)
+ *   col 15 (P) = Valor
  */
 export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   const result: EmpenhoNF[] = [];
@@ -416,12 +428,17 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
       nota_empenho:      neMatch ? neMatch[1] : rawNota.slice(-12), // ex: 2026NE000001
       nota_empenho_full: rawNota,
       descricao,
-      ugcred_code:       (row[3] ?? "").trim(),
-      ugr:               (row[4] ?? "").trim(),
-      natureza:          (row[5] ?? "").trim(),
-      pi:                (row[7] ?? "").trim(),
-      pi_desc:           (row[8] ?? "").trim(),
-      valor:             toNum((row[9] ?? "").trim()),
+      ugcred_code:       (row[3]  ?? "").trim(),
+      ugr:               (row[4]  ?? "").trim(),
+      natureza:          (row[5]  ?? "").trim(),
+      pi:                (row[7]  ?? "").trim(),
+      pi_desc:           (row[8]  ?? "").trim(),
+      pag:               (row[9]  ?? "").trim(),
+      cnpj:              (row[10] ?? "").trim(),
+      nome_fantasia:     (row[11] ?? "").trim(),
+      assinatura:        (row[13] ?? "").trim(),
+      pendente_od:       (row[14] ?? "").trim(),
+      valor:             toNum((row[15] ?? "").trim()),
       solicitacao:       extractSolicitacao(descricao),
     });
   }
@@ -429,6 +446,64 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   // Ordena pelo número da NE (parte numérica após "NE")
   const neNum = (ne: string) => parseInt(ne.replace(/.*NE0*/i, "") || "0", 10);
   result.sort((a, b) => neNum(a.nota_empenho) - neNum(b.nota_empenho));
+  return result;
+}
+
+/** Linha de RP por Nota de Empenho (planilha gid=792698456) */
+export interface LinhaRPNE {
+  ugr_code:    string;
+  ugr_nome:    string;
+  ne:          string;   // NE sem os 11 primeiros chars do código completo
+  favorecido:  string;
+  descricao:   string;
+  processo:    string;
+  rp_nao_proc: number;   // col H — RP Não Processados
+  rp_proc:     number;   // col I — RP Processados
+}
+
+/**
+ * Transforma linhas CSV da planilha de RP por NE em LinhaRPNE[].
+ * As 5 primeiras linhas são cabeçalho/título — dados começam na linha 5 (índice 5).
+ * Col B usa fill-down: quando vazio, repete o último nome de UGR.
+ */
+export function toRPNEs(rows: string[][]): LinhaRPNE[] {
+  const result: LinhaRPNE[] = [];
+  let lastUgrCode = "";
+  let lastUgrNome = "";
+
+  for (let i = 5; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length < 3) continue;
+
+    const ugrCode = (row[0] ?? "").trim();
+    const ugrNome = (row[1] ?? "").trim();
+    if (ugrCode) lastUgrCode = ugrCode;
+    if (ugrNome) lastUgrNome = ugrNome;
+
+    const neRaw = (row[2] ?? "").trim();
+    if (!neRaw) continue;
+
+    // Extrai NE: tenta regex padrão SIAFI, fallback: remove 11 primeiros chars
+    const neMatch = neRaw.match(/(\d{4}NE\d+)$/i);
+    const ne = neMatch ? neMatch[1] : (neRaw.length > 11 ? neRaw.slice(11) : neRaw);
+    if (!ne) continue;
+
+    const rpNaoProc = toNum((row[7] ?? "").trim());
+    const rpProc    = toNum((row[8] ?? "").trim());
+    if (rpNaoProc === 0 && rpProc === 0) continue;
+
+    result.push({
+      ugr_code:    lastUgrCode,
+      ugr_nome:    lastUgrNome,
+      ne,
+      favorecido:  (row[4] ?? "").trim(),
+      descricao:   (row[5] ?? "").trim(),
+      processo:    (row[6] ?? "").trim(),
+      rp_nao_proc: rpNaoProc,
+      rp_proc:     rpProc,
+    });
+  }
+
   return result;
 }
 
