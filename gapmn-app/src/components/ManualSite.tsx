@@ -1,18 +1,22 @@
 import { useRef, useState, useEffect } from "react";
 
 const BOOKMARKLET_URL = `javascript:(function(){var s=document.createElement('script');s.src='https://gapmn.app/cnet-bot.js?_='+Date.now();document.head.appendChild(s);}())`;
+const BOOKMARKLET_ARP_URL = `javascript:(function(){var s=document.createElement('script');s.src='https://processoscae.vercel.app/arp-bot.js?v='+Date.now();document.body.appendChild(s);})();`;
 
 interface Props {
   onClose: () => void;
 }
 
 export default function ManualSite({ onClose }: Props) {
-  const printRef = useRef<HTMLDivElement>(null);
-  const bmRef    = useRef<HTMLAnchorElement>(null);
-  const [copiedBm, setCopiedBm] = useState(false);
+  const printRef   = useRef<HTMLDivElement>(null);
+  const bmRef      = useRef<HTMLAnchorElement>(null);
+  const bmArpRef   = useRef<HTMLAnchorElement>(null);
+  const [copiedBm,    setCopiedBm]    = useState(false);
+  const [copiedBmArp, setCopiedBmArp] = useState(false);
 
   useEffect(() => {
-    if (bmRef.current) bmRef.current.setAttribute('href', BOOKMARKLET_URL);
+    if (bmRef.current)    bmRef.current.setAttribute('href', BOOKMARKLET_URL);
+    if (bmArpRef.current) bmArpRef.current.setAttribute('href', BOOKMARKLET_ARP_URL);
   }, []);
 
   function copyBm() {
@@ -23,6 +27,17 @@ export default function ManualSite({ onClose }: Props) {
         ta.value = BOOKMARKLET_URL;
         document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
         setCopiedBm(true); setTimeout(() => setCopiedBm(false), 2500);
+      });
+  }
+
+  function copyBmArp() {
+    navigator.clipboard.writeText(BOOKMARKLET_ARP_URL)
+      .then(() => { setCopiedBmArp(true); setTimeout(() => setCopiedBmArp(false), 2500); })
+      .catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = BOOKMARKLET_ARP_URL;
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+        setCopiedBmArp(true); setTimeout(() => setCopiedBmArp(false), 2500);
       });
   }
 
@@ -420,6 +435,84 @@ export default function ManualSite({ onClose }: Props) {
             <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
               <strong>⚠️ Atenção:</strong> Não feche a aba do ComprasNet nem navegue para outra página enquanto o robô estiver rodando.
               O robô processa um item por vez — processos com muitos itens podem levar alguns minutos.
+            </div>
+          </section>
+
+          {/* 11. Robô ARP */}
+          <section>
+            <h2 className="text-base font-bold text-emerald-700 border-l-4 border-emerald-600 pl-3 py-0.5 mb-3">
+              11. Robô ARP — Sincronização de Atas de Registro de Preço
+            </h2>
+            <p className="mb-3">
+              O <strong>Robô ARP</strong> é um bookmarklet que roda no <strong>contratos.sistema.gov.br/arp</strong>.
+              Ele lista todas as ATAs do GAP-MN (UASG 120630), registra os metadados de cada ATA e captura
+              a tabela de itens de cada uma, salvando tudo automaticamente no sistema GAP-MN.
+            </p>
+
+            {/* Instalação */}
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-4 space-y-3">
+              <h3 className="font-semibold text-slate-800 text-sm">Instalar o robô no navegador</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Arraste o botão abaixo para a <strong>barra de favoritos</strong> do seu navegador.
+                Sempre que estiver na página de ATAs do Contratos.gov, clique nele para iniciar a sincronização.
+              </p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <a
+                  ref={bmArpRef}
+                  href="#"
+                  className="inline-block rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-emerald-700 cursor-grab active:cursor-grabbing select-none no-underline"
+                  onClick={e => { e.preventDefault(); copyBmArp(); }}
+                  title="Clique para copiar a URL — depois crie o favorito manualmente. Ou arraste para a barra de favoritos."
+                >
+                  {copiedBmArp ? '✓ URL copiada!' : '📋 Robô ARP'}
+                </a>
+                <span className="text-xs text-slate-500">← clique para copiar ou arraste para a barra</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                <strong>Para instalar:</strong> clique o botão acima para copiar a URL → pressione <strong>Ctrl+Shift+B</strong> para mostrar a barra de favoritos → clique com botão direito na barra → <em>Adicionar marcador/página…</em> → cole no campo URL → salvar.
+              </p>
+            </div>
+
+            {/* Como usar */}
+            <h3 className="font-semibold text-slate-800 mb-2">Como usar</h3>
+            <ol className="list-decimal pl-5 space-y-1 mb-3">
+              <li>Acesse <strong>contratos.sistema.gov.br/arp</strong> e faça login.</li>
+              <li>Certifique-se de estar na página que lista as ATAs da UASG 120630 (GAP-MN).</li>
+              <li>Clique no favorito <strong>Robô ARP</strong> na barra do navegador.</li>
+              <li>Uma aba de trabalho abrirá automaticamente — <strong>não a feche</strong>.</li>
+              <li>Acompanhe o progresso no painel flutuante. O robô processa uma ATA por vez.</li>
+              <li>Ao concluir, a aba de trabalho fecha e o painel exibe o resumo.</li>
+            </ol>
+
+            {/* O que captura */}
+            <h3 className="font-semibold text-slate-800 mb-2">O que o robô captura</h3>
+            <table>
+              <thead><tr><th>Dado</th><th>Tabela no banco</th><th>Descrição</th></tr></thead>
+              <tbody>
+                <tr><td>Número da ATA</td><td>atas_gap_mn</td><td>Ex: 00164/2026</td></tr>
+                <tr><td>Situação</td><td>atas_gap_mn</td><td>Ativa, Cancelada, Encerrada…</td></tr>
+                <tr><td>Tipo UASG</td><td>atas_gap_mn</td><td>Gerenciadora ou Participante</td></tr>
+                <tr><td>Vigência</td><td>atas_gap_mn</td><td>Data inicial e final da ATA</td></tr>
+                <tr><td>Número do Item</td><td>itens_ata_gap_mn · numero_ata</td><td>Ex: 00016</td></tr>
+                <tr><td>Descrição do Item</td><td>itens_ata_gap_mn · descricao</td><td>Texto completo do item</td></tr>
+                <tr><td>CNPJ do Fornecedor</td><td>itens_ata_gap_mn · cnpj_fornecedor</td><td>Fornecedor registrado na ATA</td></tr>
+                <tr><td>Razão Social</td><td>itens_ata_gap_mn · fornecedor_nome</td><td>Nome da empresa</td></tr>
+                <tr><td>Quantidade Registrada</td><td>itens_ata_gap_mn · quantidade_registrada</td><td>Qtde homologada na ATA</td></tr>
+                <tr><td>Valor Unitário</td><td>itens_ata_gap_mn · valor_unitario</td><td>Preço unitário registrado</td></tr>
+                <tr><td>Valor Total</td><td>itens_ata_gap_mn · valor_total</td><td>Qtde × Valor Unitário</td></tr>
+                <tr><td>Aceita Adesão</td><td>itens_ata_gap_mn · aceita_adesao</td><td>Sim / Não</td></tr>
+              </tbody>
+            </table>
+
+            <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+              <strong>⚠️ Atenção:</strong> O robô abre uma aba auxiliar automaticamente — se o navegador bloquear popups,
+              autorize popups para <em>contratos.sistema.gov.br</em> e clique o bookmarklet novamente.
+              Não feche nem redirecione a aba auxiliar durante a execução.
+            </div>
+
+            <div className="mt-2 rounded-lg bg-sky-50 border border-sky-200 p-3 text-xs text-sky-800">
+              <strong>ℹ️ Reprocessamento:</strong> O robô só baixa ATAs ainda sem itens cadastrados.
+              Para forçar nova captura completa, limpe a tabela <code className="bg-white px-1 rounded">itens_ata_gap_mn</code> no Supabase antes de rodar.
             </div>
           </section>
 
