@@ -16,17 +16,19 @@ import RequireAgent from "./routes/RequireAgent";
 import ManualSite from "./components/ManualSite";
 
 const AppTitle = () => (
-  <div className="flex items-center justify-center gap-3">
+  <div className="flex items-center gap-3">
     <img src="/gapmn.png" alt="GAP-MN"
-      className="h-10 w-10 rounded-xl object-contain shadow-sm border border-slate-200 bg-white" />
+      className="h-9 w-9 rounded-xl object-contain border border-slate-100 bg-white shadow-sm" />
     <img src="/acantus.png" alt="Acantus"
-      className="h-10 w-10 rounded-xl object-contain shadow-sm border border-slate-200 bg-white" />
-    <h1 className="text-lg sm:text-xl font-semibold text-slate-900">
-      Aplicativo do GAP-MN
-    </h1>
-    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600 select-none">
-      versão de teste
-    </span>
+      className="h-9 w-9 rounded-xl object-contain border border-slate-100 bg-white shadow-sm" />
+    <div className="flex items-center gap-2">
+      <h1 className="text-base font-bold tracking-tight" style={{ color: "#0F172A" }}>
+        Aplicativo do GAP-MN
+      </h1>
+      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-600 select-none tracking-wide">
+        versão de teste
+      </span>
+    </div>
   </div>
 );
 
@@ -57,20 +59,21 @@ function Shell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Páginas de app: header fixo no topo
+  // Páginas de app: topbar fixa + conteúdo
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 overflow-hidden">
+    <div className="min-h-screen flex flex-col" style={{ background: "#F4F7FB" }}>
       {showManual && <ManualSite onClose={() => setShowManual(false)} />}
-      <header className="pt-6 pb-4">
-        <AppTitle />
+      <header className="sticky top-0 z-40 bg-white"
+        style={{ borderBottom: "1px solid #E2E8F0", boxShadow: "0 1px 8px rgba(15,23,42,0.06)" }}>
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center px-6 md:px-10">
+          <AppTitle />
+        </div>
       </header>
-      <main className="flex-1 px-4 pb-10">
+      <main className="flex-1 px-4 md:px-8 pb-12 pt-6">
         <div className="mx-auto w-full max-w-[1600px]">{children}</div>
       </main>
-      <footer className="py-4">
-        <div className="text-center text-xs text-slate-500">
-          Desenvolvido por 2T Bruno | GAP-MN
-        </div>
+      <footer className="py-4 text-center text-[11px]" style={{ color: "#94A3B8" }}>
+        Desenvolvido por 2T Bruno · GAP-MN · versão de teste
       </footer>
     </div>
   );
