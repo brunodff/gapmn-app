@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { supabase } from "../lib/supabase";
-import { Card } from "../components/Card";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
 import GerenciamentoEmpenhos from "../components/GerenciamentoEmpenhos";
@@ -71,40 +70,45 @@ export default function SetorInbox() {
     })();
   }, []);
 
+  const TAB_META: Record<string, { label: string; icon: string }> = {
+    contratos:   { label: "Contratos",              icon: "📋" },
+    processos:   { label: "Processos",              icon: "⚖️" },
+    atas:        { label: "Atas de RP",             icon: "📝" },
+    indicadores: { label: "Indicadores de Lotação", icon: "📊" },
+    empenhos:    { label: "Empenhos",               icon: "💰" },
+  };
+
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-lg font-semibold text-slate-900">
-              {tab === "processos"  ? "Processos"
-                : tab === "contratos" ? "Contratos"
-                : tab === "empenhos"  ? "Empenhos"
-                : tab === "atas"      ? "Atas de RP"
-                : "Indicadores de Lotação"}
-            </div>
-            <div className="text-sm text-slate-600">
-              {me?.setor === "ADMIN" ? "Chefe do GAP" : `Setor: ${formatSetor(me?.setor)}`}
-            </div>
+      {/* Header + Tabs */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {/* Barra superior */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base font-bold text-slate-800 truncate">
+              {TAB_META[tab]?.icon} {TAB_META[tab]?.label}
+            </span>
+            <span className="hidden sm:inline text-xs text-slate-400">
+              · {me?.setor === "ADMIN" ? "Administração" : formatSetor(me?.setor)}
+            </span>
           </div>
-
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => nav("/ferramentas")}
-              className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700 hover:bg-violet-100"
+              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
               title="Ferramentas, robôs e guia do sistema"
             >
               🔧 Ferramentas
             </button>
             <button
               onClick={() => nav("/app")}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
             >
               ← Início
             </button>
             <button
               onClick={async () => { await supabase.auth.signOut(); nav("/"); }}
-              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
+              className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-100 transition-colors"
             >
               Sair
             </button>
@@ -113,26 +117,21 @@ export default function SetorInbox() {
 
         {/* Abas */}
         {showAnyExtraTab && (
-          <div className="mt-3 flex flex-wrap gap-1 border-b border-slate-200">
+          <div className="flex overflow-x-auto">
             {(["contratos", "processos", "atas", "indicadores", "empenhos"] as const).map((t) => {
-              const labels: Record<string, string> = {
-                indicadores: "Indicadores de Lotação",
-                contratos:   "Contratos",
-                processos:   "Processos",
-                atas:        "Atas de RP",
-                empenhos:    "Empenhos",
-              };
+              const { label, icon } = TAB_META[t];
               return (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
                     tab === t
-                      ? "border-sky-600 text-sky-700"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
+                      ? "border-sky-600 text-sky-700 bg-sky-50/60"
+                      : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  {labels[t]}
+                  <span>{icon}</span>
+                  <span>{label}</span>
                 </button>
               );
             })}
@@ -140,11 +139,11 @@ export default function SetorInbox() {
         )}
 
         {err && (
-          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+          <div className="mx-4 mb-3 rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">
             {err}
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Conteúdo da aba Indicadores de Lotação */}
       {tab === "indicadores" && (

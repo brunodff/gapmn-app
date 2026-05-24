@@ -594,7 +594,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                                 className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-300 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100 font-medium whitespace-nowrap"
                                 title="Gerar Termo de Apostilamento com cálculo de reajuste"
                               >
-                                📜 Apostilamento
+                                📜 Gerar Termo de Apostilamento
                               </button>
                             )}
                             {hasTR && (
@@ -631,22 +631,17 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                               <div className="px-6 py-3 text-xs text-slate-400">Carregando itens…</div>
                             ) : (
                               <div className="overflow-x-auto">
-                                {/* Bloco de TR + Reajuste */}
-                                {(tr || (compra && comprasTrMap.has(compra))) ? (
-                                  <TRReajusteBlock
-                                    tr={tr ?? null}
-                                    compra={compra ?? null}
-                                    ipcaResult={compra ? (ipcaMap.get(compra) ?? undefined) : undefined}
-                                  />
-                                ) : (
-                                  compra && (
-                                    <div className="px-4 py-2 text-[11px] text-slate-400 border-b border-slate-200 bg-white">
-                                      🛒 Compra: <span className="font-mono font-semibold text-slate-600">{compra}</span>
-                                      {canSync && (
-                                        <span className="ml-2 text-amber-600">— insira o TR para ver dados de reajuste</span>
-                                      )}
-                                    </div>
-                                  )
+                                {compra && (
+                                  <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-3 text-xs text-slate-500">
+                                    <span className="font-semibold text-slate-700">Nº Compra: <span className="font-mono font-normal">{compra}</span></span>
+                                    {tr?.pdf_url && (
+                                      <a href={tr.pdf_url} target="_blank" rel="noopener noreferrer"
+                                        className="text-sky-600 hover:underline font-medium">📄 Ver TR</a>
+                                    )}
+                                    {tr?.data_orcamento && (
+                                      <span className="text-amber-600">Reajuste disponível — clique em "Gerar Termo de Apostilamento"</span>
+                                    )}
+                                  </div>
                                 )}
 
                                 {/* Header de itens */}
@@ -671,19 +666,12 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                                         <th className="px-3 py-1.5 whitespace-nowrap">CNPJ</th>
                                         <th className="px-3 py-1.5 whitespace-nowrap text-right">Qtd.</th>
                                         <th className="px-3 py-1.5 whitespace-nowrap text-right">Valor Unit.</th>
-                                        {tr?.data_orcamento && (
-                                          <th className="px-3 py-1.5 whitespace-nowrap text-right text-amber-700">Unit. Reaj.</th>
-                                        )}
                                         <th className="px-3 py-1.5 whitespace-nowrap text-right">Valor Total</th>
                                         <th className="px-3 py-1.5 whitespace-nowrap text-center">Adesão</th>
                                       </tr>
                                     </thead>
                                     <tbody>
                                       {itens.map((item, j) => {
-                                        const ipca = compra ? (ipcaMap.get(compra) ?? null) : null;
-                                        const vuReaj = ipca && item.valor_unitario
-                                          ? item.valor_unitario * ipca.fator
-                                          : null;
                                         return (
                                           <tr key={item.id}
                                             className={`border-t border-slate-200 ${j % 2 === 0 ? "bg-white" : "bg-slate-50"}`}>
@@ -695,11 +683,6 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                                             <td className="px-3 py-1.5 font-mono whitespace-nowrap text-slate-500">{item.cnpj_fornecedor || "–"}</td>
                                             <td className="px-3 py-1.5 whitespace-nowrap text-right">{fmtQtd(item.quantidade_registrada)}</td>
                                             <td className="px-3 py-1.5 whitespace-nowrap text-right font-mono">{fmtBRL(item.valor_unitario)}</td>
-                                            {tr?.data_orcamento && (
-                                              <td className="px-3 py-1.5 whitespace-nowrap text-right font-mono font-semibold text-amber-700">
-                                                {vuReaj != null ? fmtBRL(vuReaj) : <span className="text-slate-300">…</span>}
-                                              </td>
-                                            )}
                                             <td className="px-3 py-1.5 whitespace-nowrap text-right font-mono font-semibold">{fmtBRL(item.valor_total)}</td>
                                             <td className="px-3 py-1.5 whitespace-nowrap text-center">
                                               {item.aceita_adesao == null ? "–"
@@ -884,93 +867,6 @@ function ApostilamentoModal({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Sub-componente: bloco TR + Reajuste ────────────────────────────────────
-function TRReajusteBlock({
-  tr,
-  compra,
-  ipcaResult,
-}: {
-  tr: CompraTR | null;
-  compra: string | null;
-  ipcaResult?: IpcaResult | null;
-}) {
-  const calcUrl = tr?.data_orcamento
-    ? "https://www3.bcb.gov.br/CALCIDADAO/publico/corrigirPorIndice.do?method=corrigirPorIndice"
-    : null;
-
-  const proxReaj = tr?.data_orcamento ? proxReajusteDisplay(tr.data_orcamento) : null;
-
-  return (
-    <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 space-y-2">
-      <div className="flex flex-wrap items-center gap-4 text-xs">
-        {compra && (
-          <span className="font-semibold text-slate-700">🛒 Compra: <span className="font-mono">{compra}</span></span>
-        )}
-        {tr?.pdf_url && (
-          <a href={tr.pdf_url} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2 py-1 text-sky-700 hover:bg-sky-100 font-medium">
-            📄 Ver TR
-          </a>
-        )}
-      </div>
-
-      {tr?.data_orcamento ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-          <div className="rounded-lg bg-white border border-amber-200 px-3 py-2">
-            <div className="text-slate-500 text-[10px] uppercase font-semibold mb-0.5">Data do Orçamento</div>
-            <div className="font-semibold text-slate-800">{fmtDate(tr.data_orcamento)}</div>
-          </div>
-          <div className="rounded-lg bg-white border border-amber-200 px-3 py-2">
-            <div className="text-slate-500 text-[10px] uppercase font-semibold mb-0.5">Índice Adotado</div>
-            <div className="font-semibold text-slate-800">{tr.indice_adotado ?? "–"}</div>
-          </div>
-          <div className="rounded-lg bg-white border border-amber-200 px-3 py-2">
-            <div className="text-slate-500 text-[10px] uppercase font-semibold mb-0.5">Próximo Reajuste</div>
-            <div className="font-semibold text-amber-700">{proxReaj ?? "–"}</div>
-          </div>
-          <div className="rounded-lg bg-white border border-amber-200 px-3 py-2">
-            <div className="text-slate-500 text-[10px] uppercase font-semibold mb-0.5">
-              Reajuste {tr.indice_adotado ?? "IPCA"}
-              {ipcaResult && (
-                <span className="text-slate-400 ml-1">({ipcaResult.periodoInicio}–{ipcaResult.periodoFim})</span>
-              )}
-            </div>
-            {ipcaResult === undefined ? (
-              <div className="text-slate-400 animate-pulse">Calculando…</div>
-            ) : ipcaResult === null ? (
-              <div className="text-slate-400 text-[10px]">
-                Calcule em{" "}
-                {calcUrl && (
-                  <a href={calcUrl} target="_blank" rel="noopener noreferrer"
-                    className="text-sky-600 hover:underline font-medium">
-                    Calculadora BCB ↗
-                  </a>
-                )}
-              </div>
-            ) : (
-              <div>
-                <span className="font-bold text-emerald-700 text-sm">
-                  +{ipcaResult.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
-                </span>
-                {calcUrl && (
-                  <a href={calcUrl} target="_blank" rel="noopener noreferrer"
-                    className="ml-2 text-[10px] text-sky-600 hover:underline">
-                    Calculadora ↗
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="text-xs text-amber-700">
-          TR registrado sem dados de reajuste extraídos. Reenvie o arquivo PDF do TR.
-        </div>
-      )}
     </div>
   );
 }

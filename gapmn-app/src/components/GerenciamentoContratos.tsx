@@ -520,26 +520,26 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     <div className="space-y-4">
 
       {/* Cabeçalho */}
-      <Card>
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="font-semibold text-slate-900">Gerenciamento de Contratos</div>
-            <div className="text-sm text-slate-500">
+            <div className="text-sm font-bold text-slate-800">Gerenciamento de Contratos</div>
+            <div className="text-xs text-slate-400 mt-0.5">
               {contratos.length} contrato{contratos.length !== 1 ? "s" : ""} cadastrado{contratos.length !== 1 ? "s" : ""}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {canImport && (
               <>
                 <button
                   onClick={() => { setShowCadastro((v) => !v); setPreview(null); }}
-                  className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100"
+                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
                 >
                   {showCadastro ? "Cancelar" : "+ Cadastrar"}
                 </button>
                 <button
                   onClick={() => { setPreview(null); fileInputRef.current?.click(); }}
-                  className="rounded-xl bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700"
+                  className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 transition-colors"
                 >
                   Importar Excel
                 </button>
@@ -554,7 +554,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   onClick={clearExcelContratos}
                   disabled={clearingExcel || loading}
                   title="Remove todos os contratos importados via Excel e permite reimportar com os dados corrigidos"
-                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                  className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60 transition-colors"
                 >
                   {clearingExcel ? "Removendo..." : "Limpar Importados"}
                 </button>
@@ -563,16 +563,16 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
             <button
               onClick={load}
               disabled={loading}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-60 transition-colors"
             >
-              {loading ? "Carregando..." : "Atualizar"}
+              {loading ? "Carregando..." : "↻ Atualizar"}
             </button>
           </div>
         </div>
         {err && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>
         )}
-      </Card>
+      </div>
 
       {/* Prévia de importação */}
       {preview && (

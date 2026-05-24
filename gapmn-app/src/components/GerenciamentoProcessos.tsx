@@ -652,46 +652,29 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
       )}
 
       {/* Cabeçalho */}
-      <Card>
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="font-semibold text-slate-900">Gerenciamento de Processos</div>
-            <div className="text-sm text-slate-500">
-              UASG 120630 •{" "}
+            <div className="text-sm font-bold text-slate-800">Gerenciamento de Processos</div>
+            <div className="text-xs text-slate-400 mt-0.5">
+              UASG 120630 ·{" "}
               {lastSync
                 ? `Última sincronização: ${fmtDateTime(lastSync)}`
                 : "Ainda não sincronizado — clique em Sincronizar"}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {canImport && subTab === "publicados" && (
-              <>
-                <button
-                  onClick={() => setShowCadastro((v) => !v)}
-                  className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100"
-                >
-                  {showCadastro ? "Cancelar" : "+ Cadastrar Processo"}
-                </button>
-                <button
-                  onClick={handleSync}
-                  disabled={syncing || loading}
-                  className="rounded-xl bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-60"
-                >
-                  {syncing ? "Sincronizando..." : "Sincronizar"}
-                </button>
-              </>
-            )}
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={() => loadSheets()}
               disabled={loadingSheet}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-60 transition-colors"
             >
-              {loadingSheet ? "Carregando..." : "↺ Atualizar planilha"}
+              {loadingSheet ? "Carregando..." : "↻ Atualizar planilha"}
             </button>
             {canImport && (
               <button
                 onClick={() => { setShowSheetCfg((v) => !v); setSheetInput(sheetId); }}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
                 title="Configurar planilha"
               >
                 ⚙
@@ -772,9 +755,9 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
             </button>
           ))}
         </div>
-      </Card>
+      </div>
 
-      {/* ══════════════════ SUB-ABA: PUBLICADOS ══════════════════ */}
+      {/* ══════════════════ SUB-ABA: PUBLICADOS — PNCP ══════════════════ */}
       {subTab === "publicados" && (
         <>
           {/* Formulário de cadastro manual */}
