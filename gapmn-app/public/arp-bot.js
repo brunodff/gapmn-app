@@ -127,6 +127,14 @@
       if (rows.length>100) log('  ✓ lote '+Math.min(i+100,rows.length)+'/'+rows.length);
     }
   }
+  async function sPatch(table, filter, body) {
+    var r = await fetch(SUPA_URL+'/rest/v1/'+table+'?'+filter, {
+      method:'PATCH',
+      headers:Object.assign({},H,{'Content-Type':'application/json',Prefer:'return=minimal'}),
+      body:JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('PATCH '+table+' '+r.status+': '+await r.text());
+  }
 
   // ── extração de linhas da lista (página principal) ─────────────────────────
   function extractRows() {
@@ -514,17 +522,31 @@
     }
     log('  📄 '+finalUrl.slice(-45)+' ('+k+' polls)', '#4ade80');
 
-    // 6. Guard + scrape
+    // 6. Guard + scrape + captura numero_compra
     var itens = [];
+    var numeroCompra = null;
     try {
       if (!/\/show/i.test(finalUrl)) {
         log('  ⚠ URL não é /show — skip', '#f87171');
         return [];
       }
+      // Extrai "Compra: 90049/2025" do texto da página
+      var pgTxt = (_workerWin.document.body||{innerText:''}).innerText||'';
+      var compraM = pgTxt.match(/Compra\s*:\s*([\d]+\/\d{4})/i);
+      if (compraM) { numeroCompra = compraM[1]; log('  🛒 Compra: '+numeroCompra, '#a3e635'); }
       itens = scrapeItens(_workerWin.document, ata.numero_ata);
     } catch(e) { log('  ⚠ scrape: '+e.message, '#f87171'); }
 
-    // 7. Volta para a lista
+    // 7. Salva numero_compra na ATA
+    if (numeroCompra) {
+      try {
+        await sPatch('atas_gap_mn',
+          'numero_ata=eq.'+encodeURIComponent(ata.numero_ata),
+          { numero_compra: numeroCompra });
+      } catch(e) { log('  ⚠ compra PATCH: '+e.message, '#fbbf24'); }
+    }
+
+    // 8. Volta para a lista
     try { _workerWin.history.back(); } catch(e) {}
     await wait(1500);
 
