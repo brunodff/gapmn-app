@@ -21,7 +21,7 @@ type UserHeader = {
   avatarKey?: string | null;
   setor?: "SEO" | "SCON" | "SLIC" | "ADMIN" | null;
 };
-type KPIs = { empenhos: number; processos: number; contratos: number; il: number };
+type KPIs = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
 
 function formatSetor(s: string | null | undefined): string {
   switch ((s ?? "").toUpperCase()) {
@@ -93,6 +93,15 @@ function IcIndicator({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IcAta({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
     </svg>
   );
 }
@@ -206,7 +215,7 @@ export default function AppChat() {
   const nav = useNavigate();
   const [me, setMe] = useState<UserHeader>({ nome: "Usuário" });
   const [loggingOut, setLoggingOut] = useState(false);
-  const [kpis, setKpis] = useState<KPIs>({ empenhos: 0, processos: 0, contratos: 0, il: 0 });
+  const [kpis, setKpis] = useState<KPIs>({ empenhos: 0, processos: 0, contratos: 0, il: 0, atas: 0 });
 
   const { state: pushState, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePush(me.id ?? null);
 
@@ -232,17 +241,27 @@ export default function AppChat() {
       setMe({ id: user.id, nome, avatarKey, setor: setorP });
 
       // Contagens para KPIs
-      const [r1, r2, r3, r4] = await Promise.all([
-        supabase.from("empenhos_seo").select("*", { count: "exact", head: true }),
+      const today = new Date().toISOString().split("T")[0];
+      const [r1, r2, r3, r4, r5] = await Promise.all([
+        supabase.from("empenhos_seo").select("nota_empenho").order("nota_empenho", { ascending: false }).limit(1),
         supabase.from("processos_licitatorios").select("*", { count: "exact", head: true }),
         supabase.from("contratos_scon").select("*", { count: "exact", head: true }),
         supabase.from("indicadores_lotacao").select("*", { count: "exact", head: true }),
+        supabase.from("atas_gap_mn").select("*", { count: "exact", head: true })
+          .gte("vigencia_final", today)
+          .not("situacao", "ilike", "%cancelad%"),
       ]);
+
+      // Extrai o número sequencial da última NE (ex: "2026NE000700" → 700)
+      const lastNE: string = (r1.data?.[0] as any)?.nota_empenho ?? "";
+      const neNum = parseInt(lastNE.replace(/\D/g, "").slice(-6) || "0", 10);
+
       setKpis({
-        empenhos:  r1.count ?? 0,
+        empenhos:  neNum,
         processos: r2.count ?? 0,
         contratos: r3.count ?? 0,
         il:        r4.count ?? 0,
+        atas:      r5.count ?? 0,
       });
     })();
   }, []);
@@ -353,11 +372,12 @@ export default function AppChat() {
           </div>
 
           {/* KPI cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0 w-full md:w-auto md:min-w-[380px]">
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-3 flex-shrink-0 w-full md:w-auto">
             <KpiCard icon={<IcCoins />}     value={kpis.empenhos}  label="Empenhos"  color="#2563EB" />
             <KpiCard icon={<IcProcess />}   value={kpis.processos} label="Processos" color="#7C3AED" />
             <KpiCard icon={<IcContract />}  value={kpis.contratos} label="Contratos" color="#0F9B6B" />
             <KpiCard icon={<IcIndicator />} value={kpis.il}        label="IL"        color="#F59E0B" />
+            <KpiCard icon={<IcAta />}       value={kpis.atas}      label="ATAs Ativas" color="#E11D48" />
           </div>
         </div>
       </motion.div>
@@ -414,31 +434,10 @@ export default function AppChat() {
           style={{ borderColor: P.border, boxShadow: "0 2px 12px rgba(15,23,42,0.05)" }}
         >
           <div className="px-5 pt-5 pb-3 border-b" style={{ borderColor: P.border }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-bold" style={{ color: P.text }}>Atualizações</h2>
-                <p className="text-xs mt-0.5" style={{ color: P.muted }}>
-                  Atividades recentes do sistema
-                </p>
-              </div>
-              {canCreateFeed && (
-                <motion.button
-                  whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => {/* handled by FeedNoticias */}}
-                  className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{
-                    background:  `linear-gradient(135deg, ${P.accent} 0%, #1D4ED8 100%)`,
-                    boxShadow:   "0 2px 8px rgba(37,99,235,0.3)",
-                  }}
-                >
-                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <line x1="12" y1="5" x2="12" y2="19" strokeLinecap="round" />
-                    <line x1="5" y1="12" x2="19" y2="12" strokeLinecap="round" />
-                  </svg>
-                  Nova
-                </motion.button>
-              )}
-            </div>
+            <h2 className="text-sm font-bold" style={{ color: P.text }}>Atualizações</h2>
+            <p className="text-xs mt-0.5" style={{ color: P.muted }}>
+              Atividades recentes do sistema
+            </p>
           </div>
           <div className="p-5">
             <FeedNoticias

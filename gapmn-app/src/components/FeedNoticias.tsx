@@ -54,7 +54,6 @@ interface Props {
 }
 
 export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Props) {
-  const [modo,     setModo]     = useState<"geral" | "meus">("geral");
   const [items,    setItems]    = useState<FeedItem[]>([]);
   const [notifs,   setNotifs]   = useState<UserNotif[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -139,48 +138,21 @@ export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Prop
 
   return (
     <div className="space-y-3">
-      {/* Cabeçalho + toggle */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="text-sm font-semibold text-slate-700">Atualizações</h3>
-
-        {isLoggedIn && (
-          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-0.5 text-xs">
-            <button
-              onClick={() => setModo("geral")}
-              className={`rounded-lg px-2.5 py-1 transition-colors ${
-                modo === "geral" ? "bg-white shadow-sm font-medium text-slate-800" : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              Todas
-            </button>
-            <button
-              onClick={() => { setModo("meus"); if (unread > 0) marcarLidas(); }}
-              className={`relative rounded-lg px-2.5 py-1 transition-colors ${
-                modo === "meus" ? "bg-white shadow-sm font-medium text-slate-800" : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              Meus acompanhamentos
-              {unread > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold text-white">
-                  {unread}
-                </span>
-              )}
-            </button>
-          </div>
-        )}
-
-        {canCreate && modo === "geral" && (
+      {/* Cabeçalho */}
+      {canCreate && (
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-700">Atualizações</h3>
           <button
             onClick={() => setShowForm((v) => !v)}
             className="text-xs text-sky-600 hover:text-sky-800 font-medium border border-sky-200 rounded-lg px-2 py-0.5"
           >
             {showForm ? "Cancelar" : "+ Nova"}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Form criação */}
-      {showForm && canCreate && modo === "geral" && (
+      {showForm && canCreate && (
         <form onSubmit={handleCreate} className="rounded-xl border border-slate-200 bg-white p-3 space-y-2 text-xs">
           <input value={fTitulo} onChange={(e) => setFTitulo(e.target.value)}
             placeholder="Título*" required
@@ -214,14 +186,13 @@ export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Prop
       )}
 
       {/* Lista — Feed geral */}
-      {modo === "geral" && (
-        loading ? (
-          <div className="text-xs text-slate-400 animate-pulse py-2">Carregando...</div>
-        ) : items.length === 0 ? (
-          <div className="text-xs text-slate-400 py-2">Nenhuma atualização recente.</div>
-        ) : (
-          <div className="space-y-2">
-            {items.map((item) => (
+      {loading ? (
+        <div className="text-xs text-slate-400 animate-pulse py-2">Carregando...</div>
+      ) : items.length === 0 ? (
+        <div className="text-xs text-slate-400 py-2">Nenhuma atualização recente.</div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
               <div key={item.id} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm hover:border-slate-200 transition-colors">
                 <div className="flex items-start gap-2.5">
                   <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
@@ -271,59 +242,7 @@ export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Prop
             ))}
           </div>
         )
-      )}
-
-      {/* Lista — Meus acompanhamentos */}
-      {modo === "meus" && (
-        notifs.length === 0 ? (
-          <div className="text-xs text-slate-400 py-4 text-center">
-            Nenhuma alteração nos seus acompanhamentos ainda.<br />
-            <span className="text-[11px]">Quando um item que você acompanha for atualizado, aparecerá aqui.</span>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {notifs.map((n) => (
-              <div key={n.id} className={`rounded-xl border p-3 shadow-sm transition-colors ${n.lida ? "bg-white border-slate-100" : "bg-sky-50 border-sky-200"}`}>
-                <div className="flex items-start gap-2.5">
-                  <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                    n.tipo === "contrato"  ? "bg-sky-100"    :
-                    n.tipo === "processo"  ? "bg-violet-100" :
-                    n.tipo === "empenho"   ? "bg-emerald-100":
-                    n.tipo === "indicador" ? "bg-amber-100"  : "bg-slate-100"
-                  }`}>
-                    {TIPO_ICONS[n.tipo] ?? "🔔"}
-                    {!n.lida && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sky-500" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {n.mensagem.split("\n").map((line, i) => (
-                      <div key={i} className={`break-words leading-snug ${
-                        i === 0
-                          ? n.lida ? "text-sm text-slate-700" : "text-sm font-medium text-slate-900"
-                          : "text-xs text-slate-600 mt-0.5"
-                      }`}>
-                        {line}
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <time className="text-[11px] text-slate-400" title={new Date(n.created_at).toLocaleString("pt-BR")}>
-                        {fmtRelDate(n.created_at)}
-                      </time>
-                      {tipoLink[n.tipo] && isLoggedIn && (
-                        <button
-                          onClick={() => onNavigate?.(tipoLink[n.tipo])}
-                          className="text-xs text-sky-600 hover:text-sky-800 font-medium whitespace-nowrap"
-                        >
-                          Ver →
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      )}
+      }
     </div>
   );
 }
