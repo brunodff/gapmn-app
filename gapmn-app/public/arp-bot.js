@@ -530,10 +530,33 @@
         log('  ⚠ URL não é /show — skip', '#f87171');
         return [];
       }
-      // Extrai "Compra: 90049/2025" do texto da página
-      var pgTxt = (_workerWin.document.body||{innerText:''}).innerText||'';
-      var compraM = pgTxt.match(/Compra\s*:\s*([\d]+\/\d{4})/i);
-      if (compraM) { numeroCompra = compraM[1]; log('  🛒 Compra: '+numeroCompra, '#a3e635'); }
+      // Extrai "Compra: 90049/2025" — DOM approach (innerText falha em aba oculta)
+      // Abordagem 1: acha o <td>/<th> com texto exato "Compra:" e lê o próximo sibling
+      try {
+        var labelEls = [..._workerWin.document.querySelectorAll('td,th,dt,label,span,div')];
+        for (var ci = 0; ci < labelEls.length; ci++) {
+          var lbl = (labelEls[ci].textContent||'').trim();
+          if (/^Compra\s*:?\s*$/.test(lbl)) {
+            var valEl = labelEls[ci].nextElementSibling;
+            if (!valEl && labelEls[ci].parentElement) {
+              var parNext = labelEls[ci].parentElement.nextElementSibling;
+              if (parNext) valEl = parNext.querySelector('td,dd,span') || parNext;
+            }
+            if (valEl) {
+              var vt = (valEl.textContent||'').trim();
+              if (/^\d{4,6}\/\d{4}$/.test(vt)) { numeroCompra = vt; break; }
+            }
+          }
+        }
+      } catch(ce) {}
+      // Abordagem 2 (fallback): textContent do body — NÃO innerText (vazio em aba oculta)
+      if (!numeroCompra) {
+        var pgTxt = (_workerWin.document.body||{textContent:''}).textContent||'';
+        var compraM = pgTxt.match(/\bCompra\s*:\s*([\d]{4,6}\/\d{4})/i);
+        if (compraM) numeroCompra = compraM[1];
+      }
+      if (numeroCompra) log('  🛒 Compra: '+numeroCompra, '#a3e635');
+      else log('  ⚠ numero_compra não encontrado', '#fbbf24');
       itens = scrapeItens(_workerWin.document, ata.numero_ata);
     } catch(e) { log('  ⚠ scrape: '+e.message, '#f87171'); }
 
