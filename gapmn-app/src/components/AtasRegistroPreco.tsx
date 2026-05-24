@@ -185,6 +185,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
   const [ipcaMap, setIpcaMap]   = useState<Map<string, IpcaResult | null>>(new Map());
   const [sortByReajuste, setSortByReajuste] = useState(false);
   const [apostilamentoAta, setApostilamentoAta] = useState<string | null>(null);
+  const [previewAta,       setPreviewAta]       = useState<string | null>(null);
 
   // upload de Termo de Referência
   const fileInputRef                          = useRef<HTMLInputElement>(null);
@@ -245,10 +246,11 @@ export default function AtasRegistroPreco({ canSync }: Props) {
 
   useEffect(() => { loadAtas(); }, [loadAtas]);
 
-  // Carrega IPCA ao abrir apostilamento
+  // Carrega IPCA e itens ao abrir o card de prévia (ou o modal direto)
   useEffect(() => {
-    if (!apostilamentoAta) return;
-    const compra = compraMap.get(apostilamentoAta);
+    const ata = previewAta ?? apostilamentoAta;
+    if (!ata) return;
+    const compra = compraMap.get(ata);
     if (!compra) return;
     const tr = comprasTrMap.get(compra);
     if (!tr?.data_orcamento) return;
@@ -258,17 +260,17 @@ export default function AtasRegistroPreco({ canSync }: Props) {
         setIpcaMap((prev) => new Map(prev).set(compra, result));
       });
     }
-    if (!itensMap.has(apostilamentoAta)) {
-      setLoadingItens(apostilamentoAta);
+    if (!itensMap.has(ata)) {
+      setLoadingItens(ata);
       supabase.from("itens_ata_gap_mn").select("*")
-        .eq("ata_numero", apostilamentoAta).order("numero_ata")
+        .eq("ata_numero", ata).order("numero_ata")
         .then(({ data }) => {
-          setItensMap((prev) => new Map(prev).set(apostilamentoAta, (data as ItemAta[]) ?? []));
+          setItensMap((prev) => new Map(prev).set(ata, (data as ItemAta[]) ?? []));
           setLoadingItens(null);
         });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apostilamentoAta]);
+  }, [previewAta, apostilamentoAta]);
 
   async function toggleAta(numeroAta: string) {
     if (expanded === numeroAta) { setExpanded(null); return; }
@@ -420,6 +422,23 @@ export default function AtasRegistroPreco({ canSync }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Card de prévia do apostilamento */}
+      {previewAta && (() => {
+        const compra = compraMap.get(previewAta) ?? null;
+        const tr     = compra ? (comprasTrMap.get(compra) ?? null) : null;
+        const ipca   = compra ? ipcaMap.get(compra) : undefined;
+        return (
+          <ApostilamentoPreviewCard
+            numeroAta={previewAta}
+            compra={compra}
+            tr={tr}
+            ipcaResult={ipca}
+            onClose={() => setPreviewAta(null)}
+            onOpenDoc={() => { setApostilamentoAta(previewAta); setPreviewAta(null); }}
+          />
+        );
+      })()}
+
       {/* Modal de Apostilamento */}
       {apostilamentoAta && (() => {
         const compra = compraMap.get(apostilamentoAta) ?? null;
@@ -590,7 +609,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                           <div className="flex items-center justify-center gap-1 flex-wrap">
                             {tr?.data_orcamento && (
                               <button
-                                onClick={() => setApostilamentoAta(a.numero_ata)}
+                                onClick={() => setPreviewAta(a.numero_ata)}
                                 className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-300 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100 font-medium whitespace-nowrap"
                                 title="Gerar Termo de Apostilamento com cálculo de reajuste"
                               >
@@ -765,6 +784,98 @@ function saveAptCfg(cfg: AptConfig) {
   try { localStorage.setItem(LS_APT, JSON.stringify(cfg)); } catch {}
 }
 
+// ── Card de prévia do apostilamento ───────────────────────────────────────
+function ApostilamentoPreviewCard({
+  numeroAta, compra, tr, ipcaResult, onClose, onOpenDoc,
+}: {
+  numeroAta: string;
+  compra: string | null;
+  tr: CompraTR | null;
+  ipcaResult?: IpcaResult | null; // undefined = carregando, null = sem resultado
+  onClose: () => void;
+  onOpenDoc: () => void;
+}) {
+  const loading = ipcaResult === undefined;
+  const pct = ipcaResult
+    ? ipcaResult.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-amber-50">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📜</span>
+            <div>
+              <div className="text-sm font-bold text-slate-800">Termo de Apostilamento</div>
+              <div className="text-xs text-slate-500">ATA Nº {numeroAta}{compra ? ` · Pregão ${compra}` : ""}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl px-1 leading-none">✕</button>
+        </div>
+
+        {/* Dados */}
+        <div className="p-5 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+              <div className="text-[11px] font-semibold text-slate-400 uppercase mb-1">Nº Compra (Pregão)</div>
+              <div className="text-sm font-mono font-semibold text-slate-800">{compra ?? "–"}</div>
+            </div>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+              <div className="text-[11px] font-semibold text-slate-400 uppercase mb-1">Data do Orçamento</div>
+              <div className="text-sm font-semibold text-slate-800">{tr?.data_orcamento ? fmtDate(tr.data_orcamento) : "–"}</div>
+            </div>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+              <div className="text-[11px] font-semibold text-slate-400 uppercase mb-1">Índice Adotado</div>
+              <div className="text-sm font-semibold text-slate-800">{tr?.indice_adotado ?? "IPCA"}</div>
+            </div>
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+              <div className="text-[11px] font-semibold text-amber-500 uppercase mb-1">Percentual Calculado</div>
+              <div className="text-sm font-bold text-amber-800">
+                {loading
+                  ? <span className="animate-pulse text-slate-400">Calculando…</span>
+                  : pct
+                    ? `${pct}%`
+                    : "Não disponível"}
+              </div>
+            </div>
+          </div>
+
+          {ipcaResult && (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs text-emerald-800">
+              📊 IPCA acumulado de <strong>{ipcaResult.periodoInicio}</strong> a <strong>{ipcaResult.periodoFim}</strong>
+              {" "}· fator {ipcaResult.fator.toFixed(6)}
+            </div>
+          )}
+
+          {!tr?.data_orcamento && (
+            <div className="rounded-xl bg-yellow-50 border border-yellow-200 px-4 py-3 text-xs text-yellow-800">
+              ⚠️ Nenhum TR com data de orçamento foi inserido para esta ATA. Insira o Termo de Referência para calcular o reajuste automaticamente.
+            </div>
+          )}
+        </div>
+
+        {/* Ações */}
+        <div className="px-5 pb-5 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onOpenDoc}
+            className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white py-2.5 px-6 text-sm font-semibold transition-colors"
+          >
+            📄 Abrir Documento
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Modal de Apostilamento ─────────────────────────────────────────────────
 function ApostilamentoModal({
   numeroAta, compra, itens, loadingItens, ipcaResult, onClose,
@@ -780,6 +891,29 @@ function ApostilamentoModal({
   const [cfg,     setCfg]     = useState<AptConfig>(loadAptCfg);
   const [draft,   setDraft]   = useState<AptConfig>(loadAptCfg);
   const [showCfg, setShowCfg] = useState(false);
+  const docRef = useRef<HTMLDivElement>(null);
+
+  function handlePrint() {
+    const el = docRef.current;
+    if (!el) { window.print(); return; }
+    const pw = window.open("", "_blank", "width=900,height=700");
+    if (!pw) { window.print(); return; }
+    pw.document.write(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Termo de Apostilamento — ATA ${numeroAta}</title>
+<style>
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
+  body { margin: 0; padding: 0; background: #fff; font-family: Arial, Helvetica, sans-serif; }
+  @page { size: A4; margin: 0; }
+  table { border-collapse: collapse; }
+</style>
+</head>
+<body>${el.outerHTML}<script>window.onload=function(){window.print();};<\/script></body>
+</html>`);
+    pw.document.close();
+  }
 
   // Itens agrupados por fornecedor
   const byFornecedor = useMemo(() => {
@@ -852,7 +986,7 @@ function ApostilamentoModal({
             ✏️ {showCfg ? "Fechar painel" : "Editar campos"}
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={handlePrint}
             className="flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition-colors"
           >
             🖨 Imprimir / PDF
@@ -897,13 +1031,19 @@ function ApostilamentoModal({
 
         {/* Área do documento */}
         <div className="flex-1 overflow-y-auto py-8 px-4 print:p-0 print:overflow-visible flex justify-center">
-          <div style={docStyle} className="shadow-xl print:shadow-none">
+          <div ref={docRef} style={docStyle} className="shadow-xl print:shadow-none">
 
             {/* Timbre */}
-            <div style={{ textAlign: "center", borderBottom: "2px solid #003366", paddingBottom: "10pt", marginBottom: "14pt" }}>
-              <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#003366" }}>MINISTÉRIO DA DEFESA</div>
-              <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#003366" }}>COMANDO DA AERONÁUTICA</div>
-              <div style={{ fontSize: "10pt", fontWeight: "bold", color: "#003366" }}>GRUPAMENTO DE APOIO DE MANAUS</div>
+            <div style={{ textAlign: "center", borderBottom: "2px solid #000", paddingBottom: "10pt", marginBottom: "14pt" }}>
+              <img
+                src="/brasao.png"
+                alt="Brasão da República Federativa do Brasil"
+                style={{ height: "55pt", display: "block", margin: "0 auto 6pt" }}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+              />
+              <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#000" }}>MINISTÉRIO DA DEFESA</div>
+              <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#000" }}>COMANDO DA AERONÁUTICA</div>
+              <div style={{ fontSize: "10pt", fontWeight: "bold", color: "#000" }}>GRUPAMENTO DE APOIO DE MANAUS</div>
             </div>
 
             {/* Título */}
@@ -922,37 +1062,30 @@ function ApostilamentoModal({
             {/* Parágrafo de abertura */}
             <p style={{ textAlign: "justify", marginBottom: "14pt" }}>
               O GRUPAMENTO DE APOIO DE MANAUS, com sede em AV. PRESIDENTE KENNEDY, 1700 MANAUS-AM,
-              inscrito(a) no CNPJ/MF sob o n.º 00.394.429/0188-24, neste ato representado pela{" "}
-              <strong>{cfg.representanteNome}</strong>, nomeado(a) pela{" "}
-              <strong>{cfg.representantePortaria}</strong>, publicada no{" "}
-              <strong>{cfg.representanteBoletim}</strong>, inscrito(a) no CPF sob o n.º{" "}
-              <strong>{cfg.representanteCpf}</strong>, portador(a) da Carteira de Identidade n.º{" "}
-              <strong>{cfg.representanteIdentidade}</strong>, considerando o julgamento da licitação na
-              modalidade de pregão, na forma eletrônica, para REGISTRO DE PREÇOS n.º{" "}
-              <strong>{compra ?? "________"}</strong>, publicada no Diário Oficial de{" "}
-              <strong>{cfg.dofReferencia}</strong>, processo administrativo{" "}
-              <strong>{cfg.processoAdm || "________________"}</strong>, RESOLVE lavrar o presente Termo de
-              Apostilamento à Ata de Registro de Preços n.º <strong>{numeroAta}</strong>, em conformidade com as
-              disposições a seguir:
+              inscrito(a) no CNPJ/MF sob o n.º 00.394.429/0188-24, neste ato representado
+              pela {cfg.representanteNome}, nomeado(a) pela {cfg.representantePortaria}, publicada
+              no {cfg.representanteBoletim}, inscrito(a) no CPF sob o n.º {cfg.representanteCpf},
+              portador(a) da Carteira de Identidade n.º {cfg.representanteIdentidade}, considerando
+              o julgamento da licitação na modalidade de pregão, na forma eletrônica, para REGISTRO
+              DE PREÇOS n.º {compra ?? "________"}, publicada no Diário Oficial
+              de {cfg.dofReferencia}, processo administrativo {cfg.processoAdm || "________________"},
+              RESOLVE lavrar o presente Termo de Apostilamento à Ata de Registro de Preços
+              n.º {numeroAta}, em conformidade com as disposições a seguir:
             </p>
 
             {/* 1. DO OBJETO */}
             <p style={{ fontWeight: "bold", marginBottom: "6pt" }}>1. DO OBJETO</p>
             <p style={{ textAlign: "justify", marginBottom: "10pt" }}>
-              1.1 O presente instrumento tem por objeto formalizar o reajuste de preços dos itens registrados na
-              Ata de Registro de Preços n.º <strong>{numeroAta}</strong> com fulcro no art. 136, inciso I, da Lei
-              n.º 14.133/2021, visando à recomposição do valor aquisitivo da moeda.
+              1.1 O presente instrumento tem por objeto formalizar o reajuste de preços dos itens
+              registrados na Ata de Registro de Preços n.º {numeroAta} com fulcro no art. 136,
+              inciso I, da Lei n.º 14.133/2021, visando à recomposição do valor aquisitivo da moeda.
             </p>
             <p style={{ textAlign: "justify", marginBottom: "16pt" }}>
-              1.2. O reajuste decorre do transcurso do interregno de 12 (doze) meses e foi calculado com base
-              na variação do índice IPCA, acumulado no período de{" "}
-              <strong>
-                {ipcaResult?.periodoInicio ?? "______"} a {ipcaResult?.periodoFim ?? "______"}
-              </strong>
-              , correspondente ao percentual de{" "}
-              <strong>
-                {pct}%{cfg.percentualExtenso ? ` (${cfg.percentualExtenso})` : ""}
-              </strong>.
+              1.2. O reajuste decorre do transcurso do interregno de 12 (doze) meses e foi calculado
+              com base na variação do índice IPCA, acumulado no período
+              de {ipcaResult?.periodoInicio ?? "______"} a {ipcaResult?.periodoFim ?? "______"},
+              correspondente ao percentual
+              de {pct}%{cfg.percentualExtenso ? ` (${cfg.percentualExtenso})` : ""}.
             </p>
 
             {/* Tabelas por fornecedor */}
@@ -969,24 +1102,24 @@ function ApostilamentoModal({
                 <div key={gi} style={{ marginBottom: "14pt" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
-                      <tr style={{ background: "#003366", color: "#fff" }}>
-                        <td colSpan={7} style={{ padding: "4pt 6pt", fontWeight: "bold", fontSize: "10pt" }}>
+                      <tr>
+                        <td colSpan={7} style={{ border: "1px solid #666", padding: "4pt 6pt", fontWeight: "bold", fontSize: "10pt", background: "#f0f0f0", color: "#000" }}>
                           RAZÃO: {grupo.razao.toUpperCase()}
                         </td>
                       </tr>
-                      <tr style={{ background: "#1a4d7a", color: "#fff" }}>
-                        <td colSpan={7} style={{ padding: "2pt 6pt", fontSize: "9pt" }}>
-                          CNPJ {grupo.cnpj}
+                      <tr>
+                        <td colSpan={7} style={{ border: "1px solid #666", borderTop: "none", padding: "2pt 6pt", fontSize: "9pt", background: "#fff", color: "#000" }}>
+                          CNPJ: {grupo.cnpj}
                         </td>
                       </tr>
-                      <tr style={{ background: "#c8d4e3", fontSize: "9pt", fontWeight: "bold", textAlign: "center" }}>
-                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "6%" }}>ITEM</th>
-                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "36%", textAlign: "left" }}>DESCRIÇÃO</th>
-                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "7%" }}>QTDE</th>
-                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "6%" }}>UND</th>
-                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "14%" }}>VALOR UNIT. ATUAL</th>
-                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "15%" }}>VALOR UNIT. REAJUSTADO</th>
-                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "16%" }}>VALOR TOTAL REAJUSTADO</th>
+                      <tr style={{ background: "#e0e0e0", fontSize: "9pt", fontWeight: "bold", textAlign: "center", color: "#000" }}>
+                        <th style={{ border: "1px solid #666", padding: "3pt 4pt", width: "6%" }}>ITEM</th>
+                        <th style={{ border: "1px solid #666", padding: "3pt 4pt", width: "36%", textAlign: "left" }}>DESCRIÇÃO</th>
+                        <th style={{ border: "1px solid #666", padding: "3pt 4pt", width: "7%" }}>QTDE</th>
+                        <th style={{ border: "1px solid #666", padding: "3pt 4pt", width: "6%" }}>UND</th>
+                        <th style={{ border: "1px solid #666", padding: "3pt 4pt", width: "14%" }}>VALOR UNIT. ATUAL</th>
+                        <th style={{ border: "1px solid #666", padding: "3pt 4pt", width: "15%" }}>VALOR UNIT. REAJUSTADO</th>
+                        <th style={{ border: "1px solid #666", padding: "3pt 4pt", width: "16%" }}>VALOR TOTAL REAJUSTADO</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -995,20 +1128,20 @@ function ApostilamentoModal({
                         const vuR = ipcaResult ? vu * ipcaResult.fator : null;
                         const tot = vuR != null ? vuR * (item.quantidade_registrada ?? 0) : null;
                         return (
-                          <tr key={item.id} style={{ background: j % 2 === 0 ? "#fff" : "#f5f7fa", fontSize: "9pt", verticalAlign: "top" }}>
-                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "center", fontWeight: "bold" }}>{item.numero_ata || String(j + 1).padStart(2, "0")}</td>
-                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt" }}>{item.descricao || "–"}</td>
-                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "center" }}>{fmtQtd(item.quantidade_registrada)}</td>
-                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "center" }}>UN</td>
-                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right" }}>{fmtBRL(item.valor_unitario)}</td>
-                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right", fontWeight: "bold" }}>{vuR != null ? fmtBRL(vuR) : "–"}</td>
-                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right", fontWeight: "bold" }}>{tot != null ? fmtBRL(tot) : "–"}</td>
+                          <tr key={item.id} style={{ background: j % 2 === 0 ? "#fff" : "#f9f9f9", fontSize: "9pt", verticalAlign: "top", color: "#000" }}>
+                            <td style={{ border: "1px solid #999", padding: "3pt 4pt", textAlign: "center" }}>{item.numero_ata || String(j + 1).padStart(2, "0")}</td>
+                            <td style={{ border: "1px solid #999", padding: "3pt 4pt" }}>{item.descricao || "–"}</td>
+                            <td style={{ border: "1px solid #999", padding: "3pt 4pt", textAlign: "center" }}>{fmtQtd(item.quantidade_registrada)}</td>
+                            <td style={{ border: "1px solid #999", padding: "3pt 4pt", textAlign: "center" }}>UN</td>
+                            <td style={{ border: "1px solid #999", padding: "3pt 4pt", textAlign: "right" }}>{fmtBRL(item.valor_unitario)}</td>
+                            <td style={{ border: "1px solid #999", padding: "3pt 4pt", textAlign: "right" }}>{vuR != null ? fmtBRL(vuR) : "–"}</td>
+                            <td style={{ border: "1px solid #999", padding: "3pt 4pt", textAlign: "right" }}>{tot != null ? fmtBRL(tot) : "–"}</td>
                           </tr>
                         );
                       })}
-                      <tr style={{ background: "#e4eaf2", fontWeight: "bold", fontSize: "9pt" }}>
-                        <td colSpan={6} style={{ border: "1px solid #ccc", padding: "3pt 6pt", textAlign: "right" }}>TOTAL:</td>
-                        <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right" }}>{fmtBRL(totalGrupo)}</td>
+                      <tr style={{ background: "#ebebeb", fontWeight: "bold", fontSize: "9pt", color: "#000" }}>
+                        <td colSpan={6} style={{ border: "1px solid #999", padding: "3pt 6pt", textAlign: "right" }}>TOTAL:</td>
+                        <td style={{ border: "1px solid #999", padding: "3pt 4pt", textAlign: "right" }}>{fmtBRL(totalGrupo)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1019,9 +1152,9 @@ function ApostilamentoModal({
             {/* 2. DA RATIFICAÇÃO */}
             <p style={{ fontWeight: "bold", marginTop: "16pt", marginBottom: "6pt" }}>2. DA RATIFICAÇÃO</p>
             <p style={{ textAlign: "justify", marginBottom: "16pt" }}>
-              2.1. Ficam ratificadas e inalteradas todas as demais cláusulas, condições e prazos estabelecidos na
-              Ata de Registro de Preços n.º <strong>{numeroAta}</strong> e em seus anexos, que não colidam com as
-              disposições do presente Termo de Apostilamento.
+              2.1. Ficam ratificadas e inalteradas todas as demais cláusulas, condições e prazos
+              estabelecidos na Ata de Registro de Preços n.º {numeroAta} e em seus anexos, que não
+              colidam com as disposições do presente Termo de Apostilamento.
             </p>
 
             {/* 3. DA DIVULGAÇÃO */}
@@ -1048,8 +1181,8 @@ function ApostilamentoModal({
               ].map((sig, i) => (
                 <div key={i} style={{ textAlign: "center" }}>
                   <div style={{ borderTop: "1px solid #000", paddingTop: "4pt", minWidth: "220pt", display: "inline-block" }}>
-                    <div style={{ fontWeight: "bold", color: "#003366" }}>{sig.nome}</div>
-                    <div style={{ color: "#003366", fontSize: "9pt" }}>{sig.cargo}</div>
+                    <div style={{ fontWeight: "bold", color: "#000" }}>{sig.nome}</div>
+                    <div style={{ color: "#000", fontSize: "9pt" }}>{sig.cargo}</div>
                   </div>
                 </div>
               ))}
@@ -1059,17 +1192,6 @@ function ApostilamentoModal({
         </div>
       </div>
 
-      {/* CSS de impressão */}
-      <style>{`
-        @media print {
-          body > *:not([data-apt-root]) { display: none !important; }
-          [data-apt-root] { position: fixed !important; inset: 0 !important; overflow: visible !important; background: #fff !important; }
-          .print\\:hidden { display: none !important; }
-          .print\\:block { display: block !important; }
-          .print\\:p-0 { padding: 0 !important; }
-          .print\\:shadow-none { box-shadow: none !important; }
-        }
-      `}</style>
     </div>
   );
 }

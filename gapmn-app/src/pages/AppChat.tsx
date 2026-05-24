@@ -210,11 +210,143 @@ function NavCard({ onClick, iconBg, iconColor, titleColor, descColor, gradientFr
   );
 }
 
+// ── Modal de perfil ──────────────────────────────────────────────────────────
+const AVATAR_OPTIONS = [
+  "grad_homem", "grad_mulher", "oficial_homem", "oficial_mulher",
+  "sarg_homem",  "sarg_mulher",  "civil_homem",  "civil_mulher",
+];
+
+function ProfileModal({ userId, currentNome, currentAvatarKey, onClose, onSaved }: {
+  userId: string;
+  currentNome: string;
+  currentAvatarKey: string | null;
+  onClose: () => void;
+  onSaved: (nome: string, avatarKey: string | null) => void;
+}) {
+  const [nome,         setNome]         = useState(currentNome);
+  const [avatarKey,    setAvatarKey]    = useState<string | null>(currentAvatarKey);
+  const [novaSenha,    setNovaSenha]    = useState("");
+  const [confirmSenha, setConfirmSenha] = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [msg,          setMsg]          = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  async function salvar() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const { error: e1 } = await supabase
+        .from("profiles")
+        .update({ nome_guerra: nome.trim(), avatar_key: avatarKey })
+        .eq("id", userId);
+      if (e1) throw e1;
+
+      if (novaSenha) {
+        if (novaSenha !== confirmSenha) throw new Error("Senhas não conferem");
+        if (novaSenha.length < 6)       throw new Error("Senha muito curta (mínimo 6 caracteres)");
+        const { error: e2 } = await supabase.auth.updateUser({ password: novaSenha });
+        if (e2) throw e2;
+      }
+
+      setMsg({ type: "ok", text: "Perfil atualizado com sucesso!" });
+      onSaved(nome.trim(), avatarKey);
+    } catch (err: unknown) {
+      setMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="text-sm font-bold text-slate-800">✏️ Editar Perfil</div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl px-1 leading-none">✕</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Avatar */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-2">Avatar</label>
+            <div className="grid grid-cols-4 gap-2">
+              {AVATAR_OPTIONS.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setAvatarKey(k)}
+                  className={`rounded-xl border-2 overflow-hidden transition-all ${
+                    avatarKey === k ? "border-sky-500 shadow-md" : "border-slate-200 hover:border-sky-200"
+                  }`}
+                >
+                  <img
+                    src={`/${k}.png`}
+                    alt={k}
+                    className="w-full h-16 object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/grad_homem.png"; }}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Nome */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Nome de Guerra</label>
+            <input
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+            />
+          </div>
+
+          {/* Senha */}
+          <div className="border-t border-slate-100 pt-4 space-y-2">
+            <div className="text-xs font-semibold text-slate-500">Alterar senha (opcional)</div>
+            <input
+              type="password"
+              placeholder="Nova senha"
+              value={novaSenha}
+              onChange={(e) => setNovaSenha(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+            />
+            <input
+              type="password"
+              placeholder="Confirmar nova senha"
+              value={confirmSenha}
+              onChange={(e) => setConfirmSenha(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+            />
+          </div>
+
+          {msg && (
+            <div className={`rounded-lg px-3 py-2 text-xs ${
+              msg.type === "ok"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                : "bg-red-50 text-red-700 border border-red-200"
+            }`}>{msg.text}</div>
+          )}
+        </div>
+
+        <div className="px-5 pb-5">
+          <button
+            onClick={salvar}
+            disabled={saving}
+            className="w-full rounded-xl bg-sky-600 text-white py-2.5 text-sm font-semibold hover:bg-sky-700 transition-colors disabled:opacity-50"
+          >
+            {saving ? "Salvando…" : "Salvar alterações"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
 export default function AppChat() {
   const nav = useNavigate();
   const [me, setMe] = useState<UserHeader>({ nome: "Usuário" });
   const [loggingOut, setLoggingOut] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [kpis, setKpis] = useState<KPIs>({ empenhos: 0, processos: 0, contratos: 0, il: 0, atas: 0 });
 
   const { state: pushState, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePush(me.id ?? null);
@@ -288,6 +420,20 @@ export default function AppChat() {
   return (
     <div className="space-y-6">
 
+      {/* Modal de perfil */}
+      {showProfile && me.id && (
+        <ProfileModal
+          userId={me.id}
+          currentNome={me.nome}
+          currentAvatarKey={me.avatarKey ?? null}
+          onClose={() => setShowProfile(false)}
+          onSaved={(nome, avatarKey) => {
+            setMe((prev) => ({ ...prev, nome, avatarKey }));
+            setShowProfile(false);
+          }}
+        />
+      )}
+
       {/* ── Hero card do usuário ─────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: 18 }}
@@ -333,6 +479,16 @@ export default function AppChat() {
 
               {/* Botões de ação */}
               <div className="flex items-center gap-2 mt-3">
+                {/* Editar perfil */}
+                <button
+                  onClick={() => setShowProfile(true)}
+                  title="Editar perfil"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border transition-colors"
+                  style={{ borderColor: P.border, background: "white", color: P.muted, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
+                >
+                  ✏️
+                </button>
+
                 {pushState !== "unsupported" && (
                   <button
                     title={
