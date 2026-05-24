@@ -1,226 +1,572 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Home, FileText, Clipboard, Bookmark, Activity,
+  TrendingUp, BarChart2, Wrench, Bell, BellOff, LogOut,
+  ChevronLeft, ChevronRight, X, Menu, DollarSign, ArrowRight,
+} from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { usePush } from "../lib/usePush";
 import FeedNoticias from "../components/FeedNoticias";
 
-// ── Paleta ───────────────────────────────────────────────────────────────────
+// ─── Paleta ───────────────────────────────────────────────────
 const P = {
-  navy:   "#062B49",
-  accent: "#2563EB",
+  navy:   "#071B34",
+  fab:    "#0B4D91",
+  light:  "#EAF4FF",
+  ice:    "#F8FAFC",
+  border: "#E2E8F0",
   text:   "#0F172A",
   muted:  "#64748B",
-  border: "#E2E8F0",
+  gray:   "#94A3B8",
 };
 
-// ── Tipos ────────────────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────
 type UserHeader = {
   id?: string;
   nome: string;
   avatarKey?: string | null;
-  setor?: "SEO" | "SCON" | "SLIC" | "ADMIN" | null;
+  setor?: "SEO" | "SCON" | "SLIC" | "ADMIN" | "DEV" | null;
 };
 type KPIs = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
 
-function formatSetor(s: string | null | undefined): string {
+type Panel = {
+  id: string; title: string; icon: React.ElementType;
+  color: string; bg: string; path: string; desc: string;
+};
+
+function formatSetor(s?: string | null) {
   switch ((s ?? "").toUpperCase()) {
     case "SLIC":  return "Seção de Licitações";
     case "SEO":   return "Seção de Execução Orçamentária";
     case "SCON":  return "Seção de Contratos";
     case "ADMIN": return "Administração";
-    default:      return s ?? "-";
+    case "DEV":   return "Desenvolvimento";
+    default:      return s ?? "";
   }
 }
 
-// ── Ícones SVG ───────────────────────────────────────────────────────────────
-function IcClipboard({ className = "h-6 w-6" }: { className?: string }) {
+// ─── Nav ──────────────────────────────────────────────────────
+const NAV_MAIN = [
+  { id: "inicio",      label: "Início",                icon: Home,       path: "/app" },
+  { id: "contratos",   label: "Contratos",             icon: FileText,   path: "/setor?tab=contratos" },
+  { id: "processos",   label: "Processos",             icon: Clipboard,  path: "/setor?tab=processos" },
+  { id: "atas",        label: "Atas de RP",            icon: Bookmark,   path: "/setor?tab=atas" },
+  { id: "indicadores", label: "Indicadores de Lotação",icon: Activity,   path: "/setor?tab=indicadores" },
+  { id: "empenhos",    label: "Empenhos",              icon: DollarSign, path: "/setor?tab=empenhos" },
+  { id: "paineis",     label: "Painéis Gerenciais",    icon: BarChart2,  path: "/orcamento" },
+];
+
+// ─── Slides do card lateral ───────────────────────────────────
+const SLIDES = [
+  {
+    bg:       "linear-gradient(150deg, #0B4D91 0%, #071B34 100%)",
+    img:      "/acantus.png",
+    title:    "Acantus",
+    subtitle: "Símbolo da Intendência",
+    desc:     "Representa o aprimoramento constante da administração, do suprimento e do apoio logístico, garantindo eficiência e sustentabilidade às operações.",
+  },
+  {
+    bg:       "linear-gradient(150deg, #071B34 0%, #0B4D91 100%)",
+    img:      "/gapmn.png",
+    title:    "GAP-MN",
+    subtitle: "Grupamento de Apoio de Manaus",
+    desc:     "Responsável pelo apoio logístico e administrativo às organizações militares da Força Aérea Brasileira na região amazônica.",
+  },
+  {
+    bg:       "linear-gradient(150deg, #1a2f50 0%, #0B4D91 100%)",
+    img:      null,
+    title:    "Sistema de Gestão",
+    subtitle: "Controle e Transparência",
+    desc:     "Plataforma integrada para gestão de contratos, processos licitatórios, empenhos e indicadores operacionais do GAP-MN.",
+  },
+];
+
+// ─── Painéis ──────────────────────────────────────────────────
+const PANELS: Panel[] = [
+  { id: "orcamentario", title: "Painel Orçamentário", icon: BarChart2,  color: "#0B4D91", bg: "#EAF4FF", path: "/orcamento",             desc: "Crédito, dotação e execução orçamentária"  },
+  { id: "empenhos",     title: "Painel de Empenhos",  icon: DollarSign, color: "#16A34A", bg: "#F0FDF4", path: "/orcamento",             desc: "NEs SIAFI, perfis e acompanhamento"         },
+  { id: "rp",           title: "Painel de RP",        icon: TrendingUp, color: "#7C3AED", bg: "#F5F3FF", path: "/orcamento",             desc: "Restos a Pagar e liquidações"              },
+  { id: "processos",    title: "Painel de Processos", icon: Clipboard,  color: "#D97706", bg: "#FFFBEB", path: "/setor?tab=processos",   desc: "Licitações, pregões e SRPs"                },
+];
+
+// ─── Rotating Card ────────────────────────────────────────────
+function RotatingCard() {
+  const [cur, setCur] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setCur(c => (c + 1) % SLIDES.length), 15000);
+    return () => clearInterval(t);
+  }, []);
+  const s = SLIDES[cur];
+  const prev = () => setCur(c => (c - 1 + SLIDES.length) % SLIDES.length);
+  const next = () => setCur(c => (c + 1) % SLIDES.length);
+
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-      <rect x="9" y="3" width="6" height="4" rx="1" />
-      <line x1="9" y1="12" x2="15" y2="12" strokeLinecap="round" />
-      <line x1="9" y1="16" x2="13" y2="16" strokeLinecap="round" />
-    </svg>
-  );
-}
-function IcChart({ className = "h-6 w-6" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <rect x="3" y="12" width="4" height="9" rx="1" />
-      <rect x="10" y="7" width="4" height="14" rx="1" />
-      <rect x="17" y="3" width="4" height="18" rx="1" />
-    </svg>
-  );
-}
-function IcWrench({ className = "h-6 w-6" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
-  );
-}
-function IcCoins({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <circle cx="8" cy="14" r="5" />
-      <path d="M19 5c0 2.76-2.24 5-5 5" />
-      <path d="M14 5c0 2.76-2.24 5-5 5" strokeDasharray="2 2" />
-      <circle cx="16" cy="5" r="3" />
-    </svg>
-  );
-}
-function IcProcess({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-      <rect x="9" y="3" width="6" height="4" rx="1" />
-      <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function IcContract({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="8" y1="13" x2="16" y2="13" strokeLinecap="round" />
-      <line x1="8" y1="17" x2="12" y2="17" strokeLinecap="round" />
-    </svg>
-  );
-}
-function IcIndicator({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function IcAta({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M12 2L2 7l10 5 10-5-10-5z" />
-      <path d="M2 17l10 5 10-5" />
-      <path d="M2 12l10 5 10-5" />
-    </svg>
-  );
-}
-function IcBell({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-  );
-}
-function IcBellOff({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-      <path d="M18.63 13A17.89 17.89 0 0 1 18 8" />
-      <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14" />
-      <path d="M18 8a6 6 0 0 0-9.33-5" />
-      <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" />
-    </svg>
-  );
-}
-function IcLogout({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
-    </svg>
-  );
-}
-function IcArrow({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
+    <div className="relative rounded-2xl overflow-hidden" style={{ background: s.bg }}>
+      <AnimatePresence mode="wait">
+        <motion.div key={cur}
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.35 }}
+          className="px-4 pt-4 pb-1 text-center"
+        >
+          {s.img && (
+            <div className="flex justify-center mb-2.5">
+              <img src={s.img} alt={s.title} className="h-12 w-12 object-contain opacity-90"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+            </div>
+          )}
+          <div className="text-[13px] font-bold text-white leading-tight">{s.title}</div>
+          <div className="text-[10px] mt-0.5 mb-2" style={{ color: "rgba(255,255,255,0.55)" }}>{s.subtitle}</div>
+          <div className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.42)" }}>{s.desc}</div>
+        </motion.div>
+      </AnimatePresence>
+
+      <div className="flex justify-center gap-1 py-3">
+        {SLIDES.map((_, i) => (
+          <button key={i} onClick={() => setCur(i)}
+            className="rounded-full transition-all"
+            style={{ height: 4, width: i === cur ? 16 : 5, background: i === cur ? "white" : "rgba(255,255,255,0.22)" }} />
+        ))}
+      </div>
+
+      <button onClick={prev}
+        className="absolute left-1.5 top-[40%] rounded-full p-1 hover:bg-white/10 transition-colors"
+        style={{ background: "rgba(255,255,255,0.07)" }}>
+        <ChevronLeft size={13} className="text-white/60" />
+      </button>
+      <button onClick={next}
+        className="absolute right-1.5 top-[40%] rounded-full p-1 hover:bg-white/10 transition-colors"
+        style={{ background: "rgba(255,255,255,0.07)" }}>
+        <ChevronRight size={13} className="text-white/60" />
+      </button>
+    </div>
   );
 }
 
-// ── KPI card ─────────────────────────────────────────────────────────────────
-type KpiProps = { icon: React.ReactNode; value: number; label: string; color: string };
+// ─── Sidebar Content ──────────────────────────────────────────
+function SidebarContent({ active, onNav }: { active: string; onNav: (path: string, id: string) => void }) {
+  return (
+    <div className="flex h-full flex-col" style={{ background: P.navy }}>
+      {/* Brand */}
+      <div className="flex items-center gap-3 px-5 py-5 border-b flex-shrink-0"
+        style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+        <img src="/acantus.png" alt="Acantus" className="h-9 w-9 object-contain opacity-90 flex-shrink-0"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = "0"; }} />
+        <div className="min-w-0">
+          <div className="text-[12.5px] font-bold text-white leading-tight truncate">
+            Grupamento de Apoio de Manaus
+          </div>
+          <div className="text-[10px] truncate" style={{ color: "rgba(255,255,255,0.38)" }}>
+            Sistema de Gestão
+          </div>
+        </div>
+      </div>
 
-function KpiCard({ icon, value, label, color }: KpiProps) {
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+        {NAV_MAIN.map(item => {
+          const Icon = item.icon;
+          const isActive = active === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onNav(item.path, item.id)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-[13px] transition-all group"
+              style={{
+                background: isActive ? "rgba(59,130,246,0.15)" : "transparent",
+                color:      isActive ? "#60A5FA" : "rgba(255,255,255,0.52)",
+                border:     isActive ? "1px solid rgba(59,130,246,0.2)" : "1px solid transparent",
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  (e.currentTarget).style.background = "rgba(255,255,255,0.05)";
+                  (e.currentTarget).style.color = "rgba(255,255,255,0.82)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  (e.currentTarget).style.background = "transparent";
+                  (e.currentTarget).style.color = "rgba(255,255,255,0.52)";
+                }
+              }}
+            >
+              <Icon size={16} className="flex-shrink-0" />
+              <span className="flex-1">{item.label}</span>
+              {isActive && <span className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: "#60A5FA" }} />}
+            </button>
+          );
+        })}
+
+        <div className="my-3 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }} />
+
+        <button
+          onClick={() => onNav("/ferramentas", "ferramentas")}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-[13px] transition-all"
+          style={{ color: "rgba(255,255,255,0.4)" }}
+          onMouseEnter={(e) => {
+            (e.currentTarget).style.background = "rgba(255,255,255,0.05)";
+            (e.currentTarget).style.color = "rgba(255,255,255,0.78)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget).style.background = "transparent";
+            (e.currentTarget).style.color = "rgba(255,255,255,0.4)";
+          }}
+        >
+          <Wrench size={16} className="flex-shrink-0" />
+          <span>Ferramentas & Catálogo</span>
+        </button>
+      </nav>
+
+      {/* Rotating card */}
+      <div className="px-3 pb-4 flex-shrink-0">
+        <RotatingCard />
+      </div>
+    </div>
+  );
+}
+
+// ─── Header ───────────────────────────────────────────────────
+function TopHeader({ me, pushState, onPush, onLogout, onMenuToggle, loggingOut }: {
+  me: UserHeader; pushState: string;
+  onPush: () => void; onLogout: () => void;
+  onMenuToggle: () => void; loggingOut: boolean;
+}) {
+  const avatarSrc = me.avatarKey ? `/${me.avatarKey}.png` : "/7_homem.png";
+  return (
+    <header className="flex-shrink-0 flex items-center gap-4 px-5 bg-white border-b"
+      style={{ height: 64, borderColor: P.border, boxShadow: "0 1px 6px rgba(15,23,42,0.05)", zIndex: 20 }}>
+
+      <button onClick={onMenuToggle}
+        className="md:hidden flex items-center justify-center rounded-xl border h-9 w-9 transition-colors hover:bg-slate-50"
+        style={{ borderColor: P.border, color: P.muted }}>
+        <Menu size={18} />
+      </button>
+
+      <div className="flex items-center gap-2.5">
+        <img src="/gapmn.png" alt="GAP-MN"
+          className="h-8 w-8 rounded-lg object-contain border border-slate-100 bg-white shadow-sm"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+        <span className="hidden sm:block text-[14px] font-bold tracking-tight" style={{ color: P.text }}>
+          Aplicativo do GAP-MN
+        </span>
+      </div>
+
+      <div className="ml-auto flex items-center gap-2.5">
+        {pushState !== "unsupported" && (
+          <button onClick={onPush} disabled={pushState === "loading" || pushState === "denied"}
+            title={pushState === "subscribed" ? "Notificações ativas" : pushState === "denied" ? "Notificações bloqueadas" : "Ativar notificações"}
+            className="relative h-9 w-9 flex items-center justify-center rounded-xl border transition-colors disabled:opacity-40"
+            style={{
+              borderColor: pushState === "subscribed" ? "#FBD38D" : P.border,
+              background:  pushState === "subscribed" ? "#FFFBEB" : "white",
+              color:       pushState === "subscribed" ? "#B45309" : P.muted,
+            }}>
+            {pushState === "denied" ? <BellOff size={16} /> : <Bell size={16} />}
+            {pushState === "subscribed" && (
+              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white bg-amber-400" />
+            )}
+          </button>
+        )}
+
+        <div className="flex items-center gap-2.5 pl-2.5 border-l" style={{ borderColor: P.border }}>
+          <div className="h-9 w-9 rounded-full overflow-hidden border-2 flex-shrink-0"
+            style={{ borderColor: "#CBE0F7" }}>
+            <img src={avatarSrc} alt="Avatar" className="h-full w-full object-cover"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/7_homem.png"; }} />
+          </div>
+          <div className="hidden sm:block leading-tight">
+            <div className="text-[13px] font-semibold" style={{ color: P.text }}>Olá, {me.nome}!</div>
+            {me.setor && <div className="text-[11px]" style={{ color: P.muted }}>{formatSetor(me.setor)}</div>}
+          </div>
+          <button onClick={onLogout} disabled={loggingOut}
+            className="h-9 w-9 flex items-center justify-center rounded-xl border transition-colors hover:bg-red-50 hover:border-red-200 disabled:opacity-50 ml-1"
+            style={{ borderColor: P.border, color: P.muted }} title="Sair">
+            <LogOut size={15} />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ─── KPI Card ─────────────────────────────────────────────────
+function KpiCard({ icon: Icon, value, label, color }: { icon: React.ElementType; value: number; label: string; color: string }) {
   return (
     <motion.div
-      whileHover={{ y: -2, boxShadow: `0 6px 20px ${color}20` }}
-      className="flex flex-col items-center gap-1.5 rounded-2xl px-5 py-4 text-center"
+      whileHover={{ y: -3, boxShadow: `0 8px 20px ${color}28` }}
+      className="flex flex-col items-center gap-1.5 rounded-2xl px-3 py-3.5 text-center cursor-default"
       style={{
-        background:     "rgba(255,255,255,0.75)",
-        backdropFilter: "blur(8px)",
-        border:         "1px solid rgba(255,255,255,0.9)",
-        boxShadow:      "0 2px 12px rgba(15,23,42,0.06)",
+        background:     "rgba(255,255,255,0.11)",
+        backdropFilter: "blur(10px)",
+        border:         "1px solid rgba(255,255,255,0.18)",
       }}
     >
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl"
-        style={{ background: `${color}18`, color }}>
-        {icon}
+      <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: `${color}28`, color }}>
+        <Icon size={16} />
       </div>
-      <div className="text-2xl font-extrabold" style={{ color: P.text }}>{value}</div>
-      <div className="text-xs font-medium" style={{ color: P.muted }}>{label}</div>
+      <div className="text-[22px] font-extrabold text-white leading-none">
+        {value.toLocaleString("pt-BR")}
+      </div>
+      <div className="text-[11px] font-medium leading-tight" style={{ color: "rgba(255,255,255,0.58)" }}>{label}</div>
     </motion.div>
   );
 }
 
-// ── Nav card ─────────────────────────────────────────────────────────────────
-type NavCardProps = {
-  onClick: () => void;
-  bg: string; border: string;
-  iconBg: string; iconColor: string;
-  titleColor: string; descColor: string;
-  gradientFrom: string; gradientTo: string;
-  title: string; desc: string;
-  icon: React.ReactNode;
-  delay: number;
-};
+// ─── Hero ─────────────────────────────────────────────────────
+function HeroSection({ me, kpis }: { me: UserHeader; kpis: KPIs }) {
+  const avatarSrc = me.avatarKey ? `/${me.avatarKey}.png` : "/7_homem.png";
+  return (
+    <section className="relative overflow-hidden px-6 py-8 md:py-10"
+      style={{ background: `linear-gradient(135deg, ${P.navy} 0%, ${P.fab} 65%, #1a4e8c 100%)` }}>
 
-function NavCard({ onClick, iconBg, iconColor, titleColor, descColor, gradientFrom, gradientTo, border, title, desc, icon, delay }: NavCardProps) {
+      {/* Subtle grid bg */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <svg className="absolute inset-0 h-full w-full opacity-[0.025]" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="hgrid" width="44" height="44" patternUnits="userSpaceOnUse">
+              <path d="M 44 0 L 0 0 0 44" fill="none" stroke="white" strokeWidth="0.6" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#hgrid)" />
+        </svg>
+        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full opacity-[0.05]" style={{ background: "white" }} />
+        <div className="absolute bottom-0 left-1/4 h-40 w-40 rounded-full opacity-[0.03]" style={{ background: "white" }} />
+      </div>
+
+      <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-7">
+        {/* Avatar + info */}
+        <div className="flex items-center gap-5 flex-1 min-w-0">
+          <div className="relative flex-shrink-0">
+            <div className="h-20 w-20 rounded-full border-4 overflow-hidden"
+              style={{ borderColor: "rgba(255,255,255,0.22)", boxShadow: "0 0 0 3px rgba(96,165,250,0.28), 0 8px 28px rgba(0,0,0,0.28)" }}>
+              <img src={avatarSrc} alt="Avatar" className="h-full w-full object-cover"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/7_homem.png"; }} />
+            </div>
+            <div className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white bg-green-500"
+              style={{ boxShadow: "0 0 0 2px rgba(34,197,94,0.35)" }} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-white">Olá, {me.nome}! 👋</h1>
+            {me.setor && (
+              <div className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.62)" }}>{formatSetor(me.setor)}</div>
+            )}
+            <div className="text-xs mt-2 max-w-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.42)" }}>
+              Bem-vindo ao sistema. Acompanhe os principais indicadores e fique por dentro das atualizações.
+            </div>
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-2.5 w-full md:w-auto md:min-w-[340px]">
+          <KpiCard icon={DollarSign} value={kpis.empenhos}  label="Empenhos"   color="#60A5FA" />
+          <KpiCard icon={Clipboard}  value={kpis.processos} label="Processos"  color="#C4B5FD" />
+          <KpiCard icon={FileText}   value={kpis.contratos} label="Contratos"  color="#6EE7B7" />
+          <KpiCard icon={Activity}   value={kpis.il}        label="IL"         color="#FCD34D" />
+          <KpiCard icon={Bookmark}   value={kpis.atas}      label="ATAs Ativas" color="#FCA5A5" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Panel Fullscreen ─────────────────────────────────────────
+function PanelFullscreen({ panel, onClose, nav }: {
+  panel: Panel; onClose: () => void; nav: ReturnType<typeof useNavigate>;
+}) {
+  const Icon = panel.icon;
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.42, ease: "easeOut", delay }}
-      whileHover={{ y: -4, boxShadow: `0 12px 32px ${iconColor}20` }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8"
     >
-      <button
-        onClick={onClick}
-        className="w-full rounded-2xl border p-6 text-left transition-all"
-        style={{
-          background:  `linear-gradient(140deg, ${gradientFrom} 0%, ${gradientTo} 100%)`,
-          borderColor: border,
-        }}
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="absolute inset-0 cursor-pointer"
+        style={{ background: "rgba(7,27,52,0.88)", backdropFilter: "blur(7px)" }}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <motion.div
+        initial={{ scale: 0.88, y: 28, opacity: 0 }}
+        animate={{ scale: 1,    y: 0,  opacity: 1 }}
+        exit={{   scale: 0.92,  y: 16, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 290, damping: 26 }}
+        className="relative z-10 w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col bg-white"
+        style={{ maxHeight: "88vh" }}
       >
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex h-13 w-13 items-center justify-center rounded-2xl p-3"
-            style={{ background: iconBg, color: iconColor }}>
-            {icon}
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0"
+          style={{ borderColor: P.border }}>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center"
+              style={{ background: panel.bg, color: panel.color }}>
+              <Icon size={20} />
+            </div>
+            <div>
+              <h2 className="text-[15px] font-bold" style={{ color: P.text }}>{panel.title}</h2>
+              <p className="text-xs" style={{ color: P.muted }}>{panel.desc}</p>
+            </div>
           </div>
-          <span className="mt-1 opacity-40" style={{ color: iconColor }}>
-            <IcArrow className="h-5 w-5" />
-          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { onClose(); nav(panel.path); }}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition-colors hover:bg-slate-50"
+              style={{ borderColor: P.border, color: P.muted }}>
+              Abrir página completa <ArrowRight size={13} />
+            </button>
+            <button onClick={onClose}
+              className="h-9 w-9 flex items-center justify-center rounded-xl border transition-colors hover:bg-slate-50"
+              style={{ borderColor: P.border, color: P.muted }}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
-        <div className="text-[15px] font-bold mb-1" style={{ color: titleColor }}>{title}</div>
-        <div className="text-sm" style={{ color: descColor }}>{desc}</div>
-      </button>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6" style={{ background: P.ice }}>
+          {/* Mock KPI row */}
+          <div className="grid grid-cols-3 gap-4 mb-5">
+            {["Indicador 1", "Indicador 2", "Indicador 3"].map((label, i) => (
+              <div key={label} className="rounded-xl bg-white border p-4" style={{ borderColor: P.border }}>
+                <div className="text-xs mb-1" style={{ color: P.muted }}>{label}</div>
+                <div className="text-2xl font-bold" style={{ color: P.text }}>—</div>
+                <div className="mt-3 h-1.5 rounded-full" style={{ background: `${panel.color}18` }}>
+                  <div className="h-full rounded-full transition-all"
+                    style={{ width: `${[68, 44, 82][i]}%`, background: panel.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* CTA */}
+          <div className="rounded-xl bg-white border flex items-center justify-center p-10"
+            style={{ borderColor: P.border }}>
+            <div className="text-center space-y-3">
+              <div style={{ color: panel.color, opacity: 0.25 }}>
+                <Icon size={48} />
+              </div>
+              <div className="text-sm font-medium" style={{ color: P.muted }}>
+                Visualização detalhada disponível na página completa
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={() => { onClose(); nav(panel.path); }}
+                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
+                style={{ background: panel.color }}>
+                Abrir {panel.title} <ArrowRight size={15} />
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
+// ─── Panels Section ───────────────────────────────────────────
+function PanelsSection({ nav }: { nav: ReturnType<typeof useNavigate> }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  return (
+    <section className="px-6 py-6">
+      <div className="mb-5">
+        <h2 className="text-[16px] font-bold" style={{ color: P.text }}>Painéis Gerenciais</h2>
+        <p className="text-sm mt-1" style={{ color: P.muted }}>
+          Clique em qualquer painel para expandir em tela cheia e visualizar os indicadores detalhados.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {PANELS.map((panel, i) => {
+          const Icon = panel.icon;
+          return (
+            <motion.button
+              key={panel.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.38, delay: i * 0.07 }}
+              whileHover={{ y: -5, boxShadow: `0 14px 36px ${panel.color}1A` }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setExpanded(panel.id)}
+              className="text-left rounded-2xl border p-5 bg-white transition-all"
+              style={{ borderColor: P.border }}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="h-11 w-11 rounded-xl flex items-center justify-center"
+                  style={{ background: panel.bg, color: panel.color }}>
+                  <Icon size={21} />
+                </div>
+                <ArrowRight size={15} style={{ color: P.gray, marginTop: 2 }} />
+              </div>
+              <div className="text-[13px] font-bold mb-1" style={{ color: P.text }}>{panel.title}</div>
+              <div className="text-xs leading-relaxed" style={{ color: P.muted }}>{panel.desc}</div>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <PanelFullscreen
+            panel={PANELS.find(p => p.id === expanded)!}
+            onClose={() => setExpanded(null)}
+            nav={nav}
+          />
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+// ─── Feed Section ─────────────────────────────────────────────
+function FeedSection({ canCreate, onNavigate }: { canCreate: boolean; onNavigate: (tab: string) => void }) {
+  return (
+    <section className="px-6 pb-6">
+      <div className="rounded-2xl border bg-white overflow-hidden"
+        style={{ borderColor: P.border, boxShadow: "0 2px 12px rgba(15,23,42,0.04)" }}>
+        <div className="px-5 pt-5 pb-3 border-b" style={{ borderColor: P.border }}>
+          <h2 className="text-[15px] font-bold" style={{ color: P.text }}>Atualizações</h2>
+          <p className="text-xs mt-0.5" style={{ color: P.muted }}>
+            Fique por dentro das últimas novidades e atividades do sistema.
+          </p>
+        </div>
+        <div className="p-5">
+          <FeedNoticias isLoggedIn canCreate={canCreate} onNavigate={onNavigate} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Footer ───────────────────────────────────────────────────
+function PageFooter() {
+  return (
+    <footer className="px-6 pb-6">
+      <div className="flex items-center justify-center gap-2.5 py-3 border-t"
+        style={{ borderColor: P.border }}>
+        <img src="/acantus.png" alt="Acantus" className="h-4 w-4 object-contain"
+          style={{ opacity: 0.28 }}
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+        <span className="text-[11px]" style={{ color: P.gray }}>
+          Desenvolvido por 2T Bruno · GAP-MN
+        </span>
+      </div>
+    </footer>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────
 export default function AppChat() {
   const nav = useNavigate();
-  const [me, setMe] = useState<UserHeader>({ nome: "Usuário" });
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileOpen,  setMobileOpen]  = useState(false);
+  const [activeNav,   setActiveNav]   = useState("inicio");
+  const [loggingOut,  setLoggingOut]  = useState(false);
+  const [me,   setMe]   = useState<UserHeader>({ nome: "Usuário" });
   const [kpis, setKpis] = useState<KPIs>({ empenhos: 0, processos: 0, contratos: 0, il: 0, atas: 0 });
 
   const { state: pushState, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePush(me.id ?? null);
-
-  const isAgent = !!(me.setor);
-  const canCreateFeed = me.setor === "ADMIN" || me.setor === "SCON" || me.setor === "SLIC" || me.setor === "SEO";
+  const canCreateFeed = ["ADMIN", "SCON", "SLIC", "SEO", "DEV"].includes((me.setor ?? "").toUpperCase());
 
   useEffect(() => {
     (async () => {
@@ -236,26 +582,21 @@ export default function AppChat() {
 
       const email     = user.email ?? null;
       const nome      = (prof as any)?.nome_guerra || (user.user_metadata as any)?.nome_guerra || (email ? email.split("@")[0] : "Usuário");
-      const avatarKey = (prof as any)?.avatar_key || (user.user_metadata as any)?.avatar_key || null;
+      const avatarKey = (prof as any)?.avatar_key  || (user.user_metadata as any)?.avatar_key  || null;
       const setorP    = ((prof as any)?.setor as UserHeader["setor"]) ?? null;
       setMe({ id: user.id, nome, avatarKey, setor: setorP });
 
-      // Contagens para KPIs
       const today = new Date().toISOString().split("T")[0];
       const [r1, r2, r3, r4, r5] = await Promise.all([
         supabase.from("siloms_ne_identificadores").select("ne_siafi")
-          .ilike("ne_siafi", "2026NE0_____")
-          .order("ne_siafi", { ascending: false })
-          .limit(1),
+          .ilike("ne_siafi", "2026NE0_____").order("ne_siafi", { ascending: false }).limit(1),
         supabase.from("processos_licitatorios").select("*", { count: "exact", head: true }),
         supabase.from("contratos_scon").select("*", { count: "exact", head: true }),
         supabase.from("indicadores_lotacao").select("*", { count: "exact", head: true }),
         supabase.from("atas_gap_mn").select("*", { count: "exact", head: true })
-          .gte("vigencia_final", today)
-          .not("situacao", "ilike", "%cancelad%"),
+          .gte("vigencia_final", today).not("situacao", "ilike", "%cancelad%"),
       ]);
 
-      // Extrai número sequencial da última NE no padrão 2026NE0XXXXX (últimos 5 chars)
       const lastNE: string = (r1.data?.[0] as any)?.ne_siafi ?? "";
       const neNum = parseInt(lastNE.slice(-5) || "0", 10);
 
@@ -271,188 +612,73 @@ export default function AppChat() {
 
   async function handleLogout() {
     setLoggingOut(true);
-    try {
-      await supabase.auth.signOut();
-      nav("/", { replace: true });
-    } finally {
-      setLoggingOut(false);
-    }
+    try { await supabase.auth.signOut(); nav("/", { replace: true }); }
+    finally { setLoggingOut(false); }
   }
 
-  function goToTab(tab: string) {
-    nav(`/setor?tab=${tab}`);
+  function handleNav(path: string, id: string) {
+    setActiveNav(id);
+    setMobileOpen(false);
+    const [base, qs] = path.split("?");
+    nav(qs ? `${base}?${qs}` : base);
   }
-
-  const avatarSrc = me.avatarKey ? `/${me.avatarKey}.png` : "/grad_homem.png";
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-screen overflow-hidden"
+      style={{ background: P.ice, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}>
 
-      {/* ── Hero card do usuário ─────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: "easeOut" }}
-        className="rounded-2xl border p-6 md:p-8"
-        style={{
-          background:  "linear-gradient(140deg, #EAF3FF 0%, #F0F7FF 55%, #FFFFFF 100%)",
-          borderColor: "#CBE0F7",
-          boxShadow:   "0 2px 20px rgba(37,99,235,0.07)",
-        }}
-      >
-        <div className="flex flex-col md:flex-row md:items-center gap-6 md:gap-8">
-
-          {/* Avatar + info + ações */}
-          <div className="flex items-center gap-5 min-w-0 flex-1">
-            {/* Avatar */}
-            <div className="relative flex-shrink-0">
-              <div className="h-20 w-20 md:h-24 md:w-24 rounded-full border-4 border-white overflow-hidden"
-                style={{ boxShadow: "0 0 0 4px rgba(37,99,235,0.12), 0 8px 28px rgba(0,0,0,0.12)" }}>
-                <img
-                  src={avatarSrc}
-                  alt="Avatar"
-                  className="h-full w-full object-cover"
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/grad_homem.png"; }}
-                />
-              </div>
-              {/* Indicador online */}
-              <div className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white bg-green-500"
-                style={{ boxShadow: "0 0 0 2px #22c55e40" }} />
-            </div>
-
-            {/* Nome + setor */}
-            <div className="min-w-0 flex-1">
-              <div className="text-xl font-bold truncate" style={{ color: P.text }}>
-                Olá, {me.nome}!
-              </div>
-              {me.setor && (
-                <div className="text-sm mt-0.5" style={{ color: P.muted }}>
-                  {formatSetor(me.setor)}
-                </div>
-              )}
-
-              {/* Botões de ação */}
-              <div className="flex items-center gap-2 mt-3">
-                {pushState !== "unsupported" && (
-                  <button
-                    title={
-                      pushState === "subscribed" ? "Notificações ativas"
-                      : pushState === "denied"   ? "Notificações bloqueadas"
-                      : "Ativar notificações"
-                    }
-                    disabled={pushState === "loading" || pushState === "denied"}
-                    onClick={() => pushState === "subscribed" ? pushUnsubscribe() : pushSubscribe()}
-                    className="relative flex h-9 w-9 items-center justify-center rounded-xl border transition-colors disabled:opacity-40"
-                    style={{
-                      borderColor: pushState === "subscribed" ? "#FBD38D" : P.border,
-                      background:  pushState === "subscribed" ? "#FFFBEB"
-                                 : pushState === "denied"     ? "#FEF2F2"
-                                 : "white",
-                      color:       pushState === "subscribed" ? "#B45309"
-                                 : pushState === "denied"     ? "#EF4444"
-                                 : P.muted,
-                      boxShadow:  "0 1px 4px rgba(0,0,0,0.06)",
-                    }}
-                  >
-                    {pushState === "denied" ? <IcBellOff /> : <IcBell />}
-                    {pushState === "subscribed" && (
-                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white bg-amber-400" />
-                    )}
-                  </button>
-                )}
-
-                <button
-                  onClick={handleLogout}
-                  disabled={loggingOut}
-                  className="flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors hover:bg-red-50 disabled:opacity-50"
-                  style={{ borderColor: P.border, color: P.muted, background: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
-                >
-                  <IcLogout />
-                  {loggingOut ? "Saindo..." : "Sair"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* KPI cards */}
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-3 flex-shrink-0 w-full md:w-auto">
-            <KpiCard icon={<IcCoins />}     value={kpis.empenhos}  label="Empenhos"  color="#2563EB" />
-            <KpiCard icon={<IcProcess />}   value={kpis.processos} label="Processos" color="#7C3AED" />
-            <KpiCard icon={<IcContract />}  value={kpis.contratos} label="Contratos" color="#0F9B6B" />
-            <KpiCard icon={<IcIndicator />} value={kpis.il}        label="IL"        color="#F59E0B" />
-            <KpiCard icon={<IcAta />}       value={kpis.atas}      label="ATAs Ativas" color="#E11D48" />
-          </div>
-        </div>
-      </motion.div>
-
-      {/* ── Conteúdo principal ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-5 items-start">
-
-        {/* Coluna esquerda — cards de navegação */}
-        <div className="space-y-3">
-          <NavCard
-            delay={0.08}
-            onClick={() => nav("/setor")}
-            bg=""
-            gradientFrom="#EAF3FF" gradientTo="#DBEAFE"
-            border="#C3D9FA"
-            iconBg="rgba(37,99,235,0.12)"  iconColor="#2563EB"
-            titleColor={P.navy}            descColor="#3B6EBF"
-            title="Gerenciamentos"
-            desc="Contratos · Processos · Indicadores de Lotação"
-            icon={<IcClipboard className="h-6 w-6" />}
-          />
-          <NavCard
-            delay={0.14}
-            onClick={() => nav("/orcamento")}
-            bg=""
-            gradientFrom="#EAFBF2" gradientTo="#DCFCE7"
-            border="#A7DFBC"
-            iconBg="rgba(34,197,94,0.12)"  iconColor="#16A34A"
-            titleColor="#14532D"           descColor="#15803D"
-            title="Painéis Gerenciais"
-            desc="Orçamentário · Empenhos · Restos a Pagar"
-            icon={<IcChart className="h-6 w-6" />}
-          />
-          <NavCard
-            delay={0.20}
-            onClick={() => nav("/ferramentas")}
-            bg=""
-            gradientFrom="#F3EFFF" gradientTo="#EDE9FE"
-            border="#C4B6F5"
-            iconBg="rgba(124,58,237,0.12)"  iconColor="#7C3AED"
-            titleColor="#3B0D91"            descColor="#6D28D9"
-            title="Ferramentas &amp; Catálogo"
-            desc="Robôs · Automações · Guia do sistema"
-            icon={<IcWrench className="h-6 w-6" />}
-          />
-        </div>
-
-        {/* Coluna direita — feed de atualizações */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: "easeOut", delay: 0.1 }}
-          className="rounded-2xl border bg-white overflow-hidden"
-          style={{ borderColor: P.border, boxShadow: "0 2px 12px rgba(15,23,42,0.05)" }}
-        >
-          <div className="px-5 pt-5 pb-3 border-b" style={{ borderColor: P.border }}>
-            <h2 className="text-sm font-bold" style={{ color: P.text }}>Atualizações</h2>
-            <p className="text-xs mt-0.5" style={{ color: P.muted }}>
-              Atividades recentes do sistema
-            </p>
-          </div>
-          <div className="p-5">
-            <FeedNoticias
-              isLoggedIn
-              canCreate={canCreateFeed}
-              onNavigate={goToTab}
-            />
-          </div>
-        </motion.div>
+      {/* Sidebar — desktop (always visible) */}
+      <div className="hidden md:flex md:w-[272px] md:flex-shrink-0 overflow-hidden">
+        <SidebarContent active={activeNav} onNav={handleNav} />
       </div>
 
-      {isAgent && null}
+      {/* Sidebar — mobile overlay */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <>
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-30 md:hidden"
+              style={{ background: "rgba(7,27,52,0.5)", backdropFilter: "blur(3px)" }}
+              onClick={() => setMobileOpen(false)}
+            />
+            <motion.div
+              key="drawer"
+              initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }}
+              transition={{ type: "tween", duration: 0.24 }}
+              className="fixed inset-y-0 left-0 z-40 w-[272px] md:hidden overflow-hidden"
+            >
+              <SidebarContent active={activeNav} onNav={handleNav} />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Main */}
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+        <TopHeader
+          me={me}
+          pushState={pushState}
+          onPush={() => pushState === "subscribed" ? pushUnsubscribe() : pushSubscribe()}
+          onLogout={handleLogout}
+          onMenuToggle={() => setMobileOpen(v => !v)}
+          loggingOut={loggingOut}
+        />
+
+        <main className="flex-1 overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+          >
+            <HeroSection  me={me} kpis={kpis} />
+            <PanelsSection nav={nav} />
+            <FeedSection canCreate={canCreateFeed} onNavigate={(tab) => nav(`/setor?tab=${tab}`)} />
+            <PageFooter />
+          </motion.div>
+        </main>
+      </div>
     </div>
   );
 }
