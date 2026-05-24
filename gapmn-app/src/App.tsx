@@ -25,9 +25,6 @@ const AppTitle = () => (
       <h1 className="text-base font-bold tracking-tight" style={{ color: "#0F172A" }}>
         Aplicativo do GAP-MN
       </h1>
-      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-600 select-none tracking-wide">
-        versão de teste
-      </span>
     </div>
   </div>
 );
@@ -39,7 +36,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [showManual, setShowManual] = useState(false);
 
   // Login/signup: componente controla o próprio layout
-  if (loc.pathname === "/" || loc.pathname === "/login" || loc.pathname === "/signup") {
+  if (loc.pathname === "/" || loc.pathname === "/login") {
     return <>{children}</>;
   }
 
@@ -73,7 +70,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto w-full max-w-[1600px]">{children}</div>
       </main>
       <footer className="py-4 text-center text-[11px]" style={{ color: "#94A3B8" }}>
-        Desenvolvido por 2T Bruno · GAP-MN · versão de teste
+        Desenvolvido por 2T Bruno · GAP-MN
       </footer>
     </div>
   );
@@ -86,7 +83,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
 
-          <Route path="/signup" element={<Signup />} />
+          <Route path="/signup" element={<Navigate to="/" replace />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
 
           <Route path="/auth/confirm" element={<AuthConfirm />} />

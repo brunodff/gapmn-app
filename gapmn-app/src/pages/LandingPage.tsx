@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion, useInView, AnimatePresence, type Variants } from "framer-motion";
 import { supabase } from "../lib/supabase";
 
@@ -317,60 +317,108 @@ function Navbar({ onScroll }: { onScroll: (id: string) => void }) {
   );
 }
 
-// ── Formulário de login (hero) ────────────────────────────────────────────────
+const UNIDADES = ["GAP-MN","CINDACTA IV","SEREP-MN","SERIPA-MN","COMARA","COMAR VII","HAMN","PAMN","BAMN","Outro"] as const;
+const AVATARS  = [{ key: "7_homem" },{ key: "7_mulher" },{ key: "10_homem" },{ key: "10_mulher" },{ key: "grad_homem" },{ key: "grad_mulher" }] as const;
+
+// ── Formulário de acesso (login + signup) ─────────────────────────────────────
 function LoginCard() {
   const nav = useNavigate();
   const loc = useLocation() as any;
   const redirectTo = loc.state?.from || "/app";
 
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [done, setDone] = useState(false);
+
+  // Campos compartilhados
   const [email,   setEmail]   = useState("");
   const [senha,   setSenha]   = useState("");
   const [loading, setLoading] = useState(false);
   const [err,     setErr]     = useState<string | null>(null);
 
-  const canSend = email.trim().length > 0 && senha.trim().length > 0 && !loading;
+  // Campos exclusivos do signup
+  const [nomeGuerra,    setNomeGuerra]    = useState("");
+  const [unidade,       setUnidade]       = useState<typeof UNIDADES[number]>("GAP-MN");
+  const [unidadeOutro,  setUnidadeOutro]  = useState("");
+  const [avatarKey,     setAvatarKey]     = useState<typeof AVATARS[number]["key"]>("7_homem");
+
+  const unidadeFinal = useMemo(() =>
+    unidade !== "Outro" ? unidade : (unidadeOutro.trim() ? `Outro: ${unidadeOutro.trim()}` : "Outro"),
+    [unidade, unidadeOutro]
+  );
+
+  function resetForm() {
+    setEmail(""); setSenha(""); setErr(null);
+    setNomeGuerra(""); setUnidade("GAP-MN"); setUnidadeOutro(""); setAvatarKey("7_homem");
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null);
-    setLoading(true);
+    setErr(null); setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password: senha,
-      });
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: senha });
       if (error) throw error;
       nav(redirectTo, { replace: true });
     } catch (err: any) {
       setErr(traduzErroAuth(err?.message));
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
+  }
+
+  async function handleSignup(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (!email.trim().toLowerCase().endsWith("@fab.mil.br")) { setErr("Use um e-mail institucional @fab.mil.br."); return; }
+    if (senha.length < 8) { setErr("A senha deve ter pelo menos 8 caracteres."); return; }
+    if (!nomeGuerra.trim()) { setErr("Informe seu nome de guerra."); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(), password: senha,
+        options: { emailRedirectTo: `${window.location.origin}/auth/confirm`,
+          data: { nome_guerra: nomeGuerra.trim(), unidade: unidadeFinal, avatar_key: avatarKey, role: "user" } },
+      });
+      if (error) throw error;
+      setDone(true);
+    } catch (err: any) {
+      setErr(traduzErroAuth(err?.message));
+    } finally { setLoading(false); }
   }
 
   const inputBase = {
-    background:  "rgba(255,255,255,0.07)",
-    border:      "1px solid rgba(255,255,255,0.12)",
-    borderRadius: "0.75rem",
-    color:        "white",
-    outline:      "none",
+    background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: "0.75rem", color: "white", outline: "none",
   } as React.CSSProperties;
 
+  const cardStyle = {
+    background: "rgba(11,59,102,0.45)", backdropFilter: "blur(16px)",
+    border: "1px solid rgba(63,169,255,0.18)", boxShadow: "0 24px 60px rgba(0,0,0,0.35)",
+  };
+
+  // ── Signup concluído ─────────────────────────────────────────────────────────
+  if (done) return (
+    <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+      className="w-full max-w-sm rounded-2xl p-7 text-center" style={cardStyle}>
+      <div className="text-4xl mb-4">✅</div>
+      <div className="text-lg font-bold text-white mb-2">Conta criada!</div>
+      <div className="text-sm mb-5" style={{ color: "rgba(255,255,255,0.6)" }}>
+        Verifique seu e-mail <span className="text-white font-medium">@fab.mil.br</span> para confirmar o acesso.
+      </div>
+      <button onClick={() => { setDone(false); setMode("login"); resetForm(); }}
+        className="w-full rounded-xl py-2.5 text-sm font-semibold text-white" style={{ background: C.accent }}>
+        Ir para o login
+      </button>
+    </motion.div>
+  );
+
+  // ── Card principal ───────────────────────────────────────────────────────────
   return (
-    <motion.div
-      initial={{ opacity: 0, x: 36 }}
-      animate={{ opacity: 1, x: 0 }}
+    <motion.div initial={{ opacity: 0, x: 36 }} animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
-      className="w-full max-w-sm rounded-2xl p-7"
-      style={{
-        background:    "rgba(11,59,102,0.45)",
-        backdropFilter: "blur(16px)",
-        border:         "1px solid rgba(63,169,255,0.18)",
-        boxShadow:      "0 24px 60px rgba(0,0,0,0.35)",
-      }}
-    >
-      <div className="mb-6">
-        <div className="text-lg font-bold text-white mb-1">Acessar o sistema</div>
+      className="w-full max-w-sm rounded-2xl p-7" style={cardStyle}>
+
+      <div className="mb-5">
+        <div className="text-lg font-bold text-white mb-1">
+          {mode === "login" ? "Acessar o sistema" : "Criar acesso"}
+        </div>
         <div className="text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
           Grupamento de Apoio de Manaus — FAB
         </div>
@@ -383,69 +431,121 @@ function LoginCard() {
         </div>
       )}
 
-      <form onSubmit={handleLogin} className="space-y-3">
-        {/* E-mail */}
-        <div className="flex items-center gap-3 px-4 py-2.5 transition-all focus-within:ring-1"
-          style={{ ...inputBase, focusWithinRingColor: C.accent } as any}
-          onFocus={(e) => e.currentTarget.style.borderColor = "rgba(63,169,255,0.5)"}
-          onBlur={(e)  => e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"}
-        >
-          <span style={{ color: "rgba(255,255,255,0.35)" }}><IcMail /></span>
-          <input
-            className="flex-1 bg-transparent text-sm outline-none"
-            style={{ color: "white" }}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            autoComplete="email"
-            placeholder="E-mail"
-            onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
-            onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")}
-          />
-        </div>
+      {/* ── LOGIN ── */}
+      {mode === "login" && (
+        <form onSubmit={handleLogin} className="space-y-3">
+          <div className="flex items-center gap-3 px-4 py-2.5" style={inputBase}>
+            <span style={{ color: "rgba(255,255,255,0.35)" }}><IcMail /></span>
+            <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: "white" }}
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              type="email" autoComplete="email" placeholder="E-mail"
+              onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
+              onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")} />
+          </div>
+          <div className="flex items-center gap-3 px-4 py-2.5" style={inputBase}>
+            <span style={{ color: "rgba(255,255,255,0.35)" }}><IcLock /></span>
+            <input className="flex-1 bg-transparent text-sm outline-none placeholder-white/30" style={{ color: "white" }}
+              value={senha} onChange={(e) => setSenha(e.target.value)}
+              type="password" autoComplete="current-password" placeholder="Senha"
+              onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
+              onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")} />
+          </div>
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            type="submit" disabled={!email || !senha || loading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-40"
+            style={{ background: C.accent }}>
+            <IcLogin />{loading ? "Entrando..." : "Entrar"}
+          </motion.button>
+          <div className="flex flex-col items-center gap-2 mt-3">
+            <span className="text-sm" style={{ color: "rgba(255,255,255,0.45)" }}>
+              Não tem conta?{" "}
+              <button type="button" onClick={() => { setMode("signup"); setErr(null); }}
+                className="font-semibold hover:underline" style={{ color: C.accent }}>
+                Criar acesso
+              </button>
+            </span>
+            <button type="button" onClick={() => nav("/forgot-password")}
+              className="text-xs hover:underline" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Esqueceu a senha?
+            </button>
+          </div>
+        </form>
+      )}
 
-        {/* Senha */}
-        <div className="flex items-center gap-3 px-4 py-2.5"
-          style={inputBase}>
-          <span style={{ color: "rgba(255,255,255,0.35)" }}><IcLock /></span>
-          <input
-            className="flex-1 bg-transparent text-sm outline-none placeholder-white/30"
-            style={{ color: "white" }}
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            type="password"
-            autoComplete="current-password"
-            placeholder="Senha"
-            onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
-            onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")}
-          />
-        </div>
-
-        <motion.button
-          whileHover={{ scale: canSend ? 1.02 : 1 }}
-          whileTap={{ scale: canSend ? 0.98 : 1 }}
-          type="submit"
-          disabled={!canSend}
-          className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
-          style={{ background: C.accent }}
-        >
-          <IcLogin />
-          {loading ? "Entrando..." : "Entrar"}
-        </motion.button>
-      </form>
-
-      <div className="mt-5 flex flex-col items-center gap-2">
-        <span className="text-sm" style={{ color: "rgba(255,255,255,0.45)" }}>
-          Não tem conta?{" "}
-          <Link to="/signup" className="font-semibold hover:underline" style={{ color: C.accent }}>
-            Criar acesso
-          </Link>
-        </span>
-        <Link to="/forgot-password" className="text-xs hover:underline"
-          style={{ color: "rgba(255,255,255,0.35)" }}>
-          Esqueceu a senha?
-        </Link>
-      </div>
+      {/* ── SIGNUP ── */}
+      {mode === "signup" && (
+        <form onSubmit={handleSignup} className="space-y-3">
+          <div className="flex items-center gap-3 px-4 py-2.5" style={inputBase}>
+            <span style={{ color: "rgba(255,255,255,0.35)" }}><IcMail /></span>
+            <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: "white" }}
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              type="email" autoComplete="email" placeholder="E-mail FAB (@fab.mil.br)"
+              onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
+              onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")} />
+          </div>
+          <div className="flex items-center gap-3 px-4 py-2.5" style={inputBase}>
+            <span style={{ color: "rgba(255,255,255,0.35)" }}><IcLock /></span>
+            <input className="flex-1 bg-transparent text-sm outline-none placeholder-white/30" style={{ color: "white" }}
+              value={senha} onChange={(e) => setSenha(e.target.value)}
+              type="password" autoComplete="new-password" placeholder="Senha (mín. 8 caracteres)"
+              onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
+              onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")} />
+          </div>
+          <div className="flex items-center gap-3 px-4 py-2.5" style={inputBase}>
+            <span style={{ color: "rgba(255,255,255,0.35)" }}>
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+              </svg>
+            </span>
+            <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: "white" }}
+              value={nomeGuerra} onChange={(e) => setNomeGuerra(e.target.value)}
+              placeholder="Nome de guerra (ex: SILVA)"
+              onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
+              onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")} />
+          </div>
+          <select value={unidade} onChange={(e) => setUnidade(e.target.value as any)}
+            className="w-full px-4 py-2.5 text-sm"
+            style={{ ...inputBase, color: unidade ? "white" : "rgba(255,255,255,0.4)" }}>
+            {UNIDADES.map(u => <option key={u} value={u} style={{ background: "#0B3B66" }}>{u}</option>)}
+          </select>
+          {unidade === "Outro" && (
+            <div className="flex items-center gap-3 px-4 py-2.5" style={inputBase}>
+              <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: "white" }}
+                value={unidadeOutro} onChange={(e) => setUnidadeOutro(e.target.value)}
+                placeholder="Digite a unidade"
+                onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
+                onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")} />
+            </div>
+          )}
+          {/* Avatar */}
+          <div>
+            <div className="text-xs mb-2" style={{ color: "rgba(255,255,255,0.45)" }}>Escolha seu avatar</div>
+            <div className="grid grid-cols-6 gap-1.5">
+              {AVATARS.map(a => (
+                <button key={a.key} type="button" onClick={() => setAvatarKey(a.key)}
+                  className="aspect-square rounded-xl p-1 transition-all"
+                  style={{ background: avatarKey === a.key ? `${C.accent}30` : "rgba(255,255,255,0.06)",
+                    border: `1px solid ${avatarKey === a.key ? C.accent : "rgba(255,255,255,0.12)"}` }}>
+                  <img src={`/${a.key}.png`} alt={a.key} className="h-full w-full rounded-lg object-contain"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/grad_homem.png"; }} />
+                </button>
+              ))}
+            </div>
+          </div>
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            type="submit" disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-40"
+            style={{ background: C.accent }}>
+            {loading ? "Criando conta..." : "Criar conta"}
+          </motion.button>
+          <div className="text-center mt-1">
+            <button type="button" onClick={() => { setMode("login"); setErr(null); }}
+              className="text-sm hover:underline" style={{ color: "rgba(255,255,255,0.45)" }}>
+              Já tenho conta — <span style={{ color: C.accent }}>Entrar</span>
+            </button>
+          </div>
+        </form>
+      )}
     </motion.div>
   );
 }
@@ -739,18 +839,16 @@ function Footer({ onScroll }: { onScroll: (id: string) => void }) {
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest mb-4"
             style={{ color: "rgba(255,255,255,0.25)" }}>Suporte</p>
-          <ul className="space-y-2">
-            {["Central de Ajuda", "Fale Conosco", "Política de Privacidade"].map((item) => (
-              <li key={item}>
-                <span className="text-sm" style={{ color: "rgba(255,255,255,0.45)" }}>{item}</span>
-              </li>
-            ))}
-          </ul>
+          <a href="mailto:brunobff.fab@gmail.com"
+            className="text-sm hover:underline"
+            style={{ color: "rgba(255,255,255,0.45)" }}>
+            brunobff.fab@gmail.com
+          </a>
         </div>
       </div>
       <div className="border-t px-6 py-5 text-center text-[11px]"
         style={{ borderColor: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.2)" }}>
-        Desenvolvido por 2T Bruno · GAP-MN · versão de teste
+        Desenvolvido por 2T Bruno · GAP-MN
       </div>
     </footer>
   );

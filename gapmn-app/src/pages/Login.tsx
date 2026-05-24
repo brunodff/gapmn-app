@@ -121,9 +121,6 @@ export default function Login() {
           />
         </div>
         <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Aplicativo do GAP-MN</h1>
-        <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-widest text-amber-600">
-          Versão de testes
-        </span>
       </div>
 
       {/* Card principal */}
