@@ -36,7 +36,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [showManual, setShowManual] = useState(false);
 
   // Login/signup: componente controla o próprio layout
-  if (loc.pathname === "/" || loc.pathname === "/login" || loc.pathname === "/app") {
+  if (loc.pathname === "/" || loc.pathname === "/login") {
     return <>{children}</>;
   }
 
