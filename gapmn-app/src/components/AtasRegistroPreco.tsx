@@ -40,6 +40,7 @@ interface CompraTR {
   pdf_url: string | null;
   data_orcamento: string | null; // "YYYY-MM-DD"
   indice_adotado: string | null;
+  nup?: string | null;
 }
 
 interface IpcaResult {
@@ -104,13 +105,18 @@ async function extractPdfText(file: File): Promise<string> {
   return text;
 }
 
-// Extrai data_orcamento e indice_adotado da seção "Reajuste" do TR
+// Extrai data_orcamento, indice_adotado e NUP (Processo Administrativo) do TR
 function parseReajuste(text: string): {
   dataOrcamento: string | null;
   indiceAdotado: string | null;
+  nup: string | null;
 } {
+  // NUP / Processo Administrativo: padrão 00000.000000/YYYY-NN
+  const nupMatch = text.match(/\b(\d{5}\.\d{6}\/\d{4}-\d{2})\b/);
+  const nup = nupMatch ? nupMatch[1] : null;
+
   const idx = text.search(/reajuste/i);
-  if (idx < 0) return { dataOrcamento: null, indiceAdotado: null };
+  if (idx < 0) return { dataOrcamento: null, indiceAdotado: null, nup };
   const section = text.slice(idx, idx + 3000);
 
   // Procura padrão "em DD/MM/YYYY" (data do orçamento estimado)
@@ -132,7 +138,7 @@ function parseReajuste(text: string): {
     ? idxMatch[1].toUpperCase().replace(/\s/g, "-")
     : null;
 
-  return { dataOrcamento, indiceAdotado };
+  return { dataOrcamento, indiceAdotado, nup };
 }
 
 // Busca IPCA acumulado na API do BCB (série 433)
@@ -311,6 +317,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
       // Extrai dados do PDF (somente se for PDF)
       let dataOrcamento: string | null = null;
       let indiceAdotado: string | null = null;
+      let nup: string | null = null;
       if (ext.toLowerCase() === "pdf") {
         setUploadStatus("Lendo PDF…");
         try {
@@ -318,6 +325,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
           const parsed  = parseReajuste(pdfText);
           dataOrcamento = parsed.dataOrcamento;
           indiceAdotado = parsed.indiceAdotado;
+          nup           = parsed.nup;
         } catch {
           // falha silenciosa — dados podem ser preenchidos manualmente depois
         }
@@ -333,6 +341,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
             pdf_url: publicUrl,
             data_orcamento: dataOrcamento,
             indice_adotado: indiceAdotado,
+            ...(nup ? { nup } : {}),
           }, { onConflict: "numero_compra" });
         if (trErr) throw trErr;
         setComprasTrMap((prev) =>
@@ -341,6 +350,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
             pdf_url: publicUrl,
             data_orcamento: dataOrcamento,
             indice_adotado: indiceAdotado,
+            nup,
           })
         );
       } else {
@@ -840,6 +850,12 @@ function ApostilamentoPreviewCard({
                     : "Não disponível"}
               </div>
             </div>
+            {tr?.nup && (
+              <div className="col-span-2 rounded-xl bg-sky-50 border border-sky-200 p-3">
+                <div className="text-[11px] font-semibold text-sky-500 uppercase mb-1">NUP / Processo Administrativo</div>
+                <div className="text-sm font-mono font-semibold text-sky-800">{tr.nup}</div>
+              </div>
+            )}
           </div>
 
           {ipcaResult && (
@@ -878,7 +894,7 @@ function ApostilamentoPreviewCard({
 
 // ── Modal de Apostilamento ─────────────────────────────────────────────────
 function ApostilamentoModal({
-  numeroAta, compra, itens, loadingItens, ipcaResult, onClose,
+  numeroAta, compra, tr, itens, loadingItens, ipcaResult, onClose,
 }: {
   numeroAta: string;
   compra: string | null;
@@ -888,8 +904,17 @@ function ApostilamentoModal({
   ipcaResult?: IpcaResult | null;
   onClose: () => void;
 }) {
-  const [cfg,     setCfg]     = useState<AptConfig>(loadAptCfg);
-  const [draft,   setDraft]   = useState<AptConfig>(loadAptCfg);
+  const [cfg,     setCfg]     = useState<AptConfig>(() => {
+    const base = loadAptCfg();
+    // Auto-preenche NUP do TR se ainda não salvo manualmente
+    if (!base.nup && tr?.nup) return { ...base, nup: tr.nup };
+    return base;
+  });
+  const [draft,   setDraft]   = useState<AptConfig>(() => {
+    const base = loadAptCfg();
+    if (!base.nup && tr?.nup) return { ...base, nup: tr.nup };
+    return base;
+  });
   const [showCfg, setShowCfg] = useState(false);
   const docRef = useRef<HTMLDivElement>(null);
 
@@ -898,6 +923,14 @@ function ApostilamentoModal({
     if (!el) { window.print(); return; }
     const pw = window.open("", "_blank", "width=900,height=700");
     if (!pw) { window.print(); return; }
+
+    // Substitui src do brasão pelo URL realmente carregado (pode ser fallback Wikimedia)
+    let html = el.outerHTML;
+    const brasaoEl = el.querySelector("[data-brasao]") as HTMLImageElement | null;
+    if (brasaoEl?.currentSrc && brasaoEl.currentSrc !== brasaoEl.src) {
+      html = html.replace(/data-brasao="true"\s+src="[^"]*"/, `data-brasao="true" src="${brasaoEl.currentSrc}"`);
+    }
+
     pw.document.write(`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -910,7 +943,7 @@ function ApostilamentoModal({
   table { border-collapse: collapse; }
 </style>
 </head>
-<body>${el.outerHTML}<script>window.onload=function(){window.print();};<\/script></body>
+<body>${html}<script>window.onload=function(){window.print();};<\/script></body>
 </html>`);
     pw.document.close();
   }
@@ -1036,14 +1069,23 @@ function ApostilamentoModal({
             {/* Timbre */}
             <div style={{ textAlign: "center", borderBottom: "2px solid #000", paddingBottom: "10pt", marginBottom: "14pt" }}>
               <img
+                data-brasao="true"
                 src="/brasao.png"
                 alt="Brasão da República Federativa do Brasil"
                 style={{ height: "55pt", display: "block", margin: "0 auto 6pt" }}
-                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                onError={(e) => {
+                  const img = e.currentTarget as HTMLImageElement;
+                  if (!img.dataset.tried) {
+                    img.dataset.tried = "1";
+                    img.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/Coat_of_arms_of_Brazil.svg/160px-Coat_of_arms_of_Brazil.svg.png";
+                  } else {
+                    img.style.display = "none";
+                  }
+                }}
               />
               <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#000" }}>MINISTÉRIO DA DEFESA</div>
-              <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#000" }}>COMANDO DA AERONÁUTICA</div>
-              <div style={{ fontSize: "10pt", fontWeight: "bold", color: "#000" }}>GRUPAMENTO DE APOIO DE MANAUS</div>
+              <div style={{ fontSize: "9pt", color: "#000" }}>COMANDO DA AERONÁUTICA</div>
+              <div style={{ fontSize: "10pt", textDecoration: "underline", color: "#000" }}>GRUPAMENTO DE APOIO DE MANAUS</div>
             </div>
 
             {/* Título */}
@@ -1054,8 +1096,8 @@ function ApostilamentoModal({
             </div>
 
             {/* Assunto */}
-            <p style={{ marginBottom: "12pt" }}>
-              <strong>Assunto:</strong> Reajuste de preços da ata de registro de preços n.º {numeroAta} referente ao Pregão
+            <p style={{ marginBottom: "12pt", fontWeight: "bold" }}>
+              Assunto: Reajuste de preços da ata de registro de preços n.º {numeroAta} referente ao Pregão
               eletrônico {compra ?? "________"} – NUP {cfg.nup || "________________"}
             </p>
 

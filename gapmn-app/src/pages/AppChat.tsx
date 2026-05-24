@@ -212,8 +212,9 @@ function NavCard({ onClick, iconBg, iconColor, titleColor, descColor, gradientFr
 
 // ── Modal de perfil ──────────────────────────────────────────────────────────
 const AVATAR_OPTIONS = [
-  "grad_homem", "grad_mulher", "oficial_homem", "oficial_mulher",
-  "sarg_homem",  "sarg_mulher",  "civil_homem",  "civil_mulher",
+  "grad_homem", "grad_mulher",
+  "7_homem",    "7_mulher",
+  "10_homem",   "10_mulher",
 ];
 
 function ProfileModal({ userId, currentNome, currentAvatarKey, onClose, onSaved }: {
