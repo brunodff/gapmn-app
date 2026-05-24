@@ -716,9 +716,58 @@ export default function AtasRegistroPreco({ canSync }: Props) {
   );
 }
 
+// ── Config localStorage ────────────────────────────────────────────────────
+const LS_APT = "gapmn_apt_config";
+
+type AptConfig = {
+  nup: string;
+  processoAdm: string;
+  dofReferencia: string;
+  representanteNome: string;
+  representantePortaria: string;
+  representanteBoletim: string;
+  representanteCpf: string;
+  representanteIdentidade: string;
+  percentualExtenso: string;
+  gestorNome: string;
+  gestorCargo: string;
+  agenteCINome: string;
+  agenteCICargo: string;
+  ordenadorNome: string;
+  ordenadorCargo: string;
+};
+
+const DEFAULT_APT: AptConfig = {
+  nup: "",
+  processoAdm: "",
+  dofReferencia: "SEÇÃO 3 Nº 162 de 27/08/2025",
+  representanteNome: "SUSAN KELLY PRADO ANDRADE Cel Int",
+  representantePortaria: "PORTARIA GABAER n°1208/GC1, de 06 de setembro de 2024",
+  representanteBoletim: "BOLETIM DO COMANDO DA AERONÁUTICA n°56, de 24 março de 2024",
+  representanteCpf: "708.595.071-49",
+  representanteIdentidade: "510352 COMAER",
+  percentualExtenso: "",
+  gestorNome: "GABRIELA DE ANDRADE CAVALCANTI TRINDADE 1º Ten QOINT",
+  gestorCargo: "Gestor de Licitações",
+  agenteCINome: "MAINÃ FARIA CUNHA DE JESUS Cap INT",
+  agenteCICargo: "Agente de Controle Interno",
+  ordenadorNome: "SUSAN KELLY PRADO ANDRADE Cel Int",
+  ordenadorCargo: "Ordenador de Despesas",
+};
+
+function loadAptCfg(): AptConfig {
+  try {
+    const raw = localStorage.getItem(LS_APT);
+    return raw ? { ...DEFAULT_APT, ...JSON.parse(raw) } : { ...DEFAULT_APT };
+  } catch { return { ...DEFAULT_APT }; }
+}
+function saveAptCfg(cfg: AptConfig) {
+  try { localStorage.setItem(LS_APT, JSON.stringify(cfg)); } catch {}
+}
+
 // ── Modal de Apostilamento ─────────────────────────────────────────────────
 function ApostilamentoModal({
-  numeroAta, compra, tr, itens, loadingItens, ipcaResult, onClose,
+  numeroAta, compra, itens, loadingItens, ipcaResult, onClose,
 }: {
   numeroAta: string;
   compra: string | null;
@@ -728,145 +777,299 @@ function ApostilamentoModal({
   ipcaResult?: IpcaResult | null;
   onClose: () => void;
 }) {
-  const proxReaj = tr?.data_orcamento ? proxReajusteDisplay(tr.data_orcamento) : null;
-  const calcUrl  = "https://www3.bcb.gov.br/CALCIDADAO/publico/corrigirPorIndice.do?method=corrigirPorIndice";
+  const [cfg,     setCfg]     = useState<AptConfig>(loadAptCfg);
+  const [draft,   setDraft]   = useState<AptConfig>(loadAptCfg);
+  const [showCfg, setShowCfg] = useState(false);
+
+  // Itens agrupados por fornecedor
+  const byFornecedor = useMemo(() => {
+    const map = new Map<string, { razao: string; cnpj: string; itens: ItemAta[] }>();
+    itens.forEach((item) => {
+      const key = item.cnpj_fornecedor ?? "__sem_cnpj__";
+      if (!map.has(key)) map.set(key, { razao: item.fornecedor_nome ?? "–", cnpj: item.cnpj_fornecedor ?? "–", itens: [] });
+      map.get(key)!.itens.push(item);
+    });
+    return Array.from(map.values());
+  }, [itens]);
+
+  function setDraftField(k: keyof AptConfig, v: string) {
+    setDraft((prev) => ({ ...prev, [k]: v }));
+  }
+  function salvarCfg() {
+    saveAptCfg(draft);
+    setCfg({ ...draft });
+    setShowCfg(false);
+  }
+
+  const pct = ipcaResult
+    ? ipcaResult.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "____";
+
+  const docStyle: React.CSSProperties = {
+    fontFamily: "Arial, Helvetica, sans-serif",
+    fontSize: "11pt",
+    color: "#000",
+    lineHeight: "1.6",
+    width: "210mm",
+    minHeight: "297mm",
+    padding: "18mm 22mm",
+    background: "#fff",
+  };
+
+  const CFG_FIELDS: { key: keyof AptConfig; label: string }[] = [
+    { key: "nup",                    label: "NUP" },
+    { key: "processoAdm",            label: "Processo Administrativo" },
+    { key: "dofReferencia",          label: "Referência — Diário Oficial" },
+    { key: "representanteNome",      label: "Representante GAP-MN (nome + posto/graduação)" },
+    { key: "representantePortaria",  label: "Portaria de nomeação" },
+    { key: "representanteBoletim",   label: "Boletim COMAER (publicação da portaria)" },
+    { key: "representanteCpf",       label: "CPF do representante" },
+    { key: "representanteIdentidade",label: "Identidade do representante" },
+    { key: "percentualExtenso",      label: "Percentual IPCA por extenso (ex: quatro vírgula trinta e nove por cento)" },
+    { key: "gestorNome",             label: "Gestor de Licitações — nome + graduação" },
+    { key: "gestorCargo",            label: "Gestor de Licitações — cargo" },
+    { key: "agenteCINome",           label: "Agente de Controle Interno — nome + graduação" },
+    { key: "agenteCICargo",          label: "Agente de Controle Interno — cargo" },
+    { key: "ordenadorNome",          label: "Ordenador de Despesas — nome + graduação" },
+    { key: "ordenadorCargo",         label: "Ordenador de Despesas — cargo" },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto print:p-0">
-      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl my-6 print:shadow-none print:rounded-none print:my-0">
-        {/* Cabeçalho */}
-        <div className="bg-gradient-to-r from-slate-800 to-slate-700 text-white rounded-t-2xl px-6 py-4 flex items-start justify-between print:rounded-none">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">
-              Grupamento de Apoio — Marinha do Brasil (GAP-MN)
-            </div>
-            <div className="text-lg font-bold">TERMO DE APOSTILAMENTO</div>
-            <div className="text-sm text-slate-300 mt-0.5">
-              ATA Nº {numeroAta}{compra ? ` · Compra ${compra}` : ""}
-            </div>
-          </div>
-          <button onClick={onClose}
-            className="text-slate-400 hover:text-white text-xl leading-none mt-1 print:hidden">✕</button>
-        </div>
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-200 overflow-hidden">
 
-        <div className="px-6 py-5 space-y-5">
-          {/* Dados do reajuste */}
-          {tr?.data_orcamento ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: "Data do Orçamento Estimado", value: fmtDate(tr.data_orcamento) },
-                { label: "Índice de Reajuste",          value: tr.indice_adotado ?? "–" },
-                { label: "Data do Próximo Reajuste",    value: proxReaj ?? "–", amber: true },
-                {
-                  label: `${tr.indice_adotado ?? "IPCA"} Acumulado`,
-                  value: ipcaResult === undefined
-                    ? "Calculando…"
-                    : ipcaResult === null
-                      ? "Não disponível"
-                      : `+${ipcaResult.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
-                  sub: ipcaResult ? `${ipcaResult.periodoInicio} a ${ipcaResult.periodoFim}` : undefined,
-                  green: !!ipcaResult,
-                },
-              ].map((c) => (
-                <div key={c.label} className="rounded-xl border border-slate-200 px-4 py-3 bg-slate-50">
-                  <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">{c.label}</div>
-                  <div className={`text-base font-bold ${c.amber ? "text-amber-700" : c.green ? "text-emerald-700" : "text-slate-800"}`}>
-                    {c.value}
-                  </div>
-                  {c.sub && <div className="text-[10px] text-slate-400 mt-0.5">{c.sub}</div>}
+      {/* Barra superior — oculta na impressão */}
+      <div className="print:hidden shrink-0 flex items-center justify-between gap-3 bg-slate-800 px-4 py-2 text-white">
+        <div className="text-sm font-semibold truncate">
+          Termo de Apostilamento — ATA Nº {numeroAta}{compra ? ` · Pregão ${compra}` : ""}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => { setDraft({ ...cfg }); setShowCfg((v) => !v); }}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              showCfg ? "bg-slate-600 text-slate-200" : "bg-amber-500 hover:bg-amber-400 text-white"
+            }`}
+          >
+            ✏️ {showCfg ? "Fechar painel" : "Editar campos"}
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition-colors"
+          >
+            🖨 Imprimir / PDF
+          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2 leading-none">✕</button>
+        </div>
+      </div>
+
+      {/* Corpo — painel de config + documento */}
+      <div className="flex flex-1 overflow-hidden print:block print:overflow-visible">
+
+        {/* Painel de campos editáveis — oculto na impressão */}
+        {showCfg && (
+          <div className="print:hidden w-80 shrink-0 bg-white border-r border-slate-200 overflow-y-auto flex flex-col">
+            <div className="p-4 space-y-3 flex-1">
+              <div className="text-sm font-bold text-slate-800">Campos Editáveis</div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Estas informações são salvas no navegador e reutilizadas automaticamente na próxima ATA.
+                Altere apenas o que mudou.
+              </p>
+              {CFG_FIELDS.map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-0.5">{label}</label>
+                  <input
+                    value={draft[key]}
+                    onChange={(e) => setDraftField(key, e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  />
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-              TR ainda não contém dados de reajuste. Reenvie o PDF do Termo de Referência.
+            <div className="p-4 border-t border-slate-100 shrink-0">
+              <button
+                onClick={salvarCfg}
+                className="w-full rounded-lg bg-emerald-600 text-white py-2 text-xs font-semibold hover:bg-emerald-700 transition-colors"
+              >
+                ✓ Salvar e aplicar
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Nota legal */}
-          {tr?.data_orcamento && (
-            <p className="text-xs text-slate-500 leading-relaxed border-l-2 border-slate-200 pl-3">
-              Nos termos do art. 135 da Lei nº 14.133/2021, fica apostilado o reajuste dos preços registrados
-              nesta Ata, referente ao período de <strong>{ipcaResult?.periodoInicio ?? "–"}</strong> a{" "}
-              <strong>{ipcaResult?.periodoFim ?? "–"}</strong>, pelo índice {tr.indice_adotado ?? "IPCA"} acumulado
-              de <strong>{ipcaResult
-                ? `${ipcaResult.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
-                : "____%"
-              }</strong>, conforme calculadora do cidadão disponível em{" "}
-              <a href={calcUrl} target="_blank" rel="noopener noreferrer"
-                className="text-sky-600 hover:underline">bcb.gov.br ↗</a>.
+        {/* Área do documento */}
+        <div className="flex-1 overflow-y-auto py-8 px-4 print:p-0 print:overflow-visible flex justify-center">
+          <div style={docStyle} className="shadow-xl print:shadow-none">
+
+            {/* Timbre */}
+            <div style={{ textAlign: "center", borderBottom: "2px solid #003366", paddingBottom: "10pt", marginBottom: "14pt" }}>
+              <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#003366" }}>MINISTÉRIO DA DEFESA</div>
+              <div style={{ fontSize: "9pt", fontWeight: "bold", color: "#003366" }}>COMANDO DA AERONÁUTICA</div>
+              <div style={{ fontSize: "10pt", fontWeight: "bold", color: "#003366" }}>GRUPAMENTO DE APOIO DE MANAUS</div>
+            </div>
+
+            {/* Título */}
+            <div style={{ textAlign: "center", marginBottom: "14pt" }}>
+              <div style={{ fontWeight: "bold" }}>TERMO DE APOSTILAMENTO</div>
+              <div style={{ fontWeight: "bold" }}>ATA DE REGISTRO DE PREÇOS</div>
+              <div style={{ fontWeight: "bold" }}>N.º {numeroAta}</div>
+            </div>
+
+            {/* Assunto */}
+            <p style={{ marginBottom: "12pt" }}>
+              <strong>Assunto:</strong> Reajuste de preços da ata de registro de preços n.º {numeroAta} referente ao Pregão
+              eletrônico {compra ?? "________"} – NUP {cfg.nup || "________________"}
             </p>
-          )}
 
-          {/* Tabela de itens reajustados */}
-          <div>
-            <div className="text-xs font-semibold uppercase text-slate-500 tracking-wider mb-2">
-              Valores Reajustados por Item
-            </div>
+            {/* Parágrafo de abertura */}
+            <p style={{ textAlign: "justify", marginBottom: "14pt" }}>
+              O GRUPAMENTO DE APOIO DE MANAUS, com sede em AV. PRESIDENTE KENNEDY, 1700 MANAUS-AM,
+              inscrito(a) no CNPJ/MF sob o n.º 00.394.429/0188-24, neste ato representado pela{" "}
+              <strong>{cfg.representanteNome}</strong>, nomeado(a) pela{" "}
+              <strong>{cfg.representantePortaria}</strong>, publicada no{" "}
+              <strong>{cfg.representanteBoletim}</strong>, inscrito(a) no CPF sob o n.º{" "}
+              <strong>{cfg.representanteCpf}</strong>, portador(a) da Carteira de Identidade n.º{" "}
+              <strong>{cfg.representanteIdentidade}</strong>, considerando o julgamento da licitação na
+              modalidade de pregão, na forma eletrônica, para REGISTRO DE PREÇOS n.º{" "}
+              <strong>{compra ?? "________"}</strong>, publicada no Diário Oficial de{" "}
+              <strong>{cfg.dofReferencia}</strong>, processo administrativo{" "}
+              <strong>{cfg.processoAdm || "________________"}</strong>, RESOLVE lavrar o presente Termo de
+              Apostilamento à Ata de Registro de Preços n.º <strong>{numeroAta}</strong>, em conformidade com as
+              disposições a seguir:
+            </p>
+
+            {/* 1. DO OBJETO */}
+            <p style={{ fontWeight: "bold", marginBottom: "6pt" }}>1. DO OBJETO</p>
+            <p style={{ textAlign: "justify", marginBottom: "10pt" }}>
+              1.1 O presente instrumento tem por objeto formalizar o reajuste de preços dos itens registrados na
+              Ata de Registro de Preços n.º <strong>{numeroAta}</strong> com fulcro no art. 136, inciso I, da Lei
+              n.º 14.133/2021, visando à recomposição do valor aquisitivo da moeda.
+            </p>
+            <p style={{ textAlign: "justify", marginBottom: "16pt" }}>
+              1.2. O reajuste decorre do transcurso do interregno de 12 (doze) meses e foi calculado com base
+              na variação do índice IPCA, acumulado no período de{" "}
+              <strong>
+                {ipcaResult?.periodoInicio ?? "______"} a {ipcaResult?.periodoFim ?? "______"}
+              </strong>
+              , correspondente ao percentual de{" "}
+              <strong>
+                {pct}%{cfg.percentualExtenso ? ` (${cfg.percentualExtenso})` : ""}
+              </strong>.
+            </p>
+
+            {/* Tabelas por fornecedor */}
             {loadingItens ? (
-              <div className="text-xs text-slate-400 py-4 text-center">Carregando itens…</div>
-            ) : itens.length === 0 ? (
-              <div className="text-xs text-slate-400 py-4 text-center">Nenhum item registrado para esta ATA.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-600 font-semibold text-left">
-                      <th className="px-3 py-2 whitespace-nowrap">Item</th>
-                      <th className="px-3 py-2">Descrição</th>
-                      <th className="px-3 py-2 whitespace-nowrap">Fornecedor</th>
-                      <th className="px-3 py-2 whitespace-nowrap text-right">Qtd.</th>
-                      <th className="px-3 py-2 whitespace-nowrap text-right">Vl. Unit. Original</th>
-                      <th className="px-3 py-2 whitespace-nowrap text-right text-amber-700">Vl. Unit. Reajustado</th>
-                      <th className="px-3 py-2 whitespace-nowrap text-right text-emerald-700">Variação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itens.map((item, j) => {
-                      const vuReaj = ipcaResult && item.valor_unitario
-                        ? item.valor_unitario * ipcaResult.fator : null;
-                      const variacao = ipcaResult && item.valor_unitario
-                        ? item.valor_unitario * (ipcaResult.fator - 1) : null;
-                      return (
-                        <tr key={item.id}
-                          className={`border-t border-slate-200 ${j % 2 === 0 ? "bg-white" : "bg-slate-50"}`}>
-                          <td className="px-3 py-1.5 font-mono font-semibold">{item.numero_ata || "–"}</td>
-                          <td className="px-3 py-1.5 max-w-xs">
-                            <span className="line-clamp-2">{item.descricao || "–"}</span>
-                          </td>
-                          <td className="px-3 py-1.5 whitespace-nowrap">{item.fornecedor_nome || "–"}</td>
-                          <td className="px-3 py-1.5 text-right">{fmtQtd(item.quantidade_registrada)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(item.valor_unitario)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono font-semibold text-amber-700">
-                            {vuReaj != null ? fmtBRL(vuReaj) : <span className="text-slate-300">–</span>}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-semibold text-emerald-700">
-                            {variacao != null ? `+${fmtBRL(variacao)}` : <span className="text-slate-300">–</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+              <p style={{ textAlign: "center", color: "#666", padding: "20pt 0" }}>Carregando itens…</p>
+            ) : byFornecedor.length === 0 ? (
+              <p style={{ textAlign: "center", color: "#666", padding: "20pt 0" }}>Nenhum item registrado para esta ATA.</p>
+            ) : byFornecedor.map((grupo, gi) => {
+              const totalGrupo = grupo.itens.reduce((s, item) => {
+                const vuR = ipcaResult && item.valor_unitario ? item.valor_unitario * ipcaResult.fator : 0;
+                return s + vuR * (item.quantidade_registrada ?? 0);
+              }, 0);
+              return (
+                <div key={gi} style={{ marginBottom: "14pt" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#003366", color: "#fff" }}>
+                        <td colSpan={7} style={{ padding: "4pt 6pt", fontWeight: "bold", fontSize: "10pt" }}>
+                          RAZÃO: {grupo.razao.toUpperCase()}
+                        </td>
+                      </tr>
+                      <tr style={{ background: "#1a4d7a", color: "#fff" }}>
+                        <td colSpan={7} style={{ padding: "2pt 6pt", fontSize: "9pt" }}>
+                          CNPJ {grupo.cnpj}
+                        </td>
+                      </tr>
+                      <tr style={{ background: "#c8d4e3", fontSize: "9pt", fontWeight: "bold", textAlign: "center" }}>
+                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "6%" }}>ITEM</th>
+                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "36%", textAlign: "left" }}>DESCRIÇÃO</th>
+                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "7%" }}>QTDE</th>
+                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "6%" }}>UND</th>
+                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "14%" }}>VALOR UNIT. ATUAL</th>
+                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "15%" }}>VALOR UNIT. REAJUSTADO</th>
+                        <th style={{ border: "1px solid #999", padding: "3pt 4pt", width: "16%" }}>VALOR TOTAL REAJUSTADO</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grupo.itens.map((item, j) => {
+                        const vu  = item.valor_unitario ?? 0;
+                        const vuR = ipcaResult ? vu * ipcaResult.fator : null;
+                        const tot = vuR != null ? vuR * (item.quantidade_registrada ?? 0) : null;
+                        return (
+                          <tr key={item.id} style={{ background: j % 2 === 0 ? "#fff" : "#f5f7fa", fontSize: "9pt", verticalAlign: "top" }}>
+                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "center", fontWeight: "bold" }}>{item.numero_ata || String(j + 1).padStart(2, "0")}</td>
+                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt" }}>{item.descricao || "–"}</td>
+                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "center" }}>{fmtQtd(item.quantidade_registrada)}</td>
+                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "center" }}>UN</td>
+                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right" }}>{fmtBRL(item.valor_unitario)}</td>
+                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right", fontWeight: "bold" }}>{vuR != null ? fmtBRL(vuR) : "–"}</td>
+                            <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right", fontWeight: "bold" }}>{tot != null ? fmtBRL(tot) : "–"}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr style={{ background: "#e4eaf2", fontWeight: "bold", fontSize: "9pt" }}>
+                        <td colSpan={6} style={{ border: "1px solid #ccc", padding: "3pt 6pt", textAlign: "right" }}>TOTAL:</td>
+                        <td style={{ border: "1px solid #ccc", padding: "3pt 4pt", textAlign: "right" }}>{fmtBRL(totalGrupo)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+
+            {/* 2. DA RATIFICAÇÃO */}
+            <p style={{ fontWeight: "bold", marginTop: "16pt", marginBottom: "6pt" }}>2. DA RATIFICAÇÃO</p>
+            <p style={{ textAlign: "justify", marginBottom: "16pt" }}>
+              2.1. Ficam ratificadas e inalteradas todas as demais cláusulas, condições e prazos estabelecidos na
+              Ata de Registro de Preços n.º <strong>{numeroAta}</strong> e em seus anexos, que não colidam com as
+              disposições do presente Termo de Apostilamento.
+            </p>
+
+            {/* 3. DA DIVULGAÇÃO */}
+            <p style={{ fontWeight: "bold", marginBottom: "6pt" }}>3. DA DIVULGAÇÃO NO PNCP</p>
+            <p style={{ textAlign: "justify", marginBottom: "8pt" }}>
+              3.1. Incumbirá ao ÓRGÃO GERENCIADOR providenciar a divulgação deste instrumento no PNCP,
+              de acordo com o prescrito no art. 18, § 4º, e art. 22 do Decreto n.º 11.462, de 2023.
+            </p>
+            <p style={{ textAlign: "justify", marginBottom: "36pt" }}>
+              Para firmeza e validade do que aqui ficou lavrado, assina-se o presente Termo de Apostilamento.
+            </p>
+
+            {/* Localidade e data */}
+            <p style={{ textAlign: "center", marginBottom: "32pt", color: "#555", fontStyle: "italic", fontSize: "10pt" }}>
+              Manaus, data conforme assinatura digital
+            </p>
+
+            {/* Assinaturas */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "28pt" }}>
+              {[
+                { nome: cfg.gestorNome,    cargo: cfg.gestorCargo    },
+                { nome: cfg.agenteCINome,  cargo: cfg.agenteCICargo  },
+                { nome: cfg.ordenadorNome, cargo: cfg.ordenadorCargo },
+              ].map((sig, i) => (
+                <div key={i} style={{ textAlign: "center" }}>
+                  <div style={{ borderTop: "1px solid #000", paddingTop: "4pt", minWidth: "220pt", display: "inline-block" }}>
+                    <div style={{ fontWeight: "bold", color: "#003366" }}>{sig.nome}</div>
+                    <div style={{ color: "#003366", fontSize: "9pt" }}>{sig.cargo}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
           </div>
         </div>
-
-        {/* Rodapé */}
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between print:hidden">
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-          >
-            🖨 Imprimir / Exportar PDF
-          </button>
-          <button onClick={onClose}
-            className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
-            Fechar
-          </button>
-        </div>
       </div>
+
+      {/* CSS de impressão */}
+      <style>{`
+        @media print {
+          body > *:not([data-apt-root]) { display: none !important; }
+          [data-apt-root] { position: fixed !important; inset: 0 !important; overflow: visible !important; background: #fff !important; }
+          .print\\:hidden { display: none !important; }
+          .print\\:block { display: block !important; }
+          .print\\:p-0 { padding: 0 !important; }
+          .print\\:shadow-none { box-shadow: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
