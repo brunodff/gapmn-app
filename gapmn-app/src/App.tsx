@@ -10,6 +10,7 @@ import SetorInbox from "./pages/SetorInbox";
 import ControleOrcamentario from "./pages/ControleOrcamentario";
 import FerramentasGestao from "./pages/FerramentasGestao";
 import CnetBot from "./pages/CnetBot";
+import LandingPage from "./pages/LandingPage";
 import RequireAuth from "./routes/RequireAuth";
 import RequireAgent from "./routes/RequireAgent";
 import ManualSite from "./components/ManualSite";
@@ -36,7 +37,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [showManual, setShowManual] = useState(false);
 
   // Login/signup: componente controla o próprio layout
-  if (loc.pathname === "/login" || loc.pathname === "/signup") {
+  if (loc.pathname === "/" || loc.pathname === "/login" || loc.pathname === "/signup") {
     return <>{children}</>;
   }
 
@@ -80,7 +81,7 @@ export default function App() {
     <BrowserRouter>
       <Shell>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<LandingPage />} />
 
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
