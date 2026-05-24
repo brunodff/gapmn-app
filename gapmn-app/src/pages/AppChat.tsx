@@ -243,7 +243,7 @@ export default function AppChat() {
       // Contagens para KPIs
       const today = new Date().toISOString().split("T")[0];
       const [r1, r2, r3, r4, r5] = await Promise.all([
-        supabase.from("empenhos_seo").select("nota_empenho").order("nota_empenho", { ascending: false }).limit(1),
+        supabase.from("siloms_ne_identificadores").select("ne_siafi").order("ne_siafi", { ascending: false }).limit(1),
         supabase.from("processos_licitatorios").select("*", { count: "exact", head: true }),
         supabase.from("contratos_scon").select("*", { count: "exact", head: true }),
         supabase.from("indicadores_lotacao").select("*", { count: "exact", head: true }),
@@ -253,7 +253,7 @@ export default function AppChat() {
       ]);
 
       // Extrai o número sequencial da última NE (ex: "2026NE000700" → 700)
-      const lastNE: string = (r1.data?.[0] as any)?.nota_empenho ?? "";
+      const lastNE: string = (r1.data?.[0] as any)?.ne_siafi ?? "";
       const neNum = parseInt(lastNE.replace(/\D/g, "").slice(-6) || "0", 10);
 
       setKpis({
