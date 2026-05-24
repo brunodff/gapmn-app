@@ -29,7 +29,7 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
   if (loading) return <div style={{ padding: 24 }}>Carregando...</div>;
 
   if (!hasSession) {
-    return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
+    return <Navigate to="/" replace state={{ from: loc.pathname }} />;
   }
 
   return <>{children}</>;
