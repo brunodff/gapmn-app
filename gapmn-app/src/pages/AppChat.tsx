@@ -244,7 +244,7 @@ export default function AppChat() {
       const today = new Date().toISOString().split("T")[0];
       const [r1, r2, r3, r4, r5] = await Promise.all([
         supabase.from("siloms_ne_identificadores").select("ne_siafi")
-          .ilike("ne_siafi", "2026NE0%")
+          .ilike("ne_siafi", "2026NE0_____")
           .order("ne_siafi", { ascending: false })
           .limit(1),
         supabase.from("processos_licitatorios").select("*", { count: "exact", head: true }),
@@ -255,9 +255,9 @@ export default function AppChat() {
           .not("situacao", "ilike", "%cancelad%"),
       ]);
 
-      // Extrai o número sequencial da última NE (ex: "2026NE000700" → 700)
+      // Extrai número sequencial da última NE no padrão 2026NE0XXXXX (últimos 5 chars)
       const lastNE: string = (r1.data?.[0] as any)?.ne_siafi ?? "";
-      const neNum = parseInt(lastNE.replace(/\D/g, "").slice(-6) || "0", 10);
+      const neNum = parseInt(lastNE.slice(-5) || "0", 10);
 
       setKpis({
         empenhos:  neNum,
