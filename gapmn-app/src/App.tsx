@@ -87,7 +87,7 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
 
           <Route path="/signup" element={<Signup />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
 
           <Route path="/auth/confirm" element={<AuthConfirm />} />
           <Route path="/auth/reset-password" element={<ResetPassword />} />
@@ -132,7 +132,7 @@ export default function App() {
 
           <Route path="/cnet" element={<CnetBot />} />
 
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Shell>
     </BrowserRouter>

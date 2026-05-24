@@ -103,7 +103,7 @@ export default function SetorInbox() {
               ← Início
             </button>
             <button
-              onClick={async () => { await supabase.auth.signOut(); nav("/login"); }}
+              onClick={async () => { await supabase.auth.signOut(); nav("/"); }}
               className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
             >
               Sair

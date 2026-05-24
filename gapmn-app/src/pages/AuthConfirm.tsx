@@ -84,7 +84,7 @@ export default function AuthConfirm() {
 
         {status === "err" && (
           <div className="mt-4 flex gap-4">
-            <Link className="text-sky-700" to="/login">
+            <Link className="text-sky-700" to="/">
               Ir para login
             </Link>
             <Link className="text-sky-700" to="/signup">

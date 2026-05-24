@@ -220,7 +220,7 @@ export default function Signup() {
 
           <p className="text-center text-sm text-slate-600">
             Já tem conta?{" "}
-            <Link className="text-sky-700" to="/login">
+            <Link className="text-sky-700" to="/">
               Entrar
             </Link>
           </p>

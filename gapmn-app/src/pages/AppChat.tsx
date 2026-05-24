@@ -251,7 +251,7 @@ export default function AppChat() {
     setLoggingOut(true);
     try {
       await supabase.auth.signOut();
-      nav("/login", { replace: true });
+      nav("/", { replace: true });
     } finally {
       setLoggingOut(false);
     }

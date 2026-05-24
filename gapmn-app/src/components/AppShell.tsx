@@ -15,7 +15,7 @@ export default function AppShell({
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    nav("/login");
+    nav("/");
   }
 
   const isActive = (path: string) =>

@@ -46,7 +46,7 @@ export default function ForgotPassword() {
             </button>
           </p>
           <p className="mt-2 text-center text-sm">
-            <Link className="text-sky-700" to="/login">
+            <Link className="text-sky-700" to="/">
               Voltar ao login
             </Link>
           </p>
@@ -88,7 +88,7 @@ export default function ForgotPassword() {
           </button>
 
           <p className="text-center text-sm">
-            <Link className="text-sky-700" to="/login">
+            <Link className="text-sky-700" to="/">
               Voltar ao login
             </Link>
           </p>

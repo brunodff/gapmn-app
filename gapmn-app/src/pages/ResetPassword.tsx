@@ -126,7 +126,7 @@ export default function ResetPassword() {
             <Link className="text-sky-700" to="/forgot-password">
               Solicitar novo link
             </Link>
-            <Link className="text-sky-700" to="/login">
+            <Link className="text-sky-700" to="/">
               Ir para login
             </Link>
           </div>
