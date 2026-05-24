@@ -144,18 +144,18 @@ export default function AppChat() {
             onClick={() => nav("/orcamento")}
             className="w-full rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6 text-left hover:bg-emerald-100 active:bg-emerald-200 transition-colors"
           >
-            <div className="text-3xl mb-2">💰</div>
-            <div className="text-lg font-semibold text-emerald-800">Painel Orçamentário</div>
-            <div className="text-sm text-emerald-600 mt-1">Crédito disponível · Empenhos · Restos a Pagar</div>
+            <div className="text-3xl mb-2">📊</div>
+            <div className="text-lg font-semibold text-emerald-800">Painéis Gerenciais</div>
+            <div className="text-sm text-emerald-600 mt-1">Orçamentário · Empenhos · Restos a Pagar</div>
           </button>
 
           <button
-            onClick={() => nav("/acompanhamentos")}
+            onClick={() => nav("/ferramentas")}
             className="w-full rounded-2xl border-2 border-violet-200 bg-violet-50 p-6 text-left hover:bg-violet-100 active:bg-violet-200 transition-colors"
           >
-            <div className="text-3xl mb-2">👤</div>
-            <div className="text-lg font-semibold text-violet-800">Meus Acompanhamentos</div>
-            <div className="text-sm text-violet-600 mt-1">Contratos · Processos · Empenhos · Indicadores</div>
+            <div className="text-3xl mb-2">🔧</div>
+            <div className="text-lg font-semibold text-violet-800">Ferramentas & Catálogo</div>
+            <div className="text-sm text-violet-600 mt-1">Robôs · Automações · Guia do sistema</div>
           </button>
 
         </div>

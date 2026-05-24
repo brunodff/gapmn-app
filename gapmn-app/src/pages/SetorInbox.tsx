@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { supabase } from "../lib/supabase";
@@ -6,35 +6,16 @@ import { Card } from "../components/Card";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
 import GerenciamentoEmpenhos from "../components/GerenciamentoEmpenhos";
-import SicafBot from "../components/SicafBot";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
-import PainelDashboard from "../components/PainelDashboard";
+import AtasRegistroPreco from "../components/AtasRegistroPreco";
 
 type Setor = "SEO" | "SCON" | "SLIC" | "ADMIN" | "DEV";
-
-type TicketStatus = "open" | "answered" | "closed";
 
 type Profile = {
   id: string;
   nome_guerra: string | null;
   email: string | null;
   setor: Setor | null;
-};
-
-type Ticket = {
-  id: string; // uuid
-  created_at: string;
-  updated_at?: string | null;
-  user_id: string;
-  nome_guerra: string | null;
-  email: string | null;
-  unidade: string | null;
-  setor: Setor;
-  mensagem: string;
-  status: TicketStatus;
-  resposta: string | null;
-  respondido_em?: string | null;
-  responded_by?: string | null;
 };
 
 function isAgent(profile?: Profile | null) {
@@ -55,57 +36,27 @@ function formatSetor(s: string | null | undefined): string {
 export default function SetorInbox() {
   const nav = useNavigate();
   const [me, setMe] = useState<Profile | null>(null);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [active, setActive] = useState<Ticket | null>(null);
-  const [reply, setReply] = useState("");
-  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const [sp] = useSearchParams();
 
-  // Aba ativa — todos os usuários logados veem contratos/processos/indicadores
   const defaultTab = sp.get("tab") || (me?.setor === "SEO" ? "indicadores" : "contratos");
-  const [tab, setTab] = useState<"processos" | "prestacao" | "contratos" | "indicadores" | "empenhos" | "sicaf">(defaultTab as any);
+  const [tab, setTab] = useState<"processos" | "contratos" | "indicadores" | "empenhos" | "atas">(defaultTab as any);
   const isDev = me?.setor === "DEV";
-  const showProcessosTab   = true;
-  const showContratosTab   = true;
-  const showIndicadoresTab = true;
   const showAnyExtraTab    = true;
-  // Painel de prestação: SCON, SLIC, ADMIN e DEV (acesso total)
-  const showPrestacaoTab   = isDev || me?.setor === "SCON" || me?.setor === "SLIC" || me?.setor === "ADMIN";
-  // Permissões de importação: setor responsável + admin + DEV (acesso total)
   const canImportIndicadores = isDev || me?.setor === "SEO"   || me?.setor === "ADMIN";
   const canImportContratos   = isDev || me?.setor === "SCON"  || me?.setor === "ADMIN";
   const canImportProcessos   = isDev || me?.setor === "SLIC"  || me?.setor === "ADMIN";
-  // Permissão de edição geral: qualquer setor cadastrado (não visitante)
   const canEdit              = isAgent(me);
-  // Permissão de sync de empenhos: SEO, ADMIN e DEV
   const canSyncEmpenhos      = isDev || me?.setor === "SEO" || me?.setor === "ADMIN";
 
-  const canAnswer = useMemo(() => reply.trim().length > 0 && !saving && !!active, [reply, saving, active]);
-
-  const [filtroTicket, setFiltroTicket] = useState<"todos" | "open" | "answered">("todos");
-  const [prestacaoSubTab, setPrestacaoSubTab] = useState<"SCON" | "SLIC">("SCON");
-
-  const ticketsFiltrados = useMemo(
-    () => filtroTicket === "todos" ? tickets : tickets.filter((t) => t.status === filtroTicket),
-    [tickets, filtroTicket]
-  );
 
   useEffect(() => {
     (async () => {
-      setLoading(true);
       setErr(null);
-
       const { data: sess } = await supabase.auth.getSession();
       const uid = sess.session?.user.id;
-      if (!uid) {
-        setLoading(false);
-        setErr("Sessão inválida. Faça login novamente.");
-        return;
-      }
+      if (!uid) { setErr("Sessão inválida. Faça login novamente."); return; }
 
       const { data: prof, error: e1 } = await supabase
         .from("profiles")
@@ -113,90 +64,12 @@ export default function SetorInbox() {
         .eq("id", uid)
         .maybeSingle();
 
-      if (e1) {
-        setLoading(false);
-        setErr(e1.message);
-        return;
-      }
+      if (e1) { setErr(e1.message); return; }
 
       const raw = (prof ?? null) as any;
-      const p: Profile | null = raw
-        ? { ...raw, setor: raw.setor?.toUpperCase() ?? null }
-        : null;
-      setMe(p);
-
-      // Carrega tickets apenas para agentes (usado se a aba inbox for reativada)
-      if (p && isAgent(p)) {
-        const q = supabase
-          .from("help_tickets")
-          .select("id, created_at, user_id, nome_guerra, email, unidade, setor, mensagem, status, resposta, respondido_em, responded_by")
-          .order("created_at", { ascending: false });
-        const { data, error: e2 } = p.setor === "ADMIN" ? await q : await q.eq("setor", p.setor!);
-        if (e2) setErr(e2.message);
-        else setTickets((data as any) ?? []);
-      }
-
-      setLoading(false);
+      setMe(raw ? { ...raw, setor: raw.setor?.toUpperCase() ?? null } : null);
     })();
   }, []);
-
-  async function refresh() {
-    if (!me || !isAgent(me)) return;
-
-    setErr(null);
-    setLoading(true);
-
-    const q = supabase
-      .from("help_tickets")
-      .select("id, created_at, user_id, nome_guerra, email, unidade, setor, mensagem, status, resposta, respondido_em, responded_by")
-      .order("created_at", { ascending: false });
-
-    const { data, error } =
-      me.setor === "ADMIN"
-        ? await q
-        : await q.eq("setor", me.setor as any);
-
-    if (error) setErr(error.message);
-    else setTickets((data as any) ?? []);
-
-    // atualiza active
-    if (active) {
-      const updated = (data as any[])?.find((t) => t.id === active.id);
-      if (updated) setActive(updated);
-    }
-
-    setLoading(false);
-  }
-
-  async function answerTicket() {
-    if (!active || !canAnswer) return;
-
-    setSaving(true);
-    setErr(null);
-
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const uid = sess.session?.user.id;
-      if (!uid) throw new Error("Sessão inválida.");
-
-      const payload = {
-        resposta: reply.trim(),
-        status: "answered" as TicketStatus,
-        responded_by: uid,
-        respondido_em: new Date().toISOString(),
-      };
-
-      const { error } = await supabase.from("help_tickets").update(payload).eq("id", active.id);
-      if (error) throw error;
-
-      setReply("");
-      await refresh();
-    } catch (e: any) {
-      setErr(e?.message ?? "Não foi possível responder.");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -204,10 +77,10 @@ export default function SetorInbox() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-lg font-semibold text-slate-900">
-              {tab === "processos"   ? "Processos"
-                : tab === "prestacao"   ? "Prestação de Contas"
-                : tab === "sicaf"       ? "SICAF"
-                : tab === "contratos"   ? "Contratos"
+              {tab === "processos"  ? "Processos"
+                : tab === "contratos" ? "Contratos"
+                : tab === "empenhos"  ? "Empenhos"
+                : tab === "atas"      ? "Atas de RP"
                 : "Indicadores de Lotação"}
             </div>
             <div className="text-sm text-slate-600">
@@ -216,6 +89,13 @@ export default function SetorInbox() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => nav("/ferramentas")}
+              className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700 hover:bg-violet-100"
+              title="Ferramentas, robôs e guia do sistema"
+            >
+              🔧 Ferramentas
+            </button>
             <button
               onClick={() => nav("/app")}
               className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
@@ -234,14 +114,13 @@ export default function SetorInbox() {
         {/* Abas */}
         {showAnyExtraTab && (
           <div className="mt-3 flex flex-wrap gap-1 border-b border-slate-200">
-            {(["contratos", "processos", "indicadores", "empenhos", "sicaf", ...(showPrestacaoTab ? ["prestacao" as const] : [])] as const).map((t) => {
+            {(["contratos", "processos", "atas", "indicadores", "empenhos"] as const).map((t) => {
               const labels: Record<string, string> = {
                 indicadores: "Indicadores de Lotação",
                 contratos:   "Contratos",
                 processos:   "Processos",
+                atas:        "Atas de RP",
                 empenhos:    "Empenhos",
-                sicaf:       "SICAF",
-                prestacao:   "Prestação de Contas",
               };
               return (
                 <button
@@ -278,38 +157,12 @@ export default function SetorInbox() {
       {/* Conteúdo da aba Gerenciamento de Contratos */}
       {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEdit} />}
 
+      {/* Conteúdo da aba Atas de RP */}
+      {tab === "atas" && <AtasRegistroPreco canSync={canImportProcessos} />}
+
       {/* Conteúdo da aba Empenhos */}
       {tab === "empenhos" && <GerenciamentoEmpenhos canSync={canSyncEmpenhos} userRole={me?.setor ?? undefined} />}
 
-      {tab === "sicaf" && <SicafBot />}
-
-      {/* Conteúdo da aba Prestação de Contas */}
-      {tab === "prestacao" && showPrestacaoTab && (
-        me?.setor === "ADMIN" ? (
-          <div className="space-y-3">
-            <div className="flex gap-2 border-b border-slate-200 pb-0">
-              {(["SCON", "SLIC"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setPrestacaoSubTab(s)}
-                  className={`px-5 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    prestacaoSubTab === s
-                      ? "border-sky-600 text-sky-700"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  {s === "SCON" ? "Contratos (SCON)" : "Processos (SLIC)"}
-                </button>
-              ))}
-            </div>
-            <PainelDashboard setor={prestacaoSubTab} isAdmin={false} />
-          </div>
-        ) : (
-          <PainelDashboard setor={me?.setor ?? null} isAdmin={false} />
-        )
-      )}
-
-      {/* Aba Inbox removida — restaurar pelo git (branch main) se necessário */}
     </div>
   );
 }

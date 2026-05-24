@@ -75,11 +75,18 @@ function isVencida(vigFim: string | null) {
   return new Date(vigFim + "T23:59:59") < new Date();
 }
 
-// Próximo reajuste: mês da data_orcamento + 12 meses - 1 mês = + 11 meses
-// Ex: 04/11/2024 → 10/2025; 11/2025 → 10/2026
-function proxReajusteDisplay(dataOrcamento: string): string {
+// Próximo reajuste: início = data_orcamento + 11 meses; avança ciclos de 12 meses
+// até uma data futura. Ex: 11/2024 → (10/2025 passado) → 10/2026 ✓
+function proxReajusteDate(dataOrcamento: string): Date {
   const d = new Date(dataOrcamento + "T12:00:00");
   d.setMonth(d.getMonth() + 11);
+  const hoje = new Date();
+  hoje.setDate(1);
+  while (d < hoje) d.setMonth(d.getMonth() + 12);
+  return d;
+}
+function proxReajusteDisplay(dataOrcamento: string): string {
+  const d = proxReajusteDate(dataOrcamento);
   return `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
@@ -176,6 +183,8 @@ export default function AtasRegistroPreco({ canSync }: Props) {
   const [comprasTrMap, setComprasTrMap] = useState<Map<string, CompraTR>>(new Map());
   const [descMap, setDescMap]   = useState<Map<string, string>>(new Map()); // ata_numero → descs concat
   const [ipcaMap, setIpcaMap]   = useState<Map<string, IpcaResult | null>>(new Map());
+  const [sortByReajuste, setSortByReajuste] = useState(false);
+  const [apostilamentoAta, setApostilamentoAta] = useState<string | null>(null);
 
   // upload de Termo de Referência
   const fileInputRef                          = useRef<HTMLInputElement>(null);
@@ -236,19 +245,30 @@ export default function AtasRegistroPreco({ canSync }: Props) {
 
   useEffect(() => { loadAtas(); }, [loadAtas]);
 
-  // Carrega IPCA quando uma ATA com TR e data_orcamento é expandida
+  // Carrega IPCA ao abrir apostilamento
   useEffect(() => {
-    if (!expanded) return;
-    const compra = compraMap.get(expanded);
+    if (!apostilamentoAta) return;
+    const compra = compraMap.get(apostilamentoAta);
     if (!compra) return;
     const tr = comprasTrMap.get(compra);
     if (!tr?.data_orcamento) return;
-    if (ipcaMap.has(compra)) return; // já carregou
-    setIpcaMap((prev) => new Map(prev).set(compra, null)); // marcador loading
-    fetchIpca(tr.data_orcamento).then((result) => {
-      setIpcaMap((prev) => new Map(prev).set(compra, result));
-    });
-  }, [expanded, compraMap, comprasTrMap, ipcaMap]);
+    if (!ipcaMap.has(compra)) {
+      setIpcaMap((prev) => new Map(prev).set(compra, null));
+      fetchIpca(tr.data_orcamento).then((result) => {
+        setIpcaMap((prev) => new Map(prev).set(compra, result));
+      });
+    }
+    if (!itensMap.has(apostilamentoAta)) {
+      setLoadingItens(apostilamentoAta);
+      supabase.from("itens_ata_gap_mn").select("*")
+        .eq("ata_numero", apostilamentoAta).order("numero_ata")
+        .then(({ data }) => {
+          setItensMap((prev) => new Map(prev).set(apostilamentoAta, (data as ItemAta[]) ?? []));
+          setLoadingItens(null);
+        });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apostilamentoAta]);
 
   async function toggleAta(numeroAta: string) {
     if (expanded === numeroAta) { setExpanded(null); return; }
@@ -352,17 +372,29 @@ export default function AtasRegistroPreco({ canSync }: Props) {
     if (filtro === "ativas")     list = list.filter((a) => !isVencida(a.vigencia_final) && !/cancelad/i.test(a.situacao ?? ""));
     if (filtro === "encerradas") list = list.filter((a) => isVencida(a.vigencia_final) || /cancelad|encerrad/i.test(a.situacao ?? ""));
     if (filtroCompra)            list = list.filter((a) => compraMap.get(a.numero_ata) === filtroCompra);
-    if (!busca.trim()) return list;
-    const q = busca.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    return list.filter((a) => {
-      const base = [a.numero_ata, a.situacao, compraMap.get(a.numero_ata) ?? ""]
-        .join(" ").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-      if (base.includes(q)) return true;
-      // busca em descrições dos itens
-      const descs = descMap.get(a.numero_ata) ?? "";
-      return descs.normalize("NFD").replace(/[̀-ͯ]/g, "").includes(q);
-    });
-  }, [atas, busca, filtro, filtroCompra, compraMap, descMap]);
+    if (busca.trim()) {
+      const q = busca.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      list = list.filter((a) => {
+        const base = [a.numero_ata, a.situacao, compraMap.get(a.numero_ata) ?? ""]
+          .join(" ").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        if (base.includes(q)) return true;
+        const descs = descMap.get(a.numero_ata) ?? "";
+        return descs.normalize("NFD").replace(/[̀-ͯ]/g, "").includes(q);
+      });
+    }
+    if (sortByReajuste) {
+      return [...list].sort((a, b) => {
+        const cA = compraMap.get(a.numero_ata);
+        const cB = compraMap.get(b.numero_ata);
+        const tA = cA ? comprasTrMap.get(cA) : undefined;
+        const tB = cB ? comprasTrMap.get(cB) : undefined;
+        const dA = tA?.data_orcamento ? proxReajusteDate(tA.data_orcamento).getTime() : Infinity;
+        const dB = tB?.data_orcamento ? proxReajusteDate(tB.data_orcamento).getTime() : Infinity;
+        return dA - dB;
+      });
+    }
+    return list;
+  }, [atas, busca, filtro, filtroCompra, compraMap, descMap, sortByReajuste, comprasTrMap]);
 
   const ativas     = atas.filter((a) => !isVencida(a.vigencia_final) && !/cancelad/i.test(a.situacao ?? "")).length;
   const encerradas = atas.length - ativas;
@@ -388,6 +420,25 @@ export default function AtasRegistroPreco({ canSync }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Modal de Apostilamento */}
+      {apostilamentoAta && (() => {
+        const compra = compraMap.get(apostilamentoAta) ?? null;
+        const tr     = compra ? (comprasTrMap.get(compra) ?? null) : null;
+        const itens  = itensMap.get(apostilamentoAta) ?? [];
+        const ipca   = compra ? (ipcaMap.get(compra) ?? undefined) : undefined;
+        return (
+          <ApostilamentoModal
+            numeroAta={apostilamentoAta}
+            compra={compra}
+            tr={tr}
+            itens={itens}
+            loadingItens={loadingItens === apostilamentoAta}
+            ipcaResult={ipca}
+            onClose={() => setApostilamentoAta(null)}
+          />
+        );
+      })()}
+
       {/* input oculto para upload */}
       <input
         ref={fileInputRef} type="file" accept=".pdf,.doc,.docx"
@@ -450,6 +501,17 @@ export default function AtasRegistroPreco({ canSync }: Props) {
               ))}
             </select>
           )}
+          <button
+            onClick={() => setSortByReajuste((v) => !v)}
+            className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+              sortByReajuste
+                ? "bg-amber-500 text-white border-amber-500"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+            }`}
+            title="Ordenar por data do próximo reajuste (crescente)"
+          >
+            📅 Próx. reajuste
+          </button>
         </div>
 
         {/* Status de upload */}
@@ -459,30 +521,11 @@ export default function AtasRegistroPreco({ canSync }: Props) {
           </div>
         )}
 
-        {/* Bookmarklet */}
+        {/* Link discreto para ferramentas */}
         {canSync && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold">📋 Sincronizar ATAs via robô</span>
-              <button onClick={() => setShowInstrucoes((v) => !v)} className="text-amber-700 hover:text-amber-900 underline text-[11px]">
-                {showInstrucoes ? "Ocultar" : "Ver instruções"}
-              </button>
-            </div>
-            {showInstrucoes && (
-              <ol className="list-decimal list-inside space-y-1 text-amber-900">
-                <li>Abra <a href="https://contratos.sistema.gov.br/arp" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:underline font-medium">contratos.sistema.gov.br/arp ↗</a> e faça login</li>
-                <li>Crie um favorito no navegador com o código abaixo como URL</li>
-                <li>Na página do contratos.gov.br, clique o favorito</li>
-                <li>O robô sincroniza metadados e itens de cada ATA</li>
-              </ol>
-            )}
-            <div className="flex items-center gap-2 pt-1">
-              <button onClick={copiarBookmarklet}
-                className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700">
-                {copiado ? "✓ Copiado!" : "📋 Copiar URL do robô"}
-              </button>
-              <span className="text-[11px] text-amber-700">Cole como URL de um favorito do navegador</span>
-            </div>
+          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+            <span>Robô de ATAs disponível em</span>
+            <a href="/ferramentas" className="text-violet-600 hover:underline font-medium">🔧 Ferramentas & Catálogo</a>
           </div>
         )}
       </div>
@@ -508,6 +551,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                   <th className="px-3 py-2 whitespace-nowrap">Situação</th>
                   <th className="px-3 py-2 whitespace-nowrap">Vigência Inicial</th>
                   <th className="px-3 py-2 whitespace-nowrap">Vigência Final</th>
+                  <th className="px-3 py-2 whitespace-nowrap text-amber-600">📅 Próx. Reajuste</th>
                   <th className="px-3 py-2 whitespace-nowrap text-center">Termo de Referência</th>
                 </tr>
               </thead>
@@ -539,15 +583,27 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                         <td className={`px-3 py-2 text-xs whitespace-nowrap ${isVencida(a.vigencia_final) ? "text-red-600 font-semibold" : ""}`}>
                           {fmtDate(a.vigencia_final)}
                         </td>
+                        <td className="px-3 py-2 text-xs whitespace-nowrap font-semibold text-amber-700">
+                          {tr?.data_orcamento ? proxReajusteDisplay(tr.data_orcamento) : "–"}
+                        </td>
                         <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1 flex-wrap">
+                            {tr?.data_orcamento && (
+                              <button
+                                onClick={() => setApostilamentoAta(a.numero_ata)}
+                                className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-300 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100 font-medium whitespace-nowrap"
+                                title="Gerar Termo de Apostilamento com cálculo de reajuste"
+                              >
+                                📜 Apostilamento
+                              </button>
+                            )}
                             {hasTR && (
                               <a
                                 href={tr?.pdf_url ?? a.pdf_url ?? "#"}
                                 target="_blank" rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2 py-1 text-xs text-sky-700 hover:bg-sky-100 font-medium whitespace-nowrap"
                               >
-                                📄 Ver TR
+                                📄 TR
                               </a>
                             )}
                             {canSync && (
@@ -557,10 +613,10 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                                 className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-100 font-medium whitespace-nowrap disabled:opacity-50"
                                 title={compra ? `Inserir TR para compra ${compra}` : "Inserir Termo de Referência"}
                               >
-                                {isUpload ? "…" : (hasTR ? "📎 Alterar TR" : "📎 Inserir TR")}
+                                {isUpload ? "…" : (hasTR ? "📎 Alterar" : "📎 Inserir TR")}
                               </button>
                             )}
-                            {!hasTR && !canSync && (
+                            {!hasTR && !canSync && !tr?.data_orcamento && (
                               <span className="text-slate-300 text-xs">–</span>
                             )}
                           </div>
@@ -570,7 +626,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                       {/* Painel expandido */}
                       {isExp && (
                         <tr key={a.numero_ata + "-itens"} className="border-t border-slate-100">
-                          <td colSpan={7} className="px-0 py-0 bg-slate-50">
+                          <td colSpan={8} className="px-0 py-0 bg-slate-50">
                             {carregando ? (
                               <div className="px-6 py-3 text-xs text-slate-400">Carregando itens…</div>
                             ) : (
@@ -673,6 +729,161 @@ export default function AtasRegistroPreco({ canSync }: Props) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Modal de Apostilamento ─────────────────────────────────────────────────
+function ApostilamentoModal({
+  numeroAta, compra, tr, itens, loadingItens, ipcaResult, onClose,
+}: {
+  numeroAta: string;
+  compra: string | null;
+  tr: CompraTR | null;
+  itens: ItemAta[];
+  loadingItens: boolean;
+  ipcaResult?: IpcaResult | null;
+  onClose: () => void;
+}) {
+  const proxReaj = tr?.data_orcamento ? proxReajusteDisplay(tr.data_orcamento) : null;
+  const calcUrl  = "https://www3.bcb.gov.br/CALCIDADAO/publico/corrigirPorIndice.do?method=corrigirPorIndice";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto print:p-0">
+      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl my-6 print:shadow-none print:rounded-none print:my-0">
+        {/* Cabeçalho */}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-700 text-white rounded-t-2xl px-6 py-4 flex items-start justify-between print:rounded-none">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">
+              Grupamento de Apoio — Marinha do Brasil (GAP-MN)
+            </div>
+            <div className="text-lg font-bold">TERMO DE APOSTILAMENTO</div>
+            <div className="text-sm text-slate-300 mt-0.5">
+              ATA Nº {numeroAta}{compra ? ` · Compra ${compra}` : ""}
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="text-slate-400 hover:text-white text-xl leading-none mt-1 print:hidden">✕</button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Dados do reajuste */}
+          {tr?.data_orcamento ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Data do Orçamento Estimado", value: fmtDate(tr.data_orcamento) },
+                { label: "Índice de Reajuste",          value: tr.indice_adotado ?? "–" },
+                { label: "Data do Próximo Reajuste",    value: proxReaj ?? "–", amber: true },
+                {
+                  label: `${tr.indice_adotado ?? "IPCA"} Acumulado`,
+                  value: ipcaResult === undefined
+                    ? "Calculando…"
+                    : ipcaResult === null
+                      ? "Não disponível"
+                      : `+${ipcaResult.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
+                  sub: ipcaResult ? `${ipcaResult.periodoInicio} a ${ipcaResult.periodoFim}` : undefined,
+                  green: !!ipcaResult,
+                },
+              ].map((c) => (
+                <div key={c.label} className="rounded-xl border border-slate-200 px-4 py-3 bg-slate-50">
+                  <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">{c.label}</div>
+                  <div className={`text-base font-bold ${c.amber ? "text-amber-700" : c.green ? "text-emerald-700" : "text-slate-800"}`}>
+                    {c.value}
+                  </div>
+                  {c.sub && <div className="text-[10px] text-slate-400 mt-0.5">{c.sub}</div>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+              TR ainda não contém dados de reajuste. Reenvie o PDF do Termo de Referência.
+            </div>
+          )}
+
+          {/* Nota legal */}
+          {tr?.data_orcamento && (
+            <p className="text-xs text-slate-500 leading-relaxed border-l-2 border-slate-200 pl-3">
+              Nos termos do art. 135 da Lei nº 14.133/2021, fica apostilado o reajuste dos preços registrados
+              nesta Ata, referente ao período de <strong>{ipcaResult?.periodoInicio ?? "–"}</strong> a{" "}
+              <strong>{ipcaResult?.periodoFim ?? "–"}</strong>, pelo índice {tr.indice_adotado ?? "IPCA"} acumulado
+              de <strong>{ipcaResult
+                ? `${ipcaResult.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+                : "____%"
+              }</strong>, conforme calculadora do cidadão disponível em{" "}
+              <a href={calcUrl} target="_blank" rel="noopener noreferrer"
+                className="text-sky-600 hover:underline">bcb.gov.br ↗</a>.
+            </p>
+          )}
+
+          {/* Tabela de itens reajustados */}
+          <div>
+            <div className="text-xs font-semibold uppercase text-slate-500 tracking-wider mb-2">
+              Valores Reajustados por Item
+            </div>
+            {loadingItens ? (
+              <div className="text-xs text-slate-400 py-4 text-center">Carregando itens…</div>
+            ) : itens.length === 0 ? (
+              <div className="text-xs text-slate-400 py-4 text-center">Nenhum item registrado para esta ATA.</div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 font-semibold text-left">
+                      <th className="px-3 py-2 whitespace-nowrap">Item</th>
+                      <th className="px-3 py-2">Descrição</th>
+                      <th className="px-3 py-2 whitespace-nowrap">Fornecedor</th>
+                      <th className="px-3 py-2 whitespace-nowrap text-right">Qtd.</th>
+                      <th className="px-3 py-2 whitespace-nowrap text-right">Vl. Unit. Original</th>
+                      <th className="px-3 py-2 whitespace-nowrap text-right text-amber-700">Vl. Unit. Reajustado</th>
+                      <th className="px-3 py-2 whitespace-nowrap text-right text-emerald-700">Variação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itens.map((item, j) => {
+                      const vuReaj = ipcaResult && item.valor_unitario
+                        ? item.valor_unitario * ipcaResult.fator : null;
+                      const variacao = ipcaResult && item.valor_unitario
+                        ? item.valor_unitario * (ipcaResult.fator - 1) : null;
+                      return (
+                        <tr key={item.id}
+                          className={`border-t border-slate-200 ${j % 2 === 0 ? "bg-white" : "bg-slate-50"}`}>
+                          <td className="px-3 py-1.5 font-mono font-semibold">{item.numero_ata || "–"}</td>
+                          <td className="px-3 py-1.5 max-w-xs">
+                            <span className="line-clamp-2">{item.descricao || "–"}</span>
+                          </td>
+                          <td className="px-3 py-1.5 whitespace-nowrap">{item.fornecedor_nome || "–"}</td>
+                          <td className="px-3 py-1.5 text-right">{fmtQtd(item.quantidade_registrada)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(item.valor_unitario)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono font-semibold text-amber-700">
+                            {vuReaj != null ? fmtBRL(vuReaj) : <span className="text-slate-300">–</span>}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-semibold text-emerald-700">
+                            {variacao != null ? `+${fmtBRL(variacao)}` : <span className="text-slate-300">–</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Rodapé */}
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between print:hidden">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+          >
+            🖨 Imprimir / Exportar PDF
+          </button>
+          <button onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
+            Fechar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

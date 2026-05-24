@@ -10,3 +10,5 @@ CREATE TABLE IF NOT EXISTS compras_tr_gap_mn (
 
 GRANT SELECT, INSERT, UPDATE ON TABLE public.compras_tr_gap_mn TO anon;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.compras_tr_gap_mn TO authenticated;
+
+ALTER TABLE compras_tr_gap_mn DISABLE ROW LEVEL SECURITY;

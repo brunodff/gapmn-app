@@ -8,7 +8,8 @@ import ResetPassword from "./pages/ResetPassword";
 import AppChat from "./pages/AppChat";
 import SetorInbox from "./pages/SetorInbox";
 import ControleOrcamentario from "./pages/ControleOrcamentario";
-import MeusAcompanhamentos from "./pages/MeusAcompanhamentos";
+import FerramentasGestao from "./pages/FerramentasGestao";
+import CnetBot from "./pages/CnetBot";
 import RequireAuth from "./routes/RequireAuth";
 import RequireAgent from "./routes/RequireAgent";
 import ManualSite from "./components/ManualSite";
@@ -30,10 +31,16 @@ const AppTitle = () => (
 
 function Shell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
-  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/acompanhamentos");
+  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/ferramentas");
+  if (loc.pathname.startsWith("/cnet")) return <>{children}</>;
   const [showManual, setShowManual] = useState(false);
 
-  // Páginas de auth: título + card centralizados juntos na tela
+  // Login/signup: componente controla o próprio layout
+  if (loc.pathname === "/login" || loc.pathname === "/signup") {
+    return <>{children}</>;
+  }
+
+  // Outras páginas de auth: título + card centralizados
   if (!isApp) {
     return (
       <div className="min-h-screen flex flex-col bg-slate-50">
@@ -110,14 +117,16 @@ export default function App() {
           />
 
           <Route
-            path="/acompanhamentos"
+            path="/ferramentas"
             element={
               <RequireAuth>
-                <MeusAcompanhamentos />
+                <FerramentasGestao />
               </RequireAuth>
             }
           />
 
+
+          <Route path="/cnet" element={<CnetBot />} />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
