@@ -66,11 +66,26 @@ export default function AtasRegistroPreco({ canSync }: Props) {
   const [loadingItens, setLoadingItens] = useState<string | null>(null);
   const [showInstrucoes, setShowInstrucoes] = useState(false);
   const [copiado, setCopiado]   = useState(false);
+  const [compraMap, setCompraMap] = useState<Map<string, string>>(new Map());
 
   // upload de Termo de Referência
   const fileInputRef                          = useRef<HTMLInputElement>(null);
   const [uploadTargetAta, setUploadTargetAta] = useState<string | null>(null);
   const [uploading, setUploading]             = useState(false);
+
+  const loadCompraMap = useCallback(async () => {
+    const { data } = await supabase
+      .from("itens_ata_gap_mn")
+      .select("ata_numero, numero_compra")
+      .not("numero_compra", "is", null);
+    if (data) {
+      const m = new Map<string, string>();
+      (data as { ata_numero: string; numero_compra: string }[]).forEach(r => {
+        if (!m.has(r.ata_numero)) m.set(r.ata_numero, r.numero_compra);
+      });
+      setCompraMap(m);
+    }
+  }, []);
 
   const loadAtas = useCallback(async () => {
     setLoading(true);
@@ -80,7 +95,8 @@ export default function AtasRegistroPreco({ canSync }: Props) {
       .order("vigencia_final", { ascending: false });
     if (data) setAtas(data as Ata[]);
     setLoading(false);
-  }, []);
+    loadCompraMap();
+  }, [loadCompraMap]);
 
   useEffect(() => { loadAtas(); }, [loadAtas]);
 
@@ -133,10 +149,10 @@ export default function AtasRegistroPreco({ canSync }: Props) {
     if (!busca.trim()) return list;
     const q = busca.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
     return list.filter(a =>
-      [a.numero_ata, a.situacao, a.tipo_uasg]
+      [a.numero_ata, a.situacao, compraMap.get(a.numero_ata) ?? ""]
         .join(" ").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(q)
     );
-  }, [atas, busca, filtro]);
+  }, [atas, busca, filtro, compraMap]);
 
   const ativas     = atas.filter(a => !isVencida(a.vigencia_final) && !/cancelad/i.test(a.situacao ?? "")).length;
   const encerradas = atas.length - ativas;
@@ -250,7 +266,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                 <tr className="text-left text-xs font-semibold uppercase text-slate-500 bg-slate-50 border-b border-slate-200">
                   <th className="px-3 py-2 w-4"></th>
                   <th className="px-3 py-2 whitespace-nowrap">Nº ATA</th>
-                  <th className="px-3 py-2 whitespace-nowrap">Tipo UASG</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Nº Compra</th>
                   <th className="px-3 py-2 whitespace-nowrap">Situação</th>
                   <th className="px-3 py-2 whitespace-nowrap">Vigência Inicial</th>
                   <th className="px-3 py-2 whitespace-nowrap">Vigência Final</th>
@@ -274,7 +290,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                       >
                         <td className="px-2 py-2 text-slate-400 text-xs select-none">{isExp ? "▼" : "▶"}</td>
                         <td className="px-3 py-2 font-mono text-xs font-semibold whitespace-nowrap">{a.numero_ata}</td>
-                        <td className="px-3 py-2 text-xs whitespace-nowrap text-slate-600">{a.tipo_uasg || "–"}</td>
+                        <td className="px-3 py-2 text-xs whitespace-nowrap font-mono text-slate-600">{compraMap.get(a.numero_ata) || "–"}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <span className={sitBadge(a.situacao)}>{a.situacao || "–"}</span>
                         </td>
