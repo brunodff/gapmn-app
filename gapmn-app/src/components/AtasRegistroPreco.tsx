@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 
 interface Ata {
   id: number;
   numero_ata: string;
-  numero_compra: string | null;
   situacao: string | null;
   tipo_uasg: string | null;
   vigencia_inicial: string | null;
@@ -15,8 +14,8 @@ interface Ata {
 
 interface ItemAta {
   id: number;
-  ata_numero: string;       // FK da ATA-mãe (ex: "00164/2026")
-  numero_ata: string | null; // Nº do item na ATA (ex: "00016")
+  ata_numero: string;
+  numero_ata: string | null;
   descricao: string | null;
   cnpj_fornecedor: string | null;
   fornecedor_nome: string | null;
@@ -25,6 +24,7 @@ interface ItemAta {
   valor_total: number | null;
   qtd_limite_adesao: number | null;
   aceita_adesao: string | null;
+  numero_compra: string | null;
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -67,6 +67,11 @@ export default function AtasRegistroPreco({ canSync }: Props) {
   const [showInstrucoes, setShowInstrucoes] = useState(false);
   const [copiado, setCopiado]   = useState(false);
 
+  // upload de Termo de Referência
+  const fileInputRef                          = useRef<HTMLInputElement>(null);
+  const [uploadTargetAta, setUploadTargetAta] = useState<string | null>(null);
+  const [uploading, setUploading]             = useState(false);
+
   const loadAtas = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
@@ -87,10 +92,37 @@ export default function AtasRegistroPreco({ canSync }: Props) {
       const { data } = await supabase
         .from("itens_ata_gap_mn")
         .select("*")
-        .eq("ata_numero", numeroAta)   // coluna renomeada pela migration
-        .order("numero_ata");           // numero_ata agora = nº do item
+        .eq("ata_numero", numeroAta)
+        .order("numero_ata");
       setItensMap(prev => new Map(prev).set(numeroAta, (data as ItemAta[]) ?? []));
       setLoadingItens(null);
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !uploadTargetAta) return;
+    setUploading(true);
+    try {
+      const ext  = file.name.split(".").pop() ?? "pdf";
+      const path = `${uploadTargetAta.replace("/", "-")}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("atas-docs").upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: { publicUrl } } = supabase.storage
+        .from("atas-docs").getPublicUrl(path);
+      const { error: updErr } = await supabase
+        .from("atas_gap_mn").update({ pdf_url: publicUrl }).eq("numero_ata", uploadTargetAta);
+      if (updErr) throw updErr;
+      setAtas(prev => prev.map(a =>
+        a.numero_ata === uploadTargetAta ? { ...a, pdf_url: publicUrl } : a
+      ));
+    } catch (err: unknown) {
+      alert("Erro ao enviar: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setUploading(false);
+      setUploadTargetAta(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -101,7 +133,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
     if (!busca.trim()) return list;
     const q = busca.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
     return list.filter(a =>
-      [a.numero_ata, a.numero_compra, a.situacao, a.tipo_uasg]
+      [a.numero_ata, a.situacao, a.tipo_uasg]
         .join(" ").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(q)
     );
   }, [atas, busca, filtro]);
@@ -123,6 +155,13 @@ export default function AtasRegistroPreco({ canSync }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* input oculto para upload */}
+      <input
+        ref={fileInputRef} type="file" accept=".pdf,.doc,.docx"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+
       {/* Cabeçalho */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -135,8 +174,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={loadAtas}
-              disabled={loading}
+              onClick={loadAtas} disabled={loading}
               title="Buscar dados atualizados do banco"
               className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
             >
@@ -145,8 +183,8 @@ export default function AtasRegistroPreco({ canSync }: Props) {
             </button>
             <input
               type="text" value={busca} onChange={e => setBusca(e.target.value)}
-              placeholder="Buscar nº ATA ou compra…"
-              className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-sky-300"
+              placeholder="Buscar nº ATA…"
+              className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-sky-300"
             />
           </div>
         </div>
@@ -179,9 +217,9 @@ export default function AtasRegistroPreco({ canSync }: Props) {
             {showInstrucoes && (
               <ol className="list-decimal list-inside space-y-1 text-amber-900">
                 <li>Abra <a href="https://contratos.sistema.gov.br/arp" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:underline font-medium">contratos.sistema.gov.br/arp ↗</a> e faça login</li>
-                <li>Crie um favorito no navegador com o código abaixo como URL <span className="text-amber-700">(Ctrl+D → editar URL)</span></li>
+                <li>Crie um favorito no navegador com o código abaixo como URL</li>
                 <li>Na página do contratos.gov.br, clique o favorito</li>
-                <li>O robô sincroniza metadados e, para cada ATA nova, entra no "Visualizar" para capturar os itens e o nº da compra</li>
+                <li>O robô sincroniza metadados e itens de cada ATA</li>
               </ol>
             )}
             <div className="flex items-center gap-2 pt-1">
@@ -212,19 +250,19 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                 <tr className="text-left text-xs font-semibold uppercase text-slate-500 bg-slate-50 border-b border-slate-200">
                   <th className="px-3 py-2 w-4"></th>
                   <th className="px-3 py-2 whitespace-nowrap">Nº ATA</th>
-                  <th className="px-3 py-2 whitespace-nowrap">Nº Compra</th>
                   <th className="px-3 py-2 whitespace-nowrap">Tipo UASG</th>
                   <th className="px-3 py-2 whitespace-nowrap">Situação</th>
                   <th className="px-3 py-2 whitespace-nowrap">Vigência Inicial</th>
                   <th className="px-3 py-2 whitespace-nowrap">Vigência Final</th>
-                  <th className="px-3 py-2 whitespace-nowrap text-center">PDF / Fonte</th>
+                  <th className="px-3 py-2 whitespace-nowrap text-center">Termo de Referência</th>
                 </tr>
               </thead>
               <tbody>
                 {filtradas.map((a, i) => {
-                  const isExp = expanded === a.numero_ata;
-                  const itens = itensMap.get(a.numero_ata) ?? [];
+                  const isExp    = expanded === a.numero_ata;
+                  const itens    = itensMap.get(a.numero_ata) ?? [];
                   const carregando = loadingItens === a.numero_ata;
+                  const isUpload = uploading && uploadTargetAta === a.numero_ata;
                   return (
                     <>
                       <tr
@@ -234,13 +272,8 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                           i % 2 === 0 ? "bg-white" : "bg-slate-50/40"
                         } hover:bg-sky-50 ${isVencida(a.vigencia_final) ? "opacity-55" : ""}`}
                       >
-                        <td className="px-2 py-2 text-slate-400 text-xs select-none">
-                          {isExp ? "▼" : "▶"}
-                        </td>
+                        <td className="px-2 py-2 text-slate-400 text-xs select-none">{isExp ? "▼" : "▶"}</td>
                         <td className="px-3 py-2 font-mono text-xs font-semibold whitespace-nowrap">{a.numero_ata}</td>
-                        <td className="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-600">
-                          {a.numero_compra || <span className="text-slate-300">–</span>}
-                        </td>
                         <td className="px-3 py-2 text-xs whitespace-nowrap text-slate-600">{a.tipo_uasg || "–"}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <span className={sitBadge(a.situacao)}>{a.situacao || "–"}</span>
@@ -250,24 +283,34 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                           {fmtDate(a.vigencia_final)}
                         </td>
                         <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
-                          {a.pdf_url ? (
-                            <a href={a.pdf_url} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2 py-1 text-xs text-sky-700 hover:bg-sky-100 font-medium">
-                              📄 PDF
-                            </a>
-                          ) : (
-                            <a href="https://contratos.sistema.gov.br/arp" target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-100">
-                              🔗 Fonte
-                            </a>
-                          )}
+                          <div className="flex items-center justify-center gap-1">
+                            {a.pdf_url && (
+                              <a href={a.pdf_url} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2 py-1 text-xs text-sky-700 hover:bg-sky-100 font-medium whitespace-nowrap">
+                                📄 Ver TR
+                              </a>
+                            )}
+                            {canSync && (
+                              <button
+                                disabled={isUpload}
+                                onClick={() => { setUploadTargetAta(a.numero_ata); fileInputRef.current?.click(); }}
+                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-100 font-medium whitespace-nowrap disabled:opacity-50"
+                                title="Inserir Termo de Referência"
+                              >
+                                {isUpload ? "…" : (a.pdf_url ? "📎 Alterar" : "📎 Inserir")}
+                              </button>
+                            )}
+                            {!a.pdf_url && !canSync && (
+                              <span className="text-slate-300 text-xs">–</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
 
                       {/* Painel de itens expandido */}
                       {isExp && (
                         <tr key={a.numero_ata + "-itens"} className="border-t border-slate-100">
-                          <td colSpan={8} className="px-0 py-0 bg-slate-50">
+                          <td colSpan={7} className="px-0 py-0 bg-slate-50">
                             {carregando ? (
                               <div className="px-6 py-3 text-xs text-slate-400">Carregando itens…</div>
                             ) : itens.length === 0 ? (
@@ -276,10 +319,20 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                               </div>
                             ) : (
                               <div className="overflow-x-auto">
+                                {/* info de compra + totais */}
+                                <div className="px-4 py-2 flex items-center gap-3 text-[11px] text-slate-500 border-b border-slate-200 bg-slate-100">
+                                  {itens[0]?.numero_compra && (
+                                    <span className="font-semibold text-slate-700">
+                                      🛒 Compra: {itens[0].numero_compra}
+                                    </span>
+                                  )}
+                                  <span>{itens.length} item(s)</span>
+                                  <span>Valor total: <strong>{fmtBRL(itens.reduce((s, it) => s + (it.valor_total ?? 0), 0))}</strong></span>
+                                </div>
                                 <table className="w-full text-xs border-collapse">
                                   <thead>
                                     <tr className="text-left font-semibold text-slate-500 bg-slate-100 border-b border-slate-200">
-                                      <th className="px-3 py-1.5 whitespace-nowrap">Nº</th>
+                                      <th className="px-3 py-1.5 whitespace-nowrap">Item(s)</th>
                                       <th className="px-3 py-1.5">Descrição</th>
                                       <th className="px-3 py-1.5 whitespace-nowrap">Fornecedor</th>
                                       <th className="px-3 py-1.5 whitespace-nowrap">CNPJ</th>
@@ -312,9 +365,6 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                                     ))}
                                   </tbody>
                                 </table>
-                                <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-slate-200">
-                                  {itens.length} item(ns) — Valor total: {fmtBRL(itens.reduce((s, it) => s + (it.valor_total ?? 0), 0))}
-                                </div>
                               </div>
                             )}
                           </td>

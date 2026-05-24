@@ -537,13 +537,9 @@
       itens = scrapeItens(_workerWin.document, ata.numero_ata);
     } catch(e) { log('  ⚠ scrape: '+e.message, '#f87171'); }
 
-    // 7. Salva numero_compra na ATA
-    if (numeroCompra) {
-      try {
-        await sPatch('atas_gap_mn',
-          'numero_ata=eq.'+encodeURIComponent(ata.numero_ata),
-          { numero_compra: numeroCompra });
-      } catch(e) { log('  ⚠ compra PATCH: '+e.message, '#fbbf24'); }
+    // 7. Anexa numero_compra a cada item
+    if (numeroCompra && itens.length) {
+      itens.forEach(function(it) { it.numero_compra = numeroCompra; });
     }
 
     // 8. Volta para a lista
