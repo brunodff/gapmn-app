@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import PaineisGerenciais from "../components/PaineisGerenciais";
 import PainelRP from "../components/PainelRP";
 import CnetRoboGapmn from "../components/CnetRoboGapmn";
+import PainelProcessos from "../components/PainelProcessos";
+import PainelExecucao from "../components/PainelExecucao";
 
 const BI_URL =
   "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
 
-type Painel = "orcamentario" | "empenhos" | "rp" | "processos";
+type Painel = "orcamentario" | "empenhos" | "rp" | "processos" | "execucao";
 
 export default function PaineisGerenciaisPage() {
   const nav = useNavigate();
@@ -63,6 +65,7 @@ export default function PaineisGerenciaisPage() {
             ["empenhos",     "📊 Painel de Empenhos"],
             ["rp",           "📋 Painel de RP"],
             ["processos",    "🤖 Painel de Processos"],
+            ["execucao",     "📈 Painel de Execução"],
           ] as const).map(([key, label]) => (
             <button
               key={key}
@@ -100,9 +103,11 @@ export default function PaineisGerenciaisPage() {
         )}
 
         {painel === "processos" && (
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <CnetRoboGapmn canImport />
-          </div>
+          <PainelProcessos />
+        )}
+
+        {painel === "execucao" && (
+          <PainelExecucao />
         )}
       </div>
 

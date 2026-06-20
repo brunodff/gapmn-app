@@ -7,6 +7,7 @@ import GerenciamentoContratos from "../components/GerenciamentoContratos";
 import GerenciamentoEmpenhos from "../components/GerenciamentoEmpenhos";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import AtasRegistroPreco from "../components/AtasRegistroPreco";
+import PainelSolicitacoesEmpenho from "../components/PainelSolicitacoesEmpenho";
 
 type Setor = "SEO" | "SCON" | "SLIC" | "ADMIN" | "DEV";
 
@@ -40,14 +41,15 @@ export default function SetorInbox() {
   const [sp] = useSearchParams();
 
   const defaultTab = sp.get("tab") || (me?.setor === "SEO" ? "indicadores" : "contratos");
-  const [tab, setTab] = useState<"processos" | "contratos" | "indicadores" | "empenhos" | "atas">(defaultTab as any);
+  const [tab, setTab] = useState<"processos" | "contratos" | "indicadores" | "empenhos" | "atas" | "solicitacoes">(defaultTab as any);
   const isDev = me?.setor === "DEV";
-  const showAnyExtraTab    = true;
+  const showAnyExtraTab      = true;
   const canImportIndicadores = isDev || me?.setor === "SEO"   || me?.setor === "ADMIN";
   const canImportContratos   = isDev || me?.setor === "SCON"  || me?.setor === "ADMIN";
   const canImportProcessos   = isDev || me?.setor === "SLIC"  || me?.setor === "ADMIN";
   const canEdit              = isAgent(me);
   const canSyncEmpenhos      = isDev || me?.setor === "SEO" || me?.setor === "ADMIN";
+  const canManageSolicitacoes = isDev || me?.setor === "SEO" || me?.setor === "ADMIN";
 
 
   useEffect(() => {
@@ -71,11 +73,12 @@ export default function SetorInbox() {
   }, []);
 
   const TAB_META: Record<string, { label: string; icon: string }> = {
-    contratos:   { label: "Contratos",              icon: "📋" },
-    processos:   { label: "Processos",              icon: "⚖️" },
-    atas:        { label: "Atas de RP",             icon: "📝" },
-    indicadores: { label: "Indicadores de Lotação", icon: "📊" },
-    empenhos:    { label: "Empenhos",               icon: "💰" },
+    contratos:    { label: "Contratos",              icon: "📋" },
+    processos:    { label: "Processos",              icon: "⚖️" },
+    atas:         { label: "Atas de RP",             icon: "📝" },
+    indicadores:  { label: "Indicadores de Lotação", icon: "📊" },
+    empenhos:     { label: "Empenhos",               icon: "💰" },
+    solicitacoes: { label: "Solicitações",           icon: "📬" },
   };
 
   return (
@@ -118,7 +121,7 @@ export default function SetorInbox() {
         {/* Abas */}
         {showAnyExtraTab && (
           <div className="flex overflow-x-auto">
-            {(["contratos", "processos", "atas", "indicadores", "empenhos"] as const).map((t) => {
+            {(["contratos", "processos", "atas", "indicadores", "empenhos", "solicitacoes"] as const).map((t) => {
               const { label, icon } = TAB_META[t];
               return (
                 <button
@@ -154,13 +157,16 @@ export default function SetorInbox() {
       {tab === "processos" && <GerenciamentoProcessos canImport={canImportProcessos} canEdit={canEdit} canEditElaboracao={canImportProcessos} />}
 
       {/* Conteúdo da aba Gerenciamento de Contratos */}
-      {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEdit} />}
+      {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEdit} canEditBudget={canImportContratos} />}
 
       {/* Conteúdo da aba Atas de RP */}
       {tab === "atas" && <AtasRegistroPreco canSync={canImportProcessos} />}
 
       {/* Conteúdo da aba Empenhos */}
       {tab === "empenhos" && <GerenciamentoEmpenhos canSync={canSyncEmpenhos} userRole={me?.setor ?? undefined} />}
+
+      {/* Conteúdo da aba Solicitações de Empenho */}
+      {tab === "solicitacoes" && <PainelSolicitacoesEmpenho canManage={canManageSolicitacoes} />}
 
     </div>
   );
