@@ -1091,7 +1091,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
       {/* ── Modal: Relatório de Sincronização ── */}
       {showSyncReport && syncReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.55)" }}>
-          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: "#ffffff" }}>
+          <div className="svmodal w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: "#ffffff" }}>
 
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4" style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
@@ -1208,7 +1208,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
       {/* ── Modal: Pendências ── */}
       {showPendencias && pendencias.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg flex flex-col rounded-2xl bg-white shadow-2xl max-h-[70vh]">
+          <div className="svmodal w-full max-w-lg flex flex-col rounded-2xl bg-white shadow-2xl max-h-[70vh]">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <h3 className="font-semibold text-slate-900 text-sm">⚠ Registros sem destinatário ({pendencias.length})</h3>
               <button onClick={() => setShowPendencias(false)} className="text-slate-400 hover:text-slate-700">✕</button>
@@ -1239,7 +1239,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
       {/* ── Modal: Log de E-mails ── */}
       {showLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl max-h-[80vh] flex flex-col rounded-2xl bg-white shadow-2xl">
+          <div className="svmodal w-full max-w-3xl max-h-[80vh] flex flex-col rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <h3 className="font-semibold text-slate-900 text-sm">Log de Notificações — últimos 100</h3>
               <button onClick={() => setShowLog(false)} className="text-slate-400 hover:text-slate-700">✕</button>

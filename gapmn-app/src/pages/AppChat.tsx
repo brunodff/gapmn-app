@@ -1462,6 +1462,31 @@ export default function AppChat() {
         .svdark .force-light .bg-amber-50     { background: #fffbeb !important; }
         .svdark .force-light .border-amber-200 { border-color: #fde68a !important; }
         .svdark .force-light .text-green-400  { color: #4ade80 !important; }
+        /* ── svmodal: modais de tema claro dentro de svdark (PainelSolicitacoesEmpenho) ── */
+        .svdark .svmodal { background: #ffffff !important; color: #0f172a !important; }
+        .svdark .svmodal .bg-white   { background: #ffffff !important; }
+        .svdark .svmodal .bg-slate-50  { background: #f8fafc !important; }
+        .svdark .svmodal .bg-slate-100 { background: #f1f5f9 !important; }
+        .svdark .svmodal td  { color: #334155 !important; border-color: #f1f5f9 !important; }
+        .svdark .svmodal th  { color: #475569 !important; background: #f8fafc !important; border-color: #e2e8f0 !important; }
+        .svdark .svmodal thead { background: #f8fafc !important; border-color: #e2e8f0 !important; }
+        .svdark .svmodal table { border-color: #e2e8f0 !important; }
+        .svdark .svmodal tr:hover td, .svdark .svmodal tbody tr:hover { background: #f1f5f9 !important; color: #334155 !important; }
+        .svdark .svmodal .text-slate-900, .svdark .svmodal .text-slate-800 { color: #0f172a !important; }
+        .svdark .svmodal .text-slate-700 { color: #334155 !important; }
+        .svdark .svmodal .text-slate-600 { color: #475569 !important; }
+        .svdark .svmodal .text-slate-500 { color: #64748b !important; }
+        .svdark .svmodal .text-slate-400 { color: #94a3b8 !important; }
+        .svdark .svmodal .border-slate-100 { border-color: #f1f5f9 !important; }
+        .svdark .svmodal .border-slate-200 { border-color: #e2e8f0 !important; }
+        .svdark .svmodal .text-green-700  { color: #15803d !important; }
+        .svdark .svmodal .text-amber-700  { color: #b45309 !important; }
+        .svdark .svmodal .text-red-600    { color: #dc2626 !important; }
+        .svdark .svmodal .text-sky-600    { color: #0284c7 !important; }
+        .svdark .svmodal .bg-green-50     { background: #f0fdf4 !important; }
+        .svdark .svmodal .bg-amber-50     { background: #fffbeb !important; }
+        .svdark .svmodal .bg-red-50       { background: #fef2f2 !important; }
+        .svdark .svmodal .bg-sky-50       { background: #f0f9ff !important; }
       `}</style>
 
       <div style={{
