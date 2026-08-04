@@ -5,7 +5,6 @@ import { SparklesCore } from "../components/ui/sparkles";
 import FeedNoticias from "../components/FeedNoticias";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
-import GerenciamentoEmpenhos from "../components/GerenciamentoEmpenhos";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import AtasRegistroPreco from "../components/AtasRegistroPreco";
 import PainelSolicitacoesEmpenho from "../components/PainelSolicitacoesEmpenho";
@@ -13,7 +12,6 @@ import PaineisGerenciais from "../components/PaineisGerenciais";
 import PainelRP from "../components/PainelRP";
 import PainelProcessos from "../components/PainelProcessos";
 import PainelExecucao from "../components/PainelExecucao";
-import PainelEmpenhos from "../components/PainelEmpenhos";
 import FerramentasGestao from "./FerramentasGestao";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -42,8 +40,8 @@ const BI_URL = "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzL
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type View =
-  | "dashboard" | "processos" | "contratos" | "empenhos" | "indicadores" | "atas" | "solicitacoes"
-  | "painel-orcamento" | "painel-empenhos" | "painel-rp" | "painel-processos" | "painel-execucao"
+  | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
+  | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
   | "painel-contratos" | "ferramentas" | "admin";
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
@@ -54,12 +52,10 @@ const VIEW_LABELS: Record<View, string> = {
   dashboard:          "Dashboard",
   processos:          "Processos Licitatórios",
   contratos:          "Contratos SCON",
-  empenhos:           "Empenhos",
   indicadores:        "Indicadores de Lotação",
   atas:               "Atas de Registro de Preço",
   solicitacoes:       "Solicitações de Empenho",
   "painel-orcamento": "Painel Orçamentário",
-  "painel-empenhos":  "Painel de Empenhos",
   "painel-rp":        "Painel de RP",
   "painel-processos": "Painel de Processos",
   "painel-execucao":  "Painel de Execução",
@@ -322,13 +318,11 @@ const NAV: NavNode[] = [
   ]},
   { id: "ctr",     label: "Contratos",            icon: "📑", path: "view:contratos" },
   { id: "eo",      label: "Exec. Orçamentária",   icon: "💰", children: [
-    { label: "Empenhos",               path: "view:empenhos",       icon: "💵" },
     { label: "Indicadores de Lotação", path: "view:indicadores",    icon: "📊" },
     { label: "Solicitações",           path: "view:solicitacoes",   icon: "📬" },
   ]},
   { id: "paineis", label: "Painéis Gerenciais",   icon: "📈", children: [
     { label: "Painel Orçamentário",  path: "view:painel-orcamento",  icon: "💰" },
-    { label: "Painel de Empenhos",   path: "view:painel-empenhos",   icon: "📊" },
     { label: "Painel de RP",         path: "view:painel-rp",         icon: "📋" },
     { label: "Painel de Processos",  path: "view:painel-processos",  icon: "🤖", wip: true },
     { label: "Painel de Execução",   path: "view:painel-execucao",   icon: "📈" },
@@ -1578,16 +1572,12 @@ export default function AppChat() {
             {/* ── Setor views ── */}
             {view === "processos"     && <div className="svdark"><GerenciamentoProcessos canImport={canImportPrc} canEdit={canEdit} canEditElaboracao={canImportPrc} /></div>}
             {view === "contratos"     && <div className="svdark"><GerenciamentoContratos canImport={canImportCtr} canEdit={canEdit} canEditBudget={canImportCtr} /></div>}
-            {view === "empenhos"      && <div className="svdark"><GerenciamentoEmpenhos  canSync={canSyncEmp} userRole={user.setor ?? undefined} /></div>}
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}
 
             {/* ── Panel views ── */}
             {view === "painel-orcamento"  && <PainelOrcamentario />}
-            {view === "painel-empenhos"   && (
-              <PainelEmpenhos onNavigateToEmpenhos={() => setView("empenhos")} />
-            )}
             {view === "painel-rp"         && <div className="svdark"><PainelRP /></div>}
             {view === "painel-processos"  && (
               <div className="svdark" style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:320 }}>
