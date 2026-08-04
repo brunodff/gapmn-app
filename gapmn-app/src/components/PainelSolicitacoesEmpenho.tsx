@@ -704,12 +704,9 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   const q = search.toLowerCase();
   const agora = new Date();
   const filtered = items.filter((it) => {
-    // Visibilidade por data de emissão
-    if (it.data_emissao) {
-      if (it.data_emissao < "2026-08-03") {
-        // Registro antigo: só aparece se ASSINADA E a partir de 05/08
-        if (it.status !== "ASSINADA" || agora < DATA_INICIO_ANTIGAS) return false;
-      }
+    // Visibilidade por data de emissão: sem data ou pré-03/08 = tratado como antigo
+    if (!it.data_emissao || it.data_emissao < "2026-08-03") {
+      if (it.status !== "ASSINADA" || agora < DATA_INICIO_ANTIGAS) return false;
     }
     if (!showVerificados && it.revisado_em) return false;
     if (filterStatus && it.status !== filterStatus) return false;
