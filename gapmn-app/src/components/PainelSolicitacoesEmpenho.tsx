@@ -183,8 +183,10 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   // Edição inline
   const [editingObs, setEditingObs]     = useState<string | null>(null);
   const [obsValue, setObsValue]         = useState("");
-  const [editingEmail, setEditingEmail] = useState<string | null>(null);
-  const [emailValue, setEmailValue]     = useState("");
+  const [editingEmail, setEditingEmail]   = useState<string | null>(null);
+  const [emailValue, setEmailValue]       = useState("");
+  const [editingResp, setEditingResp]     = useState<string | null>(null);
+  const [respValue, setRespValue]         = useState("");
 
   // Filtros
   const [filterStatus, setFilterStatus]     = useState<"" | Status>("");
@@ -360,7 +362,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         const records = nesNovas.map(ne => {
           const email       = extractEmail(ne.descricao);
           const responsavel = extractResponsavelFromDesc(ne.descricao, email);
-          const status: Status = (ne.nota_empenho && ne.pendente_od !== "Pendente")
+          const status: Status = (ne.nota_empenho && ne.pendente_od !== "Pendente" && ne.assinatura !== "SEM INFORMACAO")
             ? "ASSINADA" : "EMITIDA";
           const dateObj = parseSheetDate(ne.data);
           return {
@@ -431,7 +433,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
 
         const bestNE = sheetNEs[sheetNEs.length - 1];
 
-        const anyAssinada = sheetNEs.some(ne => ne.nota_empenho && ne.pendente_od !== "Pendente");
+        const anyAssinada = sheetNEs.some(ne => ne.nota_empenho && ne.pendente_od !== "Pendente" && ne.assinatura !== "SEM INFORMACAO");
         const anyEmitida  = sheetNEs.some(ne => ne.pendente_od === "Pendente");
 
         const newStatus: Status = anyAssinada ? "ASSINADA" : anyEmitida ? "EMITIDA" : item.status;
@@ -572,6 +574,16 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   }
 
   // ── Edição inline: E-mail ─────────────────────────────────────────────────
+
+  async function saveResponsavel(id: string) {
+    const trimmed = respValue.trim();
+    await supabase
+      .from("solicitacoes_empenho")
+      .update({ responsavel: trimmed || null, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    setEditingResp(null);
+    await load();
+  }
 
   async function saveEmail(id: string) {
     const trimmed = emailValue.trim().toLowerCase();
@@ -929,7 +941,35 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
 
                   {/* Responsável / E-mail */}
                   <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
-                    <div className="text-slate-700">{it.responsavel || "—"}</div>
+                    {editingResp === it.id ? (
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={respValue}
+                          onChange={(e) => setRespValue(e.target.value)}
+                          placeholder="Nome do responsável"
+                          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] w-40 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveResponsavel(it.id);
+                            if (e.key === "Escape") setEditingResp(null);
+                          }}
+                        />
+                        <button onClick={() => saveResponsavel(it.id)} className="text-green-600 hover:text-green-800 font-bold text-xs">✓</button>
+                        <button onClick={() => setEditingResp(null)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 group">
+                        <span className="text-slate-700">{it.responsavel || "—"}</span>
+                        {canManage && (
+                          <button
+                            onClick={() => { setEditingResp(it.id); setRespValue(it.responsavel ?? ""); }}
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-sky-600 transition-opacity ml-1 text-[11px]"
+                            title="Editar responsável"
+                          >✏</button>
+                        )}
+                      </div>
+                    )}
                     {editingEmail === it.id ? (
                       <div className="flex items-center gap-1 mt-0.5">
                         <input
