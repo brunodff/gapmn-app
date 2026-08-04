@@ -362,7 +362,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         const records = nesNovas.map(ne => {
           const email       = extractEmail(ne.descricao);
           const responsavel = extractResponsavelFromDesc(ne.descricao, email);
-          const status: Status = (ne.nota_empenho && ne.pendente_od !== "Pendente" && ne.assinatura !== "SEM INFORMACAO")
+          const status: Status = ne.pendente_od.toUpperCase() === "ASSINADA"
             ? "ASSINADA" : "EMITIDA";
           const dateObj = parseSheetDate(ne.data);
           return {
@@ -394,7 +394,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
           for (const ne of nesNovas) {
             const email = extractEmail(ne.descricao);
             if (!email) continue;
-            const status: Status = (ne.nota_empenho && ne.pendente_od !== "Pendente")
+            const status: Status = ne.pendente_od.toUpperCase() === "ASSINADA"
               ? "ASSINADA" : "EMITIDA";
             const responsavel = extractResponsavelFromDesc(ne.descricao, email);
             await supabase.functions.invoke("send-empenho-email", {
@@ -433,8 +433,8 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
 
         const bestNE = sheetNEs[sheetNEs.length - 1];
 
-        const anyAssinada = sheetNEs.some(ne => ne.nota_empenho && ne.pendente_od !== "Pendente" && ne.assinatura !== "SEM INFORMACAO");
-        const anyEmitida  = sheetNEs.some(ne => ne.pendente_od === "Pendente");
+        const anyAssinada = sheetNEs.some(ne => ne.pendente_od.toUpperCase() === "ASSINADA");
+        const anyEmitida  = sheetNEs.some(ne => ne.pendente_od.toUpperCase() !== "ASSINADA");
 
         const newStatus: Status = anyAssinada ? "ASSINADA" : anyEmitida ? "EMITIDA" : item.status;
 
