@@ -390,14 +390,19 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         });
         if (upsertErr) console.error("[GAPMN] Auto-feed upsert error:", upsertErr);
 
+        // Atualiza dbItems antes de enviar emails (precisamos dos IDs para salvar timestamps)
+        const { data: refreshed } = await supabase.from("solicitacoes_empenho").select("*").order("numero");
+        dbItems = (refreshed as Solicitacao[]) ?? [];
+
         if (ENVIO_AUTOMATICO_ATIVO) {
+          const autoNow = new Date().toISOString();
           for (const ne of nesNovas) {
             const email = extractEmail(ne.descricao);
             if (!email) continue;
             const status: Status = ne.pendente_od.toUpperCase() === "ASSINADA"
               ? "ASSINADA" : "EMITIDA";
             const responsavel = extractResponsavelFromDesc(ne.descricao, email);
-            await supabase.functions.invoke("send-empenho-email", {
+            const { error: fnErr } = await supabase.functions.invoke("send-empenho-email", {
               body: {
                 solicitacao_id: ne.solicitacao!,
                 tipo:           status,
@@ -412,11 +417,17 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
                 data_emissao:   ne.data,
               },
             });
+            if (!fnErr) {
+              // Salva timestamp para não reenviar em syncs futuros
+              const tsField = status === "ASSINADA" ? "notificado_assinada_em" : "notificado_emitida_em";
+              const rec = dbItems.find(i => i.numero.toUpperCase() === ne.solicitacao!.toUpperCase());
+              if (rec) {
+                await supabase.from("solicitacoes_empenho").update({ [tsField]: autoNow }).eq("id", rec.id);
+                (rec as unknown as Record<string, unknown>)[tsField] = autoNow; // atualiza in-memory p/ sync não reenviar
+              }
+            }
           }
         }
-
-        const { data: refreshed } = await supabase.from("solicitacoes_empenho").select("*").order("numero");
-        dbItems = (refreshed as Solicitacao[]) ?? [];
       }
 
       const reportItens: SyncReportItem[] = [];
@@ -689,10 +700,23 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   async function reenviar(it: Solicitacao) {
     if (!it.email) { flash("Sem e-mail cadastrado.", false); return; }
     if (!it.ne_siafi) { flash("Sincronize primeiro (sem NE SIAFI).", false); return; }
+
+    const tipo = it.status === "ASSINADA" ? "ASSINADA" : "EMITIDA";
+    const tsField = tipo === "ASSINADA" ? "notificado_assinada_em" : "notificado_emitida_em";
+    const jaEnviado = it[tsField as keyof Solicitacao] as string | null;
+
+    if (jaEnviado) {
+      const dtFmt = new Date(jaEnviado).toLocaleString("pt-BR");
+      const confirmar = window.confirm(
+        `⚠ E-mail de ${tipo} já foi enviado em ${dtFmt}.\n\nDeseja reenviar mesmo assim para ${it.email}?`
+      );
+      if (!confirmar) return;
+    }
+
     const { error } = await supabase.functions.invoke("send-empenho-email", {
       body: {
         solicitacao_id: it.id,
-        tipo:        it.status === "ASSINADA" ? "ASSINADA" : "EMITIDA",
+        tipo,
         email:       it.email,
         responsavel: it.responsavel ?? it.numero,
         numero:      it.numero,
@@ -707,8 +731,15 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         pdf_ne_url:  it.pdf_ne_url,
       },
     });
-    if (error) flash("Falha ao reenviar.", false);
-    else flash(`E-mail reenviado para ${it.email}.`);
+    if (error) {
+      flash("Falha ao reenviar.", false);
+    } else {
+      await supabase.from("solicitacoes_empenho")
+        .update({ [tsField]: new Date().toISOString() })
+        .eq("id", it.id);
+      flash(`E-mail de ${tipo} reenviado para ${it.email}.`);
+      await load();
+    }
   }
 
   // ── Filtro ────────────────────────────────────────────────────────────────
@@ -1021,11 +1052,18 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
                       {STATUS_LABEL[it.status]}
                     </span>
                     {it.status_siloms && <div className="text-slate-400 text-[10px] mt-0.5">{it.status_siloms}</div>}
-                    {it.status === "EMITIDA" && it.notificado_emitida_em && (
-                      <div className="text-slate-400 text-[10px]">E-mail {new Date(it.notificado_emitida_em).toLocaleDateString("pt-BR")}</div>
+                    {it.notificado_emitida_em && (
+                      <div className="text-emerald-600 text-[10px] mt-0.5" title="E-mail de emissão enviado">
+                        ✉ Emitida {new Date(it.notificado_emitida_em).toLocaleDateString("pt-BR")}
+                      </div>
                     )}
-                    {it.status === "ASSINADA" && it.notificado_assinada_em && (
-                      <div className="text-slate-400 text-[10px]">E-mail {new Date(it.notificado_assinada_em).toLocaleDateString("pt-BR")}</div>
+                    {it.notificado_assinada_em && (
+                      <div className="text-sky-600 text-[10px] mt-0.5" title="E-mail de assinatura enviado">
+                        ✉ Assinada {new Date(it.notificado_assinada_em).toLocaleDateString("pt-BR")}
+                      </div>
+                    )}
+                    {!it.notificado_emitida_em && !it.notificado_assinada_em && it.email && (
+                      <div className="text-slate-400 text-[10px] mt-0.5">Sem e-mail enviado</div>
                     )}
                   </td>
 
