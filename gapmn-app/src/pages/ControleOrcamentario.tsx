@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import PaineisGerenciais from "../components/PaineisGerenciais";
 import PainelRP from "../components/PainelRP";
 import CnetRoboGapmn from "../components/CnetRoboGapmn";
 import PainelProcessos from "../components/PainelProcessos";
@@ -9,7 +8,7 @@ import PainelExecucao from "../components/PainelExecucao";
 const BI_URL =
   "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
 
-type Painel = "orcamentario" | "empenhos" | "rp" | "processos" | "execucao";
+type Painel = "orcamentario" | "rp" | "processos" | "execucao";
 
 export default function PaineisGerenciaisPage() {
   const nav = useNavigate();
@@ -62,7 +61,6 @@ export default function PaineisGerenciaisPage() {
         <div className="flex gap-2 border-b border-slate-200 pb-0">
           {([
             ["orcamentario", "💰 Painel Orçamentário"],
-            ["empenhos",     "📊 Painel de Empenhos"],
             ["rp",           "📋 Painel de RP"],
             ["processos",    "🤖 Painel de Processos"],
             ["execucao",     "📈 Painel de Execução"],
@@ -92,10 +90,6 @@ export default function PaineisGerenciaisPage() {
               allowFullScreen
             />
           </div>
-        )}
-
-        {painel === "empenhos" && (
-          <PaineisGerenciais canEdit />
         )}
 
         {painel === "rp" && (
