@@ -5,7 +5,8 @@ import { SHEET_URLS, toEmpenhosNF } from "../lib/gsheets";
 
 const ENVIO_AUTOMATICO_ATIVO = true;
 
-const DATA_INICIO_SIAFI = new Date(2026, 7, 3); // 03/08/2026
+const DATA_INICIO_SIAFI   = new Date(2026, 7, 3); // 03/08/2026 — auto-feed cria registros a partir daqui
+const DATA_INICIO_ANTIGAS = new Date(2026, 7, 5); // 05/08/2026 — registros pré-03/08 ASSINADOS passam a aparecer
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -422,6 +423,9 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
       for (const item of dbItems) {
         if (item.status === "ENCERRADA") continue;
 
+        // Registros pré-03/08: não processa até 05/08
+        if (item.data_emissao && item.data_emissao < "2026-08-03" && new Date() < DATA_INICIO_ANTIGAS) continue;
+
         const sheetNEs = bySolic.get(item.numero.toUpperCase());
         if (!sheetNEs?.length) continue;
 
@@ -698,7 +702,15 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   // ── Filtro ────────────────────────────────────────────────────────────────
 
   const q = search.toLowerCase();
+  const agora = new Date();
   const filtered = items.filter((it) => {
+    // Visibilidade por data de emissão
+    if (it.data_emissao) {
+      if (it.data_emissao < "2026-08-03") {
+        // Registro antigo: só aparece se ASSINADA E a partir de 05/08
+        if (it.status !== "ASSINADA" || agora < DATA_INICIO_ANTIGAS) return false;
+      }
+    }
     if (!showVerificados && it.revisado_em) return false;
     if (filterStatus && it.status !== filterStatus) return false;
     if (filterSemEmail && !it.sem_destinatario) return false;
