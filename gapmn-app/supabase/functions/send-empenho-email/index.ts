@@ -24,7 +24,6 @@ interface Payload {
   email: string;
   responsavel: string;
   numero: string;       // ex: "25S2012"
-  subprocesso?: string; // col F (SB)
   ne_siafi: string;
   pag?: string;
   fornecedor?: string;
@@ -56,7 +55,7 @@ function buildEmail1(p: Payload): { subject: string; html: string; text: string 
   const subject = `[GAPMN] Solicitação ${p.numero} — Empenho emitido`;
   const infoEmpenho = buildInfoEmpenho(p);
 
-  const text = `Prezado(a),\n\nSua solicitação de empenho ${p.numero} foi emitida!\nAcompanhe pelo subprocesso ${p.subprocesso ?? "—"}\nNúmero do empenho emitido: ${p.ne_siafi}\nInformações do empenho: ${infoEmpenho}\n\nO(a) Senhor(a) receberá um novo e-mail com o documento anexado, assim que a Nota de Empenho for assinada.\n\nRespeitosamente,\nSeção de Execução Orçamentária do GAP-MN`;
+  const text = `Prezado(a),\n\nSua solicitação de empenho ${p.numero} foi emitida!\nNúmero do empenho emitido: ${p.ne_siafi}\nInformações do empenho: ${infoEmpenho}\n\nO(a) Senhor(a) receberá um novo e-mail com o documento anexado, assim que a Nota de Empenho for assinada.\n\nRespeitosamente,\nSeção de Execução Orçamentária do GAP-MN`;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -93,10 +92,6 @@ function buildEmail1(p: Payload): { subject: string; html: string; text: string 
           <td style="padding:9px 14px;font-size:13px;color:#0f172a;"><strong>${p.numero}</strong></td>
         </tr>
         ${p.data_emissao ? `<tr><td style="padding:9px 14px;font-size:13px;font-weight:600;color:#64748b;white-space:nowrap;">Data de Emissão</td><td style="padding:9px 14px;font-size:13px;color:#0f172a;">${p.data_emissao}</td></tr>` : ""}
-        <tr${p.data_emissao ? "" : ` style="background:#f8fafc;"`}>
-          <td style="padding:9px 14px;font-size:13px;font-weight:600;color:#64748b;white-space:nowrap;">Subprocesso</td>
-          <td style="padding:9px 14px;font-size:13px;color:#0f172a;">${p.subprocesso ?? "—"}</td>
-        </tr>
         <tr style="background:#f8fafc;">
           <td style="padding:9px 14px;font-size:13px;font-weight:600;color:#64748b;white-space:nowrap;">NE SIAFI</td>
           <td style="padding:9px 14px;font-size:13px;color:#0f172a;"><strong>${p.ne_siafi}</strong></td>
@@ -142,7 +137,7 @@ function buildEmail2(p: Payload): { subject: string; html: string; text: string 
   const infoEmpenho = buildInfoEmpenho(p);
 
   const pdfLine = p.pdf_ne_url ? `\nDownload da NE: ${p.pdf_ne_url}\n` : "";
-  const text = `Prezado(a),\n\nSua solicitação de empenho ${p.numero} foi assinada!\nNúmero do empenho: ${p.ne_siafi}\nAcompanhe pelo subprocesso ${p.subprocesso ?? "—"}\nInformações do empenho: ${infoEmpenho}\n${pdfLine}\nA Nota de Empenho já foi assinada pelo(a) Ordenador(a) de Despesas e está em vigor.\n\nCaso não seja o responsável pela Solicitação de Empenho, entre em contato com o atual responsável para que seja realizada a correção da descrição da Solicitação de Empenho.\n\nRespeitosamente,\nSeção de Execução Orçamentária do GAP-MN`;
+  const text = `Prezado(a),\n\nSua solicitação de empenho ${p.numero} foi assinada!\nNúmero do empenho: ${p.ne_siafi}\nInformações do empenho: ${infoEmpenho}\n${pdfLine}\nA Nota de Empenho já foi assinada pelo(a) Ordenador(a) de Despesas e está em vigor.\n\nCaso não seja o responsável pela Solicitação de Empenho, entre em contato com o atual responsável para que seja realizada a correção da descrição da Solicitação de Empenho.\n\nRespeitosamente,\nSeção de Execução Orçamentária do GAP-MN`;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -183,10 +178,6 @@ function buildEmail2(p: Payload): { subject: string; html: string; text: string 
         <tr style="background:#f8fafc;">
           <td style="padding:9px 14px;font-size:13px;font-weight:600;color:#64748b;white-space:nowrap;">NE SIAFI</td>
           <td style="padding:9px 14px;font-size:13px;color:#0f172a;"><strong>${p.ne_siafi}</strong></td>
-        </tr>
-        <tr>
-          <td style="padding:9px 14px;font-size:13px;font-weight:600;color:#64748b;white-space:nowrap;">Subprocesso</td>
-          <td style="padding:9px 14px;font-size:13px;color:#0f172a;">${p.subprocesso ?? "—"}</td>
         </tr>
         <tr style="background:#f8fafc;">
           <td style="padding:9px 14px;font-size:13px;font-weight:600;color:#64748b;white-space:nowrap;">Informações</td>
