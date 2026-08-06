@@ -548,6 +548,39 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   // Marca como revisadas as NEs ASSINADAS que tiveram e-mail enviado.
   // NEs EMITIDAS ficam na página pois ainda aguardam assinatura.
 
+  // ── Limpar lista ─────────────────────────────────────────────────────────
+  // Arquiva itens já processados: e-mail enviado OU sem destinatário.
+  // Itens EMITIDA ainda aguardando envio ficam na lista.
+
+  async function limparLista() {
+    const candidatos = items.filter(i =>
+      !i.revisado_em && (
+        i.notificado_emitida_em !== null ||
+        i.notificado_assinada_em !== null ||
+        i.sem_destinatario
+      )
+    );
+    if (!candidatos.length) {
+      flash("Nenhum item elegível para limpeza.", true);
+      return;
+    }
+    const comEmail  = candidatos.filter(i => i.notificado_emitida_em || i.notificado_assinada_em).length;
+    const semEmail  = candidatos.filter(i => i.sem_destinatario && !i.notificado_emitida_em && !i.notificado_assinada_em).length;
+    const partes: string[] = [];
+    if (comEmail) partes.push(`${comEmail} com e-mail enviado`);
+    if (semEmail) partes.push(`${semEmail} sem destinatário`);
+    const ok = window.confirm(
+      `Limpar lista?\n\n${partes.join(" + ")} serão marcados como verificados e ocultados.\n\nItens pendentes (EMITIDA sem envio) permanecem na lista.`
+    );
+    if (!ok) return;
+    await supabase
+      .from("solicitacoes_empenho")
+      .update({ revisado_em: new Date().toISOString() })
+      .in("id", candidatos.map(i => i.id));
+    await load();
+    flash(`${candidatos.length} item(ns) arquivados.`, true);
+  }
+
   async function verificarRelatorio() {
     if (!syncReport) return;
     setVerifying(true);
@@ -899,10 +932,19 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
             <input type="checkbox" checked={filterSemEmail} onChange={(e) => setFilterSemEmail(e.target.checked)} className="rounded" />
             Sem e-mail
           </label>
+          {canManage && (
+            <button
+              onClick={limparLista}
+              className="rounded border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
+              title="Arquivar itens já processados (e-mail enviado ou sem destinatário)"
+            >
+              🗑 Limpar lista
+            </button>
+          )}
           {counts.verificados > 0 && (
             <label className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer">
               <input type="checkbox" checked={showVerificados} onChange={(e) => setShowVerificados(e.target.checked)} className="rounded" />
-              Mostrar verificadas ({counts.verificados})
+              Mostrar arquivados ({counts.verificados})
             </label>
           )}
         </div>
