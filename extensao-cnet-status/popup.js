@@ -678,7 +678,15 @@ async function autoSyncVencedores(identificacao, identificadorInterno, participa
   }));
 
   if (updates.length) {
-    try { await supaUpsert('cnet_itens', updates, gapmn_token); } catch {}
+    try {
+      await supaUpsert('cnet_itens', updates, gapmn_token);
+      setMsg('✅ Vencedores: ' + updates.length + ' itens salvos — ' + identificacao);
+    } catch (e) {
+      setMsg('❌ Vencedores ERRO (' + identificacao + '): ' + e.message.slice(0, 80));
+    }
+  } else {
+    // Ganhos vazios: endpoint em-selecao não retornou dados (processo pode estar finalizado)
+    setMsg('⚠ Vencedores: sem ganhos via API para ' + identificacao + ' (' + participantes.length + ' forn. verificados)');
   }
 }
 
@@ -1411,7 +1419,7 @@ function renderParticipantes(container, participantes, debugParticipante) {
       + '<td style="text-align:center;color:' + (julg  > 0 ? '#fbbf24' : '#475569') + '">' + julg  + '</td>'
       + '<td style="text-align:center;color:' + (habil > 0 ? '#818cf8' : '#475569') + '">' + habil + '</td>'
       + '<td style="white-space:nowrap">'
-      + '<button class="btn-exp btn-itens-forn" data-cnpj="' + esc(cnpj) + '" data-cnpjid="' + cnpjId + '">▼ Itens</button>'
+      + '<button class="btn-exp btn-itens-forn" data-cnpj="' + esc(cnpj) + '" data-cnpjid="' + cnpjId + '" data-nome="' + esc(empresa) + '">▼ Itens</button>'
       + '</td>'
       + '</tr>'
       + '<tr id="irow-' + cnpjId + '" style="display:none">'
@@ -1453,6 +1461,35 @@ function renderParticipantes(container, participantes, debugParticipante) {
         if (!pd?.ok) throw new Error(pd?.error || 'Sem dados');
         renderItensParticipante(inner, pd.ganhos || [], pd.naoGanhos || []);
         inner.dataset.loaded = '1';
+
+        // Salva vencedores no App imediatamente — o popup já tem os dados, garantido
+        if (pd.ganhos?.length && detalheProcesso && gapmn_token) {
+          const nomeForn = btn.dataset.nome || null;
+          const vencUpdates = pd.ganhos.map(it => {
+            const num = it.numero ?? it.numeroItem;
+            if (num == null) return null;
+            let vlrUnit = null, vlrTotal = null;
+            try {
+              const calc = it.propostaItem.valores.valorPropostaInicialOuLances.valorCalculado;
+              vlrUnit  = calc.valorUnitario ?? null;
+              vlrTotal = calc.valorTotal    ?? null;
+            } catch {}
+            return {
+              identificacao:           detalheProcesso.identificacao,
+              numero_item:             Number(num),
+              vencedor_cnpj:           cnpj,
+              vencedor_nome:           nomeForn,
+              valor_vencedor_unitario: vlrUnit,
+              valor_vencedor_total:    vlrTotal ?? (vlrUnit != null && (it.quantidadeSolicitada ?? it.quantidade) != null
+                                         ? vlrUnit * (it.quantidadeSolicitada ?? it.quantidade) : null),
+            };
+          }).filter(Boolean);
+          if (vencUpdates.length) {
+            supaUpsert('cnet_itens', vencUpdates, gapmn_token)
+              .then(() => { inner.dataset.synced = '1'; })
+              .catch(() => {});
+          }
+        }
       } catch (e) {
         inner.innerHTML = '<span style="color:#f87171;font-size:11px">Erro: ' + e.message + '</span>';
         btn.textContent = '▼ Itens';
