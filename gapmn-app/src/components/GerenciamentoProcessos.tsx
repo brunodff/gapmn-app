@@ -166,8 +166,11 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
     };
 
     if (selected && itens.length > 0) {
-      // Exporta apenas itens homologados com vencedor (igual ao popup exportarProcessoXLS)
-      const topLevel = itens.filter(it => it.grupo_numero == null && it.homologado && it.vencedor_cnpj != null);
+      // Exporta itens homologados (prefere) — cai para todos se não houver homologados com vencedor
+      const homologados = itens.filter(it => it.grupo_numero == null && it.homologado && it.vencedor_cnpj != null);
+      const topLevel = homologados.length > 0
+        ? homologados
+        : itens.filter(it => it.grupo_numero == null);
       if (!topLevel.length) return;
       const rows: unknown[][] = [
         ["LOTE", "ITEM", "REQUISIÇÃO", "CNPJ", "EMPRESA", "QTDE", "UND", "VALOR UNIT", "VALOR TOTAL", "PRAZO", "DESCRIÇÃO", "SITUAÇÃO", "FORNECEDOR", "MODELO/VERSAO", "MARCA"],
@@ -265,17 +268,10 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
           <span className="text-xs text-slate-500 flex-1">
             {filtered.length} de {processos.length} processo{processos.length !== 1 ? "s" : ""}
           </span>
-          {(() => {
-            const homCount = selected ? itens.filter(it => it.grupo_numero == null && it.homologado && it.vencedor_cnpj != null).length : 0;
-            return (
-              <button onClick={exportarCSV} disabled={selected ? homCount === 0 : filtered.length === 0}
-                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors">
-                {selected && itens.length > 0
-                  ? `📥 Itens Homologados${homCount > 0 ? ` (${homCount})` : " — nenhum"}`
-                  : "📥 Exportar Processos"}
-              </button>
-            );
-          })()}
+          <button onClick={exportarCSV} disabled={selected ? itens.length === 0 : filtered.length === 0}
+            className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors">
+            {selected && itens.length > 0 ? "📥 Exportar CSV do Processo" : "📥 Exportar Processos"}
+          </button>
         </div>
       </Card>
 
@@ -626,62 +622,114 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
                     processo e clique em "Ver todos os fornecedores" para sincronizar.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div>
+                    {/* Aviso quando dados de vencedor ainda não foram sincronizados */}
+                    {itens.length > 0 && itens.every(it => it.vencedor_cnpj == null) && (
+                      <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 leading-relaxed">
+                        <strong>⚠ Dados de vencedor não sincronizados.</strong> Atualize a extensão Chrome (git pull + recarregar extensão) e clique em "☁ Sincronizar com App" novamente. Os itens ganhos por cada fornecedor aparecerão automaticamente.
+                      </div>
+                    )}
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr className="bg-slate-50">
-                          <th className="text-left px-2 py-2 text-slate-500 font-semibold border-b">CNPJ</th>
+                          <th className="text-left px-2 py-2 text-slate-500 font-semibold border-b w-8"></th>
+                          <th className="text-left px-2 py-2 text-slate-500 font-semibold border-b">CNPJ/CPF</th>
                           <th className="text-left px-2 py-2 text-slate-500 font-semibold border-b">Empresa</th>
                           <th className="text-center px-2 py-2 text-slate-500 font-semibold border-b w-16">ME/EPP</th>
-                          <th className="text-center px-2 py-2 text-slate-500 font-semibold border-b w-20">Participações</th>
-                          <th className="text-left px-2 py-2 text-slate-500 font-semibold border-b">Itens ganhos</th>
+                          <th className="text-center px-2 py-2 text-slate-500 font-semibold border-b w-20">Itens</th>
+                          <th className="text-center px-2 py-2 text-slate-500 font-semibold border-b w-20 text-emerald-600">Ganhos</th>
                         </tr>
                       </thead>
                       <tbody>
                         {participantes.map(p => {
                           const itensGanhos = itens.filter(it => it.vencedor_cnpj === p.cnpj);
+                          const supExpanded = expandedItems.has(-(p.id));
                           return (
-                            <tr key={p.id} className="hover:bg-slate-50 border-b border-slate-100 align-top">
-                              <td className="px-2 py-2 text-slate-400 font-mono text-[10px]">{fmtCnpj(p.cnpj)}</td>
-                              <td className="px-2 py-2 text-slate-800 max-w-[240px] truncate" title={p.nome ?? ""}>{p.nome || "—"}</td>
-                              <td className="px-2 py-2 text-center">
-                                {p.me_epp && (
-                                  <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] text-green-700 font-medium">ME/EPP</span>
-                                )}
-                              </td>
-                              <td className="px-2 py-2 text-center text-slate-600 font-medium">{p.qtd_itens_selecao ?? "—"}</td>
-                              <td className="px-2 py-2">
-                                {itensGanhos.length > 0 ? (
-                                  <div className="space-y-0.5">
-                                    {itensGanhos.map(it => {
-                                      const isGrupo = it.numero_item < 0;
-                                      const label = isGrupo
-                                        ? <span className="text-indigo-600 font-semibold shrink-0">📦 {it.descricao || `Grupo`}</span>
-                                        : <span className="text-emerald-700 font-semibold shrink-0">#{it.numero_item}</span>;
-                                      const desc = isGrupo ? null : (it.descricao_detalhada || it.descricao || "");
-                                      const vlr = it.valor_vencedor_unitario != null
-                                        ? `${fmtBRL(it.valor_vencedor_unitario)}/un`
-                                        : it.valor_vencedor_total != null
-                                          ? `${fmtBRL(it.valor_vencedor_total)} total`
-                                          : null;
-                                      return (
-                                        <div key={it.id} className="flex items-center gap-2 text-[10px]">
-                                          {label}
-                                          {desc && (
-                                            <span className="text-slate-600 truncate max-w-[180px]" title={desc}>
-                                              {desc.slice(0, 45)}{desc.length > 45 ? "…" : ""}
-                                            </span>
-                                          )}
-                                          {vlr && <span className="text-slate-500 font-mono shrink-0">{vlr}</span>}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-300 text-[10px]">—</span>
-                                )}
-                              </td>
-                            </tr>
+                            <Fragment key={p.id}>
+                              <tr
+                                className="border-b border-slate-100 cursor-pointer hover:bg-slate-50 select-none"
+                                onClick={() => toggleItem(-(p.id))}
+                              >
+                                <td className="px-2 py-2 text-slate-400 text-center text-[10px]">{supExpanded ? "▲" : "▼"}</td>
+                                <td className="px-2 py-2 text-slate-400 font-mono text-[10px]">{fmtCnpj(p.cnpj)}</td>
+                                <td className="px-2 py-2 text-slate-800 font-medium max-w-[260px] truncate" title={p.nome ?? ""}>{p.nome || "—"}</td>
+                                <td className="px-2 py-2 text-center">
+                                  {p.me_epp && <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] text-green-700 font-medium">ME/EPP</span>}
+                                </td>
+                                <td className="px-2 py-2 text-center text-slate-600 font-medium">{p.qtd_itens_selecao ?? "—"}</td>
+                                <td className="px-2 py-2 text-center font-bold">
+                                  {itensGanhos.length > 0
+                                    ? <span className="text-emerald-600">{itensGanhos.length}</span>
+                                    : <span className="text-slate-300 font-normal">—</span>}
+                                </td>
+                              </tr>
+                              {supExpanded && (
+                                <tr className="border-b border-slate-100">
+                                  <td colSpan={6} className="p-0">
+                                    {itensGanhos.length === 0 ? (
+                                      <div className="px-8 py-3 text-[11px] text-slate-400 italic bg-slate-50/60">
+                                        {itens.every(it => it.vencedor_cnpj == null)
+                                          ? "Dados de vencedor ainda não sincronizados. Atualize a extensão e re-sincronize."
+                                          : "Este fornecedor não ganhou nenhum item neste processo."}
+                                      </div>
+                                    ) : (
+                                      <div className="bg-slate-50/60 px-4 py-3">
+                                        <div className="text-[10px] font-bold text-emerald-700 mb-2">🏆 Itens ganhos ({itensGanhos.length})</div>
+                                        <table className="w-full text-[11px] border-collapse">
+                                          <thead>
+                                            <tr className="border-b border-slate-200">
+                                              <th className="text-left py-1 pr-3 text-slate-400 font-semibold w-8">#</th>
+                                              <th className="text-left py-1 pr-3 text-slate-400 font-semibold">Item</th>
+                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-14">Qtde</th>
+                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-28">Val. Est.</th>
+                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-28 text-sky-600">Val. Proposto</th>
+                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-16 text-emerald-600">Eco.</th>
+                                              <th className="text-center py-1 text-slate-400 font-semibold w-12 text-emerald-600">Hom.</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {itensGanhos.map(it => {
+                                              const isGrupo = it.numero_item < 0;
+                                              const vlrEst = isGrupo ? it.valor_estimado_total : it.valor_estimado_unitario;
+                                              const vlrProp = isGrupo
+                                                ? it.valor_vencedor_total
+                                                : it.valor_vencedor_unitario;
+                                              const ecoIt = (vlrEst != null && vlrProp != null && vlrEst > 0)
+                                                ? ((vlrEst - vlrProp) / vlrEst) * 100 : null;
+                                              return (
+                                                <tr key={it.id} className="border-b border-slate-100">
+                                                  <td className="py-1.5 pr-3 text-slate-400 font-semibold">
+                                                    {isGrupo ? <span className="text-indigo-500 text-[9px] font-bold">GRP</span> : it.numero_item}
+                                                  </td>
+                                                  <td className="py-1.5 pr-3 text-slate-700 max-w-[280px]">
+                                                    <div className="truncate" title={it.descricao_detalhada || it.descricao || ""}>
+                                                      {it.descricao || it.descricao_detalhada || "—"}
+                                                    </div>
+                                                  </td>
+                                                  <td className="py-1.5 pr-3 text-right text-slate-500">
+                                                    {isGrupo ? "—" : (it.quantidade?.toLocaleString("pt-BR") ?? "—")}
+                                                  </td>
+                                                  <td className="py-1.5 pr-3 text-right text-slate-500">{fmtBRL(vlrEst)}</td>
+                                                  <td className="py-1.5 pr-3 text-right text-sky-700 font-semibold">{fmtBRL(vlrProp)}</td>
+                                                  <td className="py-1.5 pr-3 text-right font-bold">
+                                                    {ecoIt != null
+                                                      ? <span className={ecoIt >= 0 ? "text-emerald-600" : "text-red-500"}>{ecoIt >= 0 ? "-" : "+"}{Math.abs(ecoIt).toFixed(1)}%</span>
+                                                      : <span className="text-slate-300">—</span>}
+                                                  </td>
+                                                  <td className="py-1.5 text-center">
+                                                    {it.homologado ? <span className="text-emerald-500 font-bold">✓</span> : <span className="text-slate-300">—</span>}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           );
                         })}
                       </tbody>
