@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { supabase } from "../lib/supabase";
 import { Card } from "./Card";
 
@@ -32,6 +32,7 @@ type CnetItem = {
   vencedor_nome: string | null;
   valor_vencedor_unitario: number | null;
   valor_vencedor_total: number | null;
+  grupo_numero: number | null;
 };
 
 type CnetParticipante = {
@@ -87,6 +88,15 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
   const [filtroSit,   setFiltroSit]   = useState("todos");
   const [filtroGrupo, setFiltroGrupo] = useState("todos");
   const [filtroTexto, setFiltroTexto] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  function toggleGroup(n: number) {
+    setExpandedGroups(prev => {
+      const s = new Set(prev);
+      s.has(n) ? s.delete(n) : s.add(n);
+      return s;
+    });
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -354,81 +364,167 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
                         </tr>
                       </thead>
                       <tbody>
-                        {itens.map(it => {
-                          const eco = (it.valor_estimado_unitario != null && it.valor_vencedor_unitario != null && it.valor_estimado_unitario > 0)
-                            ? ((it.valor_estimado_unitario - it.valor_vencedor_unitario) / it.valor_estimado_unitario) * 100
-                            : null;
-                          return (
-                            <tr key={it.id} className={`border-b border-slate-100 ${it.homologado ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}>
-                              <td className="px-2 py-2 text-slate-400 font-medium">{it.numero_item}</td>
-                              <td className="px-2 py-2 text-slate-800 max-w-[340px]">
-                                <div className="font-medium leading-snug">{it.descricao_detalhada || it.descricao || "—"}</div>
-                                {it.lote && <div className="text-slate-400 text-[10px]">Lote {it.lote}</div>}
-                                {it.vencedor_nome && (
-                                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-emerald-700 text-[10px] font-semibold">🏆 Vencedor:</span>
-                                    <span className="text-[10px] text-slate-600 truncate max-w-[240px]" title={it.vencedor_nome}>
-                                      {it.vencedor_nome}
+                        {itens
+                          .filter(it => it.grupo_numero == null)
+                          .map(it => {
+                            const isGroup = it.numero_item < 0;
+
+                            if (isGroup) {
+                              const expanded = expandedGroups.has(it.numero_item);
+                              const subItens = itens.filter(si => si.grupo_numero === it.numero_item);
+                              const ecoGrupo = (it.valor_estimado_total != null && it.valor_vencedor_total != null && it.valor_estimado_total > 0)
+                                ? ((it.valor_estimado_total - it.valor_vencedor_total) / it.valor_estimado_total) * 100
+                                : null;
+                              return (
+                                <Fragment key={it.id}>
+                                  <tr
+                                    className="border-b border-indigo-100 bg-indigo-50/50 cursor-pointer hover:bg-indigo-100/50 select-none"
+                                    onClick={() => toggleGroup(it.numero_item)}
+                                  >
+                                    <td className="px-2 py-2 text-indigo-500 font-bold text-center">{expanded ? "▲" : "▼"}</td>
+                                    <td className="px-2 py-2 font-semibold text-indigo-900" colSpan={3}>
+                                      <span className="mr-1.5 text-[9px] font-bold text-indigo-400 uppercase tracking-wide">Grupo</span>
+                                      {it.descricao || it.descricao_detalhada || "—"}
+                                      {subItens.length > 0 && (
+                                        <span className="ml-2 text-[10px] font-normal text-indigo-400">
+                                          {subItens.length} {subItens.length === 1 ? "item" : "itens"}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-2 py-2 text-right text-slate-600">{fmtBRL(it.valor_estimado_total)}</td>
+                                    <td className="px-2 py-2 text-right font-medium text-slate-800">{fmtBRL(it.valor_vencedor_total)}</td>
+                                    <td className="px-2 py-2 text-right font-semibold">
+                                      {ecoGrupo != null ? (
+                                        <span className={ecoGrupo >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                          {ecoGrupo >= 0 ? "-" : "+"}{Math.abs(ecoGrupo).toFixed(1)}%
+                                        </span>
+                                      ) : "—"}
+                                    </td>
+                                    <td className="px-2 py-2">
+                                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${classeSit(it.situacao ?? "")}`}>
+                                        {it.situacao || "—"}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                  {expanded && subItens.length === 0 && (
+                                    <tr className="border-b border-indigo-50">
+                                      <td colSpan={8} className="pl-8 py-2 text-[10px] text-slate-400 italic bg-indigo-50/20">
+                                        Sub-itens não carregados. Re-sincronize via extensão Chrome para carregar os itens deste grupo.
+                                      </td>
+                                    </tr>
+                                  )}
+                                  {expanded && subItens.map(si => {
+                                    const ecoSi = (si.valor_estimado_unitario != null && si.valor_vencedor_unitario != null && si.valor_estimado_unitario > 0)
+                                      ? ((si.valor_estimado_unitario - si.valor_vencedor_unitario) / si.valor_estimado_unitario) * 100
+                                      : null;
+                                    return (
+                                      <tr key={si.id} className="border-b border-indigo-50 hover:bg-indigo-50/30">
+                                        <td className="pl-5 pr-2 py-1.5 text-indigo-400 text-[11px] font-medium">↳ {si.numero_item}</td>
+                                        <td className="px-2 py-1.5 text-slate-800 max-w-[300px]">
+                                          <div className="text-[11px] font-medium leading-snug">{si.descricao_detalhada || si.descricao || "—"}</div>
+                                          {si.vencedor_nome && (
+                                            <div className="mt-0.5 flex items-center gap-1 flex-wrap">
+                                              <span className="text-emerald-600 text-[9px] font-semibold">🏆 Vencedor:</span>
+                                              <span className="text-[9px] text-slate-500 truncate max-w-[200px]">{si.vencedor_nome}</span>
+                                              {si.vencedor_cnpj && <span className="text-[9px] text-slate-400 font-mono">{fmtCnpj(si.vencedor_cnpj)}</span>}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="px-2 py-1.5 text-slate-500 text-[11px]">{si.unidade || "—"}</td>
+                                        <td className="px-2 py-1.5 text-right text-slate-700 text-[11px]">{si.quantidade?.toLocaleString("pt-BR") ?? "—"}</td>
+                                        <td className="px-2 py-1.5 text-right text-slate-500 text-[11px]">{fmtBRL(si.valor_estimado_unitario)}</td>
+                                        <td className="px-2 py-1.5 text-right font-medium text-slate-700 text-[11px]">{fmtBRL(si.valor_vencedor_unitario)}</td>
+                                        <td className="px-2 py-1.5 text-right font-semibold text-[11px]">
+                                          {ecoSi != null ? (
+                                            <span className={ecoSi >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                              {ecoSi >= 0 ? "-" : "+"}{Math.abs(ecoSi).toFixed(1)}%
+                                            </span>
+                                          ) : "—"}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-medium ${classeSit(si.situacao ?? "")}`}>
+                                            {si.situacao || "—"}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </Fragment>
+                              );
+                            }
+
+                            // Item normal
+                            const eco = (it.valor_estimado_unitario != null && it.valor_vencedor_unitario != null && it.valor_estimado_unitario > 0)
+                              ? ((it.valor_estimado_unitario - it.valor_vencedor_unitario) / it.valor_estimado_unitario) * 100
+                              : null;
+                            return (
+                              <tr key={it.id} className="border-b border-slate-100 hover:bg-slate-50/60">
+                                <td className="px-2 py-2 text-slate-400 font-medium">{it.numero_item}</td>
+                                <td className="px-2 py-2 text-slate-800 max-w-[340px]">
+                                  <div className="font-medium leading-snug">{it.descricao_detalhada || it.descricao || "—"}</div>
+                                  {it.vencedor_nome && (
+                                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-emerald-700 text-[10px] font-semibold">🏆 Vencedor:</span>
+                                      <span className="text-[10px] text-slate-600 truncate max-w-[240px]" title={it.vencedor_nome}>{it.vencedor_nome}</span>
+                                      {it.vencedor_cnpj && <span className="text-[10px] text-slate-400 font-mono">{fmtCnpj(it.vencedor_cnpj)}</span>}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-2 py-2 text-slate-500">{it.unidade || "—"}</td>
+                                <td className="px-2 py-2 text-right text-slate-700">{it.quantidade?.toLocaleString("pt-BR") ?? "—"}</td>
+                                <td className="px-2 py-2 text-right text-slate-600">{fmtBRL(it.valor_estimado_unitario)}</td>
+                                <td className="px-2 py-2 text-right font-medium text-slate-800">{fmtBRL(it.valor_vencedor_unitario)}</td>
+                                <td className="px-2 py-2 text-right font-semibold">
+                                  {eco != null ? (
+                                    <span className={eco >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                      {eco >= 0 ? "-" : "+"}{Math.abs(eco).toFixed(1)}%
                                     </span>
-                                    {it.vencedor_cnpj && (
-                                      <span className="text-[10px] text-slate-400 font-mono">{fmtCnpj(it.vencedor_cnpj)}</span>
-                                    )}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-2 py-2 text-slate-500">{it.unidade || "—"}</td>
-                              <td className="px-2 py-2 text-right text-slate-700">{it.quantidade?.toLocaleString("pt-BR") ?? "—"}</td>
-                              <td className="px-2 py-2 text-right text-slate-600">{fmtBRL(it.valor_estimado_unitario)}</td>
-                              <td className="px-2 py-2 text-right font-medium text-slate-800">{fmtBRL(it.valor_vencedor_unitario)}</td>
-                              <td className="px-2 py-2 text-right font-semibold">
-                                {eco != null ? (
-                                  <span className={eco >= 0 ? "text-emerald-600" : "text-red-500"}>
-                                    {eco >= 0 ? "-" : "+"}{Math.abs(eco).toFixed(1)}%
+                                  ) : "—"}
+                                </td>
+                                <td className="px-2 py-2">
+                                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${classeSit(it.situacao ?? "")}`}>
+                                    {it.situacao || "—"}
                                   </span>
-                                ) : "—"}
-                              </td>
-                              <td className="px-2 py-2">
-                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${classeSit(it.situacao ?? "")}`}>
-                                  {it.situacao || "—"}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
-                    {/* Totais */}
-                    {itens.some(it => it.valor_estimado_total != null || it.valor_vencedor_total != null) && (
-                      <div className="mt-3 flex flex-wrap justify-end gap-x-8 gap-y-1 text-xs border-t pt-2">
-                        <div className="flex items-center gap-2 text-slate-500">
-                          <span>Total estimado:</span>
-                          <span className="font-bold text-slate-700">
-                            {fmtBRL(itens.reduce((s, it) => s + (it.valor_estimado_total ?? 0), 0))}
-                          </span>
-                        </div>
-                        {itens.some(it => it.valor_vencedor_total != null) && (
-                          <div className="flex items-center gap-2 text-slate-500">
-                            <span>Total vencedor:</span>
-                            <span className="font-bold text-emerald-700">
-                              {fmtBRL(itens.reduce((s, it) => s + (it.valor_vencedor_total ?? 0), 0))}
-                            </span>
-                          </div>
-                        )}
-                        {itens.some(it => it.valor_estimado_total != null && it.valor_vencedor_total != null) && (() => {
-                          const est = itens.reduce((s, it) => s + (it.valor_estimado_total ?? 0), 0);
-                          const ven = itens.reduce((s, it) => s + (it.valor_vencedor_total ?? 0), 0);
-                          const eco = est > 0 ? ((est - ven) / est) * 100 : null;
-                          return eco != null ? (
+                    {/* Totais — apenas itens de topo (sem sub-itens de grupo) */}
+                    {(() => {
+                      const topLevel = itens.filter(it => it.grupo_numero == null);
+                      const hasEst = topLevel.some(it => it.valor_estimado_total != null);
+                      const hasVen = topLevel.some(it => it.valor_vencedor_total != null);
+                      if (!hasEst && !hasVen) return null;
+                      const est = topLevel.reduce((s, it) => s + (it.valor_estimado_total ?? 0), 0);
+                      const ven = topLevel.reduce((s, it) => s + (it.valor_vencedor_total ?? 0), 0);
+                      const eco = (hasEst && hasVen && est > 0) ? ((est - ven) / est) * 100 : null;
+                      return (
+                        <div className="mt-3 flex flex-wrap justify-end gap-x-8 gap-y-1 text-xs border-t pt-2">
+                          {hasEst && (
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <span>Total estimado:</span>
+                              <span className="font-bold text-slate-700">{fmtBRL(est)}</span>
+                            </div>
+                          )}
+                          {hasVen && (
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <span>Total vencedor:</span>
+                              <span className="font-bold text-emerald-700">{fmtBRL(ven)}</span>
+                            </div>
+                          )}
+                          {eco != null && (
                             <div className="flex items-center gap-2">
                               <span className="text-slate-500">Economia:</span>
                               <span className={`font-bold ${eco >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                                 {fmtBRL(est - ven)} ({eco >= 0 ? "-" : "+"}{Math.abs(eco).toFixed(1)}%)
                               </span>
                             </div>
-                          ) : null;
-                        })()}
-                      </div>
-                    )}
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </Card>
