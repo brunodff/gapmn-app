@@ -159,25 +159,55 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
 
   // ── Export CSV ────────────────────────────────────────────────────────────
   function exportarCSV() {
-    if (!filtered.length) return;
     const esc = (v: unknown) => {
       const s = String(v ?? "");
       return s.includes(";") || s.includes('"') || s.includes("\n")
         ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    const rows = [
-      ["LOTE", "ITEM", "REQUISIÇÃO", "CNPJ", "EMPRESA", "QTDE", "UND", "VALOR UNIT", "VALOR TOTAL", "PRAZO", "DESCRIÇÃO", "SITUAÇÃO", "FORNECEDOR", "MODELO/VERSAO", "MARCA"],
-      ...filtered.map((p, i) => [
-        p.agrupamento, i + 1, p.numero + "/" + p.ano, "", "", "", "", "", "", "",
-        p.acao, p.situacao, "", "", p.possui_pendencia ? "Pendência" : "",
-      ]),
-    ];
-    const csv = "﻿" + rows.map(r => r.map(esc).join(";")).join("\r\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    a.download = `processos-cnet-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+
+    if (selected && itens.length > 0) {
+      // Exporta itens do processo selecionado (igual ao popup exportarProcessoXLS)
+      const topLevel = itens.filter(it => it.grupo_numero == null);
+      const rows: unknown[][] = [
+        ["LOTE", "ITEM", "REQUISIÇÃO", "CNPJ", "EMPRESA", "QTDE", "UND", "VALOR UNIT", "VALOR TOTAL", "PRAZO", "DESCRIÇÃO", "SITUAÇÃO", "FORNECEDOR", "MODELO/VERSAO", "MARCA"],
+        ...topLevel.map((it, idx) => [
+          it.lote ?? "",
+          idx + 1,
+          selected.numero + "/" + selected.ano,
+          it.vencedor_cnpj ?? "",
+          it.vencedor_nome ?? "",
+          it.quantidade ?? "",
+          it.unidade ?? "",
+          it.valor_vencedor_unitario ?? it.valor_estimado_unitario ?? "",
+          it.valor_vencedor_total ?? it.valor_estimado_total ?? "",
+          30,
+          it.descricao_detalhada || it.descricao || "",
+          it.situacao ?? "",
+          it.vencedor_nome ?? "",
+          "",
+          "",
+        ]),
+      ];
+      const csv = "﻿" + rows.map(r => r.map(esc).join(";")).join("\r\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      a.download = selected.identificacao.replace(/[/\\:*?"<>|]/g, "-") + ".csv";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    } else {
+      // Exporta lista de processos filtrados
+      if (!filtered.length) return;
+      const rows: unknown[][] = [
+        ["Identificação", "Número", "Ano", "Situação", "Grupo", "Ação"],
+        ...filtered.map(p => [p.identificacao, p.numero, p.ano, p.situacao, p.agrupamento, p.acao]),
+      ];
+      const csv = "﻿" + rows.map(r => r.map(esc).join(";")).join("\r\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      a.download = `processos-cnet-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -234,9 +264,11 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
           <span className="text-xs text-slate-500 flex-1">
             {filtered.length} de {processos.length} processo{processos.length !== 1 ? "s" : ""}
           </span>
-          <button onClick={exportarCSV} disabled={!filtered.length}
+          <button onClick={exportarCSV} disabled={selected ? itens.length === 0 : filtered.length === 0}
             className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors">
-            📥 Exportar CSV
+            {selected && itens.length > 0
+              ? `📥 Exportar Itens (${selected.numero}/${selected.ano})`
+              : "📥 Exportar Processos"}
           </button>
         </div>
       </Card>
