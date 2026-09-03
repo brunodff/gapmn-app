@@ -1144,6 +1144,15 @@ function renderItens(itens, debugItem) {
       renderParticipantes(inner, pd.participantes || []);
       if (detalheProcesso) autoSyncParticipantes(detalheProcesso.identificacao, pd.participantes || []);
       inner.dataset.loaded = '1';
+
+      // Sincroniza vencedores de TODOS os fornecedores automaticamente
+      // (roda em background — usuário não precisa clicar em cada fornecedor)
+      if (detalheProcesso && detalheId && gapmn_token && pd.participantes?.length) {
+        const isCancelled = /cancel|fracass|desert|revog|anulad/i.test(detalheProcesso.situacao || '');
+        if (!isCancelled) {
+          autoSyncVencedores(detalheProcesso.identificacao, detalheId, pd.participantes, currentTab.id, authToken);
+        }
+      }
       this.textContent = '🏢 Ocultar fornecedores';
     } catch (e) {
       inner.innerHTML = '<span style="color:#f87171;font-size:11px">Erro: ' + e.message + '</span>';
