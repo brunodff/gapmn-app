@@ -149,8 +149,8 @@ async function rasparNrDocumento(page) {
       if (!dataRows.length) continue;
       const cells = Array.from(dataRows[0].querySelectorAll("td"))
         .map(td => (td.textContent || "").trim());
-      const nr = cells[iNr];
-      if (nr && /\d/.test(nr)) return nr;
+      const nr = (cells[iNr] || "").trim();
+      if (nr && /^\d{3,10}$/.test(nr)) return nr;
     }
     return null;
   };
@@ -176,8 +176,8 @@ async function rasparNrDocumento(page) {
       if (iNr < 0) continue;
       for (const row of rows.slice(hi + 1)) {
         if (row.length <= iNr) continue;
-        const nr = row[iNr];
-        if (nr && /\d/.test(nr)) return nr;
+        const nr = (row[iNr] || "").trim();
+        if (nr && /^\d{3,10}$/.test(nr)) return nr;
       }
     } catch (_) {}
   }

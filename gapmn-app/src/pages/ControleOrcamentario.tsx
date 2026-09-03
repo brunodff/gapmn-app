@@ -1,5 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabase";
 import PainelRP from "../components/PainelRP";
 import CnetRoboGapmn from "../components/CnetRoboGapmn";
 import PainelProcessos from "../components/PainelProcessos";
@@ -8,13 +9,31 @@ import PainelExecucao from "../components/PainelExecucao";
 const BI_URL =
   "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
 
-type Painel = "orcamentario" | "rp" | "processos" | "execucao";
+const GOV_URL =
+  "https://app.powerbi.com/view?r=eyJrIjoiMGI0ZDUxZDAtOTQzOC00YmNiLTk1OTctYzA1NDk5MjkxMDNjIiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
+
+type Painel = "orcamentario" | "rp" | "processos" | "execucao" | "governanca";
 
 export default function PaineisGerenciaisPage() {
   const nav = useNavigate();
   const [painel, setPainel] = useState<Painel>("orcamentario");
   const [maximized, setMaximized] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const [govKey,    setGovKey]    = useState(0);
+  const [userSetor, setUserSetor] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data: sess } = await supabase.auth.getSession();
+      const uid = sess.session?.user.id;
+      if (!uid) return;
+      const { data } = await supabase
+        .from("profiles").select("setor").eq("id", uid).maybeSingle();
+      setUserSetor((data as any)?.setor?.toUpperCase() ?? null);
+    })();
+  }, []);
+
+  const isAdmin = userSetor === "ADMIN" || userSetor === "DEV";
 
   const reload = useCallback(() => setIframeKey((k) => k + 1), []);
   const src = `${BI_URL}&_k=${iframeKey}`;
@@ -48,6 +67,15 @@ export default function PaineisGerenciaisPage() {
                 </button>
               </>
             )}
+            {painel === "governanca" && isAdmin && (
+              <button
+                onClick={() => setGovKey((k) => k + 1)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                title="Recarregar painel"
+              >
+                ↺ Recarregar
+              </button>
+            )}
             <button
               onClick={() => nav("/app")}
               className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
@@ -58,7 +86,7 @@ export default function PaineisGerenciaisPage() {
         </div>
 
         {/* ── Seletor de painel ── */}
-        <div className="flex gap-2 border-b border-slate-200 pb-0">
+        <div className="flex gap-2 border-b border-slate-200 pb-0 overflow-x-auto">
           {([
             ["orcamentario", "💰 Painel Orçamentário"],
             ["rp",           "📋 Painel de RP"],
@@ -68,7 +96,7 @@ export default function PaineisGerenciaisPage() {
             <button
               key={key}
               onClick={() => setPainel(key)}
-              className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px ${
+              className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
                 painel === key
                   ? "border-sky-600 text-sky-700"
                   : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
@@ -77,6 +105,18 @@ export default function PaineisGerenciaisPage() {
               {label}
             </button>
           ))}
+          {isAdmin && (
+            <button
+              onClick={() => setPainel("governanca")}
+              className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                painel === "governanca"
+                  ? "border-purple-600 text-purple-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              🏛️ Painel de Governança
+            </button>
+          )}
         </div>
 
         {/* ── Conteúdo ── */}
@@ -102,6 +142,24 @@ export default function PaineisGerenciaisPage() {
 
         {painel === "execucao" && (
           <PainelExecucao />
+        )}
+
+        {painel === "governanca" && (
+          isAdmin ? (
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <iframe
+                key={govKey}
+                title="Painel de Governança GAP-MN"
+                src={`${GOV_URL}&_k=${govKey}`}
+                className="h-[calc(100dvh-13rem)] w-full"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-sm text-red-700">
+              🔒 Acesso restrito a administradores do sistema.
+            </div>
+          )
         )}
       </div>
 

@@ -38,6 +38,9 @@ interface SeSolicitacao {
   justificativa_atraso:    string | null;
   status:                  string | null;
   nr_documento:            string | null;
+  se_origem:               string | null;  // 26S ref para reforços/anulações 26M
+  ne_manual:               string | null;  // NE informada manualmente (ex: 2025NE...)
+  observacao:              string | null;
 }
 
 interface Props { canSync?: boolean; userRole?: string; }
@@ -58,7 +61,7 @@ function parseDate(s: string): Date | null {
 }
 
 const RESPONSAVEIS = ["3S ANNE", "3S ELAINE", "2T BRUNO"] as const;
-const TARGETS: Record<string, number> = { "3S ANNE": 0.4, "3S ELAINE": 0.4, "2T BRUNO": 0.2 };
+const TARGETS: Record<string, number> = { "3S ANNE": 0.45, "3S ELAINE": 0.45, "2T BRUNO": 0.10 };
 
 const PERFIS_RELEVANTES = [
   "DA | EMPENHOS",
@@ -273,6 +276,9 @@ function extrairSol(nome){
   if(/suprimento/i.test(nome))return 'Suprimento';
   return null;
 }
+function extrairIdent(nome){
+  var m=nome.match(/\\b(26E\\d{3,6})\\b/i);return m?m[1].toUpperCase():'';
+}
 var PERFIS_REL=['DA | EMPENHOS','SEO (INCLUSÃO EMPENHO ASSINADO E/OU AUTUAÇÃO DE EMPENHOS)','SEO (RENOMEAR EMPENHO)','SEO - (EMISSÃO DE EMPENHO)'];
 function isRelev(p){return PERFIS_REL.some(function(r){return(p||'').trim()===r;});}
 function isEmissao(p){return(p||'').trim()==='SEO - (EMISSÃO DE EMPENHO)';}
@@ -292,26 +298,26 @@ function parseTabela(doc){
       var nome=(cells[iNome]||'').trim();
       var perfil=iPerfil>=0?(cells[iPerfil]||'').trim():'';
       if(!/^\\d{3,10}$/.test(nrDoc))continue;
-      var nes=nome.match(/2026NE\\d+/gi);
-      if(nes){
-        var perfilFinal=isRelev(perfil)?perfil:'';
-        var sol=extrairSol(nome);
-        for(var n=0;n<nes.length;n++)neRows.push({ne_siafi:nes[n].toUpperCase(),subprocesso:nrDoc,perfil_atual:perfilFinal,solicitacao:sol});
-      }else if(isEmissao(perfil)){
+      if(isEmissao(perfil)){
         var seM=nome.match(/\\b(26[SM]\\d{3,6})\\b/i);
         var solE=seM?seM[1].toUpperCase():nome.trim();
-        emissaoRows.push({solicitacao:solE,nr_documento:nrDoc,perfil_atual:perfil});
+        var seOr=null;if(seM&&solE.startsWith('26M')){var ms26=nome.match(/\\b(26S\\d{3,6})\\b/i);var ms26ne=ms26?null:nome.match(/\\b(20\\d{2}NE\\d{3,9})\\b/i);seOr=ms26?ms26[1].toUpperCase():ms26ne?ms26ne[1].toUpperCase():null;}
+        emissaoRows.push({solicitacao:solE,nr_documento:nrDoc,perfil_atual:perfil,se_origem:seOr});
+      }else{
+        var nes=nome.match(/20\\d{2}NE\\d+/gi);
+        if(nes){var perfilFinal=isRelev(perfil)?perfil:'';var sol=extrairSol(nome);var ident=extrairIdent(nome);var se26m=nome.match(/\\b(26M\\d{3,6})\\b/i);for(var n=0;n<nes.length;n++)neRows.push({ne_siafi:nes[n].toUpperCase(),subprocesso:nrDoc,perfil_atual:perfilFinal,solicitacao:sol,identificador:ident,se26mSol:se26m?se26m[1].toUpperCase():null});}
       }
     }
   }
   var merged={};
   for(var i=0;i<neRows.length;i++){
     var r=neRows[i];
-    if(merged[r.ne_siafi]){var pts=merged[r.ne_siafi].subprocesso.split(', ');if(pts.indexOf(r.subprocesso)<0)merged[r.ne_siafi].subprocesso=pts.concat(r.subprocesso).join(', ');}
+    if(merged[r.ne_siafi]){var pts=merged[r.ne_siafi].subprocesso.split(', ');if(pts.indexOf(r.subprocesso)<0)merged[r.ne_siafi].subprocesso=pts.concat(r.subprocesso).join(', ');if(!merged[r.ne_siafi].identificador&&r.identificador)merged[r.ne_siafi].identificador=r.identificador;if(!merged[r.ne_siafi].solicitacao&&r.solicitacao)merged[r.ne_siafi].solicitacao=r.solicitacao;}
     else{merged[r.ne_siafi]=Object.assign({},r);}
   }
   var emSeen={};var emFinal=emissaoRows.filter(function(r){if(emSeen[r.solicitacao])return false;emSeen[r.solicitacao]=true;return true;});
-  return {neList:Object.values(merged),emissaoList:emFinal};
+  var neList=Object.values(merged).sort(function(a,b){var ya=parseInt(((a.ne_siafi||'').match(/^(\\d{4})NE/i)||['','0'])[1]);var yb=parseInt(((b.ne_siafi||'').match(/^(\\d{4})NE/i)||['','0'])[1]);return ya!==yb?ya-yb:(a.ne_siafi||'').localeCompare(b.ne_siafi||'');});
+  return {neList:neList,emissaoList:emFinal};
 }
 (async function(){
   ui('&#128269; Lendo tabela...');
@@ -330,7 +336,7 @@ function parseTabela(doc){
   if(lista.length){
     try{
       var neIds=lista.map(function(r){return r.ne_siafi;});
-      var gRes=await fetch(SB+'/rest/v1/siloms_ne_identificadores?ne_siafi=in.('+neIds.map(function(n){return '"'+n+'"';}).join(',')+')'+'&select=ne_siafi,subprocesso,solicitacao',{headers:{'apikey':SK,'Authorization':'Bearer '+SK}});
+      var gRes=await fetch(SB+'/rest/v1/siloms_ne_identificadores?ne_siafi=in.('+neIds.map(function(n){return '"'+n+'"';}).join(',')+')'+'&select=ne_siafi,subprocesso,solicitacao,identificador',{headers:{'apikey':SK,'Authorization':'Bearer '+SK}});
       if(gRes.ok){var gData=await gRes.json();for(var i=0;i<gData.length;i++)existing[gData[i].ne_siafi]=gData[i];}
     }catch(e){}
   }
@@ -345,6 +351,7 @@ function parseTabela(doc){
     var subFinal=[].concat(bancoPts,novoPts.filter(function(s){return bancoPts.indexOf(s)<0;})).join(', ');
     var payload={subprocesso:subFinal,perfil_atual:r.perfil_atual};
     if(r.solicitacao&&!(ex&&ex.solicitacao))payload.solicitacao=r.solicitacao;
+    if(r.identificador&&!(ex&&ex.identificador))payload.identificador=r.identificador;
     var res;
     if(ex){res=await fetch(SB+'/rest/v1/siloms_ne_identificadores?ne_siafi=eq.'+encodeURIComponent(r.ne_siafi),{method:'PATCH',headers:h,body:JSON.stringify(payload)});}
     else{res=await fetch(SB+'/rest/v1/siloms_ne_identificadores',{method:'POST',headers:h,body:JSON.stringify(Object.assign({ne_siafi:r.ne_siafi,identificador:''},payload))});if(res&&res.ok)novos++;}
@@ -356,6 +363,30 @@ function parseTabela(doc){
       errLog.push(desc);
       ui('&#10060; ERRO: '+r.ne_siafi+'<br><small>HTTP '+(res?res.status:'?')+' \\u2014 '+errTxt.slice(0,80).replace(/</g,'&lt;')+'</small>');
       await new Promise(function(r){setTimeout(r,2000);});
+    }
+  }
+  // Vincula 26M → se_origem quando NE row tem 26M no nome (ex: "...26M0108...2026NE000449...")
+  var neWith26m=lista.filter(function(r){return r.se26mSol&&r.ne_siafi;});
+  if(neWith26m.length){
+    ui('&#128204; Vinculando 26M → NE ('+neWith26m.length+')...');
+    for(var w=0;w<neWith26m.length;w++){
+      var wp=neWith26m[w];
+      try{await fetch(SB+'/rest/v1/siloms_solicitacoes?solicitacao=eq.'+encodeURIComponent(wp.se26mSol),{method:'PATCH',headers:h,body:JSON.stringify({se_origem:wp.ne_siafi})});}catch(_){}
+    }
+  }
+  // Vincula NE → solicitação direta (ex: "SOL EMPENHO 26S0617/ 2026NE000619/26E0518")
+  // Garante que siloms_solicitacoes.nr_documento fica preenchido, resolvendo a SE pendente
+  var neComSol=lista.filter(function(r){return r.solicitacao&&/^26[SM]/i.test(r.solicitacao)&&r.subprocesso;});
+  if(neComSol.length){
+    ui('&#128204; Atualizando SE vinculadas ('+neComSol.length+')...');
+    var solIds2=neComSol.map(function(r){return r.solicitacao;});
+    var solExMap={};
+    try{var srx=await fetch(SB+'/rest/v1/siloms_solicitacoes?select=solicitacao,nr_documento&solicitacao=in.('+solIds2.map(function(s){return'"'+s+'"';}).join(',')+')',{headers:{'apikey':SK,'Authorization':'Bearer '+SK}});if(srx.ok){var srxd=await srx.json();for(var si3=0;si3<srxd.length;si3++)solExMap[srxd[si3].solicitacao]=srxd[si3];}}catch(_){}
+    for(var ni2=0;ni2<neComSol.length;ni2++){
+      var nr=neComSol[ni2];
+      var exSR=solExMap[nr.solicitacao];
+      if(!exSR){try{await fetch(SB+'/rest/v1/siloms_solicitacoes',{method:'POST',headers:h,body:JSON.stringify({solicitacao:nr.solicitacao,nr_documento:nr.subprocesso.split(/,\s*/)[0],status:null,empenho_realizado:false,excluir_media:false})});}catch(_){}}
+      else if(!exSR.nr_documento){try{await fetch(SB+'/rest/v1/siloms_solicitacoes?solicitacao=eq.'+encodeURIComponent(nr.solicitacao),{method:'PATCH',headers:h,body:JSON.stringify({nr_documento:nr.subprocesso.split(/,\s*/)[0]})});}catch(_){}}
     }
   }
   // Emissão rows → siloms_solicitacoes
@@ -372,9 +403,12 @@ function parseTabela(doc){
       var exSol=solSols[er.solicitacao];
       var eres;
       if(exSol){
-        if(!exSol.nr_documento){eres=await fetch(SB+'/rest/v1/siloms_solicitacoes?solicitacao=eq.'+encodeURIComponent(er.solicitacao),{method:'PATCH',headers:h,body:JSON.stringify({nr_documento:er.nr_documento})});}
+        var ePld={};
+        if(!exSol.nr_documento)ePld.nr_documento=er.nr_documento;
+        if(!exSol.se_origem&&er.se_origem)ePld.se_origem=er.se_origem;
+        if(Object.keys(ePld).length){eres=await fetch(SB+'/rest/v1/siloms_solicitacoes?solicitacao=eq.'+encodeURIComponent(er.solicitacao),{method:'PATCH',headers:h,body:JSON.stringify(ePld)});}
         else{ok++;continue;}
-      }else{eres=await fetch(SB+'/rest/v1/siloms_solicitacoes',{method:'POST',headers:h,body:JSON.stringify({solicitacao:er.solicitacao,nr_documento:er.nr_documento,status:null,empenho_realizado:false,excluir_media:false})});if(eres&&eres.ok)novos++;}
+      }else{eres=await fetch(SB+'/rest/v1/siloms_solicitacoes',{method:'POST',headers:h,body:JSON.stringify({solicitacao:er.solicitacao,nr_documento:er.nr_documento,status:null,empenho_realizado:false,excluir_media:false,se_origem:er.se_origem||null})});if(eres&&eres.ok)novos++;}
       if(eres&&eres.ok){ok++;emOk++;}else{
         errs++;
         var errTxtE='';try{errTxtE=await eres.text();}catch(_){}
@@ -453,7 +487,8 @@ function parseTudo(doc){
         if(st.toLowerCase()!=='ativo')continue;
         var seMatch=nome.match(/\\b(26[SM]\\d{3,6})\\b/i);
         var solicitacao=seMatch?seMatch[1].toUpperCase():nome.trim();
-        subRows.push({solicitacao:solicitacao,nr_documento:nrDoc,ug_cred:(iUO>=0?(c[iUO]||'').trim():null)||null,dt_solicitacao:parseDt(iDtAb>=0?(c[iDtAb]||'').trim():''),status:null});
+        var seOr26=null;if(seMatch&&solicitacao.startsWith('26M')){var ms26s=nome.match(/\\b(26S\\d{3,6})\\b/i);var ms26sne=ms26s?null:nome.match(/\\b(20\\d{2}NE\\d{3,9})\\b/i);seOr26=ms26s?ms26s[1].toUpperCase():ms26sne?ms26sne[1].toUpperCase():null;}
+        subRows.push({solicitacao:solicitacao,nr_documento:nrDoc,ug_cred:(iUO>=0?(c[iUO]||'').trim():null)||null,dt_solicitacao:parseDt(iDtAb>=0?(c[iDtAb]||'').trim():''),status:null,se_origem:seOr26});
       }
     }
   }
@@ -480,7 +515,7 @@ function parseTudo(doc){
   var allSols=[].concat(seRows,subRows).map(function(r){return r.solicitacao;});
   var existing={};
   try{
-    var gRes=await fetch(SB+'/rest/v1/siloms_solicitacoes?select=solicitacao,nr_documento&solicitacao=in.('+allSols.map(function(s){return'"'+s+'"';}).join(',')+')',{headers:h});
+    var gRes=await fetch(SB+'/rest/v1/siloms_solicitacoes?select=solicitacao,nr_documento,se_origem&solicitacao=in.('+allSols.map(function(s){return'"'+s+'"';}).join(',')+')',{headers:h});
     if(gRes.ok){var gData=await gRes.json();for(var i=0;i<gData.length;i++)existing[gData[i].solicitacao]=gData[i];}
   }catch(e){}
   var ok=0,errs=0,novos=0,atualizados=0,empenhados=0;
@@ -514,9 +549,11 @@ function parseTudo(doc){
     ui('&#128196; Sub '+(i+1)+'/'+subRows.length+': '+r.solicitacao+'...');
     var ex=existing[r.solicitacao];
     if(ex){
-      if(!ex.nr_documento){
-        var payload={nr_documento:r.nr_documento};
-        if(r.ug_cred)payload.ug_cred=r.ug_cred;
+      var needPatch=!ex.nr_documento||(!ex.se_origem&&r.se_origem);
+      if(needPatch){
+        var payload={};
+        if(!ex.nr_documento){payload.nr_documento=r.nr_documento;if(r.ug_cred)payload.ug_cred=r.ug_cred;}
+        if(!ex.se_origem&&r.se_origem)payload.se_origem=r.se_origem;
         var res=await fetch(SB+'/rest/v1/siloms_solicitacoes?solicitacao=eq.'+encodeURIComponent(r.solicitacao),{method:'PATCH',headers:ph,body:JSON.stringify(payload)});
         if(res&&res.ok){ok++;atualizados++;}else{errs++;}
       }else{ok++;}
@@ -536,6 +573,7 @@ function parseTudo(doc){
 export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Props) {
   const canEdit          = ["SEO", "DEV", "ADMIN"].includes((userRole ?? "").toUpperCase());
   const canEditPendentes = ["SEO", "DEV"].includes((userRole ?? "").toUpperCase());
+  const canSeePendentes  = canEdit; // USER (sem setor) não vê Solicitações Pendentes
 
   // Dados
   const [empenhos,      setEmpenhos]      = useState<EmpenhoNF[]>([]);
@@ -560,6 +598,12 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
 
   const [showNEsTable, setShowNEsTable] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
+
+  // Resolver manualmente
+  const [resolverModal, setResolverModal]     = useState<string | null>(null);
+  const [resolverNEInput, setResolverNEInput] = useState("");
+  const [resolverSaving, setResolverSaving]   = useState(false);
+  const [resolverErro,   setResolverErro]     = useState<string | null>(null);
 
   useEffect(() => {
     const id = "empenhos-dark-css";
@@ -655,7 +699,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
 
   // (showColarModal removido — unificado em showSubprocModal)
   const [colarTexto,     setColarTexto]     = useState("");
-  const [colarParsed,    setColarParsed]    = useState<{ ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null }[]>([]);
+  const [colarParsed,    setColarParsed]    = useState<{ ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null; se_origem: string | null }[]>([]);
   const [colarMsg,       setColarMsg]       = useState<string | null>(null);
   const [colarSalvando,  setColarSalvando]  = useState(false);
 
@@ -670,10 +714,10 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   }
 
   // Returns NE rows (ne_siafi set) and emissão rows (ne_siafi = "" for docs without 2026NE in EMISSÃO perfil)
-  function parseSilomsTable(texto: string): { ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null }[] {
+  function parseSilomsTable(texto: string): { ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null; se_origem: string | null }[] {
     const linhas = texto.split(/\r?\n/).filter(l => l.trim());
     let iNr = -1, iNome = -1, iPerfil = -1, offset = 0;
-    const brutos: { ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null }[] = [];
+    const brutos: { ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null; se_origem: string | null }[] = [];
 
     for (const linha of linhas) {
       const cols = linha.split("\t");
@@ -693,24 +737,30 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
 
       if (!/^\d{3,10}$/.test(nrDoc)) continue;
 
-      const neMatches = nome.match(/2026NE\d+/gi);
-      if (neMatches) {
-        // Doc with NE: save regardless of perfil; irrelevant perfil → perfil_atual = ""
-        const perfilFinal = isPerfilRelevante(perfil) ? perfil : "";
-        const solicitacao = extrairSolicitacao(nome);
-        for (const ne of neMatches) {
-          brutos.push({ ne_siafi: ne.toUpperCase(), subprocesso: nrDoc, perfil_atual: perfilFinal, solicitacao });
-        }
-      } else if (isPerfilEmissao(perfil)) {
-        // Doc in EMISSÃO perfil without NE → emissão row (ne_siafi = "")
+      if (isPerfilEmissao(perfil)) {
+        // Emissão tem prioridade: extrai 26S/26M mesmo que nome contenha 2026NE
         const seMatch = nome.match(/\b(26[SM]\d{3,6})\b/i);
         const solicitacao = seMatch ? seMatch[1].toUpperCase() : nome.trim();
-        brutos.push({ ne_siafi: "", subprocesso: nrDoc, perfil_atual: perfil, solicitacao });
+        const se_origem = (seMatch && /^26M/i.test(seMatch[1]))
+          ? (nome.match(/\b(26S\d{3,6})\b/i)?.[1].toUpperCase()
+             ?? nome.match(/\b(20\d{2}NE\d{3,9})\b/i)?.[1].toUpperCase()
+             ?? null)
+          : null;
+        brutos.push({ ne_siafi: "", subprocesso: nrDoc, perfil_atual: perfil, solicitacao, se_origem });
+      } else {
+        const neMatches = nome.match(/20\d{2}NE\d+/gi);
+        if (neMatches) {
+          const perfilFinal = isPerfilRelevante(perfil) ? perfil : "";
+          const solicitacao = extrairSolicitacao(nome);
+          for (const ne of neMatches) {
+            brutos.push({ ne_siafi: ne.toUpperCase(), subprocesso: nrDoc, perfil_atual: perfilFinal, solicitacao, se_origem: null });
+          }
+        }
       }
     }
 
     // Mescla entradas com a mesma ne_siafi (NE rows): concatena subprocessos distintos
-    const merged = new Map<string, { ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null }>();
+    const merged = new Map<string, { ne_siafi: string; subprocesso: string; perfil_atual: string; solicitacao: string | null; se_origem: string | null }>();
     for (const r of brutos) {
       if (r.ne_siafi === "") {
         // Emissão rows: keep all (deduplicate by solicitacao)
@@ -750,7 +800,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
           } else { ok++; }
         } else {
           const { error } = await supabase.from("siloms_solicitacoes")
-            .insert({ solicitacao: r.solicitacao!, nr_documento: r.subprocesso, status: null, empenho_realizado: false, excluir_media: false });
+            .insert({ solicitacao: r.solicitacao!, nr_documento: r.subprocesso, status: null, empenho_realizado: false, excluir_media: false, se_origem: r.se_origem ?? null });
           if (error) errs++; else { ok++; emissaoOk++; inseridos++; }
         }
         continue;
@@ -778,6 +828,19 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
           .from("siloms_ne_identificadores")
           .insert({ ne_siafi: r.ne_siafi, identificador: "", solicitacao: r.solicitacao ?? null, subprocesso: subprocessoFinal, perfil_atual: r.perfil_atual });
         if (error) errs++; else { ok++; inseridos++; }
+      }
+
+      // Se NE tem solicitacao (ex: 26S0617), garantir que siloms_solicitacoes.nr_documento fica preenchido
+      if (r.solicitacao && /^26[SM]/i.test(r.solicitacao) && subprocessoFinal) {
+        const exSol = solsMap.get(r.solicitacao.toUpperCase());
+        if (exSol && !exSol.nr_documento) {
+          await supabase.from("siloms_solicitacoes")
+            .update({ nr_documento: subprocessoFinal.split(/,\s*/)[0] })
+            .eq("solicitacao", r.solicitacao);
+        } else if (!exSol) {
+          await supabase.from("siloms_solicitacoes")
+            .insert({ solicitacao: r.solicitacao, nr_documento: subprocessoFinal.split(/,\s*/)[0], status: null, empenho_realizado: false, excluir_media: false });
+        }
       }
     }
     const extras = [inseridos ? `${inseridos} novos` : "", emissaoOk ? `${emissaoOk} emissão` : ""].filter(Boolean).join(", ");
@@ -954,12 +1017,40 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     if (!error) setSolicitacoes(prev => prev.map(s => s.solicitacao === solicitacao ? { ...s, responsavel: responsavel || null } : s));
   }
 
+  async function atualizarObservacao(solicitacao: string, observacao: string) {
+    const { error } = await supabase
+      .from("siloms_solicitacoes")
+      .update({ observacao: observacao || null })
+      .eq("solicitacao", solicitacao);
+    if (!error) setSolicitacoes(prev => prev.map(s => s.solicitacao === solicitacao ? { ...s, observacao: observacao || null } : s));
+  }
+
   async function toggleEmpenhoRealizado(solicitacao: string, realizado: boolean) {
     const { error } = await supabase
       .from("siloms_solicitacoes")
       .update({ empenho_realizado: realizado })
       .eq("solicitacao", solicitacao);
     if (!error) setSolicitacoes(prev => prev.map(s => s.solicitacao === solicitacao ? { ...s, empenho_realizado: realizado } : s));
+  }
+
+  async function resolverManualmente(solicitacao: string, ne: string) {
+    const neSiafi = ne.trim().toUpperCase();
+    if (!neSiafi) return;
+    setResolverSaving(true);
+    setResolverErro(null);
+    const { error } = await supabase
+      .from("siloms_solicitacoes")
+      .update({ ne_manual: neSiafi })
+      .eq("solicitacao", solicitacao);
+    if (!error) {
+      setSolicitacoes(prev => prev.map(s => s.solicitacao === solicitacao ? { ...s, ne_manual: neSiafi } : s));
+      setResolverModal(null);
+      setResolverNEInput("");
+      setResolverErro(null);
+    } else {
+      setResolverErro(error.message ?? "Erro ao salvar. Verifique se a migration foi aplicada no Supabase.");
+    }
+    setResolverSaving(false);
   }
 
   async function deletarSolicitacao(solicitacao: string) {
@@ -969,7 +1060,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   }
 
   async function autoDistribuir() {
-    const semResp = sePendentes.filter(s => !s.responsavel && !!s.status && !s.empenho_realizado);
+    const semResp = sePendentes.filter(s => !s.responsavel && !s.empenho_realizado);
     if (!semResp.length) return;
     const baseCounts = {
       "3S ANNE":   solicitacoes.filter(s => s.responsavel === "3S ANNE").length,
@@ -1068,59 +1159,132 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     [solicitacoes]
   );
 
+  // 26M entries indexed by their se_origem (26S) — reforços/anulações linked to an existing NE
+  const reforcosBySe = useMemo(() => {
+    const map = new Map<string, SeSolicitacao[]>();
+    for (const s of solicitacoes) {
+      if (!s.se_origem) continue;
+      const key = s.se_origem.toUpperCase();
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    }
+    return map;
+  }, [solicitacoes]);
+
   const rows = useMemo(() => {
     const neIdentsMap = new Map(neIdents.map(r => [r.ne_siafi.toUpperCase(), r]));
 
-    // Primeira emissão de cada NE SIAFI (reforços não entram na média)
-    const firstEmissaoMap = new Map<string, Date>();
+    // Agrupar todas as linhas CSV pela mesma NE SIAFI.
+    // Uma NE pode ter N linhas na planilha: emissão original + reforços + anulações.
+    const grouped = new Map<string, import("../lib/gsheets").EmpenhoNF[]>();
     for (const ne of empenhos) {
-      const key = ne.nota_empenho.toUpperCase();
-      const d = ne.data ? parseDate(ne.data) : null;
-      if (!d) continue;
-      const existing = firstEmissaoMap.get(key);
-      if (!existing || d < existing) firstEmissaoMap.set(key, d);
+      const k = ne.nota_empenho.toUpperCase();
+      if (!grouped.has(k)) grouped.set(k, []);
+      grouped.get(k)!.push(ne);
     }
 
-    return empenhos.map(ne => {
-      const ident = neIdentsMap.get(ne.nota_empenho.toUpperCase());
+    // Primeira emissão de cada NE SIAFI (para cálculo de Dias SE→NE)
+    const firstEmissaoMap = new Map<string, { date: Date; ne: import("../lib/gsheets").EmpenhoNF }>();
+    for (const [key, group] of grouped) {
+      for (const ne of group) {
+        const d = ne.data ? parseDate(ne.data) : null;
+        if (!d) continue;
+        const ex = firstEmissaoMap.get(key);
+        if (!ex || d < ex.date) firstEmissaoMap.set(key, { date: d, ne });
+      }
+    }
 
-      // SE (coluna): usa o campo extraído da planilha (26SXXXX/26MXXXX da descrição)
-      // Se não houver código de SE, mostra a descrição completa
-      const seDisplay = ne.solicitacao?.trim()
-        ? ne.solicitacao.trim()
-        : ne.descricao?.trim() || "";
+    const csvRows = [...grouped.entries()].map(([neKey, group]) => {
+      const ident = neIdentsMap.get(neKey);
 
-      // Para calcular Dias, busca SE na tabela de solicitações
-      const solKey = (ne.solicitacao || ident?.solicitacao || "").toUpperCase();
+      // NE de referência = emissão mais antiga (origem da NE)
+      const first  = firstEmissaoMap.get(neKey);
+      const primaryNE = first?.ne ?? group[0];
+
+      // Todos os códigos SE presentes nas linhas CSV deste grupo
+      const allCsvSols = [...new Set(
+        group.map(r => r.solicitacao?.trim()).filter((s): s is string => !!s)
+      )];
+      // Preferencialmente o 26S original; fallback: primeiro da lista ou ident
+      const originalSol = allCsvSols.find(s => /^26S/i.test(s))
+                       ?? allCsvSols[0]
+                       ?? ident?.solicitacao
+                       ?? "";
+      const seDisplay = originalSol || primaryNE.descricao?.trim() || "";
+
+      const solKey = (originalSol || ident?.solicitacao || "").toUpperCase();
       const se     = solKey ? seMap.get(solKey) : undefined;
+
+      // Reforços/anulações 26M registrados no Supabase (se_origem = 26S ou NE)
+      const reforcos = [
+        ...(solKey ? (reforcosBySe.get(solKey) ?? []) : []),
+        ...(reforcosBySe.get(neKey) ?? []),
+      ].filter((r, i, arr) => arr.findIndex(x => x.solicitacao === r.solicitacao) === i);
+
+      // Todos os códigos SE buscáveis: CSV + 26M do Supabase
+      const allSolicitacoes = [
+        ...allCsvSols,
+        ...reforcos.map(r => r.solicitacao),
+      ].filter((s, i, a) => a.indexOf(s) === i);
+
+      // Valor líquido = soma de todos os movimentos (original + reforços + anulações)
+      const valorLiquido = group.reduce((sum, r) => sum + (r.valor ?? 0), 0);
 
       let dias: number | null = null;
       if (se?.dt_solicitacao) {
-        const primeiraEmissao = firstEmissaoMap.get(ne.nota_empenho.toUpperCase());
-        const dtSol           = parseDate(se.dt_solicitacao);
-        if (primeiraEmissao && dtSol) {
-          dias = Math.round((primeiraEmissao.getTime() - dtSol.getTime()) / 86400000);
-        }
+        const dtSol = parseDate(se.dt_solicitacao);
+        if (first?.date && dtSol)
+          dias = Math.round((first.date.getTime() - dtSol.getTime()) / 86400000);
       }
 
-      const ug_cred = UG_CODE_MAP[ne.ugcred_code] ?? ne.ugr ?? ne.ugcred_code ?? "";
+      const ug_cred = UG_CODE_MAP[primaryNE.ugcred_code] ?? primaryNE.ugr ?? primaryNE.ugcred_code ?? "";
 
       return {
-        ne,
-        nota_empenho:     ne.nota_empenho,
-        data:             ne.data,
-        valor:            ne.valor,
-        identificador:    ident?.identificador ?? "",
-        solicitacao:      seDisplay,
-        subprocesso:      ident?.subprocesso  ?? null,
-        perfil_atual:     ident?.perfil_atual ?? null,
+        ne:              primaryNE,
+        allMovimentos:   group,          // todos os movimentos SIAFI desta NE
+        nota_empenho:    neKey,
+        data:            first?.ne?.data ?? group[0].data,
+        valor:           valorLiquido,
+        identificador:   ident?.identificador ?? "",
+        solicitacao:     seDisplay,
+        allSolicitacoes,                 // todos os SEs (26S + 26M) para busca
+        subprocesso:     ident?.subprocesso  ?? null,
+        perfil_atual:    ident?.perfil_atual ?? null,
         ug_cred,
         dias,
-        se_excluir_media: se?.excluir_media   ?? false,
-        se_sol:           se ?? null,
+        se_excluir_media: se?.excluir_media ?? false,
+        se_sol:          se ?? null,
+        reforcos,
+        isManual:        false,
       };
     });
-  }, [empenhos, neIdents, seMap]);
+
+    // NEs resolvidas manualmente que não estão na planilha (ex: 2025NE...)
+    const planilhaNEsSet = new Set(empenhos.map(e => e.nota_empenho.toUpperCase()));
+    const emptyNE = {} as import("../lib/gsheets").EmpenhoNF;
+    const manualRows = solicitacoes
+      .filter(s => s.ne_manual && !planilhaNEsSet.has(s.ne_manual.toUpperCase()))
+      .map(s => ({
+        ne:               emptyNE,
+        allMovimentos:    [] as import("../lib/gsheets").EmpenhoNF[],
+        nota_empenho:     s.ne_manual!.toUpperCase(),
+        data:             null as string | null | undefined,
+        valor:            null as number | null | undefined,
+        identificador:    "",
+        solicitacao:      s.solicitacao,
+        allSolicitacoes:  [s.solicitacao],
+        subprocesso:      null as string | null,
+        perfil_atual:     null as string | null,
+        ug_cred:          UG_CODE_MAP[s.ug_cred ?? ""] ?? s.ug_cred ?? "",
+        dias:             null as number | null,
+        se_excluir_media: false,
+        se_sol:           s,
+        reforcos:         [] as SeSolicitacao[],
+        isManual:         true,
+      }));
+
+    return [...manualRows, ...csvRows];
+  }, [empenhos, neIdents, seMap, reforcosBySe, solicitacoes]);
 
   const ugCredsDisponiveis = useMemo(() => {
     const set = new Set<string>();
@@ -1148,7 +1312,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       return (
         r.nota_empenho.toUpperCase().includes(q) ||
         r.identificador.toUpperCase().includes(q) ||
-        (r.solicitacao    ?? "").toUpperCase().includes(q) ||
+        r.allSolicitacoes.some(s => s.toUpperCase().includes(q)) ||
         (r.subprocesso    ?? "").toUpperCase().includes(q) ||
         (r.ne.pag         ?? "").toUpperCase().includes(q) ||
         (r.ne.cnpj        ?? "").toUpperCase().includes(q) ||
@@ -1163,7 +1327,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
   );
 
   const semSubprocCount = useMemo(
-    () => rows.filter(r => !r.subprocesso).length,
+    () => rows.filter(r => !r.subprocesso && !r.isManual).length,
     [rows]
   );
 
@@ -1297,15 +1461,39 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
     );
     // Subprocessos já vinculados a alguma NE emitida
     const planilhaSubprocs = new Set<string>();
+    // Mapa subprocesso → ne_siafi[] para checar 26M via NE na planilha
+    const subprocToNEs = new Map<string, string[]>();
     for (const n of neIdents) {
       if (n.subprocesso) {
-        n.subprocesso.split(/,\s*/).filter(Boolean).forEach(s => planilhaSubprocs.add(s.trim()));
+        n.subprocesso.split(/,\s*/).filter(Boolean).forEach(sp => {
+          const k = sp.trim();
+          planilhaSubprocs.add(k);
+          if (n.ne_siafi) {
+            if (!subprocToNEs.has(k)) subprocToNEs.set(k, []);
+            subprocToNEs.get(k)!.push(n.ne_siafi.toUpperCase());
+          }
+        });
       }
     }
+    // SEs que têm NE vinculada via SILOMS Leitor E confirmada na planilha
+    const solsComNEConfirmada = new Set(
+      neIdents
+        .filter(n => n.solicitacao && n.ne_siafi && planilhaNEs.has(n.ne_siafi.toUpperCase()))
+        .map(n => n.solicitacao!.toUpperCase())
+    );
     return solicitacoes.filter(s => {
       const sol = s.solicitacao.toUpperCase();
+      if (s.ne_manual) return false;                // resolvida manualmente → sai
       if (planilhaSols.has(sol)) return false;      // NE já emitida → sai
+      if (solsComNEConfirmada.has(sol)) return false; // NE vinculada E confirmada na planilha → sai
+      // 26M reforço/anulação: sai se a 26S de origem já tem NE emitida
+      if (s.se_origem && (planilhaSols.has(s.se_origem.toUpperCase()) || planilhaNEs.has(s.se_origem.toUpperCase()))) return false;
       if (s.nr_documento && planilhaSubprocs.has(s.nr_documento.trim())) return false; // subprocesso já na NE → sai
+      // 26M: sai se o subprocesso tem NE emitida na planilha (robusto mesmo sem se_origem)
+      if (/^26M/i.test(sol) && s.nr_documento) {
+        const nes26m = subprocToNEs.get(s.nr_documento.trim());
+        if (nes26m && nes26m.some(ne => planilhaNEs.has(ne))) return false;
+      }
       if (!!s.status) return true;                    // Qualquer status = veio do leitor SE, já assinada
       if (s.empenho_realizado) return true;          // Empenhada, aguardando NE na planilha
       if (!s.status && !!s.nr_documento) return true; // Emissão SILOMS: subprocesso registrado, sem SE/status
@@ -1331,7 +1519,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       {showExcluirModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={() => { setShowExcluirModal(null); setJustificativaExcluir(""); }}>
-          <div className="bg-white rounded-2xl shadow-2xl border max-w-sm w-full mx-4 p-5 space-y-3"
+          <div className="modal-card bg-white rounded-2xl shadow-2xl border max-w-sm w-full mx-4 p-5 space-y-3"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-800 text-sm">⛔ Excluir SE da média</span>
@@ -1372,7 +1560,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       {showColarSeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={() => setShowColarSeModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl border max-w-2xl w-full mx-4 p-5 space-y-3 max-h-[92vh] overflow-y-auto"
+          <div className="modal-card bg-white rounded-2xl shadow-2xl border max-w-2xl w-full mx-4 p-5 space-y-3 max-h-[92vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
 
             <div className="flex items-center justify-between">
@@ -1501,7 +1689,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       {showSubprocModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={() => setShowSubprocModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl border max-w-2xl w-full mx-4 p-5 space-y-3 max-h-[92vh] overflow-y-auto"
+          <div className="modal-card bg-white rounded-2xl shadow-2xl border max-w-2xl w-full mx-4 p-5 space-y-3 max-h-[92vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
 
             <div className="flex items-center justify-between">
@@ -1649,7 +1837,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
             onClick={gerarRelatorio}
             disabled={filtrado.length === 0}
             title="Gerar relatório PDF das NEs filtradas"
-            className="rounded-xl border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             🖨️ Gerar Relatório
           </button>
@@ -1657,7 +1845,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
           {/* Colar/Robô Subprocessos (modal unificado) */}
           {canEdit && (
             <button onClick={() => { setShowSubprocModal(true); setSubprocTab("colar"); setColarTexto(""); setColarParsed([]); setColarMsg(null); }}
-              className="rounded-xl border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100">
+              className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100">
               📋 Colar Subprocessos
             </button>
           )}
@@ -1800,6 +1988,9 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                       {/* NE SIAFI */}
                       <td className="px-3 py-1.5 font-mono font-semibold text-sky-700 text-[11px] whitespace-nowrap">
                         {row.nota_empenho}
+                        {row.isManual && (
+                          <span className="ml-1.5 rounded-md bg-violet-100 border border-violet-300 text-violet-700 text-[9px] font-bold px-1 py-0.5 not-italic">Manual</span>
+                        )}
                         <span className="ml-1 text-slate-300 text-[9px]">{isExpanded ? "▲" : "▼"}</span>
                       </td>
 
@@ -1819,14 +2010,42 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                       </td>
 
                       {/* SE */}
-                      <td className="px-2 py-1.5 font-mono text-slate-600 text-[11px] break-words leading-snug">
-                        {row.solicitacao || <span className="text-slate-300">–</span>}
+                      <td className="px-2 py-1.5 font-mono text-[11px] leading-snug">
+                        {row.solicitacao
+                          ? <div>
+                              <span className={`font-semibold ${/^26S/i.test(row.solicitacao) ? "text-sky-700" : /^26M/i.test(row.solicitacao) ? "text-indigo-600" : "text-slate-600"}`}>
+                                {row.solicitacao}
+                              </span>
+                              {(row.allMovimentos.length > 1 || row.reforcos.length > 0) && (
+                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                  {row.allMovimentos.length > 1 && (
+                                    <span className="rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 whitespace-nowrap"
+                                      title={`${row.allMovimentos.length} movimentos SIAFI (original + ${row.allMovimentos.length - 1} reforço/anulação)`}>
+                                      +{row.allMovimentos.length - 1} mov.
+                                    </span>
+                                  )}
+                                  {row.reforcos.length > 0 && (
+                                    <span className="rounded bg-indigo-50 border border-indigo-200 text-indigo-600 text-[9px] font-bold px-1.5 py-0.5 whitespace-nowrap"
+                                      title={`26M: ${row.reforcos.map(r => r.solicitacao).join(", ")}`}>
+                                      {row.reforcos.length}× 26M
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          : <span className="text-slate-300">–</span>}
                       </td>
 
                       {/* Subprocesso */}
-                      <td className="px-2 py-1.5 font-mono text-[11px] whitespace-nowrap overflow-hidden">
+                      <td className="px-2 py-1.5 font-mono text-[11px]">
                         {row.subprocesso
-                          ? <span className="text-emerald-700 font-semibold">{row.subprocesso}</span>
+                          ? <div className="flex flex-wrap gap-0.5">
+                              {row.subprocesso.split(/,\s*/).filter(Boolean).map((sp, si) => (
+                                <span key={si} className="inline-block rounded px-1 py-0.5 bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100 whitespace-nowrap">
+                                  {sp.trim()}
+                                </span>
+                              ))}
+                            </div>
                           : row.subprocesso === ""
                             ? <span className="text-slate-300 italic text-[10px]">não encontrado</span>
                             : <span className="text-slate-300">–</span>}
@@ -1865,7 +2084,24 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                     </tr>
 
                     {/* Linha expandida — detalhes da NE */}
-                    {isExpanded && (
+                    {isExpanded && row.isManual && (
+                      <tr key={`exp-${row.nota_empenho}`} className="bg-violet-50 border-b">
+                        <td colSpan={9} className="px-4 py-3">
+                          <div className="flex items-start gap-3 text-[11px]">
+                            <span className="rounded-lg bg-violet-100 border border-violet-300 px-2 py-1 text-violet-700 font-bold text-[10px]">✏️ Manual</span>
+                            <div className="text-slate-600">
+                              NE informada manualmente — dados de emissão não disponíveis na planilha principal.
+                              {row.se_sol && (
+                                <> SE vinculada: <span className="font-mono font-semibold text-sky-700">{row.se_sol.solicitacao}</span>
+                                  {row.se_sol.nr_documento && <> · Subprocesso: <span className="font-mono text-emerald-700">{row.se_sol.nr_documento}</span></>}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {isExpanded && !row.isManual && (
                       <tr key={`exp-${row.nota_empenho}`} className="bg-sky-50 border-b">
                         <td colSpan={9} className="px-4 py-3">
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
@@ -1916,6 +2152,75 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                               </div>
                             )}
 
+                            {/* Timeline de movimentos SIAFI (emissão + reforços + anulações do CSV) */}
+                            {row.allMovimentos.length > 1 && (() => {
+                              const sorted = row.allMovimentos
+                                .slice()
+                                .sort((a, b) => (parseDate(a.data)?.getTime() ?? 0) - (parseDate(b.data)?.getTime() ?? 0));
+                              // Reforços ordenados por data para pareamento posicional
+                              const reforcosSorted = row.reforcos
+                                .slice()
+                                .sort((a, b) => (parseDate(a.dt_solicitacao ?? "")?.getTime() ?? 0) - (parseDate(b.dt_solicitacao ?? "")?.getTime() ?? 0));
+                              const modificCount = sorted.length - 1;
+                              const countMatch   = reforcosSorted.length === modificCount;
+                              return (
+                                <div className="col-span-2 sm:col-span-3 bg-amber-50 rounded-lg border border-amber-200 px-3 py-2">
+                                  <p className="text-[9px] font-semibold uppercase text-amber-600 mb-1.5">
+                                    Movimentos SIAFI ({row.allMovimentos.length})
+                                  </p>
+                                  <div className="space-y-1">
+                                    {sorted.map((m, mi) => {
+                                      const isFirst = mi === 0;
+                                      const vNum    = m.valor ?? 0;
+                                      const csvSol  = m.solicitacao?.trim() || null;
+                                      // Código 26M: vem do CSV ou por pareamento posicional com reforços
+                                      const paired  = !isFirst
+                                        ? (countMatch ? reforcosSorted[mi - 1] : reforcosSorted.find(r => r.solicitacao === csvSol))
+                                        : null;
+                                      const codigoSE = csvSol ?? paired?.solicitacao ?? null;
+                                      const is26S = codigoSE && /^26S/i.test(codigoSE);
+                                      return (
+                                        <div key={mi} className="flex items-center gap-2 flex-wrap text-[11px]">
+                                          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${isFirst ? "bg-sky-100 text-sky-700 border border-sky-200" : vNum >= 0 ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : "bg-red-100 text-red-700 border border-red-200"}`}>
+                                            {isFirst ? "ORIG" : vNum >= 0 ? "REFORÇO" : "ANULAÇÃO"}
+                                          </span>
+                                          <span className="font-mono text-amber-700 text-[10px] shrink-0 w-20">
+                                            {fmtDate(m.data)}
+                                          </span>
+                                          <span className={`font-mono font-semibold ${vNum >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                                            {vNum >= 0 ? "+" : ""}{fmtValor(vNum)}
+                                          </span>
+                                          {codigoSE && (
+                                            <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded border font-semibold ${is26S ? "text-sky-700 bg-sky-50 border-sky-200" : "text-indigo-600 bg-indigo-50 border-indigo-200"}`}>
+                                              {codigoSE}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            {/* Solicitações 26M — só exibe separado quando não há múltiplos movimentos CSV */}
+                            {row.allMovimentos.length <= 1 && row.reforcos.length > 0 && (
+                              <div className="col-span-2 sm:col-span-3 bg-indigo-50 rounded-lg border border-indigo-200 px-3 py-2">
+                                <p className="text-[9px] font-semibold uppercase text-indigo-500 mb-1">
+                                  Solicitações 26M vinculadas ({row.reforcos.length})
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {row.reforcos.map(r => (
+                                    <span key={r.solicitacao}
+                                      className="inline-flex items-center gap-1 rounded-md bg-indigo-100 border border-indigo-300 px-2 py-0.5 font-mono text-[11px] text-indigo-800">
+                                      {r.solicitacao}
+                                      {r.nr_documento && <span className="text-indigo-400 text-[9px]">Doc.{r.nr_documento}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
                             {[
                               ["UGCred",     row.ne.ugcred_code],
                               ["Natureza",   row.ne.natureza],
@@ -1953,7 +2258,7 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
       </div>
 
       {/* ── Solicitações Pendentes ── */}
-      {sePendentesFiltradas.length > 0 && (
+      {canSeePendentes && sePendentesFiltradas.length > 0 && (
         <Card>
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -1967,6 +2272,13 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                 Solicitações aguardando emissão de NE SIAFI
               </div>
             </div>
+            {canEditPendentes && sePendentes.some(s => !s.responsavel && !s.empenho_realizado) && (
+              <button
+                onClick={autoDistribuir}
+                className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors">
+                ⚡ Distribuir automaticamente
+              </button>
+            )}
           </div>
           <div className="rounded-xl border border-slate-200 overflow-hidden">
             <table className="w-full text-xs border-collapse">
@@ -1976,9 +2288,10 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                   <th className="px-3 py-2 text-left font-semibold">UG Cred</th>
                   <th className="px-3 py-2 text-left font-semibold">Dt Solicitação</th>
                   <th className="px-3 py-2 text-left font-semibold">Responsável</th>
-                  <th className="px-3 py-2 text-center font-semibold">Status</th>
+                  <th className="px-3 py-2 text-left font-semibold">Observação</th>
                   <th className="px-3 py-2 text-left font-semibold">Subprocesso</th>
                   <th className="px-3 py-2 text-center font-semibold">Emitido</th>
+                  <th className="px-3 py-2 text-center font-semibold">Resolução</th>
                   <th className="px-2 py-2"></th>
                 </tr>
               </thead>
@@ -2008,11 +2321,21 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                           <span className={s.responsavel ? "text-slate-700" : "text-slate-300"}>{s.responsavel || "–"}</span>
                         )}
                       </td>
-                      <td className="px-3 py-1.5 text-center">
-                        {isEmpenhada
-                          ? <span className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-semibold bg-green-100 border border-green-300 text-green-700">✅ Empenhada — aguardando NE</span>
-                          : <span className="inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-semibold bg-amber-50 border border-amber-300 text-amber-700">🕐 Assinada OD UGCred</span>
-                        }
+                      <td className="px-3 py-1.5 min-w-[140px]">
+                        {canEditPendentes ? (
+                          <textarea
+                            rows={1}
+                            defaultValue={s.observacao ?? ""}
+                            onBlur={e => atualizarObservacao(s.solicitacao, e.target.value)}
+                            placeholder="Observação..."
+                            className="w-full resize-none rounded border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-200"
+                            style={{ minHeight: 28, maxHeight: 80 }}
+                          />
+                        ) : (
+                          <span className={s.observacao ? "text-slate-600 text-[11px]" : "text-slate-300 text-[11px]"}>
+                            {s.observacao || "–"}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-1.5 font-mono text-[11px] text-emerald-700 whitespace-normal break-words">
                         {s.nr_documento || <span className="text-slate-300">–</span>}
@@ -2035,6 +2358,17 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
                           </button>
                         )}
                       </td>
+                      {/* Resolução Manual */}
+                      <td className="px-3 py-1.5 text-center">
+                        {canEditPendentes && !isEmpenhada && (
+                          <button
+                            onClick={() => { setResolverModal(s.solicitacao); setResolverNEInput(""); }}
+                            title="Informar manualmente o número da NE SIAFI (ex: 2025NE...)"
+                            className="rounded-lg border border-violet-300 bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700 hover:bg-violet-100 font-semibold whitespace-nowrap">
+                            ✏️ Resolver
+                          </button>
+                        )}
+                      </td>
                       <td className="px-2 py-1.5 text-center">
                         {canEditPendentes && (
                           <button
@@ -2052,6 +2386,54 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
             </table>
           </div>
         </Card>
+      )}
+
+      {/* ── Modal: Resolver Manualmente ── */}
+      {resolverModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => { setResolverModal(null); setResolverErro(null); }}>
+          <div className="modal-card bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <div>
+              <p className="font-semibold text-slate-800 text-sm">Resolver Manualmente</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                SE: <span className="font-mono font-semibold text-sky-700">{resolverModal}</span>
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600">NE SIAFI</label>
+              <input
+                autoFocus
+                value={resolverNEInput}
+                onChange={e => setResolverNEInput(e.target.value.toUpperCase())}
+                onKeyDown={e => { if (e.key === "Enter") resolverManualmente(resolverModal, resolverNEInput); }}
+                placeholder="Ex: 2025NE000123"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-300 uppercase"
+              />
+              <p className="text-[10px] text-slate-400">
+                A NE informada aparecerá na tabela "Notas de Empenho" com badge Manual.
+              </p>
+              {resolverErro && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-700 font-semibold">
+                  ❌ {resolverErro}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setResolverModal(null); setResolverErro(null); }}
+                className="rounded-xl border border-slate-200 px-4 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button
+                disabled={!resolverNEInput.trim() || resolverSaving}
+                onClick={() => resolverManualmente(resolverModal, resolverNEInput)}
+                className="rounded-xl bg-violet-600 text-white px-4 py-1.5 text-xs font-semibold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                {resolverSaving ? "Salvando..." : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

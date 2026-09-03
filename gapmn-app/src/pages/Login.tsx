@@ -45,6 +45,7 @@ const NOVIDADES: { mes: string; items: string[] }[] = [
       "Robô CNET — extração de propostas do ComprasNet para planilha",
       "Robô de ATAs — sincronização de Atas de Registro de Preço",
       "Gerador de Apostilamento com cálculo de reajuste pelo IPCA",
+      "Despachante SILOMS — frases favoritas para despachos rápidos no fluxo de subprocessos",
     ],
   },
 ];
@@ -52,7 +53,7 @@ const NOVIDADES: { mes: string; items: string[] }[] = [
 export default function Login() {
   const nav = useNavigate();
   const loc = useLocation() as any;
-  const redirectTo = loc.state?.from || "/app";
+  const redirectTo = "/app";
 
   const [sp] = useSearchParams();
   const showCheckEmail    = sp.get("check_email") === "1";

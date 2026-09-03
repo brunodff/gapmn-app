@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, useInView, AnimatePresence, type Variants } from "framer-motion";
 import { supabase } from "../lib/supabase";
+import { SparklesCore } from "../components/ui/sparkles";
 
 // ── Paleta ───────────────────────────────────────────────────────────────────
 const C = {
@@ -19,6 +20,7 @@ function traduzErroAuth(msg?: string) {
   if (m.includes("invalid login credentials")) return "E-mail ou senha inválidos.";
   if (m.includes("email not confirmed"))       return "Confirme seu e-mail antes de entrar.";
   if (m.includes("too many requests"))         return "Muitas tentativas. Aguarde e tente novamente.";
+  if (m.includes("email rate limit exceeded") || m.includes("rate limit")) return "Limite de e-mails atingido. Aguarde alguns minutos e tente novamente, ou entre em contato com o administrador.";
   if (m.includes("invalid email"))             return "E-mail inválido.";
   return msg || "Erro ao entrar.";
 }
@@ -43,14 +45,19 @@ const TOOLS = [
     bg:    "#EAFBF2", border: "#B2EDD1", iconBg: "#C6F0DC", iconColor: "#0F9B6B",
   },
   {
-    title: "Gerador de Apostilamento",
-    desc:  "Calcula o reajuste contratual pelo IPCA/IGP-M e gera o Termo de Apostilamento.",
+    title: "Gerador de Termos",
+    desc:  "Gera Termos de Apostilamento (reajuste IPCA/IGP-M automático) e Termos Aditivos de prorrogação e acréscimo/supressão — modelos oficiais AGU, Lei 14.133/21.",
     bg:    "#F3EFFF", border: "#D6C8F9", iconBg: "#E4D9FD", iconColor: "#7C3AED",
   },
   {
     title: "Assistente SILOMS",
     desc:  "Lê e registra automaticamente o andamento de empenhos no SILOMS.",
     bg:    "#FFF7ED", border: "#FDE8C5", iconBg: "#FDDFA8", iconColor: "#D97706",
+  },
+  {
+    title: "Despachante SILOMS",
+    desc:  "Painel de frases favoritas para preenchimento rápido de despachos ao avançar subprocessos no SILOMS.",
+    bg:    "#F0FDF4", border: "#BBF7D0", iconBg: "#D1FAE5", iconColor: "#059669",
   },
 ];
 
@@ -59,9 +66,11 @@ const TIMELINE: { mes: string; cor: string; items: string[] }[] = [
     mes: "Maio 2026",
     cor: C.accent,
     items: [
-      "Gerador de Apostilamento com cálculo de reajuste IPCA via API do Banco Central",
-      "Robô de ATAs — coluna de próximo reajuste e sincronização automática",
+      "Gerador de Termos Aditivos — prorrogação e acréscimo/supressão com modelos oficiais da AGU (Lei 14.133/21), cláusulas configuráveis e notas explicativas da AGU integradas",
+      "Gerador de Apostilamento para Contratos com cálculo automático pelo IPCA via API do Banco Central",
+      "Coluna Próximo Reajuste nos contratos com alertas de vencimento (30/60/90 dias) e upload de documentos contratuais (PDFs)",
       "Robô CNET — extração completa de propostas do ComprasNet para planilha",
+      "Despachante SILOMS — painel de frases favoritas para despachos rápidos no fluxo de subprocessos",
     ],
   },
   {
@@ -160,6 +169,15 @@ function IcServer({ className = "h-6 w-6" }: { className?: string }) {
     </svg>
   );
 }
+function IcDespacho({ className = "h-6 w-6" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <line x1="9" y1="9"  x2="15" y2="9"  strokeLinecap="round" />
+      <line x1="9" y1="13" x2="13" y2="13" strokeLinecap="round" />
+    </svg>
+  );
+}
 function IcMail({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -224,7 +242,7 @@ function IcClose({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-const TOOL_ICONS = [IcBot, IcDoc, IcCalc, IcServer];
+const TOOL_ICONS = [IcBot, IcDoc, IcCalc, IcServer, IcDespacho];
 
 // ── Navbar ───────────────────────────────────────────────────────────────────
 function Navbar({ onScroll }: { onScroll: (id: string) => void }) {
@@ -324,10 +342,11 @@ const AVATARS  = [{ key: "7_homem" },{ key: "7_mulher" },{ key: "10_homem" },{ k
 function LoginCard() {
   const nav = useNavigate();
   const loc = useLocation() as any;
-  const redirectTo = loc.state?.from || "/app";
+  const redirectTo = "/app";
 
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [done, setDone] = useState(false);
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+  const [done,       setDone]       = useState(false);
+  const [forgotDone, setForgotDone] = useState(false);
 
   // Campos compartilhados
   const [email,   setEmail]   = useState("");
@@ -378,6 +397,20 @@ function LoginCard() {
       });
       if (error) throw error;
       setDone(true);
+    } catch (err: any) {
+      setErr(traduzErroAuth(err?.message));
+    } finally { setLoading(false); }
+  }
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null); setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      setForgotDone(true);
     } catch (err: any) {
       setErr(traduzErroAuth(err?.message));
     } finally { setLoading(false); }
@@ -464,12 +497,53 @@ function LoginCard() {
                 Criar acesso
               </button>
             </span>
-            <button type="button" onClick={() => nav("/forgot-password")}
+            <button type="button" onClick={() => { setMode("forgot"); setErr(null); setForgotDone(false); }}
               className="text-xs hover:underline" style={{ color: "rgba(255,255,255,0.35)" }}>
               Esqueceu a senha?
             </button>
           </div>
         </form>
+      )}
+
+      {/* ── FORGOT ── */}
+      {mode === "forgot" && (
+        forgotDone ? (
+          <div className="text-center space-y-4">
+            <div className="text-3xl">📧</div>
+            <div className="text-sm font-semibold text-white">E-mail enviado!</div>
+            <div className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
+              Verifique sua caixa de entrada e clique no link para redefinir a senha.
+            </div>
+            <button type="button" onClick={() => { setMode("login"); setForgotDone(false); setEmail(""); setErr(null); }}
+              className="w-full rounded-xl py-2.5 text-sm font-semibold text-white" style={{ background: C.accent }}>
+              Voltar ao login
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleForgot} className="space-y-3">
+            <div className="text-sm mb-1" style={{ color: "rgba(255,255,255,0.6)" }}>
+              Informe seu e-mail para receber o link de redefinição de senha.
+            </div>
+            <div className="flex items-center gap-3 px-4 py-2.5" style={inputBase}>
+              <span style={{ color: "rgba(255,255,255,0.35)" }}><IcMail /></span>
+              <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: "white" }}
+                value={email} onChange={(e) => setEmail(e.target.value)}
+                type="email" autoComplete="email" placeholder="Seu e-mail"
+                onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = `${C.accent}80`)}
+                onBlur={(e)  => (e.currentTarget.parentElement!.style.borderColor = "rgba(255,255,255,0.12)")} />
+            </div>
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              type="submit" disabled={!email || loading}
+              className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-40"
+              style={{ background: C.accent }}>
+              {loading ? "Enviando..." : "Enviar link de redefinição"}
+            </motion.button>
+            <button type="button" onClick={() => { setMode("login"); setErr(null); }}
+              className="w-full text-xs hover:underline text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
+              ← Voltar ao login
+            </button>
+          </form>
+        )
       )}
 
       {/* ── SIGNUP ── */}
@@ -556,19 +630,25 @@ function Hero({ onScroll }: { onScroll: (id: string) => void }) {
     <section id="inicio" className="relative min-h-screen flex items-center pt-16 overflow-hidden"
       style={{ background: `linear-gradient(135deg, ${C.navy} 0%, ${C.blue} 65%, #0a2d55 100%)` }}>
 
-      {/* Fundo geométrico */}
+      {/* Sparkles background */}
       <div className="pointer-events-none absolute inset-0">
+        <SparklesCore
+          id="hero-sparkles"
+          background="transparent"
+          minSize={0.4}
+          maxSize={1.4}
+          particleDensity={80}
+          particleColor="#3FA9FF"
+          speed={1.2}
+          className="w-full h-full"
+        />
+        {/* Preserva os glows e gradiente de rodapé */}
         <div className="absolute -right-48 top-1/2 -translate-y-1/2 h-[620px] w-[620px] rounded-full opacity-[0.07] border-2"
           style={{ borderColor: C.accent }} />
         <div className="absolute -right-64 top-1/2 -translate-y-1/2 h-[860px] w-[860px] rounded-full opacity-[0.04] border"
           style={{ borderColor: C.accent }} />
         <div className="absolute bottom-0 inset-x-0 h-40"
           style={{ background: `linear-gradient(to top, ${C.navy}, transparent)` }} />
-        <div className="absolute right-6 top-20 grid grid-cols-10 gap-4 opacity-[0.06]">
-          {Array.from({ length: 80 }).map((_, i) => (
-            <div key={i} className="h-1 w-1 rounded-full bg-white" />
-          ))}
-        </div>
         <div className="absolute top-1/3 inset-x-0 h-px opacity-[0.08]"
           style={{ background: `linear-gradient(to right, transparent, ${C.accent}, transparent)` }} />
       </div>
@@ -590,16 +670,15 @@ function Hero({ onScroll }: { onScroll: (id: string) => void }) {
           <motion.h1 initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, delay: 0.08 }}
             className="text-4xl md:text-5xl lg:text-[3.2rem] font-extrabold leading-[1.15] text-white mb-5">
-            Gestão inteligente,<br />
-            <span style={{ color: C.accent }}>resultados mais rápidos.</span>
+            Gestão inteligente e<br />
+            <span style={{ color: C.accent }}>Integração de Dados.</span>
           </motion.h1>
 
           <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.16 }}
             className="text-base mb-9 max-w-md leading-relaxed"
             style={{ color: "rgba(255,255,255,0.55)" }}>
-            Plataforma interna do Grupamento de Apoio de Manaus —
-            Força Aérea Brasileira
+            Plataforma interna do Grupamento de Apoio de Manaus
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
@@ -638,7 +717,7 @@ function Funcionalidades() {
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
           {TOOLS.map((t, i) => {
             const Icon = TOOL_ICONS[i];
             return (
@@ -750,6 +829,91 @@ function Timeline() {
   );
 }
 
+// ── Sobre slideshow ──────────────────────────────────────────────────────────
+const SLIDES = [
+  {
+    img: "/gapmn.png",
+    imgAlt: "DOM do GAP-MN",
+    title: "DOM do GAP-MN",
+    subtitle: "GRUPAMENTO DE APOIO DE MANAUS",
+    desc: "Prover apoio administrativo às organizações sediadas na Guarnição de Aeronáutica de Manaus, com vistas à preservação da capacidade de combate da Força Aérea Brasileira na Amazônia Ocidental.",
+    accent: C.accent,
+  },
+  {
+    img: "/acantus.png",
+    imgAlt: "Acantus",
+    title: "Acantus",
+    subtitle: "Intendência da Aeronáutica",
+    desc: "Inspirado na folha de acanto — símbolo da intendência — o Acantus representa a pureza de caráter, a perfeição moral e o trabalho honesto",
+    accent: "#34d399",
+  },
+];
+
+function SobreSlideshow() {
+  const [current, setCurrent] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    setProgress(0);
+    let p = 0;
+    const bar = setInterval(() => {
+      p = Math.min(100, p + (75 / 15000) * 100);
+      setProgress(p);
+    }, 75);
+    const flip = setTimeout(() => {
+      setCurrent((c) => (c + 1) % SLIDES.length);
+    }, 15000);
+    return () => { clearInterval(bar); clearTimeout(flip); };
+  }, [current]);
+
+  const slide = SLIDES[current];
+
+  return (
+    <div className="absolute inset-0 flex flex-col overflow-hidden"
+      style={{ background: `linear-gradient(135deg, ${C.navy} 0%, ${C.blue} 100%)` }}>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={current}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -16 }}
+          transition={{ duration: 0.5 }}
+          className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center"
+        >
+          <img
+            src={slide.img}
+            alt={slide.imgAlt}
+            className="h-24 w-24 md:h-28 md:w-28 object-contain drop-shadow-lg"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+          />
+          <div>
+            <div className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: slide.accent }}>
+              {slide.subtitle}
+            </div>
+            <div className="text-base font-bold text-white mb-2">{slide.title}</div>
+            <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
+              {slide.desc}
+            </p>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+      <div className="shrink-0 flex items-center justify-center gap-2 pb-6">
+        {SLIDES.map((_, i) => (
+          <button key={i} onClick={() => setCurrent(i)}
+            style={{
+              width: i === current ? 20 : 6, height: 6, borderRadius: 3,
+              background: i === current ? slide.accent : "rgba(255,255,255,0.25)",
+              transition: "all 0.3s", border: "none", cursor: "pointer",
+            }} />
+        ))}
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: "rgba(255,255,255,0.1)" }}>
+        <div style={{ width: `${progress}%`, height: "100%", background: slide.accent, transition: "width 0.075s linear" }} />
+      </div>
+    </div>
+  );
+}
+
 // ── Sobre ────────────────────────────────────────────────────────────────────
 function Sobre() {
   const { ref, inView } = useFadeIn();
@@ -766,15 +930,18 @@ function Sobre() {
           <p className="text-base leading-relaxed mb-8 max-w-md" style={{ color: C.muted }}>
             O GAP-MN é uma plataforma desenvolvida para integrar, automatizar e simplificar
             processos internos, promovendo mais controle, agilidade e transparência na gestão
-            do Grupamento de Apoio de Manaus — Força Aérea Brasileira.
+            do Grupamento de Apoio de Manaus.
           </p>
-          <motion.button
+          <motion.a
+            href="https://www.gapmn.intraer/"
+            target="_blank"
+            rel="noopener noreferrer"
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-            className="rounded-xl border px-5 py-2.5 text-sm font-semibold transition-all hover:bg-slate-50"
+            className="inline-flex rounded-xl border px-5 py-2.5 text-sm font-semibold transition-all hover:bg-slate-50"
             style={{ borderColor: C.gray, color: C.navy }}
           >
             Saiba mais sobre o GAP-MN
-          </motion.button>
+          </motion.a>
         </motion.div>
 
         <motion.div
@@ -784,17 +951,7 @@ function Sobre() {
           className="rounded-2xl overflow-hidden border shadow-lg h-72 md:h-96 relative"
           style={{ borderColor: C.gray }}
         >
-          <img src="/gapmn_predio.jpg" alt="Grupamento de Apoio de Manaus"
-            className="w-full h-full object-cover"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4"
-            style={{ background: `linear-gradient(135deg, ${C.navy} 0%, ${C.blue} 100%)` }}>
-            <img src="/gapmn.png" alt="GAP-MN"
-              className="h-20 w-20 rounded-2xl border-2 border-white/10 bg-white/5 object-contain opacity-50" />
-            <p className="text-xs text-center px-6 leading-relaxed" style={{ color: "rgba(255,255,255,0.3)" }}>
-              Grupamento de Apoio de Manaus<br />Força Aérea Brasileira
-            </p>
-          </div>
+          <SobreSlideshow />
         </motion.div>
       </div>
     </section>
@@ -816,7 +973,7 @@ function Footer({ onScroll }: { onScroll: (id: string) => void }) {
             </div>
           </div>
           <p className="text-xs leading-relaxed max-w-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
-            Plataforma interna do Grupamento de Apoio de Manaus — Força Aérea Brasileira
+            Plataforma interna do Grupamento de Apoio de Manaus
           </p>
         </div>
 

@@ -16,6 +16,7 @@ export const SHEET_URLS = {
   rpNE:       "https://docs.google.com/spreadsheets/d/1-_2ZqIaKjuzCf5dbujD9V3wP3gt3vtGanjxXqUGLlZ8/export?format=csv&gid=792698456",
   empenhos:   "https://docs.google.com/spreadsheets/d/1Gb-2Q1b6VJQff-MHTZyzwUIKvQI-sZnYwNB0ZU__Vb4/export?format=csv&gid=0",
   empenhosNF: "https://docs.google.com/spreadsheets/d/1XQ5CGcB0dTVADeEGfKjtXRhqtHxsNf1J1H_9VKjBklM/export?format=csv&gid=1297815245",
+  execucao:   "https://docs.google.com/spreadsheets/d/1WXiRR3_QnjgYJHWeBQ5QPivF5z6bJsooqAw7BdH00JI/export?format=csv&gid=837657910",
 } as const;
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -75,9 +76,9 @@ export interface EmpenhoNF {
   solicitacao?:      string;  // extraído de descricao via regex /26S\d+/i
 }
 
-/** Extrai código de solicitação SILOMS (26SXXXX ou 26MXXXX) de uma descrição de NE */
+/** Extrai código de solicitação SILOMS (2XSXXXX ou 2XMXXXX) de uma descrição de NE */
 export function extractSolicitacao(descricao: string): string {
-  const m = descricao.match(/\b26[SM]\d{4,6}\b/i);
+  const m = descricao.match(/\b2[2-9][SM]\d{4,6}\b/i);
   return m ? m[0].toUpperCase() : "";
 }
 
@@ -214,6 +215,8 @@ export async function fetchCSV(url: string): Promise<string[][]> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
   const text = await res.text();
+  if (text.trimStart().startsWith("<!") || text.trimStart().startsWith("<html"))
+    throw new Error("Planilha não está acessível — verifique se está compartilhada publicamente.");
   return parseCSV(text);
 }
 
@@ -451,56 +454,84 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
 
 /** Linha de RP por Nota de Empenho (planilha gid=792698456) */
 export interface LinhaRPNE {
+  pi:          string;
   ugr_code:    string;
   ugr_nome:    string;
-  ne:          string;   // NE sem os 11 primeiros chars do código completo
+  ne:          string;
   favorecido:  string;
   descricao:   string;
   processo:    string;
-  rp_nao_proc: number;   // col H — RP Não Processados
-  rp_proc:     number;   // col I — RP Processados
+  // Campos granulares (estrutura 2026)
+  rp_nao_proc_a_liq:    number;   // col J (631100000) — RP Não Proc. A Liquidar
+  rp_nao_proc_liq_pag:  number;   // col K (631300000) — RP Não Proc. Liquidados A Pagar
+  rp_nao_proc_pago:     number;   // col L (631400000) — RP Não Proc. Pagos
+  rp_proc_a_pagar:      number;   // col M (632100000) — RP Proc. A Pagar
+  rp_proc_pagos:        number;   // col N (632200000) — RP Proc. Pagos
+  // Agregados para PainelRP (backward compat)
+  rp_nao_proc: number;  // J+K — pendentes não-processados
+  rp_proc:     number;  // M   — pendentes processados
 }
 
 /**
  * Transforma linhas CSV da planilha de RP por NE em LinhaRPNE[].
  * As 5 primeiras linhas são cabeçalho/título — dados começam na linha 5 (índice 5).
- * Col B usa fill-down: quando vazio, repete o último nome de UGR.
+ * Estrutura (cols A-N):
+ *   A=PI código (fill-down)  B=PI descrição (fill-down)  C=UGR code (fill-down)  D=UGR nome (fill-down)
+ *   E=NE CCor  F=CNPJ/blank  G=Favorecido  H=Descrição  I=Processo/PAG
+ *   J=631100000 RP Não Proc. A Liquidar
+ *   K=631300000 RP Não Proc. Liquidados A Pagar
+ *   L=631400000 RP Não Proc. Pagos
+ *   M=632100000 RP Proc. A Pagar
+ *   N=632200000 RP Proc. Pagos
  */
 export function toRPNEs(rows: string[][]): LinhaRPNE[] {
   const result: LinhaRPNE[] = [];
+  let lastPi = "";
   let lastUgrCode = "";
   let lastUgrNome = "";
 
   for (let i = 5; i < rows.length; i++) {
     const row = rows[i];
-    if (row.length < 3) continue;
+    if (row.length < 5) continue;
 
-    const ugrCode = (row[0] ?? "").trim();
-    const ugrNome = (row[1] ?? "").trim();
+    const pi      = (row[0] ?? "").trim();
+    const ugrCode = (row[2] ?? "").trim();
+    const ugrNome = (row[3] ?? "").trim();
+    if (pi)      lastPi      = pi;
     if (ugrCode) lastUgrCode = ugrCode;
     if (ugrNome) lastUgrNome = ugrNome;
 
-    const neRaw = (row[2] ?? "").trim();
-    if (!neRaw) continue;
+    const neRaw = (row[4] ?? "").trim();
+    if (!neRaw) continue;  // sem NE = linha de grupo/total, pula
 
     // Extrai NE: tenta regex padrão SIAFI, fallback: remove 11 primeiros chars
     const neMatch = neRaw.match(/(\d{4}NE\d+)$/i);
     const ne = neMatch ? neMatch[1] : (neRaw.length > 11 ? neRaw.slice(11) : neRaw);
     if (!ne) continue;
 
-    const rpNaoProc = toNum((row[7] ?? "").trim());
-    const rpProc    = toNum((row[8] ?? "").trim());
-    if (rpNaoProc === 0 && rpProc === 0) continue;
+    const rpNaoProcALiq   = toNum((row[9]  ?? "").trim()); // J
+    const rpNaoProcLiqPag = toNum((row[10] ?? "").trim()); // K
+    const rpNaoProcPago   = toNum((row[11] ?? "").trim()); // L
+    const rpProcAPagar    = toNum((row[12] ?? "").trim()); // M
+    const rpProcPagos     = toNum((row[13] ?? "").trim()); // N
+
+    if (rpNaoProcALiq + rpNaoProcLiqPag + rpNaoProcPago + rpProcAPagar + rpProcPagos === 0) continue;
 
     result.push({
+      pi:          lastPi,
       ugr_code:    lastUgrCode,
       ugr_nome:    lastUgrNome,
       ne,
-      favorecido:  (row[4] ?? "").trim(),
-      descricao:   (row[5] ?? "").trim(),
-      processo:    (row[6] ?? "").trim(),
-      rp_nao_proc: rpNaoProc,
-      rp_proc:     rpProc,
+      favorecido:  (row[6] ?? "").trim(),
+      descricao:   (row[7] ?? "").trim(),
+      processo:    (row[8] ?? "").trim(),
+      rp_nao_proc_a_liq:   rpNaoProcALiq,
+      rp_nao_proc_liq_pag: rpNaoProcLiqPag,
+      rp_nao_proc_pago:    rpNaoProcPago,
+      rp_proc_a_pagar:     rpProcAPagar,
+      rp_proc_pagos:       rpProcPagos,
+      rp_nao_proc: rpNaoProcALiq + rpNaoProcLiqPag,
+      rp_proc:     rpProcAPagar,
     });
   }
 
@@ -546,19 +577,22 @@ export function toLinhasRP(rows: string[][]): LinhaRP[] {
     iTotal         = findCol(cm, "TOTAL", "TOTAL INSCR");
   }
 
-  // Fallback: 0=OM, 1=ProcInsc, 2=NaoProcInsc, 3=NaoProcReinsc, 4=ProcCanc, 5=NaoProcCanc, 6=Total
-  const fb = { om: 0, pi: 1, npi: 2, npr: 3, pc: 4, npc: 5, tot: 6 };
+  // Fallback (com +2 por colunas PI A e B adicionadas): 2=OM, 3=ProcInsc, 4=NaoProcInsc, 5=NaoProcReinsc, 6=ProcCanc, 7=NaoProcCanc, 8=Total
+  const fb = { om: 2, pi: 3, npi: 4, npr: 5, pc: 6, npc: 7, tot: 8 };
   const getC = (idx: number, fallback: number, row: string[]) =>
     (idx >= 0 ? row[idx] : row[fallback]) ?? "";
 
   const dataStart = hi >= 0 ? hi + 1 : 1;
   const result: LinhaRP[] = [];
+  let lastOM = "";
 
   for (let i = dataStart; i < rows.length; i++) {
     const row = rows[i];
     if (row.length < 3) continue;
 
-    const om = resolveOM(getC(iOM, fb.om, row));
+    const rawOM = resolveOM(getC(iOM, fb.om, row));
+    if (rawOM) lastOM = rawOM;
+    const om = lastOM;
     if (!om) continue;
 
     const procInsc      = toNum(getC(iProcInsc,      fb.pi,  row));
@@ -583,4 +617,103 @@ export function toLinhasRP(rows: string[][]): LinhaRP[] {
   }
 
   return result;
+}
+
+// ─── Painel de Execução ───────────────────────────────────────────────────────
+
+/** Uma linha da planilha de execução de empenhos */
+export interface ExecucaoLinha {
+  pi:              string;  // col A — PI código (fill-down)
+  pi_desc:         string;  // col B — PI descrição (fill-down)
+  unidade:         string;  // col D — UG Resp. nome (fill-down)
+  nota_empenho:    string;  // col D
+  info_d:          string;  // col E
+  info_e:          string;  // col F (tipicamente favorecido/empresa)
+  info_f:          string;  // col G
+  info_g:          string;  // col H (PAG)
+  a_liquidar:      number;  // col I
+  liquidado_pagar: number;  // col J
+  pago:            number;  // col K
+}
+
+export interface ExecucaoHeaders {
+  d: string; e: string; f: string; g: string;
+}
+
+function toBRLNum(v: string | undefined): number {
+  if (!v) return 0;
+  const s = v.replace(/[R$\s%]/g, "");
+  const cleaned = s.indexOf(",") !== -1
+    ? s.replace(/\./g, "").replace(",", ".")
+    : s;
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
+}
+
+/**
+ * Transforma CSV do "Situação Empenho GAPMN" (Sheet1) em ExecucaoLinha[].
+ *
+ * Estrutura atual da planilha (cols A-L, 2 colunas PI adicionadas no início):
+ *   A=PI código (fill-down)  B=PI descrição (fill-down)  C=UG Resp. código  D=UG Resp. nome (fill-down)
+ *   E=NE CCor (ex: "120630000012026NE000242")  F=NE CCor - Favorecido  G=Favorecido  H=NE CCor - Descrição
+ *   I=PAG  J=A Liquidar (6229.20.101)  K=Liquidado a Pagar (6229.20.103)  L=Pago (6229.20.104)
+ *
+ * Detecta o início dos dados pela primeira linha onde col E (índice 4) contém padrão \d{4}NE\d+.
+ */
+export function toExecucaoLinhas(rows: string[][]): { linhas: ExecucaoLinha[]; headers: ExecucaoHeaders } {
+  const headers: ExecucaoHeaders = { d: "Cód. Favorecido", e: "Favorecido", f: "Favorecido", g: "PAG" };
+  if (!rows.length) return { linhas: [], headers };
+
+  // Encontra primeira linha de dados: col E (índice 4) contém padrão de NE
+  let dataStart = 1;
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    if (/\d{4}NE\d+/i.test(rows[i][4] ?? "")) { dataStart = i; break; }
+  }
+
+  // Índices fixos conforme estrutura atual
+  // A=0:PI  B=1:PIdesc  C=2:UGcode  D=3:UGnome  E=4:NE  F=5:CodFav  G=6:Fav  H=7:Desc  I=8:PAG  J=9:ALiq  K=10:LiqPag  L=11:Pago
+  const iPI = 0, iUnidade = 3, iNota = 4, iD = 5, iE = 6, iF = 7, iG = 8;
+  const iALiq = 9, iLiqPag = 10, iPago = 11;
+
+  let lastPi     = "";
+  let lastPiDesc = "";
+  let lastUnidade = "";
+  let lastInfoG = "";  // PAG/NUP: fill-down pois fica em branco nas NEs subsequentes
+  const linhas: ExecucaoLinha[] = [];
+
+  for (let i = dataStart; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length < 5) continue;
+    const rawPi     = (row[iPI]      ?? "").trim();
+    const rawPiDesc = (row[1]        ?? "").trim();  // col B = PI descrição
+    const rawUnit   = (row[iUnidade] ?? "").trim();
+    const rawInfoG  = (row[iG]       ?? "").trim();
+    if (rawPi)     lastPi      = rawPi;
+    if (rawPiDesc) lastPiDesc  = rawPiDesc;
+    if (rawUnit)   lastUnidade = rawUnit;
+    if (rawInfoG)  lastInfoG   = rawInfoG;
+    // Extrai só o código NE do campo composto (ex: "120630000012026NE000242" → "2026NE000242")
+    const notaRaw = (row[iNota] ?? "").trim();
+    const neMatch = /(\d{4}NE\d+)/i.exec(notaRaw);
+    const nota = neMatch ? neMatch[1].toUpperCase() : notaRaw;
+    if (!nota && !lastUnidade) continue;
+    const aLiquidar      = toBRLNum(row[iALiq]);
+    const liquidadoPagar = toBRLNum(row[iLiqPag]);
+    const pago           = toBRLNum(row[iPago]);
+    if (!nota && aLiquidar === 0 && liquidadoPagar === 0 && pago === 0) continue;
+    linhas.push({
+      pi:              lastPi,
+      pi_desc:         lastPiDesc,
+      unidade:         lastUnidade,
+      nota_empenho:    nota,
+      info_d:          (row[iD]  ?? "").trim(),
+      info_e:          (row[iE]  ?? "").trim(),
+      info_f:          (row[iF]  ?? "").trim(),
+      info_g:          lastInfoG,
+      a_liquidar:      aLiquidar,
+      liquidado_pagar: liquidadoPagar,
+      pago,
+    });
+  }
+  return { linhas, headers };
 }

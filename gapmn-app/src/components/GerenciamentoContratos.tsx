@@ -2,6 +2,13 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { Card } from "./Card";
 import * as XLSX from "xlsx";
+import TermoApostilamentoContrato from "./TermoApostilamentoContrato";
+import { fetchCSV, toExecucaoLinhas, toRPNEs, normalizeNE, type ExecucaoLinha, type LinhaRPNE, SHEET_URLS } from "../lib/gsheets";
+import * as pdfjsLib from "pdfjs-dist";
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type Contrato = {
@@ -30,8 +37,51 @@ type Contrato = {
   prazo_fin_2: string | null;
   cnpj: string | null;
   fiscal: string | null;
+  data_orcamento: string | null;
+  vl_atual: number | null;
   fonte: string;
   created_at: string;
+};
+
+type ContratoDoc = {
+  id: string;
+  numero_contrato: string;
+  tipo: "contrato" | "tr" | "aditivo" | "apostilamento";
+  nome: string;
+  url: string | null;
+  user_nome: string | null;
+  created_at: string;
+  deleted_at: string | null;
+  deleted_by_nome: string | null;
+};
+
+type Reajuste = {
+  id: string;
+  contrato_id: string;
+  tipo_doc: string;
+  tipo_alteracao: string;
+  objeto_doc: string | null;
+  percentual: number | null;
+  valor_anterior: number | null;
+  valor_novo: number | null;
+  data_fim_anterior: string | null;
+  data_fim_nova: string | null;
+  meses_acrescidos: number | null;
+  user_nome: string | null;
+  created_at: string;
+};
+
+type ReajusteForm = {
+  tipo_doc: string;
+  tipo_alteracao: string;
+  objeto_doc: string;
+  percentual: string;
+  valor_anterior: string;
+  valor_novo: string;
+  data_fim_anterior: string;
+  data_fim_nova: string;
+  meses_acrescidos: string;
+  texto_pdf: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -65,6 +115,23 @@ function isVencido(dataFinal: string | null | undefined): boolean {
   hoje.setHours(0, 0, 0, 0);
   const fim = new Date(dataFinal + "T12:00:00");
   return fim < hoje;
+}
+
+function proxReajusteDate(dataOrcamento: string | null | undefined): Date | null {
+  if (!dataOrcamento) return null;
+  const d = new Date(dataOrcamento + "T12:00:00");
+  if (isNaN(d.getTime())) return null;
+  return new Date(d.getFullYear(), d.getMonth() + 12, 1);
+}
+function fmtProxReajuste(dataOrcamento: string | null | undefined): string {
+  const d = proxReajusteDate(dataOrcamento);
+  if (!d) return "–";
+  return d.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" });
+}
+function diasReajuste(dataOrcamento: string | null | undefined): number | null {
+  const d = proxReajusteDate(dataOrcamento);
+  if (!d) return null;
+  return Math.round((d.getTime() - Date.now()) / 86400000);
 }
 
 function toDateStr(v: unknown): string | null {
@@ -242,15 +309,120 @@ function parseExcelBuffer(buf: ArrayBuffer): Partial<Contrato>[] {
   return rows;
 }
 
+// ─── PDF extração ────────────────────────────────────────────────────────────
+async function extractPdfText(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map((item: any) => item.str).join(" ") + "\n";
+  }
+  return text;
+}
+
+function parseReajustePdf(text: string, contrato: Contrato): ReajusteForm {
+  const t = text;
+
+  // Tipo do documento
+  let tipo_doc = "Termo Aditivo";
+  if (/APOSTILAMENTO/i.test(t)) tipo_doc = "Apostilamento";
+  else if (/TERMO\s+ADITIVO/i.test(t)) tipo_doc = "Termo Aditivo";
+
+  // Objeto/ementa
+  let objeto_doc = "";
+  const objM = t.match(/(?:CL[AÁ]USULA\s+PRIMEIRA\s*[-–—]\s*DO\s+OBJETO|OBJETO\s*[:–—]|DO\s+OBJETO\s*[:–—]?)\s+([\s\S]{10,400}?)(?:\s{2,}|\n\n|\nCL[AÁ]USULA|\nART\.)/i);
+  if (objM) objeto_doc = objM[1].replace(/\s+/g, " ").trim().slice(0, 300);
+
+  // Percentual
+  let percentual = "";
+  const pctM =
+    t.match(/(?:acr[eé]scimo|reajuste|majora[çc][aã]o|aumento)\s+de\s+(\d+[,.]?\d*)\s*%/i) ||
+    t.match(/(\d+[,.]?\d*)\s*%\s*(?:de\s+acr[eé]scimo|de\s+reajuste|ao\s+ano)/i);
+  if (pctM) percentual = pctM[1].replace(",", ".");
+
+  // Meses acrescidos
+  let meses_acrescidos = "";
+  const mesM =
+    t.match(/(?:prorrog(?:a[çc][aã]o|ado)\s+(?:por\s+mais\s+|de\s+)?|acr[eé]scimo\s+de\s+)(\d+)\s*(?:\([^)]+\)\s*)?m[eê]s(?:es)?/i) ||
+    t.match(/(\d+)\s*(?:\([^)]+\)\s*)?m[eê]s(?:es)?\s+(?:de\s+)?(?:prazo|prorrog)/i);
+  if (mesM) meses_acrescidos = mesM[1];
+
+  // Nova data final
+  let data_fim_nova = "";
+  const dtM =
+    t.match(/(?:nova\s+(?:data|vigência)|vigência\s+(?:até|para|de)|prazo\s+(?:até|para)|prorrogado\s+até|até\s+o\s+dia)\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i) ||
+    t.match(/(\d{2}\/\d{2}\/\d{4})\s*(?:,\s*nova\s+data|,\s*data\s+de\s+encerramento)/i);
+  if (dtM) {
+    const [dd, mm, yyyy] = dtM[1].split("/");
+    data_fim_nova = `${yyyy}-${mm}-${dd}`;
+  } else if (meses_acrescidos && contrato.data_final) {
+    const d = new Date(contrato.data_final + "T12:00:00");
+    d.setMonth(d.getMonth() + parseInt(meses_acrescidos));
+    data_fim_nova = d.toISOString().slice(0, 10);
+  }
+
+  // Novo valor explícito no texto
+  let valor_novo = "";
+  const vlMs = [...t.matchAll(/R\$\s*([\d.]+,\d{2})/g)].map(m => {
+    const n = parseFloat(m[1].replace(/\./g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  });
+  // Pega o maior valor encontrado (provavelmente o valor total do contrato)
+  if (vlMs.length) {
+    const maxV = Math.max(...vlMs);
+    if (maxV > 0) valor_novo = String(maxV);
+  }
+  // Se tiver percentual, preferir calcular a partir do valor anterior
+  const valAnt = contrato.vl_atual ?? contrato.vl_contratual;
+  if (percentual && valAnt != null) {
+    const pct = parseFloat(percentual);
+    if (!isNaN(pct)) valor_novo = String(Math.round(valAnt * (1 + pct / 100) * 100) / 100);
+  }
+
+  // Tipo de alteração
+  const hasValor = !!(percentual || valor_novo);
+  const hasPrazo = !!(meses_acrescidos || data_fim_nova);
+  const tipo_alteracao = hasValor && hasPrazo ? "ambos" : hasPrazo ? "prazo" : "valor";
+
+  return {
+    tipo_doc,
+    tipo_alteracao,
+    objeto_doc,
+    percentual,
+    valor_anterior: valAnt != null ? String(valAnt) : "",
+    valor_novo,
+    data_fim_anterior: contrato.data_final ?? "",
+    data_fim_nova,
+    meses_acrescidos,
+    texto_pdf: text.slice(0, 10000),
+  };
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
-interface GerContratoProps { canImport?: boolean; canEdit?: boolean; }
-export default function GerenciamentoContratos({ canImport = true, canEdit = true }: GerContratoProps) {
+interface GerContratoProps { canImport?: boolean; canEdit?: boolean; canEditBudget?: boolean; }
+export default function GerenciamentoContratos({ canImport = true, canEdit = true, canEditBudget = false }: GerContratoProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Dados
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [loading, setLoading]     = useState(true);
   const [err, setErr]             = useState<string | null>(null);
+
+  // Previsão orçamentária
+  const [mainView, setMainView]     = useState<"lista" | "previsao">("lista");
+  const [gordura, setGordura]       = useState(5.1); // IPCA referência 2025
+  const [prevGroupBy, setPrevGroupBy] = useState<"ugr" | "acao">("ugr");
+  const [prevAno, setPrevAno]       = useState(new Date().getFullYear());
+  const [prevMesFim, setPrevMesFim] = useState(12); // 1-12
+  const [prevUgr, setPrevUgr]       = useState("todos");
+  const [prevAcao, setPrevAcao]     = useState("todos");
+  const [prevPi, setPrevPi]         = useState("todos");
+  // Mapa PAG → estatísticas SIAFI — carregado da planilha quando abre Previsão
+  type PagStats = { pagoByYear: Map<number, number>; aLiquidar: number };
+  const [execPagMap, setExecPagMap] = useState<Map<string, PagStats>>(new Map());
+  const [execPagLoaded, setExecPagLoaded] = useState(false);
 
   // Import
   const [preview, setPreview] = useState<{
@@ -265,20 +437,149 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [selected, setSelected] = useState<Contrato | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
+  // Documentos
+  const [showApt, setShowApt] = useState(false);
+  type DocTab = "contrato" | "tr" | "aditivo" | "apostilamento";
+  const [docTab, setDocTab] = useState<DocTab>("apostilamento");
+  const [contratoDocs, setContratoDocs] = useState<ContratoDoc[]>([]);
+  const [docUploading, setDocUploading] = useState(false);
+  const [docMsg, setDocMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const docFileRef = useRef<HTMLInputElement>(null);
+  const [pendingDocTipo, setPendingDocTipo] = useState<"contrato" | "tr">("contrato");
+
+  // Reajustes
+  const [reajustes, setReajustes] = useState<Reajuste[]>([]);
+  const [reajusteParsing, setReajusteParsing] = useState(false);
+  const [reajusteForm, setReajusteForm] = useState<ReajusteForm | null>(null);
+  const [reajusteSaving, setReajusteSaving] = useState(false);
+  const [reajusteMsg, setReajusteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const reajusteFileRef = useRef<HTMLInputElement>(null);
+
   // Fiscal
   const [editingFiscal, setEditingFiscal] = useState(false);
   const [fiscalInput, setFiscalInput]     = useState("");
   const [savingFiscal, setSavingFiscal]   = useState(false);
 
-  // Rola para o painel de detalhes ao selecionar (mobile) e reseta edição de fiscal
+  // Data base do orçamento
+  const toMmYyyy = (d: string | null) => {
+    if (!d) return "";
+    const [yyyy, mm] = d.split("-");
+    return mm && yyyy ? `${mm}/${yyyy}` : "";
+  };
+  const [orcamentoInput, setOrcamentoInput]   = useState("");
+  const [savingOrcamento, setSavingOrcamento] = useState(false);
+  const [orcamentoMsg, setOrcamentoMsg]       = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Valor atual do contrato (saldo ajustado — base para reajuste)
+  const [vlAtualInput, setVlAtualInput]     = useState("");
+  const [savingVlAtual, setSavingVlAtual]   = useState(false);
+  const [vlAtualMsg, setVlAtualMsg]         = useState<{ ok: boolean; text: string } | null>(null);
+  const [editandoVlAtual, setEditandoVlAtual] = useState(false);
+
+  // Valor total do contrato (vl_contratual)
+  const [editandoVlContratual, setEditandoVlContratual] = useState(false);
+  const [vlContratualInput, setVlContratualInput]       = useState("");
+  const [savingVlContratual, setSavingVlContratual]     = useState(false);
+
+  // Modo de detalhe: dados (padrão) | execucao | reajustes
+  type DetailMode = "dados" | "execucao" | "reajustes";
+  const [detailMode, setDetailMode] = useState<DetailMode>("dados");
+
+  // Execução — NEs do contrato carregadas do Google Sheets
+  const [execLinhas, setExecLinhas]   = useState<ExecucaoLinha[]>([]);
+  const [rpMap, setRpMap]             = useState<Map<string, LinhaRPNE>>(new Map());
+  const [execLoading, setExecLoading] = useState(false);
+  const [execExpandedNE, setExecExpandedNE] = useState<string | null>(null);
+
+  // Rola para o painel de detalhes ao selecionar (mobile) e reseta estados de edição
   useEffect(() => {
     setEditingFiscal(false);
     setFiscalInput("");
-    if (selected && detailRef.current) {
+    setOrcamentoInput(toMmYyyy(selected?.data_orcamento ?? null));
+    setOrcamentoMsg(null);
+    setVlAtualInput(selected?.vl_atual != null ? String(selected.vl_atual) : "");
+    setVlAtualMsg(null);
+    setEditandoVlAtual(false);
+    setEditandoVlContratual(false);
+    setVlContratualInput(selected?.vl_contratual != null ? String(selected.vl_contratual) : "");
+    setReajusteForm(null);
+    setDetailMode("dados");
+    setExecLinhas([]);
+    setRpMap(new Map());
+    setExecExpandedNE(null);
+    setReajusteMsg(null);
+    setContratoDocs([]);
+    setDocMsg(null);
+    if (selected) {
+      loadDocs(selected.numero_contrato);
       setTimeout(() => {
         detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 60);
     }
+  }, [selected?.id]);
+
+  // Carrega NEs do contrato (Execução) + mapa de RP em paralelo
+  useEffect(() => {
+    if (detailMode !== "execucao" || !selected) return;
+    setExecLoading(true);
+    setExecLinhas([]);
+    setRpMap(new Map());
+    const pag = (selected.pag_nup ?? "").trim().replace(/[\s]/g, "").toUpperCase();
+    Promise.all([
+      fetchCSV(SHEET_URLS.execucao),
+      fetchCSV(SHEET_URLS.rpNE),
+    ]).then(([execRows, rpRows]) => {
+      // Filtra NEs do contrato pela planilha de execução
+      const { linhas } = toExecucaoLinhas(execRows);
+      const filtered = pag
+        ? linhas.filter((l) => l.info_g.replace(/[\s]/g, "").toUpperCase() === pag)
+        : [];
+
+      // Constrói mapa de RP
+      const rps = toRPNEs(rpRows);
+      const map = new Map<string, LinhaRPNE>();
+      rps.forEach((r) => map.set(normalizeNE(r.ne), r));
+
+      // Adiciona NEs que existem APENAS no RP (não na planilha de execução)
+      // Ex: NE já liquidada/paga em exercício anterior — não consta mais na execução corrente
+      if (pag) {
+        const execNEs = new Set(filtered.map((l) => normalizeNE(l.nota_empenho)));
+        for (const rp of rps) {
+          const rpPag = rp.processo.replace(/[\s]/g, "").toUpperCase();
+          if (rpPag !== pag) continue;
+          if (execNEs.has(normalizeNE(rp.ne))) continue; // já presente
+          // Linha sintética: valores de execução = 0, RP será resolvido via rpMap
+          filtered.push({
+            pi:              rp.pi ?? "",
+            pi_desc:         "",
+            unidade:         rp.ugr_nome,
+            nota_empenho:    rp.ne,
+            info_d:          "",
+            info_e:          rp.favorecido,
+            info_f:          rp.descricao,
+            info_g:          rp.processo,
+            a_liquidar:      0,
+            liquidado_pagar: 0,
+            pago:            0,
+          });
+        }
+      }
+
+      setExecLinhas(filtered);
+      setRpMap(map);
+      setExecLoading(false);
+    }).catch(() => setExecLoading(false));
+  }, [detailMode, selected?.id]);
+
+  // Carrega histórico de reajustes do contrato selecionado
+  useEffect(() => {
+    if (!selected?.id) { setReajustes([]); return; }
+    supabase
+      .from("contratos_reajustes")
+      .select("*")
+      .eq("contrato_id", selected.id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setReajustes((data ?? []) as Reajuste[]));
   }, [selected?.id]);
 
   // Cadastro manual
@@ -297,10 +598,90 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [filtroAno, setFiltroAno]         = useState("todos");
   const [filtroUgr, setFiltroUgr]         = useState("todos");
   const [filtroFiscal, setFiltroFiscal]   = useState("todos");
-  const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "liquidar_asc" | "liquidar_desc" | "vencimento_asc">("none");
+  const [filtroPi, setFiltroPi]           = useState("todos");
+  const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "liquidar_asc" | "liquidar_desc" | "vencimento_asc" | "reajuste_asc">("none");
+
+  // Mapa PAG → PIs (pode ser vários por contrato) derivado da planilha de empenhos
+  const [piByPag, setPiByPag]             = useState<Map<string, string[]>>(new Map());
+  const [piDescMap, setPiDescMap]         = useState<Map<string, string>>(new Map());
 
   // ── Carga ────────────────────────────────────────────────────────────────
   useEffect(() => { load(); }, []);
+
+  // Mapa PAG→PIs: carrega planilha de execução (col A=PI, col H=PAG) — coleta TODOS os PIs por PAG
+  useEffect(() => {
+    fetchCSV(SHEET_URLS.execucao).then((rows) => {
+      const { linhas } = toExecucaoLinhas(rows);
+      const setMap  = new Map<string, Set<string>>();
+      const descMap = new Map<string, string>();
+      linhas.forEach((l) => {
+        if (l.pi && l.info_g) {
+          const key = l.info_g.trim().replace(/\s/g, "").toUpperCase();
+          const piSet = setMap.get(key) ?? new Set<string>();
+          piSet.add(l.pi);
+          setMap.set(key, piSet);
+          if (l.pi_desc) descMap.set(l.pi, l.pi_desc);
+        }
+      });
+      const arrMap = new Map<string, string[]>();
+      setMap.forEach((s, key) => arrMap.set(key, [...s].sort()));
+      setPiByPag(arrMap);
+      setPiDescMap(descMap);
+    }).catch(() => {});
+  }, []);
+
+  // Carrega execução SIAFI quando o usuário abre a aba Previsão
+  useEffect(() => {
+    if (mainView !== "previsao" || execPagLoaded) return;
+    setExecPagLoaded(true);
+    Promise.all([
+      fetchCSV(SHEET_URLS.execucao),
+      fetchCSV(SHEET_URLS.rpNE),
+    ]).then(([execRows, rpRows]) => {
+      const { linhas } = toExecucaoLinhas(execRows);
+      const rpList = toRPNEs(rpRows);
+      const pagMap = new Map<string, PagStats>();
+
+      const getS = (rawPag: string): PagStats => {
+        const key = rawPag.trim().replace(/\s/g, "").toUpperCase();
+        if (!pagMap.has(key)) pagMap.set(key, { pagoByYear: new Map(), aLiquidar: 0 });
+        return pagMap.get(key)!;
+      };
+
+      // Execução: acumula pago+liquidado_pagar por ano da NE, e soma a_liquidar atual
+      for (const l of linhas) {
+        if (!l.info_g) continue;
+        const s = getS(l.info_g);
+        if (l.a_liquidar > 0) s.aLiquidar += l.a_liquidar;
+        const match = l.nota_empenho.match(/^(\d{4})NE/i);
+        if (!match) continue;
+        const v = l.pago + l.liquidado_pagar;
+        if (v > 0) {
+          const yr = parseInt(match[1]);
+          s.pagoByYear.set(yr, (s.pagoByYear.get(yr) ?? 0) + v);
+        }
+      }
+
+      // RP: pago de NEs de anos anteriores → atribuído ao ano de origem da NE
+      //     rp_nao_proc_a_liq → ainda disponível para pagar faturas futuras (soma ao aLiquidar)
+      for (const rp of rpList) {
+        if (!rp.processo) continue;
+        const s = getS(rp.processo);
+        // Saldo de RP disponível para liquidar faturas futuras
+        if ((rp.rp_nao_proc_a_liq ?? 0) > 0) s.aLiquidar += rp.rp_nao_proc_a_liq;
+        // Pagamentos de RP → histórico do ano de origem da NE
+        const match = rp.ne.match(/^(\d{4})NE/i);
+        if (!match) continue;
+        const rpPago = (rp.rp_nao_proc_pago ?? 0) + (rp.rp_proc_pagos ?? 0);
+        if (rpPago > 0) {
+          const yr = parseInt(match[1]);
+          s.pagoByYear.set(yr, (s.pagoByYear.get(yr) ?? 0) + rpPago);
+        }
+      }
+
+      setExecPagMap(pagMap);
+    }).catch(() => {});
+  }, [mainView, execPagLoaded]);
 
   async function load() {
     setLoading(true);
@@ -312,6 +693,61 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     if (error) setErr(error.message);
     else setContratos((data ?? []) as Contrato[]);
     setLoading(false);
+  }
+
+  // ── Documentos do contrato ────────────────────────────────────────────────
+  async function loadDocs(numeroContrato: string) {
+    const { data } = await supabase
+      .from("contratos_docs")
+      .select("*")
+      .eq("numero_contrato", numeroContrato)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+    setContratoDocs((data ?? []) as ContratoDoc[]);
+  }
+
+  async function handleDocUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !selected) return;
+    setDocUploading(true);
+    setDocMsg(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = await supabase.from("profiles").select("nome_guerra").eq("id", user?.id ?? "").maybeSingle();
+      const safeName = file.name.replace(/[^\w.\-]/g, "_");
+      const path = `${selected.numero_contrato}/${pendingDocTipo}/${Date.now()}_${safeName}`;
+      const { error: upErr } = await supabase.storage.from("contratos-docs").upload(path, file, { upsert: false });
+      if (upErr) throw upErr;
+      const { data: { publicUrl } } = supabase.storage.from("contratos-docs").getPublicUrl(path);
+      const { error } = await supabase.from("contratos_docs").insert({
+        numero_contrato: selected.numero_contrato,
+        tipo: pendingDocTipo,
+        nome: file.name,
+        url: publicUrl,
+        user_id: user?.id ?? null,
+        user_nome: (profile as any)?.nome_guerra ?? user?.email ?? "Usuário",
+      });
+      if (error) throw error;
+      setDocMsg({ ok: true, text: "Documento salvo com sucesso." });
+      await loadDocs(selected.numero_contrato);
+    } catch (e: any) {
+      setDocMsg({ ok: false, text: e?.message ?? "Erro ao salvar documento." });
+    } finally {
+      setDocUploading(false);
+    }
+  }
+
+  async function handleDocDelete(docId: string) {
+    if (!window.confirm("Remover este documento do contrato?")) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: profile } = await supabase.from("profiles").select("nome_guerra").eq("id", user?.id ?? "").maybeSingle();
+    await supabase.from("contratos_docs").update({
+      deleted_at: new Date().toISOString(),
+      deleted_by_id: user?.id ?? null,
+      deleted_by_nome: (profile as any)?.nome_guerra ?? "Usuário",
+    }).eq("id", docId);
+    if (selected) await loadDocs(selected.numero_contrato);
   }
 
   // ── Selecionar arquivo ───────────────────────────────────────────────────
@@ -408,6 +844,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     if (!window.confirm(
       `Remover ${excelCount} contrato${excelCount !== 1 ? "s" : ""} importado${excelCount !== 1 ? "s" : ""} via Excel?\n\n` +
       `Os contratos cadastrados manualmente NÃO serão afetados.\n\n` +
+      `Documentos anexados (TR, Termo de Contrato, Aditivos, Apostilamentos) são preservados e reaparecerão ao reimportar.\n\n` +
       `Após confirmar, importe novamente a planilha para recarregar os dados corrigidos.`
     )) return;
     setClearingExcel(true);
@@ -454,6 +891,154 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     setSavingFiscal(false);
   }
 
+  async function saveOrcamento() {
+    if (!selected) return;
+    const v = orcamentoInput.trim();
+    if (!/^\d{2}\/\d{4}$/.test(v)) {
+      setOrcamentoMsg({ ok: false, text: "Formato inválido. Use MM/AAAA." });
+      return;
+    }
+    const [mm, yyyy] = v.split("/");
+    const dbDate = `${yyyy}-${mm}-01`;
+    setSavingOrcamento(true);
+    setOrcamentoMsg(null);
+    const { error } = await supabase.rpc("set_contrato_data_orcamento", {
+      p_id: selected.id,
+      p_data_orcamento: dbDate,
+    });
+    setSavingOrcamento(false);
+    if (error) {
+      setOrcamentoMsg({ ok: false, text: `Erro: ${error.message}` });
+    } else {
+      const atualizado = { ...selected, data_orcamento: dbDate };
+      setSelected(atualizado);
+      setContratos((prev) => prev.map((c) => c.id === selected.id ? atualizado : c));
+      setOrcamentoMsg({ ok: true, text: "Salvo!" });
+      setTimeout(() => setOrcamentoMsg(null), 3000);
+    }
+  }
+
+  async function saveVlAtual() {
+    if (!selected) return;
+    const v = toNum(vlAtualInput);
+    if (v === null) { setVlAtualMsg({ ok: false, text: "Valor inválido." }); return; }
+    setSavingVlAtual(true);
+    setVlAtualMsg(null);
+    const { error } = await supabase.from("contratos_scon").update({ vl_atual: v }).eq("id", selected.id);
+    setSavingVlAtual(false);
+    if (error) {
+      setVlAtualMsg({ ok: false, text: `Erro: ${error.message}` });
+    } else {
+      const atualizado = { ...selected, vl_atual: v };
+      setSelected(atualizado);
+      setContratos((prev) => prev.map((c) => c.id === selected.id ? atualizado : c));
+      setVlAtualMsg({ ok: true, text: "Salvo!" });
+      setEditandoVlAtual(false);
+      setTimeout(() => setVlAtualMsg(null), 3000);
+    }
+  }
+
+  async function saveVlContratual() {
+    if (!selected) return;
+    const v = toNum(vlContratualInput);
+    if (v === null) return;
+    setSavingVlContratual(true);
+    const { error } = await supabase.from("contratos_scon").update({ vl_contratual: v }).eq("id", selected.id);
+    setSavingVlContratual(false);
+    if (!error) {
+      const atualizado = { ...selected, vl_contratual: v };
+      setSelected(atualizado);
+      setContratos((prev) => prev.map((c) => c.id === selected.id ? atualizado : c));
+      setEditandoVlContratual(false);
+    }
+  }
+
+  // ── Reajuste: parse PDF ────────────────────────────────────────────────
+  async function handleReajustePdf(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !selected) return;
+    e.target.value = "";
+    setReajusteParsing(true);
+    setReajusteMsg(null);
+    try {
+      const text = await extractPdfText(file);
+      const form = parseReajustePdf(text, selected);
+      setReajusteForm(form);
+    } catch (err: any) {
+      setReajusteMsg({ ok: false, text: `Erro ao ler PDF: ${err?.message ?? err}` });
+    } finally {
+      setReajusteParsing(false);
+    }
+  }
+
+  // ── Reajuste: salvar ──────────────────────────────────────────────────
+  async function saveReajuste() {
+    if (!selected || !reajusteForm) return;
+    setReajusteSaving(true);
+    setReajusteMsg(null);
+
+    const pct    = toNum(reajusteForm.percentual);
+    const valAnt = toNum(reajusteForm.valor_anterior);
+    let   valNov = toNum(reajusteForm.valor_novo);
+    if (pct !== null && valAnt !== null && valNov === null) {
+      valNov = Math.round(valAnt * (1 + pct / 100) * 100) / 100;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const { error } = await supabase.from("contratos_reajustes").insert({
+      contrato_id:      selected.id,
+      tipo_doc:         reajusteForm.tipo_doc,
+      tipo_alteracao:   reajusteForm.tipo_alteracao,
+      objeto_doc:       reajusteForm.objeto_doc || null,
+      percentual:       pct,
+      valor_anterior:   valAnt,
+      valor_novo:       valNov,
+      data_fim_anterior: reajusteForm.data_fim_anterior || null,
+      data_fim_nova:    reajusteForm.data_fim_nova || null,
+      meses_acrescidos: reajusteForm.meses_acrescidos ? parseInt(reajusteForm.meses_acrescidos) : null,
+      texto_pdf:        reajusteForm.texto_pdf || null,
+      created_by:       user?.id ?? null,
+    });
+
+    if (error) {
+      setReajusteSaving(false);
+      setReajusteMsg({ ok: false, text: error.message });
+      return;
+    }
+
+    // Atualiza contrato
+    const updates: Record<string, unknown> = {};
+    if (valNov !== null && (reajusteForm.tipo_alteracao === "valor" || reajusteForm.tipo_alteracao === "ambos")) {
+      updates.vl_atual = valNov;
+    }
+    if (reajusteForm.data_fim_nova && (reajusteForm.tipo_alteracao === "prazo" || reajusteForm.tipo_alteracao === "ambos")) {
+      updates.data_final = reajusteForm.data_fim_nova;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      const { error: upErr } = await supabase.from("contratos_scon").update(updates).eq("id", selected.id);
+      if (!upErr) {
+        const atualizado = { ...selected, ...(updates as Partial<Contrato>) };
+        setSelected(atualizado);
+        setContratos((prev) => prev.map((c) => c.id === selected.id ? atualizado : c));
+      }
+    }
+
+    // Recarrega histórico
+    const { data: hist } = await supabase
+      .from("contratos_reajustes")
+      .select("*")
+      .eq("contrato_id", selected.id)
+      .order("created_at", { ascending: false });
+    setReajustes((hist ?? []) as Reajuste[]);
+
+    setReajusteForm(null);
+    setReajusteSaving(false);
+    setReajusteMsg({ ok: true, text: "Reajuste registrado e contrato atualizado!" });
+    setTimeout(() => setReajusteMsg(null), 4000);
+  }
+
   // ── Derivados ────────────────────────────────────────────────────────────
   const anos = useMemo(
     () => [...new Set(contratos.map((c) => c.data_inicio?.slice(0, 4)).filter(Boolean) as string[])].sort().reverse(),
@@ -472,12 +1057,25 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     [contratos]
   );
 
+  function normPag(pag: string | null | undefined): string {
+    return (pag ?? "").trim().replace(/\s/g, "").toUpperCase();
+  }
+
+  const pis = useMemo(() => {
+    const set = new Set<string>();
+    contratos.forEach((c) => {
+      (piByPag.get(normPag(c.pag_nup)) ?? []).forEach(pi => set.add(pi));
+    });
+    return [...set].sort();
+  }, [contratos, piByPag]);
+
   const filtered = useMemo(() => {
     const q = filtroTexto.trim().toLowerCase();
     return contratos.filter((c) => {
       if (filtroAno !== "todos" && !c.data_inicio?.startsWith(filtroAno)) return false;
       if (filtroUgr !== "todos" && c.ugr !== filtroUgr) return false;
       if (filtroFiscal !== "todos" && c.fiscal !== filtroFiscal) return false;
+      if (filtroPi !== "todos" && !(piByPag.get(normPag(c.pag_nup)) ?? []).includes(filtroPi)) return false;
       if (filtroStatus === "pendentes_encerramento") {
         if (!isVencido(c.data_final)) return false;
       } else if (filtroStatus !== "todos") {
@@ -490,7 +1088,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       }
       return true;
     });
-  }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal]);
+  }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal, filtroPi, piByPag]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -505,6 +1103,16 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
         return da - db;
       });
     }
+    else if (sortBy === "reajuste_asc") {
+      arr.sort((a, b) => {
+        const proxR = (c: Contrato) => {
+          if (!c.data_orcamento) return Infinity;
+          const d = new Date(c.data_orcamento + "T12:00:00");
+          return new Date(d.getFullYear(), d.getMonth() + 12, 1).getTime();
+        };
+        return proxR(a) - proxR(b);
+      });
+    }
     return arr;
   }, [filtered, sortBy]);
 
@@ -515,9 +1123,237 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     className: "mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200",
   });
 
+  // ── Previsão orçamentária ────────────────────────────────────────────────
+  const ANO_CORRENTE = new Date().getFullYear();
+
+  /**
+   * Média mensal estimada do contrato no `ano` alvo:
+   *   1. Se houver histórico SIAFI (execPagMap.pagoByYear): usa o último ano COMPLETO
+   *      como base e aplica IPCA composto.
+   *   2. Se não houver histórico: divide valor total do contrato pela duração total
+   *      em meses → custo mensal constante.
+   */
+  function monthlyAvgContrato(c: Contrato, ano: number): number {
+    const today      = new Date();
+    const todayYear  = today.getFullYear();
+    const todayMonth = today.getMonth() + 1;
+    const ipca       = gordura / 100;
+
+    const pag   = normPag(c.pag_nup);
+    const stats = pag ? execPagMap.get(pag) : undefined;
+    const ini   = c.data_inicio ? new Date(c.data_inicio + "T12:00:00") : null;
+
+    // ── Caminho 1: histórico real SIAFI ──────────────────────────────────
+    // Soma TODOS os pagamentos do PAG independente do ano do NE:
+    // um NE de 2025 pode ser RP liquidado durante um contrato que só começou em 2026.
+    if (stats && stats.pagoByYear.size > 0) {
+      const totalPago = [...stats.pagoByYear.values()].reduce((a, b) => a + b, 0);
+
+      // Denominador: meses corridos desde o início do contrato até o mês anterior
+      // (mês atual pode estar incompleto → excluído)
+      const cStartYear  = ini ? ini.getFullYear() : todayYear;
+      const cStartMonth = ini ? ini.getMonth() + 1 : 1;
+      const monthsElapsed = Math.max(1,
+        (todayYear * 12 + todayMonth - 1) - (cStartYear * 12 + cStartMonth - 1)
+      );
+
+      // Média mensal no ritmo atual → projeta com IPCA acumulado até o ano-alvo
+      const baseMonthly = totalPago / monthsElapsed;
+      return baseMonthly * Math.pow(1 + ipca, ano - todayYear);
+    }
+
+    // ── Caminho 2: sem histórico — valor/duração total do contrato ───────
+    const base = c.vl_atual ?? c.vl_contratual;
+    if (!base || !ini) return 0;
+    const fim = c.data_final  ? new Date(c.data_final  + "T12:00:00") : null;
+    if (!fim) return 0;
+    const MS_MES   = 30.44 * 24 * 3600 * 1000;
+    const durTotal = Math.max(1, (fim.getTime() - ini.getTime()) / MS_MES);
+    return (base / durTotal) * Math.pow(1 + ipca, Math.max(0, ano - todayYear));
+  }
+
+  /** Quantos meses do período [fromMonth, toMonth] o contrato está ativo no `ano`. */
+  function contratoMesesAtivos(c: Contrato, ano: number, fromMonth: number, toMonth: number): number {
+    if (!c.data_inicio || !c.data_final) return Math.max(0, toMonth - fromMonth + 1);
+    const ini = new Date(c.data_inicio + "T12:00:00");
+    const fim = new Date(c.data_final  + "T12:00:00");
+    const cStart = ini.getFullYear() < ano ? 1  : ini.getFullYear() > ano ? 13 : ini.getMonth() + 1;
+    const cEnd   = fim.getFullYear() > ano ? 12 : fim.getFullYear() < ano ? 0  : fim.getMonth() + 1;
+    return Math.max(0, Math.min(toMonth, cEnd) - Math.max(fromMonth, cStart) + 1);
+  }
+
+  function ativoNoAno(c: Contrato, ano: number): boolean {
+    const ini = c.data_inicio ? new Date(c.data_inicio + "T12:00:00") : null;
+    const fim = c.data_final  ? new Date(c.data_final  + "T12:00:00") : null;
+    if (!ini || !fim) return true;
+    return ini <= new Date(ano, 11, 31) && fim >= new Date(ano, 0, 1);
+  }
+
+  // Anos disponíveis: corrente + futuros cobertos por algum contrato (máx +5)
+  const prevAnosOpts = useMemo(() => {
+    const set = new Set<number>([ANO_CORRENTE]);
+    contratos.forEach((c) => {
+      if (c.data_final) {
+        const fimAno = new Date(c.data_final + "T12:00:00").getFullYear();
+        for (let y = ANO_CORRENTE + 1; y <= Math.min(fimAno, ANO_CORRENTE + 5); y++) set.add(y);
+      }
+    });
+    return [...set].sort();
+  }, [contratos]);
+
+  // Filtros cascateados da previsão
+  const prevUgrsOpts = useMemo(
+    () => [...new Set(contratos.map((c) => c.ugr).filter(Boolean) as string[])].sort(),
+    [contratos]
+  );
+
+  // Base filtrada só por UGR — usada para calcular as opções de Ação e PI
+  const prevBaseUgr = useMemo(
+    () => prevUgr === "todos" ? contratos : contratos.filter((c) => c.ugr === prevUgr),
+    [contratos, prevUgr]
+  );
+
+  // Ações disponíveis dado UGR + PI selecionados
+  const prevAcaoOpts = useMemo(() => {
+    const base = prevPi === "todos"
+      ? prevBaseUgr
+      : prevBaseUgr.filter((c) => (piByPag.get(normPag(c.pag_nup)) ?? []).includes(prevPi));
+    return [...new Set(base.map((c) => c.acao).filter(Boolean) as string[])].sort();
+  }, [prevBaseUgr, prevPi, piByPag]);
+
+  // PIs disponíveis dado UGR + Ação selecionados
+  const prevPiOpts = useMemo(() => {
+    const base = prevAcao === "todos"
+      ? prevBaseUgr
+      : prevBaseUgr.filter((c) => c.acao === prevAcao);
+    const set = new Set<string>();
+    base.forEach((c) => (piByPag.get(normPag(c.pag_nup)) ?? []).forEach((pi) => set.add(pi)));
+    return [...set].sort();
+  }, [prevBaseUgr, prevAcao, piByPag]);
+
+  // Contratos ativos no ano selecionado + filtros cascateados
+  const prevContratos = useMemo(() =>
+    contratos.filter((c) => {
+      if (!ativoNoAno(c, prevAno)) return false;
+      if (prevUgr  !== "todos" && c.ugr  !== prevUgr)  return false;
+      if (prevAcao !== "todos" && c.acao !== prevAcao) return false;
+      if (prevPi   !== "todos" && !(piByPag.get(normPag(c.pag_nup)) ?? []).includes(prevPi)) return false;
+      return true;
+    }),
+    [contratos, prevAno, prevUgr, prevAcao, prevPi, piByPag]
+  );
+
+  const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                    "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+  type PrevisaoRow = {
+    grupo: string;
+    contratos: Contrato[];
+    previsao: number;            // valor proporcional até prevMesFim (IPCA já embutido)
+    empenhadoALiquidar: number;  // NEs emitidas não pagas (só ano corrente)
+    creditoNecessario: number;   // crédito novo que precisa ser aberto
+  };
+
+  const isAnoCorrente = prevAno === ANO_CORRENTE;
+
+  // Quantos contratos ATIVOS compartilham o mesmo PAG — para dividir o total SIAFI da média mensal
+  const pagCountMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of prevContratos) {
+      const pag = normPag(c.pag_nup);
+      if (pag) m.set(pag, (m.get(pag) ?? 0) + 1);
+    }
+    return m;
+  }, [prevContratos]);
+
+  // Contrato "primário" de cada PAG — único que exibe o saldo a_liquidar do SIAFI.
+  // Escolha: contrato com data_inicio mais recente (o que está sendo executado agora).
+  // Se empate, o menor número de contrato (ordem alfabética).
+  const primaryForPag = useMemo(() => {
+    const byPag = new Map<string, Contrato[]>();
+    for (const c of prevContratos) {
+      const pag = normPag(c.pag_nup);
+      if (!pag) continue;
+      if (!byPag.has(pag)) byPag.set(pag, []);
+      byPag.get(pag)!.push(c);
+    }
+    const result = new Map<string, string>(); // PAG → id do contrato primário
+    for (const [pag, cs] of byPag) {
+      const sorted = [...cs].sort((a, b) => {
+        const da = a.data_inicio ?? "";
+        const db = b.data_inicio ?? "";
+        if (da !== db) return db.localeCompare(da); // mais recente primeiro
+        return a.numero_contrato.localeCompare(b.numero_contrato);
+      });
+      result.set(pag, sorted[0].id);
+    }
+    return result;
+  }, [prevContratos]);
+
+  // Mês de início da janela de previsão:
+  //   - ano corrente → começa no mês atual (faturas futuras)
+  //   - ano futuro   → começa em janeiro (ano todo)
+  const prevStartMonth = isAnoCorrente ? new Date().getMonth() + 1 : 1;
+
+  const previsaoRows: PrevisaoRow[] = useMemo(() => {
+    const startM = isAnoCorrente ? new Date().getMonth() + 1 : 1;
+
+    const grupos = new Map<string, Contrato[]>();
+    for (const c of prevContratos) {
+      const chave = (prevGroupBy === "ugr" ? c.ugr : c.acao) ?? "Sem " + (prevGroupBy === "ugr" ? "UGR" : "PI");
+      if (!grupos.has(chave)) grupos.set(chave, []);
+      grupos.get(chave)!.push(c);
+    }
+    return [...grupos.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
+      .map(([grupo, cs]) => {
+        // Previsão = soma dos PAGs únicos (cada PAG conta UMA VEZ, mesmo que múltiplos contratos compartilhem)
+        const seenPagsPrev = new Set<string>();
+        const previsao = cs.reduce((s, c) => {
+          const pag   = normPag(c.pag_nup);
+          const meses = contratoMesesAtivos(c, prevAno, startM, prevMesFim);
+          if (pag) {
+            if (seenPagsPrev.has(pag)) return s; // PAG já contabilizado por outro contrato
+            seenPagsPrev.add(pag);
+          }
+          return s + monthlyAvgContrato(c, prevAno) * meses;
+        }, 0);
+
+        // Empenhado a liquidar = saldo real de NEs abertas (SIAFI).
+        // Cada PAG é contado UMA ÚNICA VEZ (pelo contrato primário do PAG),
+        // evitando duplicação quando dois contratos compartilham o mesmo processo.
+        const empenhadoALiquidar = isAnoCorrente ? (() => {
+          const seenPags = new Set<string>();
+          return cs.reduce((s, c) => {
+            const pag   = normPag(c.pag_nup);
+            const stats = pag ? execPagMap.get(pag) : undefined;
+            if (!pag || seenPags.has(pag)) return s;
+            seenPags.add(pag);
+            return s + (stats?.aLiquidar ?? 0);
+          }, 0);
+        })() : 0;
+
+        // Crédito necessário = quanto ainda falta empenhar para cobrir o período
+        const creditoNecessario = Math.max(0, previsao - empenhadoALiquidar);
+
+        return { grupo, contratos: cs, previsao, empenhadoALiquidar, creditoNecessario };
+      });
+  }, [prevContratos, gordura, prevGroupBy, prevAno, prevMesFim, isAnoCorrente, execPagMap]);
+
+  const previsaoTotais = useMemo(() => previsaoRows.reduce(
+    (acc, r) => ({
+      previsao:           acc.previsao           + r.previsao,
+      empenhadoALiquidar: acc.empenhadoALiquidar + r.empenhadoALiquidar,
+      creditoNecessario:  acc.creditoNecessario  + r.creditoNecessario,
+    }),
+    { previsao: 0, empenhadoALiquidar: 0, creditoNecessario: 0 }
+  ), [previsaoRows]);
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+      {/* Input oculto para upload de documentos do contrato — sempre montado */}
+      <input ref={docFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={handleDocUpload} />
 
       {/* Cabeçalho */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4">
@@ -574,6 +1410,254 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
         )}
       </div>
 
+      {/* Seletor de visão principal */}
+      <div className="flex gap-2">
+        {([
+          { id: "lista",    label: "📋 Lista de Contratos" },
+          { id: "previsao", label: "📊 Previsão Orçamentária" },
+        ] as const).map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => setMainView(id)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+              mainView === id
+                ? "bg-sky-600 text-white border-sky-600"
+                : "border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Previsão Orçamentária ── */}
+      {mainView === "previsao" && (
+        <div className="space-y-4">
+          {/* Controles */}
+          <Card>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Agrupar por */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-600 shrink-0">Agrupar por:</span>
+                {([
+                  { v: "ugr",  l: "UGR" },
+                  { v: "acao", l: "PI / Ação" },
+                ] as const).map(({ v, l }) => (
+                  <button
+                    key={v}
+                    onClick={() => setPrevGroupBy(v)}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      prevGroupBy === v
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+
+              {/* Filtro Período */}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-slate-500 shrink-0">Até</span>
+                <select
+                  value={prevMesFim}
+                  onChange={(e) => setPrevMesFim(Number(e.target.value))}
+                  className="rounded-xl border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
+                >
+                  {MESES_PT.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+                </select>
+                <select
+                  value={prevAno}
+                  onChange={(e) => { setPrevAno(Number(e.target.value)); }}
+                  className="rounded-xl border px-2 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-200"
+                >
+                  {prevAnosOpts.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+
+              {/* Filtro UGR */}
+              <select
+                value={prevUgr}
+                onChange={(e) => { setPrevUgr(e.target.value); setPrevAcao("todos"); setPrevPi("todos"); }}
+                className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
+              >
+                <option value="todos">Todas as UGR</option>
+                {prevUgrsOpts.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+
+              {/* Filtro Ação */}
+              <select
+                value={prevAcao}
+                onChange={(e) => { setPrevAcao(e.target.value); setPrevPi("todos"); }}
+                className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
+              >
+                <option value="todos">Todas as Ações</option>
+                {prevAcaoOpts.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+
+              {/* Filtro PI */}
+              <select
+                value={prevPi}
+                onChange={(e) => setPrevPi(e.target.value)}
+                className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200 max-w-xs"
+              >
+                <option value="todos">Todos os PI</option>
+                {prevPiOpts.map((p) => {
+                  const desc = piDescMap.get(p);
+                  return <option key={p} value={p}>{desc ? `${p} — ${desc}` : p}</option>;
+                })}
+              </select>
+
+              {/* IPCA */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-slate-600 shrink-0" title="Índice de reajuste aplicado sobre contratos de anos futuros (IPCA referência 2025: 5,1%)">
+                  IPCA/Reajuste (%):
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={0.1}
+                  value={gordura}
+                  onChange={(e) => setGordura(Number(e.target.value))}
+                  className="w-16 rounded-xl border px-2 py-1 text-sm text-center outline-none focus:ring-2 focus:ring-sky-200"
+                />
+              </div>
+
+              <span className="text-xs text-slate-400 ml-auto">
+                {prevContratos.length}/{contratos.length} contratos ativos · Jan–{MESES_PT[prevMesFim - 1]} {prevAno}
+              </span>
+            </div>
+          </Card>
+
+          {/* Tabela resumo */}
+          <Card>
+            {execPagLoaded && execPagMap.size === 0 && (
+              <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                Planilha SIAFI não carregada. Usando valor/duração do contrato como estimativa.
+              </div>
+            )}
+            {!execPagLoaded && (
+              <div className="mb-3 text-xs text-slate-400">Carregando histórico SIAFI…</div>
+            )}
+            {!isAnoCorrente && (
+              <div className="mb-3 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
+                <strong>Exercício futuro ({prevAno}):</strong> Previsão Jan–{MESES_PT[prevMesFim - 1]} = média mensal histórica × IPCA {gordura}%{prevAno > ANO_CORRENTE + 1 ? `^${prevAno - ANO_CORRENTE}` : ""} × meses ativos. Crédito Necessário = previsão integral (nenhuma NE emitida ainda).
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-wide">
+                    <th className="text-left px-3 py-2 font-semibold">{prevGroupBy === "ugr" ? "UGR" : "PI / Ação"}</th>
+                    <th className="text-right px-3 py-2 font-semibold">
+                      Previsão {MESES_PT[prevStartMonth - 1].slice(0, 3)}–{MESES_PT[prevMesFim - 1].slice(0, 3)} {prevAno}
+                      {prevAno > ANO_CORRENTE ? <span className="ml-1 font-normal text-slate-400">(+IPCA {gordura}%)</span> : null}
+                    </th>
+                    {isAnoCorrente && <th className="text-right px-3 py-2 font-semibold text-indigo-600">Empenh. a Liquidar</th>}
+                    <th className="text-right px-3 py-2 font-semibold text-red-700">Crédito Necessário</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {previsaoRows.map((row) => {
+                    const ok      = row.creditoNecessario === 0;
+                    const parcial = row.creditoNecessario > 0 && row.creditoNecessario <= row.previsao * 0.5;
+                    return (
+                      <tr key={row.grupo} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-3 py-2 font-medium text-slate-800">{row.grupo}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">{fmtMoney(row.previsao)}</td>
+                        {isAnoCorrente && <td className="px-3 py-2 text-right text-indigo-600">{fmtMoney(row.empenhadoALiquidar)}</td>}
+                        <td className={`px-3 py-2 text-right font-bold ${ok ? "text-green-600" : parcial ? "text-amber-600" : "text-red-600"}`}>
+                          {fmtMoney(row.creditoNecessario)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-800 text-white text-xs font-bold">
+                    <td className="px-3 py-2">TOTAL GERAL</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(previsaoTotais.previsao)}</td>
+                    {isAnoCorrente && <td className="px-3 py-2 text-right text-indigo-300">{fmtMoney(previsaoTotais.empenhadoALiquidar)}</td>}
+                    <td className="px-3 py-2 text-right text-amber-300 text-sm">{fmtMoney(previsaoTotais.creditoNecessario)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-400 border-t pt-2">
+              <span><span className="font-semibold text-green-600">Verde</span> = totalmente coberto pelo empenhado</span>
+              <span><span className="font-semibold text-amber-600">Laranja</span> = falta até 50% da previsão</span>
+              <span><span className="font-semibold text-red-600">Vermelho</span> = falta mais de 50%</span>
+              <span className="ml-auto text-slate-300">
+                {isAnoCorrente
+                  ? "Crédito Nec. = Previsão (média mensal × meses restantes) − Empenh. a Liquidar (SIAFI)"
+                  : `Previsão = média mensal histórica × IPCA ${gordura}% × meses ativos`}
+              </span>
+            </div>
+          </Card>
+
+          {/* Detalhamento por grupo */}
+          {previsaoRows.map((row) => (
+            <Card key={row.grupo}>
+              <div className="text-xs font-semibold text-slate-700 mb-2">
+                {prevGroupBy === "ugr" ? "UGR" : "PI"}: {row.grupo}
+                <span className="ml-2 font-normal text-slate-400">({row.contratos.length} contrato{row.contratos.length !== 1 ? "s" : ""})</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-400 uppercase text-[10px]">
+                      <th className="text-left px-2 py-1.5 font-semibold">Contrato</th>
+                      <th className="text-left px-2 py-1.5 font-semibold">Fornecedor</th>
+                      <th className="text-right px-2 py-1.5 font-semibold">{MESES_PT[prevStartMonth - 1].slice(0, 3)}–{MESES_PT[prevMesFim - 1].slice(0, 3)} {prevAno}</th>
+                      {isAnoCorrente && <th className="text-right px-2 py-1.5 font-semibold text-indigo-600">Empenh. a Liq. (SIAFI)</th>}
+                      <th className="text-right px-2 py-1.5 font-semibold text-red-700">Crédito Nec.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {row.contratos.map((c) => {
+                      const pag      = normPag(c.pag_nup);
+                      const stats    = pag ? execPagMap.get(pag) : undefined;
+                      const pagCount = pag ? (pagCountMap.get(pag) ?? 1) : 1;
+                      const mAvg    = monthlyAvgContrato(c, prevAno);
+                      const meses   = contratoMesesAtivos(c, prevAno, prevStartMonth, prevMesFim);
+                      const prev    = mAvg * meses;
+                      // a_liquidar aparece SOMENTE no contrato primário do PAG (não duplica)
+                      const isPrimary = !pag || primaryForPag.get(pag) === c.id;
+                      const empLiq  = isAnoCorrente && isPrimary ? (stats?.aLiquidar ?? 0) : 0;
+                      const credNec = Math.max(0, prev - empLiq);
+                      const ok      = credNec === 0;
+                      const parcial = credNec > 0 && credNec <= prev * 0.5;
+                      const temHistorico = !!stats?.pagoByYear.size;
+                      const semPag  = !c.pag_nup;
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50">
+                          <td className="px-2 py-1.5 text-slate-700 font-medium">
+                            {c.numero_contrato}
+                            {semPag  && <span className="ml-1 text-[9px] text-amber-500" title="PAG/NUP não preenchido — preencha em Dados Gerais para usar histórico SIAFI">sem PAG</span>}
+                            {!semPag && !temHistorico && <span className="ml-1 text-[9px] text-slate-400" title="Sem histórico SIAFI — usando valor/duração do contrato">est.</span>}
+                            {pagCount > 1 && <span className="ml-1 text-[9px] text-sky-500" title={`PAG compartilhado por ${pagCount} contratos — total SIAFI dividido igualmente`}>÷{pagCount}</span>}
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-500 max-w-[180px] truncate">{c.fornecedor ?? "–"}</td>
+                          <td className="px-2 py-1.5 text-right text-slate-700" title={`Média mensal: ${fmtMoney(mAvg)} × ${meses} meses`}>{fmtMoney(prev)}</td>
+                          {isAnoCorrente && <td className="px-2 py-1.5 text-right text-indigo-600">{fmtMoney(empLiq)}</td>}
+                          <td className={`px-2 py-1.5 text-right font-semibold ${ok ? "text-green-600" : parcial ? "text-amber-600" : "text-red-600"}`}>
+                            {fmtMoney(credNec)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {mainView === "lista" && (<>
       {/* Prévia de importação */}
       {preview && (
         <Card>
@@ -764,6 +1848,20 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
             </select>
           )}
 
+          {pis.length > 0 && (
+            <select
+              value={filtroPi}
+              onChange={(e) => setFiltroPi(e.target.value)}
+              className="rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+            >
+              <option value="todos">Todos os PI</option>
+              {pis.map((p) => {
+                const desc = piDescMap.get(p);
+                return <option key={p} value={p}>{desc ? `${p} — ${desc}` : p}</option>;
+              })}
+            </select>
+          )}
+
           <input
             value={filtroTexto}
             onChange={(e) => setFiltroTexto(e.target.value)}
@@ -779,6 +1877,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
               { key: "liquidar_asc",   label: "A liquidar ↑" },
               { key: "liquidar_desc",  label: "A liquidar ↓" },
               { key: "vencimento_asc", label: "Vencimento" },
+              { key: "reajuste_asc",   label: "📅 Próx. reajuste" },
             ] as const).map(({ key, label }) => (
               <button
                 key={key}
@@ -815,73 +1914,130 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
             </p>
           ) : (
             <div className="space-y-2 max-h-[640px] overflow-y-auto pr-1">
-              {sorted.map((c) => (
-                <button
+              {sorted.map((c) => {
+                const isActive = selected?.id === c.id;
+                return (
+                <div
                   key={c.id}
-                  onClick={() => setSelected(selected?.id === c.id ? null : c)}
-                  className={`w-full rounded-xl border p-3 text-left hover:bg-slate-50 transition-colors ${
-                    selected?.id === c.id ? "border-sky-300 ring-2 ring-sky-100" : "border-slate-200"
+                  className={`rounded-xl border transition-colors ${
+                    isActive ? "border-sky-300 ring-2 ring-sky-100" : "border-slate-200"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-semibold text-slate-900 truncate">
-                          {c.numero_contrato}
-                        </span>
-                        {isVencido(c.data_final) && (
-                          <span className="inline-block rounded-full border border-orange-300 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
-                            pendente de encerramento
+                  {/* Área principal — clica para selecionar */}
+                  <button
+                    onClick={() => { setSelected(isActive ? null : c); setDetailMode("dados"); }}
+                    className="w-full p-3 text-left hover:bg-slate-50 transition-colors rounded-t-xl"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-sm font-semibold text-slate-900 truncate">
+                            {c.numero_contrato}
+                          </span>
+                          {isVencido(c.data_final) && (
+                            <span className="inline-block rounded-full border border-orange-300 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                              pendente de encerramento
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-xs text-slate-600 line-clamp-2">
+                          {c.descricao ?? c.fornecedor ?? "–"}
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5 flex-wrap text-xs text-slate-400">
+                          <span>{c.uge ?? "–"}</span>
+                          <span>•</span>
+                          <span>{fmtDate(c.data_inicio)} →</span>
+                          <span className={`font-semibold px-1.5 py-0.5 rounded-md ${
+                            isVencido(c.data_final)
+                              ? "bg-orange-100 text-orange-700"
+                              : c.data_final
+                              ? "bg-green-50 text-green-700"
+                              : "text-slate-400"
+                          }`}>
+                            {fmtDate(c.data_final)}
+                          </span>
+                        </div>
+                        {(() => {
+                          const dias = diasReajuste(c.data_orcamento);
+                          if (dias === null) return null;
+                          const cor = dias < 0 ? "text-red-500" : dias <= 30 ? "text-orange-500" : dias <= 90 ? "text-amber-500" : "text-green-600";
+                          return (
+                            <div className={`mt-0.5 text-[11px] ${cor}`}>
+                              📅 Próx. reajuste: {fmtProxReajuste(c.data_orcamento)}
+                              {dias < 0 ? ` (${Math.abs(dias)}d atrasado)` : dias <= 90 ? ` (${dias}d)` : ""}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div className="text-right text-xs shrink-0 space-y-0.5">
+                        {c.vl_contratual != null && (
+                          <div className="font-semibold text-slate-700">{fmtMoney(c.vl_contratual)}</div>
+                        )}
+                        {c.vl_a_empenhar != null && (
+                          <div className={c.vl_a_empenhar > 0 ? "text-green-700" : "text-red-600"}>
+                            A empenhar: {fmtMoney(c.vl_a_empenhar)}
+                          </div>
+                        )}
+                        {c.saldo != null && (
+                          <div className={c.saldo > 0 ? "text-amber-700" : "text-red-600"}>
+                            A liquidar: {fmtMoney(c.saldo)}
+                          </div>
+                        )}
+                        {c.status && (
+                          <span className={`inline-block rounded-full border px-2 py-0.5 ${
+                            (c.status ?? "").toLowerCase().includes("vigent")
+                              ? "bg-green-50 border-green-200 text-green-800"
+                              : (c.status ?? "").toLowerCase().includes("encerr")
+                              ? "bg-slate-50 border-slate-200 text-slate-600"
+                              : "bg-amber-50 border-amber-200 text-amber-700"
+                          }`}>
+                            {c.status}
                           </span>
                         )}
-                      </div>
-                      <div className="mt-0.5 text-xs text-slate-600 line-clamp-2">
-                        {c.descricao ?? c.fornecedor ?? "–"}
-                      </div>
-                      <div className="mt-1 flex items-center gap-1.5 flex-wrap text-xs text-slate-400">
-                        <span>{c.uge ?? "–"}</span>
-                        <span>•</span>
-                        <span>{fmtDate(c.data_inicio)} →</span>
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-md ${
-                          isVencido(c.data_final)
-                            ? "bg-orange-100 text-orange-700"
-                            : c.data_final
-                            ? "bg-green-50 text-green-700"
-                            : "text-slate-400"
-                        }`}>
-                          {fmtDate(c.data_final)}
-                        </span>
+                        {(() => {
+                          const piArr = piByPag.get(normPag(c.pag_nup)) ?? [];
+                          if (!piArr.length) return null;
+                          return (
+                            <div className="flex flex-wrap gap-1">
+                              {piArr.map(pi => (
+                                <span key={pi} className="inline-block rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-mono font-semibold text-violet-700 tracking-wide">
+                                  {pi}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
-                    <div className="text-right text-xs shrink-0 space-y-0.5">
-                      {c.vl_contratual != null && (
-                        <div className="font-semibold text-slate-700">{fmtMoney(c.vl_contratual)}</div>
-                      )}
-                      {c.vl_a_empenhar != null && (
-                        <div className={c.vl_a_empenhar > 0 ? "text-green-700" : "text-red-600"}>
-                          A empenhar: {fmtMoney(c.vl_a_empenhar)}
-                        </div>
-                      )}
-                      {c.saldo != null && (
-                        <div className={c.saldo > 0 ? "text-amber-700" : "text-red-600"}>
-                          A liquidar: {fmtMoney(c.saldo)}
-                        </div>
-                      )}
-                      {c.status && (
-                        <span className={`inline-block rounded-full border px-2 py-0.5 ${
-                          (c.status ?? "").toLowerCase().includes("vigent")
-                            ? "bg-green-50 border-green-200 text-green-800"
-                            : (c.status ?? "").toLowerCase().includes("encerr")
-                            ? "bg-slate-50 border-slate-200 text-slate-600"
-                            : "bg-amber-50 border-amber-200 text-amber-700"
-                        }`}>
-                          {c.status}
-                        </span>
-                      )}
-                    </div>
+                  </button>
+
+                  {/* Tabs rápidas: Execução e Reajustes */}
+                  <div className="flex border-t border-slate-100">
+                    <button
+                      onClick={() => { setSelected(c); setDetailMode("execucao"); }}
+                      className={`flex-1 py-1.5 text-[11px] font-medium transition-colors rounded-bl-xl ${
+                        isActive && detailMode === "execucao"
+                          ? "bg-sky-600 text-white"
+                          : "text-slate-500 hover:bg-slate-50 hover:text-sky-700"
+                      }`}
+                    >
+                      ⚡ Execução
+                    </button>
+                    <div className="w-px bg-slate-100" />
+                    <button
+                      onClick={() => { setSelected(c); setDetailMode("reajustes"); }}
+                      className={`flex-1 py-1.5 text-[11px] font-medium transition-colors rounded-br-xl ${
+                        isActive && detailMode === "reajustes"
+                          ? "bg-indigo-600 text-white"
+                          : "text-slate-500 hover:bg-slate-50 hover:text-indigo-700"
+                      }`}
+                    >
+                      📈 Reajustes
+                    </button>
                   </div>
-                </button>
-              ))}
+                </div>
+                );
+              })}
             </div>
           )}
         </Card>
@@ -890,7 +2046,8 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
         {selected && (
           <div ref={detailRef}>
           <Card>
-            <div className="flex items-start justify-between gap-2 mb-3">
+            {/* Header do painel */}
+            <div className="flex items-start justify-between gap-2 mb-2">
               <div>
                 <div className="text-sm font-semibold text-slate-900">{selected.numero_contrato}</div>
                 <div className="text-xs text-slate-500">
@@ -898,23 +2055,42 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {selected.fonte === "MANUAL" && (
-                  <button
-                    onClick={() => deleteContrato(selected)}
-                    className="text-xs text-red-400 hover:text-red-600 border border-red-200 rounded-lg px-2 py-0.5"
-                  >
+                {selected.fonte === "MANUAL" && detailMode === "dados" && (
+                  <button onClick={() => deleteContrato(selected)} className="text-xs text-red-400 hover:text-red-600 border border-red-200 rounded-lg px-2 py-0.5">
                     Excluir
                   </button>
                 )}
-                <button
-                  onClick={() => setSelected(null)}
-                  className="text-xs text-slate-400 hover:text-slate-700"
-                >
+                <button onClick={() => setSelected(null)} className="text-xs text-slate-400 hover:text-slate-700">
                   ✕ Fechar
                 </button>
               </div>
             </div>
 
+            {/* Tabs de modo */}
+            <div className="flex gap-1 mb-3 border-b pb-3">
+              {([
+                { id: "dados",     label: "Dados Gerais", icon: "📋" },
+                { id: "execucao",  label: "Execução",     icon: "⚡" },
+                { id: "reajustes", label: "Reajustes",    icon: "📈" },
+              ] as { id: DetailMode; label: string; icon: string }[]).map(({ id, label, icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setDetailMode(id)}
+                  className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium border transition-colors ${
+                    detailMode === id
+                      ? id === "execucao" ? "bg-sky-600 text-white border-sky-600"
+                        : id === "reajustes" ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-slate-700 text-white border-slate-700"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {icon} {label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Modo: Dados Gerais ─────────────────────────────────────────── */}
+            {detailMode === "dados" && (<>
             <p className="text-sm leading-relaxed mb-3 border-b pb-3">
               {selected.descricao
                 ? <span className="text-slate-700">{selected.descricao}</span>
@@ -1000,8 +2176,37 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
               <div className="text-xs font-semibold text-slate-700 mb-2">Valores Financeiros</div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <div className="rounded-lg bg-slate-50 border p-2">
-                  <div className="text-slate-500">Valor Total do Contrato</div>
-                  <div className="font-semibold text-slate-800 mt-0.5">{fmtMoney(selected.vl_contratual)}</div>
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-slate-500">Valor Total do Contrato</div>
+                    {canEditBudget && !editandoVlContratual && (
+                      <button
+                        onClick={() => { setVlContratualInput(selected.vl_contratual != null ? String(selected.vl_contratual) : ""); setEditandoVlContratual(true); }}
+                        className="text-[11px] text-slate-400 hover:text-slate-600 leading-none shrink-0"
+                        title="Editar valor total"
+                      >✏️</button>
+                    )}
+                  </div>
+                  {editandoVlContratual ? (
+                    <div className="mt-1 flex gap-1">
+                      <div className="flex items-center rounded border border-slate-200 overflow-hidden text-[11px] flex-1 min-w-0">
+                        <span className="px-1.5 py-1 bg-slate-100 text-slate-500 border-r border-slate-200 select-none text-[10px]">R$</span>
+                        <input
+                          type="text"
+                          value={vlContratualInput}
+                          onChange={(e) => setVlContratualInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveVlContratual(); if (e.key === "Escape") setEditandoVlContratual(false); }}
+                          autoFocus
+                          className="px-1.5 py-1 outline-none flex-1 min-w-0 bg-transparent text-slate-800 text-xs"
+                        />
+                      </div>
+                      <button onClick={saveVlContratual} disabled={savingVlContratual} className="rounded bg-sky-600 text-white px-2 py-1 text-[11px] font-medium hover:bg-sky-700 disabled:opacity-50 shrink-0">
+                        {savingVlContratual ? "…" : "OK"}
+                      </button>
+                      <button onClick={() => setEditandoVlContratual(false)} className="rounded border px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100 shrink-0">✕</button>
+                    </div>
+                  ) : (
+                    <div className="font-semibold text-slate-800 mt-0.5">{fmtMoney(selected.vl_contratual)}</div>
+                  )}
                 </div>
                 <div className="rounded-lg bg-amber-50 border border-amber-100 p-2">
                   <div className="text-amber-700">Valor a Liquidar</div>
@@ -1011,26 +2216,649 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   <div className="text-indigo-700">Liquidado</div>
                   <div className="font-semibold text-indigo-900 mt-0.5">{fmtMoney(selected.vl_liquidado)}</div>
                 </div>
+                {/* 4º card — Saldo Atual (mostra vl_atual quando definido, senão vl_a_empenhar) */}
                 <div className={`rounded-lg border p-2 ${
-                  selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0
+                  selected.vl_atual != null
+                    ? "bg-sky-50 border-sky-200"
+                    : selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0
                     ? "bg-green-50 border-green-200"
                     : "bg-red-50 border-red-200"
                 }`}>
-                  <div className={selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0 ? "text-green-700" : "text-red-700"}>
-                    Saldo (Valor a Empenhar)
+                  <div className="flex items-center justify-between gap-1">
+                    <div className={
+                      selected.vl_atual != null ? "text-sky-700" :
+                      selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0 ? "text-green-700" : "text-red-700"
+                    }>
+                      Saldo
+                      {selected.vl_atual != null
+                        ? <span className="ml-1 text-[9px] bg-sky-100 text-sky-600 rounded px-1 py-0.5 font-semibold align-middle">ajustado ✓</span>
+                        : " (a Empenhar)"}
+                    </div>
+                    {canEditBudget && (
+                    <button
+                      onClick={() => setEditandoVlAtual(v => !v)}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 leading-none shrink-0"
+                      title="Definir saldo ajustado para reajuste"
+                    >✏️</button>
+                    )}
                   </div>
                   <div className={`font-bold text-base mt-0.5 ${
+                    selected.vl_atual != null ? "text-sky-800" :
                     selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0 ? "text-green-800" : "text-red-800"
                   }`}>
-                    {fmtMoney(selected.vl_a_empenhar)}
+                    {fmtMoney(selected.vl_atual ?? selected.vl_a_empenhar)}
                   </div>
+                  {editandoVlAtual && (
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-200 space-y-1">
+                      <div className="flex gap-1">
+                        <div className="flex items-center rounded border border-slate-200 overflow-hidden text-[11px] flex-1 min-w-0">
+                          <span className="px-1.5 py-1 bg-slate-50 text-slate-500 border-r border-slate-200 select-none text-[10px]">R$</span>
+                          <input
+                            type="text"
+                            value={vlAtualInput}
+                            onChange={e => setVlAtualInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") saveVlAtual(); }}
+                            placeholder="0,00"
+                            autoFocus
+                            className="px-1.5 py-1 outline-none flex-1 min-w-0 bg-transparent text-slate-800 text-xs"
+                          />
+                        </div>
+                        <button
+                          onClick={saveVlAtual}
+                          disabled={savingVlAtual}
+                          className="rounded bg-sky-600 text-white px-2 py-1 text-[11px] font-medium hover:bg-sky-700 disabled:opacity-50 shrink-0"
+                        >
+                          {savingVlAtual ? "…" : "OK"}
+                        </button>
+                      </div>
+                      {selected.vl_atual != null && (
+                        <button
+                          onClick={async () => {
+                            const { error } = await supabase.from("contratos_scon").update({ vl_atual: null }).eq("id", selected.id);
+                            if (!error) {
+                              const upd = { ...selected, vl_atual: null };
+                              setSelected(upd);
+                              setContratos(prev => prev.map(c => c.id === selected.id ? upd : c));
+                              setVlAtualInput("");
+                              setEditandoVlAtual(false);
+                            }
+                          }}
+                          className="text-[10px] text-red-500 hover:text-red-700"
+                        >
+                          Limpar valor ajustado
+                        </button>
+                      )}
+                      {vlAtualMsg && (
+                        <p className={`text-[10px] ${vlAtualMsg.ok ? "text-green-700" : "text-red-600"}`}>{vlAtualMsg.text}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
+
+            {/* Documentos */}
+            <div className="mt-3 border-t pt-3">
+              <div className="text-xs font-semibold text-slate-700 mb-2">Documentos</div>
+
+              {/* Abas */}
+              <div className="flex gap-1 flex-wrap mb-3">
+                {([
+                  { id: "contrato",     label: "Contrato",           icon: "📄" },
+                  { id: "tr",           label: "Termo de Referência",icon: "📋" },
+                  { id: "aditivo",      label: "Termo Aditivo",      icon: "📝" },
+                  { id: "apostilamento",label: "Apostilamento",      icon: "🔖" },
+                ] as { id: DocTab; label: string; icon: string }[]).map(({ id, label, icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => setDocTab(id)}
+                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium border transition-colors ${
+                      docTab === id
+                        ? "bg-sky-600 text-white border-sky-600"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Conteúdo da aba */}
+              {docTab === "apostilamento" && (
+                <div className="space-y-3">
+                  {/* Data base do orçamento */}
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs space-y-2">
+                    <div className="font-semibold text-amber-800">📅 Data base do orçamento (para reajuste)</div>
+                    {canEditBudget ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input
+                        value={orcamentoInput}
+                        onChange={(e) => setOrcamentoInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") saveOrcamento(); }}
+                        placeholder="MM/AAAA"
+                        maxLength={7}
+                        className="rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-amber-300 w-28"
+                      />
+                      <button
+                        onClick={saveOrcamento}
+                        disabled={savingOrcamento}
+                        className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-60 font-medium"
+                      >
+                        {savingOrcamento ? "..." : "Salvar"}
+                      </button>
+                      {selected.data_orcamento && (
+                        <span className="text-amber-700 font-medium">Atual: {toMmYyyy(selected.data_orcamento)}</span>
+                      )}
+                    </div>
+                    ) : (
+                    <div className="text-amber-700">
+                      {selected.data_orcamento ? toMmYyyy(selected.data_orcamento) : <span className="text-amber-400 italic">Não definida</span>}
+                      <span className="ml-2 text-[10px] text-amber-400">(somente SCON/ADMIN podem alterar)</span>
+                    </div>
+                    )}
+                    {orcamentoMsg && (
+                      <p className={orcamentoMsg.ok ? "text-green-700" : "text-red-600"}>{orcamentoMsg.text}</p>
+                    )}
+                  </div>
+                  {/* Botão gerar apostilamento */}
+                  <button
+                    onClick={() => window.open(`/apt?tipo=contrato&id=${selected.id}`, "_blank")}
+                    className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 transition-colors"
+                  >
+                    🔖 Gerar Termo de Apostilamento
+                  </button>
+                  {/* Apostilamentos gerados e salvos */}
+                  {contratoDocs.filter(d => d.tipo === "apostilamento").map(doc => (
+                    <div key={doc.id} className="flex items-start gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs">
+                      <span className="text-lg leading-none">🔖</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-sky-800 truncate block">{doc.nome}</span>
+                        <span className="text-slate-400">
+                          {doc.user_nome ?? "Usuário"} · {new Date(doc.created_at).toLocaleDateString("pt-BR")}
+                        </span>
+                      </div>
+                      {canEdit && (
+                        <button onClick={() => handleDocDelete(doc.id)} className="text-red-400 hover:text-red-600 font-bold ml-1" title="Remover">✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(docTab === "contrato" || docTab === "tr") && (() => {
+                const tipoLabel = docTab === "contrato" ? "Termo de Contrato" : "Termo de Referência";
+                const docsDoTipo = contratoDocs.filter(d => d.tipo === docTab);
+                return (
+                  <div className="space-y-3">
+                    {/* Upload */}
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs space-y-2">
+                      <div className="font-semibold text-slate-700">{tipoLabel}</div>
+                      <button
+                        disabled={docUploading}
+                        onClick={() => { setPendingDocTipo(docTab); docFileRef.current?.click(); }}
+                        className="flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-1.5 text-white font-medium hover:bg-sky-700 disabled:opacity-60 transition-colors"
+                      >
+                        {docUploading ? "Enviando..." : "📎 Anexar PDF"}
+                      </button>
+                      {docMsg && (
+                        <p className={docMsg.ok ? "text-green-700" : "text-red-600"}>{docMsg.text}</p>
+                      )}
+                    </div>
+                    {/* Histórico */}
+                    {docsDoTipo.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Documentos anexados</div>
+                        {docsDoTipo.map(doc => (
+                          <div key={doc.id} className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                            <span className="text-lg leading-none">📄</span>
+                            <div className="flex-1 min-w-0">
+                              {doc.url ? (
+                                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="font-medium text-sky-700 hover:underline truncate block">{doc.nome}</a>
+                              ) : (
+                                <span className="font-medium text-slate-700 truncate block">{doc.nome}</span>
+                              )}
+                              <span className="text-slate-400">
+                                {doc.user_nome ?? "Usuário"} · {new Date(doc.created_at).toLocaleDateString("pt-BR")}
+                              </span>
+                            </div>
+                            {canEdit && (
+                              <button onClick={() => handleDocDelete(doc.id)} className="text-red-400 hover:text-red-600 font-bold ml-1" title="Remover">✕</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {docsDoTipo.length === 0 && !docUploading && (
+                      <p className="text-[11px] text-slate-400 italic">Nenhum documento anexado.</p>
+                    )}
+                  </div>
+                );
+              })()}
+              {docTab === "aditivo" && (
+                <div className="space-y-3">
+                  <button
+                    onClick={() => window.open(`/apt?tipo=aditivo&id=${selected.id}`, "_blank")}
+                    className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+                  >
+                    📝 Gerar Termo Aditivo
+                  </button>
+                  {/* Docs gerados salvos */}
+                  {contratoDocs.filter(d => d.tipo === "aditivo").map(doc => (
+                    <div key={doc.id} className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs">
+                      <span className="text-lg leading-none">📝</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-indigo-800 truncate block">{doc.nome}</span>
+                        <span className="text-slate-400">
+                          {doc.user_nome ?? "Usuário"} · {new Date(doc.created_at).toLocaleDateString("pt-BR")}
+                        </span>
+                      </div>
+                      {canEdit && (
+                        <button onClick={() => handleDocDelete(doc.id)} className="text-red-400 hover:text-red-600 font-bold ml-1" title="Remover">✕</button>
+                      )}
+                    </div>
+                  ))}
+                  {contratoDocs.filter(d => d.tipo === "aditivo").length === 0 && (
+                    <p className="text-[11px] text-slate-400 italic">Nenhum termo aditivo gerado.</p>
+                  )}
+                </div>
+              )}
+            </div>
+            </>)}
+
+            {/* ── Modo: Execução ─────────────────────────────────────────────── */}
+            {detailMode === "execucao" && (
+              <div className="space-y-3">
+                {execLoading && <p className="text-xs text-slate-500 text-center py-4">Carregando empenhos...</p>}
+                {!execLoading && !selected.pag_nup && (
+                  <p className="text-xs text-slate-400 italic text-center py-4">
+                    PAG/NUP não preenchido — não é possível vincular empenhos.
+                  </p>
+                )}
+                {!execLoading && selected.pag_nup && execLinhas.length === 0 && (
+                  <p className="text-xs text-slate-400 italic text-center py-4">
+                    Nenhum empenho encontrado para PAG <strong>{selected.pag_nup}</strong>.
+                  </p>
+                )}
+                {!execLoading && execLinhas.length > 0 && (() => {
+                  // Para cada NE: emite linha do ano de origem + linha RP (se houver)
+                  const rows = execLinhas.flatMap((l) => {
+                    const rp = rpMap.get(normalizeNE(l.nota_empenho));
+                    const execRow = {
+                      l,
+                      isRP:       false as const,
+                      rowKey:     l.nota_empenho + "_exec",
+                      aLiquidar:  l.a_liquidar,
+                      liquidado:  l.liquidado_pagar,
+                      pago:       l.pago,
+                      total:      l.a_liquidar + l.liquidado_pagar + l.pago,
+                      favorecido: l.info_e || l.info_d,
+                      descricao:  l.info_f,
+                    };
+                    if (rp) {
+                      const rpRow = {
+                        l,
+                        isRP:       true as const,
+                        rowKey:     l.nota_empenho + "_rp",
+                        aLiquidar:  rp.rp_nao_proc_a_liq,
+                        liquidado:  rp.rp_nao_proc_liq_pag + rp.rp_proc_a_pagar,
+                        pago:       rp.rp_nao_proc_pago + rp.rp_proc_pagos,
+                        total:      rp.rp_nao_proc_a_liq + rp.rp_nao_proc_liq_pag + rp.rp_nao_proc_pago + rp.rp_proc_a_pagar + rp.rp_proc_pagos,
+                        favorecido: rp.favorecido || l.info_e || l.info_d,
+                        descricao:  rp.descricao  || l.info_f,
+                      };
+                      // NE existe apenas no RP (linha sintética com zeros) — omite linha exec em branco
+                      const execIsZero = l.a_liquidar === 0 && l.liquidado_pagar === 0 && l.pago === 0;
+                      return execIsZero ? [rpRow] : [execRow, rpRow];
+                    }
+                    return [execRow];
+                  });
+
+                  const totalALiq = rows.reduce((s, r) => s + r.aLiquidar, 0);
+                  const totalLiq  = rows.reduce((s, r) => s + r.liquidado, 0);
+                  const totalPago = rows.reduce((s, r) => s + r.pago, 0);
+                  const totalEmp  = totalALiq + totalLiq + totalPago;
+                  const nRP       = rows.filter((r) => r.isRP).length;
+
+                  return (
+                    <>
+                      {/* KPIs */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          { label: "Total Empenhado", val: totalEmp,  bg: "bg-sky-50 border-sky-200",       txt: "text-sky-800" },
+                          { label: "A Liquidar",      val: totalALiq, bg: "bg-amber-50 border-amber-200",   txt: "text-amber-800" },
+                          { label: "Liq. a Pagar",    val: totalLiq,  bg: "bg-indigo-50 border-indigo-200", txt: "text-indigo-800" },
+                          { label: "Pago",            val: totalPago, bg: "bg-green-50 border-green-200",   txt: "text-green-800" },
+                        ].map(k => (
+                          <div key={k.label} className={`rounded-lg border p-2 ${k.bg}`}>
+                            <div className="text-slate-500">{k.label}</div>
+                            <div className={`font-semibold mt-0.5 ${k.txt}`}>{fmtMoney(k.val)}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Aviso de RP */}
+                      {nRP > 0 && (
+                        <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] text-orange-700 flex items-center gap-2">
+                          <span>⚠️</span>
+                          <span>
+                            <strong>{nRP} NE{nRP > 1 ? "s" : ""}</strong> com Restos a Pagar — histórico completo exibido (ano de origem + RP).
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Tabela */}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-left">
+                              <th className="px-3 py-2">NE</th>
+                              <th className="px-3 py-2">Favorecido</th>
+                              <th className="px-3 py-2 text-right">A Liquidar</th>
+                              <th className="px-3 py-2 text-right">Liq/Pagar</th>
+                              <th className="px-3 py-2 text-right">Pago</th>
+                              <th className="px-2 py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((r) => {
+                              const key = r.rowKey;
+                              const exp = execExpandedNE === key;
+                              return (
+                                <>
+                                  <tr
+                                    key={key}
+                                    onClick={() => setExecExpandedNE(exp ? null : key)}
+                                    className={`border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${r.isRP ? "bg-orange-50/40" : ""}`}
+                                  >
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <span className="font-mono font-semibold text-sky-700">
+                                        {r.l.nota_empenho.slice(-6)}
+                                      </span>
+                                      {r.isRP ? (
+                                        <span className="ml-1.5 rounded px-1 py-0.5 text-[9px] font-bold bg-orange-200 text-orange-800 align-middle">RP</span>
+                                      ) : (
+                                        <span className="ml-1.5 rounded px-1 py-0.5 text-[9px] font-semibold bg-sky-100 text-sky-700 align-middle">
+                                          {r.l.nota_empenho.slice(0, 4)}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-600 truncate max-w-[120px]">{r.favorecido}</td>
+                                    <td className="px-3 py-2 text-right text-amber-700">{r.aLiquidar > 0 ? fmtMoney(r.aLiquidar) : <span className="text-slate-300">–</span>}</td>
+                                    <td className="px-3 py-2 text-right text-indigo-700">{r.liquidado > 0 ? fmtMoney(r.liquidado) : <span className="text-slate-300">–</span>}</td>
+                                    <td className="px-3 py-2 text-right text-green-700">{r.pago > 0 ? fmtMoney(r.pago) : <span className="text-slate-300">–</span>}</td>
+                                    <td className="px-2 py-2 text-slate-400">{exp ? "▲" : "▼"}</td>
+                                  </tr>
+                                  {exp && (
+                                    <tr key={key + "_det"} className="bg-slate-50">
+                                      <td colSpan={6} className="px-4 py-3 text-[11px] text-slate-600">
+                                        <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                                          <div><span className="font-semibold">NE Completa:</span> {r.l.nota_empenho}</div>
+                                          <div><span className="font-semibold">Favorecido:</span> {r.favorecido}</div>
+                                          <div><span className="font-semibold">Descrição:</span> {r.descricao || "–"}</div>
+                                          <div><span className="font-semibold">PAG:</span> {r.l.info_g || "–"}</div>
+                                          <div><span className="font-semibold">Total linha:</span> {fmtMoney(r.total)}</div>
+                                          {r.isRP && (
+                                            <div className="col-span-2 mt-1 text-orange-700 font-medium">
+                                              ⚠️ Restos a Pagar — A Liq.: {fmtMoney(r.aLiquidar)} · Liq/Pagar: {fmtMoney(r.liquidado)} · Pago: {fmtMoney(r.pago)}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      {/* Estimativa para o próximo ano — usa início do contrato como âncora */}
+                      {(() => {
+                        const todayYear  = new Date().getFullYear();
+                        const todayMonth = new Date().getMonth() + 1;
+                        const IPCA       = 0.051;
+
+                        // Soma TODOS os pagamentos (qualquer NE, incluindo RP):
+                        // NEs de exercícios anteriores podem estar liquidando faturas do contrato atual.
+                        const totalPago = rows.reduce((s, r) =>
+                          s + r.pago + (r.isRP ? 0 : r.liquidado), 0
+                        );
+                        if (totalPago === 0) return null;
+
+                        // Denominador: meses desde o início do contrato até o mês anterior
+                        const ini        = selected.data_inicio ? new Date(selected.data_inicio + "T12:00:00") : null;
+                        const cStartYear  = ini ? ini.getFullYear() : todayYear;
+                        const cStartMonth = ini ? ini.getMonth() + 1 : 1;
+                        const monthsElapsed = Math.max(1,
+                          (todayYear * 12 + todayMonth - 1) - (cStartYear * 12 + cStartMonth - 1)
+                        );
+
+                        const predMensal = (totalPago / monthsElapsed) * (1 + IPCA);
+                        const predAnual  = predMensal * 12;
+                        const nextYear   = todayYear + 1;
+
+                        // Agrupa por ano do NE apenas para exibição informativa
+                        const byYear = new Map<number, number>();
+                        for (const r of rows) {
+                          const m = r.l.nota_empenho.match(/^(\d{4})NE/i);
+                          if (!m) continue;
+                          const yr  = parseInt(m[1]);
+                          const val = r.pago + (r.isRP ? 0 : r.liquidado);
+                          if (val > 0) byYear.set(yr, (byYear.get(yr) ?? 0) + val);
+                        }
+                        const pts = [...byYear.entries()].sort((a, b) => a[0] - b[0]);
+
+                        return (
+                          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs space-y-2">
+                            <div className="font-semibold text-sky-800">
+                              Estimativa de empenho para {nextYear}
+                            </div>
+
+                            {/* Histórico por ano do NE (informativo) */}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1">
+                              {pts.map(([yr, v]) => (
+                                <span key={yr} className="text-slate-500">
+                                  <span className="font-semibold text-slate-700">{yr}:</span>{" "}
+                                  {fmtMoney(v)}
+                                </span>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 pt-1">
+                              <div>
+                                <div className="text-slate-500">Previsão anual</div>
+                                <div className="font-bold text-sky-700 text-sm">{fmtMoney(predAnual)}</div>
+                                <div className="text-[10px] text-slate-400">base {fmtMoney(predAnual / (1 + IPCA))} + IPCA {(IPCA * 100).toFixed(1)}%</div>
+                              </div>
+                              <div>
+                                <div className="text-slate-500">Estimativa mensal</div>
+                                <div className="font-bold text-sky-700 text-sm">{fmtMoney(predMensal)}</div>
+                              </div>
+                            </div>
+
+                            <div className="text-slate-400 text-[10px]">
+                              Base: {fmtMoney(totalPago)} em {monthsElapsed} mes{monthsElapsed !== 1 ? "es" : ""} (desde {String(cStartMonth).padStart(2, "0")}/{cStartYear}) + IPCA {(IPCA * 100).toFixed(1)}%
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* ── Modo: Reajustes ────────────────────────────────────────────── */}
+            {detailMode === "reajustes" && (
+              <div className="space-y-3">
+                {/* Upload PDF */}
+                {!reajusteForm && (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center space-y-2">
+                    <p className="text-xs text-slate-500 font-medium">
+                      Importe um <strong>Termo Aditivo</strong> ou <strong>Apostilamento</strong> em PDF para registrar o reajuste.
+                    </p>
+                    <button
+                      onClick={() => reajusteFileRef.current?.click()}
+                      disabled={reajusteParsing}
+                      className="rounded-lg bg-indigo-600 px-4 py-2 text-xs text-white font-medium hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                    >
+                      {reajusteParsing ? "Lendo PDF..." : "📎 Selecionar PDF"}
+                    </button>
+                    <input ref={reajusteFileRef} type="file" accept=".pdf" className="hidden" onChange={handleReajustePdf} />
+                  </div>
+                )}
+
+                {/* Formulário de revisão */}
+                {reajusteForm && (
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-indigo-800">Revisão — confirme os dados extraídos</span>
+                      <button onClick={() => setReajusteForm(null)} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-slate-600 font-medium">Tipo de documento</label>
+                        <select value={reajusteForm.tipo_doc} onChange={(e) => setReajusteForm(f => f ? { ...f, tipo_doc: e.target.value } : f)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200">
+                          <option>Termo Aditivo</option>
+                          <option>Apostilamento</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-slate-600 font-medium">Tipo de alteração</label>
+                        <select value={reajusteForm.tipo_alteracao} onChange={(e) => setReajusteForm(f => f ? { ...f, tipo_alteracao: e.target.value } : f)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200">
+                          <option value="valor">Reajuste de valor</option>
+                          <option value="prazo">Prorrogação de prazo</option>
+                          <option value="ambos">Valor + Prazo</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-slate-600 font-medium">Objeto / Ementa do documento</label>
+                      <textarea value={reajusteForm.objeto_doc} onChange={(e) => setReajusteForm(f => f ? { ...f, objeto_doc: e.target.value } : f)}
+                        rows={3} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200 resize-none" />
+                    </div>
+
+                    {(reajusteForm.tipo_alteracao === "valor" || reajusteForm.tipo_alteracao === "ambos") && (
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-slate-600 font-medium">Valor anterior (R$)</label>
+                          <input type="text" value={reajusteForm.valor_anterior}
+                            onChange={(e) => setReajusteForm(f => f ? { ...f, valor_anterior: e.target.value } : f)}
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                          <label className="text-slate-600 font-medium">Percentual (%)</label>
+                          <input type="text" placeholder="ex: 5.96" value={reajusteForm.percentual}
+                            onChange={(e) => {
+                              const pct = e.target.value;
+                              const valAnt = toNum(reajusteForm.valor_anterior);
+                              const pctN = toNum(pct);
+                              let novo = reajusteForm.valor_novo;
+                              if (pctN !== null && valAnt !== null) novo = String(Math.round(valAnt * (1 + pctN / 100) * 100) / 100);
+                              setReajusteForm(f => f ? { ...f, percentual: pct, valor_novo: novo } : f);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                          <label className="text-slate-600 font-medium">Novo valor (R$)</label>
+                          <input type="text" value={reajusteForm.valor_novo}
+                            onChange={(e) => setReajusteForm(f => f ? { ...f, valor_novo: e.target.value } : f)}
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                      </div>
+                    )}
+
+                    {(reajusteForm.tipo_alteracao === "prazo" || reajusteForm.tipo_alteracao === "ambos") && (
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-slate-600 font-medium">Vigência anterior</label>
+                          <input type="date" value={reajusteForm.data_fim_anterior}
+                            onChange={(e) => setReajusteForm(f => f ? { ...f, data_fim_anterior: e.target.value } : f)}
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                          <label className="text-slate-600 font-medium">Meses acrescidos</label>
+                          <input type="text" placeholder="ex: 12" value={reajusteForm.meses_acrescidos}
+                            onChange={(e) => {
+                              const m = e.target.value;
+                              let nova = reajusteForm.data_fim_nova;
+                              const mN = parseInt(m);
+                              if (!isNaN(mN) && reajusteForm.data_fim_anterior) {
+                                const d = new Date(reajusteForm.data_fim_anterior + "T12:00:00");
+                                d.setMonth(d.getMonth() + mN);
+                                nova = d.toISOString().slice(0, 10);
+                              }
+                              setReajusteForm(f => f ? { ...f, meses_acrescidos: m, data_fim_nova: nova } : f);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                          <label className="text-slate-600 font-medium">Nova vigência</label>
+                          <input type="date" value={reajusteForm.data_fim_nova}
+                            onChange={(e) => setReajusteForm(f => f ? { ...f, data_fim_nova: e.target.value } : f)}
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                      </div>
+                    )}
+
+                    {reajusteMsg && (
+                      <p className={`text-xs font-medium ${reajusteMsg.ok ? "text-green-700" : "text-red-600"}`}>{reajusteMsg.text}</p>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button onClick={saveReajuste} disabled={reajusteSaving}
+                        className="rounded-lg bg-green-600 px-4 py-1.5 text-xs text-white font-medium hover:bg-green-700 disabled:opacity-60">
+                        {reajusteSaving ? "Salvando..." : "✓ Confirmar e Registrar"}
+                      </button>
+                      <button onClick={() => reajusteFileRef.current?.click()} disabled={reajusteParsing}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-60">
+                        {reajusteParsing ? "Lendo..." : "↩ Outro PDF"}
+                      </button>
+                      <input ref={reajusteFileRef} type="file" accept=".pdf" className="hidden" onChange={handleReajustePdf} />
+                    </div>
+                  </div>
+                )}
+
+                {reajusteMsg && !reajusteForm && (
+                  <p className={`text-xs font-medium px-1 ${reajusteMsg.ok ? "text-green-700" : "text-red-600"}`}>{reajusteMsg.text}</p>
+                )}
+
+                {/* Histórico */}
+                {reajustes.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-slate-600">Histórico de reajustes</div>
+                    {reajustes.map((r) => (
+                      <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-3 text-xs space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`font-semibold ${r.tipo_doc === "Apostilamento" ? "text-amber-700" : "text-indigo-700"}`}>{r.tipo_doc}</span>
+                          <span className="text-slate-400">{new Date(r.created_at).toLocaleDateString("pt-BR")}</span>
+                        </div>
+                        {r.objeto_doc && <p className="text-slate-600 leading-snug">{r.objeto_doc}</p>}
+                        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-slate-500">
+                          {r.percentual != null && <span>Percentual: <strong className="text-slate-700">{r.percentual}%</strong></span>}
+                          {r.valor_anterior != null && <span>De: <strong className="text-slate-700">{fmtMoney(r.valor_anterior)}</strong></span>}
+                          {r.valor_novo != null && <span>Para: <strong className="text-green-700">{fmtMoney(r.valor_novo)}</strong></span>}
+                          {r.meses_acrescidos != null && <span>+<strong className="text-slate-700">{r.meses_acrescidos} meses</strong></span>}
+                          {r.data_fim_nova && <span>Até: <strong className="text-slate-700">{fmtDate(r.data_fim_nova)}</strong></span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {reajustes.length === 0 && !reajusteForm && (
+                  <p className="text-xs text-slate-400 italic text-center py-2">Nenhum reajuste registrado.</p>
+                )}
+              </div>
+            )}
           </Card>
           </div>
         )}
       </div>
+      </>)}
+
     </div>
   );
 }

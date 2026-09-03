@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { initAnalytics, logActivity, startHeartbeat } from "../lib/analytics";
 import { SparklesCore } from "../components/ui/sparkles";
 import FeedNoticias from "../components/FeedNoticias";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
@@ -13,6 +14,9 @@ import PainelRP from "../components/PainelRP";
 import PainelProcessos from "../components/PainelProcessos";
 import PainelExecucao from "../components/PainelExecucao";
 import FerramentasGestao from "./FerramentasGestao";
+// OrdensBancarias removido
+import PainelAnalytics from "../components/PainelAnalytics";
+import CalendarioLicitacoes from "../components/CalendarioLicitacoes";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const T = {
@@ -36,13 +40,15 @@ const T = {
 const SW  = "268px";
 const SWC = "62px";
 
-const BI_URL = "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
+const BI_URL  = "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
+const GOV_URL = "https://app.powerbi.com/view?r=eyJrIjoiMGI0ZDUxZDAtOTQzOC00YmNiLTk1OTctYzA1NDk5MjkxMDNjIiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
+  | "calendario"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
-  | "painel-contratos" | "ferramentas" | "admin";
+  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics";
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
 type KPIs     = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
@@ -59,9 +65,12 @@ const VIEW_LABELS: Record<View, string> = {
   "painel-rp":        "Painel de RP",
   "painel-processos": "Painel de Processos",
   "painel-execucao":  "Painel de Execução",
-  "painel-contratos": "Painel de Contratos",
-  ferramentas:        "Ferramentas de Gestão",
-  admin:              "Administração",
+  "painel-contratos":   "Painel de Contratos",
+  "painel-governanca":  "Painel de Governança",
+  calendario:           "Planejamento",
+  ferramentas:          "Ferramentas de Gestão",
+  admin:                "Administração",
+  analytics:            "Analytics DEV",
 };
 
 const AVATAR_OPTIONS = [
@@ -307,14 +316,15 @@ function fmtSetor(s?: string | null) {
 }
 
 // ── Nav tree ──────────────────────────────────────────────────────────────────
-type NavChild = { label: string; path: string; icon: string; wip?: boolean };
+type NavChild = { label: string; path: string; icon: string; wip?: boolean; adminOnly?: boolean };
 type NavNode  = { id: string; label: string; icon: string; path?: string; children?: NavChild[] };
 
 const NAV: NavNode[] = [
   { id: "home",    label: "Início",              icon: "🏠" },
   { id: "lic",     label: "Licitações",           icon: "⚖️", children: [
-    { label: "Processos",  path: "view:processos", icon: "📋" },
-    { label: "Atas de RP", path: "view:atas",      icon: "📄" },
+    { label: "Processos",   path: "view:processos",  icon: "📋" },
+    { label: "Atas de RP",  path: "view:atas",       icon: "📄" },
+    { label: "Planejamento", path: "view:calendario", icon: "📅" },
   ]},
   { id: "ctr",     label: "Contratos",            icon: "📑", path: "view:contratos" },
   { id: "eo",      label: "Exec. Orçamentária",   icon: "💰", children: [
@@ -327,9 +337,11 @@ const NAV: NavNode[] = [
     { label: "Painel de Processos",  path: "view:painel-processos",  icon: "🤖", wip: true },
     { label: "Painel de Execução",   path: "view:painel-execucao",   icon: "📈" },
     { label: "Painel de Contratos",  path: "view:painel-contratos",  icon: "📑", wip: true },
+    { label: "Painel de Governança", path: "view:painel-governanca", icon: "🏛️", adminOnly: true },
   ]},
-  { id: "tools",   label: "Ferramentas",           icon: "🔧", path: "view:ferramentas" },
-  { id: "admin",   label: "Administração",          icon: "🛡️", path: "view:admin" },
+  { id: "tools",     label: "Ferramentas",           icon: "🔧", path: "view:ferramentas" },
+  { id: "admin",     label: "Administração",          icon: "🛡️", path: "view:admin" },
+  { id: "analytics", label: "Analytics DEV",          icon: "📡", path: "view:analytics" },
 ];
 
 // ── ProfileModal ──────────────────────────────────────────────────────────────
@@ -549,7 +561,11 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
 
       {/* Nav items */}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px", scrollbarWidth: "none" }}>
-        {NAV.filter(n => n.id !== "admin" || user.setor === "ADMIN" || user.setor === "DEV").map(n => (
+        {NAV.filter(n =>
+          (n.id !== "admin"     || user.setor === "ADMIN" || user.setor === "DEV") &&
+          (n.id !== "analytics" || user.setor === "DEV") &&
+          (n.id !== "ob"        || user.setor === "DEV")
+        ).map(n => (
           <div key={n.id}>
             <button
               onClick={() => n.path ? go(n.path, n.id) : n.id === "home" ? go("home", n.id) : setOpen(p => ({ ...p, [n.id]: !p[n.id] }))}
@@ -581,7 +597,7 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
 
             {!collapsed && n.children && open[n.id] && (
               <div style={{ paddingLeft: 12, paddingBottom: 4 }}>
-                {n.children.map(c => {
+                {n.children.filter(c => !c.adminOnly || user.setor === "ADMIN" || user.setor === "DEV").map(c => {
                   const cid = `${n.id}:${c.label}`;
                   return (
                     <button key={c.label}
@@ -828,6 +844,7 @@ function CeliaWidget({ kpis }: { kpis: KPIs }) {
     if (!t || busy) return;
     setInp("");
     setMsgs(p => [...p, { from: "user", text: t }]);
+    logActivity("chatbot_query", undefined, t);
     setBusy(true);
     await new Promise(r => setTimeout(r, 750));
     setBusy(false);
@@ -1103,6 +1120,52 @@ function PainelOrcamentario() {
 }
 
 
+// ── Painel de Governança (ADMIN/DEV only) ────────────────────────────────────
+function PainelGovernanca() {
+  const [key, setKey] = useState(0);
+  const [max, setMax] = useState(false);
+  const src = `${GOV_URL}&_k=${key}`;
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, justifyContent: "flex-end" }}>
+        <button onClick={() => setKey(k => k + 1)}
+          style={{ background: T.surf, border: `1px solid ${T.bdr}`, borderRadius: 8,
+            padding: "6px 14px", color: T.txt, fontSize: 12, cursor: "pointer", fontFamily: T.font }}>
+          ↺ Recarregar
+        </button>
+        <button onClick={() => setMax(true)}
+          style={{ background: T.surf, border: `1px solid ${T.bdr}`, borderRadius: 8,
+            padding: "6px 14px", color: T.txt, fontSize: 12, cursor: "pointer", fontFamily: T.font }}>
+          ⛶ Maximizar
+        </button>
+      </div>
+      <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${T.bdr}` }}>
+        <iframe key={key} src={src} title="Painel de Governança GAP-MN"
+          style={{ width: "100%", height: "calc(100dvh - 14rem)", display: "block" }}
+          allowFullScreen />
+      </div>
+      {max && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", background: "#fff" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "8px 16px", borderBottom: "1px solid #e2e8f0", background: "#fff" }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Painel de Governança — GAP-MN</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setKey(k => k + 1)}
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                  padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>↺ Recarregar</button>
+              <button onClick={() => setMax(false)}
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                  padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>✕ Restaurar</button>
+            </div>
+          </div>
+          <iframe src={`${GOV_URL}&_k=${key}-max`} title="Painel de Governança Maximizado"
+            style={{ flex: 1, width: "100%", display: "block" }} allowFullScreen />
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 export default function AppChat() {
   const navigate   = useNavigate();
@@ -1110,8 +1173,13 @@ export default function AppChat() {
   const [kpis,           setKpis]       = useState<KPIs>({ empenhos: 0, processos: 0, contratos: 0, il: 0, atas: 0 });
   const [collapsed,      setCollapsed]  = useState(false);
   const [bellOpen,       setBellOpen]   = useState(false);
-  const [view,           setView]       = useState<View>("dashboard");
+  const [view,           setViewRaw]    = useState<View>("dashboard");
   const [filterTipo,     setFilterTipo] = useState("todos");
+
+  function setView(v: View) {
+    setViewRaw(v);
+    logActivity("page_view", v);
+  }
   const [showProf,       setShowProf]   = useState(false);
   const [userNotifs,     setUserNotifs] = useState<BellItem[]>([]);
   const [userNotifCount, setNotifCount] = useState(0);
@@ -1134,6 +1202,7 @@ export default function AppChat() {
   }, []);
 
   useEffect(() => {
+    let stopHeartbeat: (() => void) | undefined;
     (async () => {
       const { data: sess } = await supabase.auth.getSession();
       const u = sess.session?.user;
@@ -1143,12 +1212,12 @@ export default function AppChat() {
         .from("profiles").select("nome_guerra, avatar_key, setor")
         .eq("id", u.id).maybeSingle();
 
-      setUser({
-        id:        u.id,
-        nome:      (prof as any)?.nome_guerra || (u.user_metadata as any)?.nome_guerra || u.email?.split("@")[0] || "Usuário",
-        avatarKey: (prof as any)?.avatar_key ?? null,
-        setor:     (prof as any)?.setor ?? null,
-      });
+      const setor     = (prof as any)?.setor ?? null;
+      const nomeGuerra = (prof as any)?.nome_guerra || (u.user_metadata as any)?.nome_guerra || u.email?.split("@")[0] || "Usuário";
+      setUser({ id: u.id, nome: nomeGuerra, avatarKey: (prof as any)?.avatar_key ?? null, setor });
+      initAnalytics(u.id, setor, nomeGuerra);
+      logActivity("page_view", "dashboard");
+      stopHeartbeat = startHeartbeat();
 
       // Load real notifications
       const { data: notifData } = await supabase
@@ -1194,6 +1263,7 @@ export default function AppChat() {
         atas:      r5.count ?? 0,
       });
     })();
+    return () => stopHeartbeat?.();
   }, [navigate]);
 
   async function saveProfile(updates: { avatarKey?: string; nome?: string; senha?: string }) {
@@ -1333,6 +1403,8 @@ export default function AppChat() {
         .svdark .bg-amber-50   { background: rgba(251,191,36,0.15) !important; }
         .svdark .bg-yellow-50  { background: rgba(251,191,36,0.08) !important; }
         .svdark .bg-violet-100, .svdark .bg-purple-100 { background: rgba(167,139,250,0.14) !important; }
+        .svdark .bg-violet-50, .svdark .bg-purple-50  { background: rgba(167,139,250,0.06) !important; }
+        .svdark .bg-blue-50   { background: rgba(56,189,248,0.08) !important; }
         .svdark .bg-orange-100    { background: rgba(251,146,60,0.14) !important; }
         .svdark .bg-indigo-100    { background: rgba(99,102,241,0.14) !important; }
         .svdark .text-sky-700, .svdark .text-sky-600   { color: #38bdf8 !important; }
@@ -1340,7 +1412,8 @@ export default function AppChat() {
         .svdark .text-green-800, .svdark .text-green-700, .svdark .text-green-600, .svdark .text-emerald-700, .svdark .text-emerald-600 { color: #34d399 !important; }
         .svdark .text-red-700, .svdark .text-red-600   { color: #fb7185 !important; }
         .svdark .text-amber-800, .svdark .text-amber-700, .svdark .text-amber-600, .svdark .text-yellow-700, .svdark .text-yellow-600 { color: #fbbf24 !important; }
-        .svdark .text-violet-700, .svdark .text-violet-600, .svdark .text-purple-700, .svdark .text-purple-600 { color: #a78bfa !important; }
+        .svdark .text-violet-800, .svdark .text-violet-700, .svdark .text-violet-600, .svdark .text-purple-800, .svdark .text-purple-700, .svdark .text-purple-600 { color: #a78bfa !important; }
+        .svdark .text-blue-700, .svdark .text-blue-600 { color: #38bdf8 !important; }
         .svdark .text-orange-700, .svdark .text-orange-600 { color: #fb923c !important; }
         .svdark .text-indigo-700, .svdark .text-indigo-600 { color: #818cf8 !important; }
         .svdark table             { border-color: rgba(255,255,255,0.10) !important; }
@@ -1363,6 +1436,13 @@ export default function AppChat() {
         .svdark .border-sky-200    { border-color: rgba(56,189,248,0.25) !important; }
         .svdark .border-red-200    { border-color: rgba(251,113,133,0.30) !important; }
         .svdark .border-green-200, .svdark .border-emerald-200 { border-color: rgba(52,211,153,0.30) !important; }
+        .svdark .border-violet-300 { border-color: rgba(167,139,250,0.35) !important; }
+        .svdark .border-violet-200 { border-color: rgba(167,139,250,0.22) !important; }
+        .svdark .border-violet-100 { border-color: rgba(167,139,250,0.12) !important; }
+        .svdark .hover\\:bg-violet-100:hover { background: rgba(167,139,250,0.14) !important; }
+        .svdark .hover\\:bg-violet-50:hover  { background: rgba(167,139,250,0.08) !important; }
+        .svdark .hover\\:bg-slate-50:hover   { background: rgba(255,255,255,0.04) !important; }
+        .svdark .hover\\:bg-blue-50:hover    { background: rgba(56,189,248,0.10) !important; }
         .svdark .bg-gray-50\/50    { background: rgba(255,255,255,0.03) !important; }
         .svdark .bg-gray-50\/40    { background: rgba(255,255,255,0.025) !important; }
         .svdark .bg-sky-50\/40     { background: rgba(56,189,248,0.06) !important; }
@@ -1600,6 +1680,7 @@ export default function AppChat() {
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}
+            {view === "calendario"    && <div className="svdark"><CalendarioLicitacoes canEdit={canImportPrc} userNome={user.nome} /></div>}
 
             {/* ── Panel views ── */}
             {view === "painel-orcamento"  && <PainelOrcamentario />}
@@ -1614,6 +1695,14 @@ export default function AppChat() {
               </div>
             )}
             {view === "painel-execucao"  && <PainelExecucao />}
+            {view === "painel-governanca" && (
+              isDev || user.setor === "ADMIN"
+                ? <PainelGovernanca />
+                : <div style={{ textAlign: "center", padding: "60px 0", color: "rgba(234,241,251,0.4)" }}>
+                    <div style={{ fontSize: 36, marginBottom: 10 }}>🔒</div>
+                    <div style={{ fontSize: 14 }}>Acesso restrito a administradores.</div>
+                  </div>
+            )}
             {view === "painel-contratos" && (
               <div className="svdark" style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:320 }}>
                 <div style={{ textAlign:"center", color:"rgba(234,241,251,0.45)" }}>
@@ -1635,6 +1724,16 @@ export default function AppChat() {
                   <div style={{ fontSize: 14 }}>Acesso restrito a administradores.</div>
                 </div>
             )}
+
+            {/* ── Analytics DEV only ── */}
+            {view === "analytics" && (isDev
+              ? <div className="p-2"><PainelAnalytics /></div>
+              : <div style={{ textAlign: "center", padding: "60px 0", color: "rgba(234,241,251,0.4)" }}>
+                  <div style={{ fontSize: 36, marginBottom: 10 }}>🔒</div>
+                  <div style={{ fontSize: 14 }}>Acesso restrito a DEV.</div>
+                </div>
+            )}
+
           </div>
         </div>
 

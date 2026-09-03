@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
 import { SHEET_URLS, toEmpenhosNF } from "../lib/gsheets";
+import { EnviadorNEFornecedor } from "./EnviadorNEFornecedor";
 
 const ENVIO_AUTOMATICO_ATIVO = true;
 
 const DATA_INICIO_SIAFI   = new Date(2026, 7, 3); // 03/08/2026 — auto-feed cria registros a partir daqui
-const DATA_INICIO_ANTIGAS = new Date(2026, 7, 5); // 05/08/2026 — registros pré-03/08 ASSINADOS passam a aparecer
+const DATA_INICIO_ANTIGAS = new Date(2026, 7, 27); // 27/08/2026 — registros pré-03/08 ASSINADOS passam a aparecer
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,8 @@ interface Solicitacao {
   notificado_assinada_em: string | null;
   notificacao_ativa: boolean;
   pdf_ne_url: string | null;
+  cnpj_fornecedor: string | null;
+  notificado_fornecedor_em: string | null;
   data_emissao: string | null;
   revisado_em: string | null;
   created_at: string;
@@ -209,6 +212,17 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   const [uploadingPdf, setUploadingPdf] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
 
+  // EnviadorNEFornecedor modal
+  const [showEnviador, setShowEnviador] = useState(false);
+
+  // Template de mensagem
+  const [showTemplate, setShowTemplate]       = useState(false);
+  const [tabTemplate, setTabTemplate]         = useState<"FISCAL" | "FORNECEDOR">("FISCAL");
+  const [templateAssunto, setTemplateAssunto] = useState("");
+  const [templateCorpo, setTemplateCorpo]     = useState("");
+  const [templateId, setTemplateId]           = useState<string | null>(null);
+  const [savingTemplate, setSavingTemplate]   = useState(false);
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -243,7 +257,8 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         numero: string;
         ugexec: string | null; ugcred: string | null; indicador_lotacao: string | null;
         nd: string | null; subprocesso: string | null; status_siloms: string | null;
-        fornecedor: string | null; pag: string | null; pregao: string | null;
+        cnpj_fornecedor: string | null; fornecedor: string | null;
+        pag: string | null; pregao: string | null;
         valor: number | null; obs_original: string | null;
         responsavel: string | null; email: string | null; sem_destinatario: boolean;
       };
@@ -273,6 +288,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
           nd:                String(r[COL.ND]          ?? "").trim() || null,
           subprocesso:       String(r[COL.SUBPROCESSO] ?? "").trim() || null,
           status_siloms:     String(r[COL.STATUS_SILOMS] ?? "").trim() || null,
+          cnpj_fornecedor:   String(r[COL.COD_FORNECEDOR] ?? "").replace(/\D/g, "").trim() || null,
           fornecedor:        String(r[COL.FORNECEDOR]  ?? "").trim() || null,
           pag:               String(r[COL.PAG]         ?? "").trim() || null,
           pregao:            String(r[COL.PREGAO]      ?? "").trim() || null,
@@ -368,6 +384,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
           return {
             numero:            ne.solicitacao!,
             pag:               ne.pag || null,
+            cnpj_fornecedor:   ne.cnpj ? ne.cnpj.replace(/\D/g, "") || null : null,
             fornecedor:        ne.nome_fantasia || null,
             valor:             ne.valor || null,
             nd:                ne.natureza || null,
@@ -430,6 +447,10 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         }
       }
 
+      // Busca template do fiscal uma vez para reutilizar em todos os envios ASSINADA
+      const { data: fiscalTpl } = await supabase
+        .from("email_templates").select("assunto, corpo").eq("tipo", "FISCAL").single();
+
       const reportItens: SyncReportItem[] = [];
       let semMudanca = 0;
 
@@ -484,6 +505,8 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
             let resultadoEnvio: ResultadoEnvio = "ERRO";
             let motivoErro: string | undefined;
             try {
+              const assuntoFiscal = (tipo === "ASSINADA" && fiscalTpl) ? applyTemplate(fiscalTpl.assunto, item) : undefined;
+              const corpoFiscal   = (tipo === "ASSINADA" && fiscalTpl) ? applyTemplate(fiscalTpl.corpo,   item) : undefined;
               const { error: fnErr } = await supabase.functions.invoke("send-empenho-email", {
                 body: {
                   solicitacao_id: item.id,
@@ -500,11 +523,12 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
                   pregao:      item.pregao,
                   obs_atraso:  item.obs_atraso,
                   pdf_ne_url:  item.pdf_ne_url,
+                  ...(assuntoFiscal && { assunto_customizado: assuntoFiscal }),
+                  ...(corpoFiscal   && { corpo_customizado:   corpoFiscal   }),
                 },
               });
               if (!fnErr) {
                 resultadoEnvio = "ENVIADO";
-                // Marca o timestamp somente quando o e-mail foi de fato enviado
                 if (isNovaEmissao)  patch.notificado_emitida_em  = now;
                 if (isNovaAssinada) patch.notificado_assinada_em = now;
               } else {
@@ -716,6 +740,64 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
     await load();
   }
 
+  // ── Template helpers ─────────────────────────────────────────────────────
+
+  function extractTelefone(obs: string | null): string {
+    if (!obs) return "";
+    const m = obs.match(/TELEFONE[:\s]+(\(?\d{2}\)?\s*\d{4,5}[\s.-]?\d{4})/i);
+    return m ? m[1].trim() : "";
+  }
+
+  function fmtBRL(v: number | null | undefined): string {
+    if (!v) return "—";
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+  }
+
+  function applyTemplate(corpo: string, it: Solicitacao, nomeFornecedor?: string | null): string {
+    return corpo
+      .replace(/\{\{ne_siafi\}\}/g,             it.ne_siafi ?? "—")
+      .replace(/\{\{numero\}\}/g,               it.numero)
+      .replace(/\{\{fornecedor\}\}/g,           nomeFornecedor ?? it.fornecedor ?? "—")
+      .replace(/\{\{responsavel\}\}/g,          it.responsavel ?? "—")
+      .replace(/\{\{email_responsavel\}\}/g,    it.email ?? "—")
+      .replace(/\{\{telefone_responsavel\}\}/g, extractTelefone(it.obs_original))
+      .replace(/\{\{valor\}\}/g,                fmtBRL(it.valor))
+      .replace(/\{\{nd\}\}/g,                   it.nd ?? "—")
+      .replace(/\{\{pag\}\}/g,                  it.pag ?? "—")
+      .replace(/\{\{subprocesso\}\}/g,          it.subprocesso ?? "—");
+  }
+
+  async function loadTemplate(tipo: "FISCAL" | "FORNECEDOR" = "FISCAL") {
+    const { data } = await supabase
+      .from("email_templates")
+      .select("id, assunto, corpo")
+      .eq("tipo", tipo)
+      .single();
+    if (data) {
+      setTemplateId(data.id);
+      setTemplateAssunto(data.assunto);
+      setTemplateCorpo(data.corpo);
+    } else {
+      setTemplateId(null);
+      setTemplateAssunto("");
+      setTemplateCorpo("");
+    }
+  }
+
+  async function saveTemplate() {
+    setSavingTemplate(true);
+    if (templateId) {
+      await supabase.from("email_templates")
+        .update({ assunto: templateAssunto, corpo: templateCorpo, updated_at: new Date().toISOString() })
+        .eq("id", templateId);
+    } else {
+      await supabase.from("email_templates")
+        .upsert({ tipo: tabTemplate, assunto: templateAssunto, corpo: templateCorpo }, { onConflict: "tipo" });
+    }
+    setSavingTemplate(false);
+    flash("Modelo do fiscal salvo.");
+  }
+
   // ── Log ───────────────────────────────────────────────────────────────────
 
   async function loadLog() {
@@ -746,6 +828,13 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
       if (!confirmar) return;
     }
 
+    let assuntoCustom: string | undefined;
+    let corpoCustom: string | undefined;
+    if (tipo === "ASSINADA") {
+      const { data: rTpl } = await supabase.from("email_templates").select("assunto, corpo").eq("tipo", "FISCAL").single();
+      if (rTpl) { assuntoCustom = applyTemplate(rTpl.assunto, it); corpoCustom = applyTemplate(rTpl.corpo, it); }
+    }
+
     const { error } = await supabase.functions.invoke("send-empenho-email", {
       body: {
         solicitacao_id: it.id,
@@ -762,6 +851,8 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         pregao:      it.pregao,
         obs_atraso:  it.obs_atraso,
         pdf_ne_url:  it.pdf_ne_url,
+        ...(assuntoCustom && { assunto_customizado: assuntoCustom }),
+        ...(corpoCustom   && { corpo_customizado:   corpoCustom   }),
       },
     });
     if (error) {
@@ -892,6 +983,24 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
           </button>
         )}
 
+        {canManage && (
+          <button
+            onClick={() => setShowEnviador(true)}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
+          >
+            📨 Enviar NE ao Fornecedor
+          </button>
+        )}
+
+        {canManage && (
+          <button
+            onClick={() => { setTabTemplate("FISCAL"); loadTemplate("FISCAL"); setShowTemplate(true); }}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
+          >
+            ✉ Modelo de Mensagem
+          </button>
+        )}
+
         <button onClick={loadLog} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
           📧 Log E-mails
         </button>
@@ -909,6 +1018,10 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
           {loading ? "Carregando…" : "↺ Atualizar"}
         </button>
 
+      </div>
+
+      {/* ── Barra de filtros ── */}
+      <div className="flex flex-wrap items-center gap-2">
         {/* Filtros */}
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           <input
@@ -1365,18 +1478,93 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         </div>
       )}
 
+      {/* ── Modal: Modelos de Mensagem ── */}
+      {showTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.65)" }}>
+          <div className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden" style={{ background: "#111c35", border: "1px solid rgba(99,102,241,0.25)" }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4" style={{ background: "#1e2d50", borderBottom: "1px solid rgba(99,102,241,0.3)" }}>
+              <h3 className="font-semibold text-base text-white">✉ Modelo de E-mail ao Fiscal</h3>
+              <button onClick={() => setShowTemplate(false)} className="text-xl leading-none text-indigo-300 hover:text-white">✕</button>
+            </div>
+
+            {/* Placeholders */}
+            <div className="px-5 py-2.5 flex flex-wrap gap-1.5 text-[11px]" style={{ background: "#111c35", borderBottom: "1px solid rgba(99,102,241,0.15)" }}>
+              {[
+                ["{{ne_siafi}}", "Número NE"],
+                ["{{fornecedor}}", "Nome empresa"],
+                ["{{responsavel}}", "Militar responsável"],
+                ["{{email_responsavel}}", "E-mail do fiscal"],
+                ["{{valor}}", "Valor em R$"],
+                ["{{nd}}", "Natureza de despesa"],
+                ["{{pag}}", "PAG"],
+                ["{{numero}}", "Nº Solicitação"],
+              ].map(([ph, label]) => (
+                <span
+                  key={ph}
+                  style={{ background: "rgba(99,102,241,0.18)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 4, padding: "1px 7px", fontFamily: "monospace", cursor: "pointer" }}
+                  title={label}
+                  onClick={() => setTemplateCorpo(c => c + ph)}
+                >{ph}</span>
+              ))}
+              <span style={{ color: "#64748b", marginLeft: 4 }}>← clique para inserir no corpo</span>
+            </div>
+
+            {/* Formulário */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3" style={{ background: "#111c35" }}>
+              <div className="flex flex-col gap-1">
+                <label style={{ fontSize: 11, fontWeight: 600, color: "#818cf8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assunto do E-mail</label>
+                <input
+                  value={templateAssunto}
+                  onChange={e => setTemplateAssunto(e.target.value)}
+                  style={{ background: "#1e2d50", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#e2e8f0", outline: "none" }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label style={{ fontSize: 11, fontWeight: 600, color: "#818cf8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Corpo da Mensagem</label>
+                <textarea
+                  value={templateCorpo}
+                  onChange={e => setTemplateCorpo(e.target.value)}
+                  rows={18}
+                  style={{ background: "#1e2d50", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontFamily: "monospace", color: "#e2e8f0", resize: "vertical", outline: "none" }}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 flex items-center justify-between gap-3" style={{ background: "#1e2d50", borderTop: "1px solid rgba(99,102,241,0.25)" }}>
+              <p style={{ fontSize: 11, color: "#64748b" }}>
+                Modelo salvo no banco e aplicado nos envios automáticos e manuais para o fiscal.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowTemplate(false)}
+                  style={{ borderRadius: 8, border: "1px solid rgba(99,102,241,0.3)", padding: "6px 16px", fontSize: 12, color: "#94a3b8", background: "transparent", cursor: "pointer" }}
+                >Cancelar</button>
+                <button
+                  onClick={saveTemplate}
+                  disabled={savingTemplate}
+                  style={{ borderRadius: 8, background: "#4f46e5", padding: "6px 16px", fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer", opacity: savingTemplate ? 0.6 : 1 }}
+                >{savingTemplate ? "Salvando…" : "Salvar Modelo"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal: Log de E-mails ── */}
       {showLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="svmodal w-full max-w-3xl max-h-[80vh] flex flex-col rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <h3 className="font-semibold text-slate-900 text-sm">Log de Notificações — últimos 100</h3>
-              <button onClick={() => setShowLog(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.65)" }}>
+          <div className="w-full max-w-3xl max-h-[80vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden" style={{ background: "#111c35", border: "1px solid rgba(99,102,241,0.25)" }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ background: "#1e2d50", borderBottom: "1px solid rgba(99,102,241,0.25)" }}>
+              <h3 style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 13 }}>Log de Notificações — últimos 100</h3>
+              <button onClick={() => setShowLog(false)} style={{ color: "#94a3b8", fontSize: 18, background: "none", border: "none", cursor: "pointer" }}>✕</button>
             </div>
-            <div className="overflow-auto flex-1 p-2">
+            <div className="overflow-auto flex-1 p-2" style={{ background: "#111c35" }}>
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-slate-500 border-b border-slate-200">
+                  <tr style={{ color: "#64748b", borderBottom: "1px solid rgba(99,102,241,0.18)", textAlign: "left" }}>
                     <th className="px-2 py-2">Data/Hora</th>
                     <th className="px-2 py-2">Solicitação</th>
                     <th className="px-2 py-2">Tipo</th>
@@ -1386,22 +1574,22 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
                 </thead>
                 <tbody>
                   {logs.length === 0 && (
-                    <tr><td colSpan={5} className="py-8 text-center text-slate-400">Nenhum log encontrado.</td></tr>
+                    <tr><td colSpan={5} className="py-8 text-center" style={{ color: "#475569" }}>Nenhum log encontrado.</td></tr>
                   )}
                   {logs.map((lg) => (
-                    <tr key={lg.id} className="border-b border-slate-100">
-                      <td className="px-2 py-1.5 text-slate-500">{new Date(lg.enviado_em).toLocaleString("pt-BR")}</td>
-                      <td className="px-2 py-1.5 font-mono font-semibold">{lg.solicitacoes_empenho?.numero ?? lg.solicitacao_id?.slice(0, 8)}</td>
+                    <tr key={lg.id} style={{ borderBottom: "1px solid rgba(99,102,241,0.1)" }}>
+                      <td className="px-2 py-1.5" style={{ color: "#64748b" }}>{new Date(lg.enviado_em).toLocaleString("pt-BR")}</td>
+                      <td className="px-2 py-1.5 font-mono font-semibold" style={{ color: "#a5b4fc" }}>{lg.solicitacoes_empenho?.numero ?? lg.solicitacao_id?.slice(0, 8)}</td>
                       <td className="px-2 py-1.5">
-                        <span className={`px-2 py-0.5 rounded-full font-medium ${lg.tipo === "ASSINADA" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+                        <span style={{ padding: "2px 8px", borderRadius: 9999, fontWeight: 500, fontSize: 11, background: lg.tipo === "ASSINADA" ? "rgba(34,197,94,0.15)" : lg.tipo === "FORNECEDOR" ? "rgba(168,85,247,0.15)" : "rgba(56,189,248,0.15)", color: lg.tipo === "ASSINADA" ? "#4ade80" : lg.tipo === "FORNECEDOR" ? "#c084fc" : "#38bdf8" }}>
                           {lg.tipo}
                         </span>
                       </td>
-                      <td className="px-2 py-1.5 text-slate-600">{lg.email_destino}</td>
+                      <td className="px-2 py-1.5" style={{ color: "#94a3b8" }}>{lg.email_destino}</td>
                       <td className="px-2 py-1.5">
                         {lg.sucesso
-                          ? <span className="text-green-700 font-semibold">✓ Enviado</span>
-                          : <span className="text-red-600 font-semibold">✗ Falha</span>}
+                          ? <span style={{ color: "#4ade80", fontWeight: 600 }}>✓ Enviado</span>
+                          : <span style={{ color: "#f87171", fontWeight: 600 }}>✗ Falha</span>}
                       </td>
                     </tr>
                   ))}
@@ -1411,6 +1599,9 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
           </div>
         </div>
       )}
+
+      {/* ── Modal: Enviar NE ao Fornecedor ── */}
+      {showEnviador && <EnviadorNEFornecedor onClose={() => setShowEnviador(false)} />}
 
     </div>
   );

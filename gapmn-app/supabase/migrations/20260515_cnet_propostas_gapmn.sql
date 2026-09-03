@@ -26,24 +26,21 @@ CREATE TABLE IF NOT EXISTS cnet_propostas_gapmn (
 CREATE INDEX IF NOT EXISTS idx_cnet_gapmn_processo ON cnet_propostas_gapmn(processo);
 CREATE INDEX IF NOT EXISTS idx_cnet_gapmn_item     ON cnet_propostas_gapmn(processo, item);
 
--- RLS: todos os autenticados leem; apenas ADMIN/SLIC podem escrever
 ALTER TABLE cnet_propostas_gapmn ENABLE ROW LEVEL SECURITY;
 
+-- Remove políticas anteriores antes de recriar
+DROP POLICY IF EXISTS "cnet_gapmn_select" ON cnet_propostas_gapmn;
+DROP POLICY IF EXISTS "cnet_gapmn_insert" ON cnet_propostas_gapmn;
+DROP POLICY IF EXISTS "cnet_gapmn_delete" ON cnet_propostas_gapmn;
+
+-- Leitura: pública (dados de licitação pública — sem restrição)
 CREATE POLICY "cnet_gapmn_select" ON cnet_propostas_gapmn
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT USING (true);
 
+-- Escrita: permite anon (robô bookmarklet usa chave anon) e autenticados
 CREATE POLICY "cnet_gapmn_insert" ON cnet_propostas_gapmn
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND setor IN ('ADMIN','DEV','SLIC')
-    )
-  );
+  FOR INSERT WITH CHECK (true);
 
+-- Deleção: permite anon e autenticados (robô apaga antes de reinserir)
 CREATE POLICY "cnet_gapmn_delete" ON cnet_propostas_gapmn
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND setor IN ('ADMIN','DEV','SLIC')
-    )
-  );
+  FOR DELETE USING (true);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 type FeedItem = {
@@ -51,9 +51,10 @@ interface Props {
   isLoggedIn: boolean;
   onNavigate?: (tab: string) => void;
   canCreate?: boolean;
+  filterTipo?: string | null;
 }
 
-export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Props) {
+export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate, filterTipo }: Props) {
   const [items,    setItems]    = useState<FeedItem[]>([]);
   const [notifs,   setNotifs]   = useState<UserNotif[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -82,7 +83,7 @@ export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Prop
       .from("feed_items")
       .select("id,titulo,descricao,tipo,link_tab,created_at")
       .order("created_at", { ascending: false })
-      .limit(15);
+      .limit(50);
     setItems(data ?? []);
     setLoading(false);
   }
@@ -136,6 +137,15 @@ export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Prop
     empenho: "empenhos",  indicador: "indicadores",
   };
 
+  const visibleItems = useMemo(() => {
+    if (!filterTipo || filterTipo === "todos") return items;
+    const f = filterTipo.toLowerCase().replace(/s$/, "");
+    return items.filter(i => {
+      const t = (i.tipo ?? "geral").toLowerCase();
+      return t === filterTipo.toLowerCase() || t === f || t.startsWith(f);
+    });
+  }, [items, filterTipo]);
+
   return (
     <div className="space-y-3">
       {/* Cabeçalho */}
@@ -188,11 +198,11 @@ export default function FeedNoticias({ isLoggedIn, onNavigate, canCreate }: Prop
       {/* Lista — Feed geral */}
       {loading ? (
         <div className="text-xs text-slate-400 animate-pulse py-2">Carregando...</div>
-      ) : items.length === 0 ? (
-        <div className="text-xs text-slate-400 py-2">Nenhuma atualização recente.</div>
+      ) : visibleItems.length === 0 ? (
+        <div className="text-xs text-slate-400 py-2">Nenhuma atualização para este filtro.</div>
       ) : (
         <div className="space-y-2">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
               <div key={item.id} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm hover:border-slate-200 transition-colors">
                 <div className="flex items-start gap-2.5">
                   <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${

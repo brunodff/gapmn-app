@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  console.log('[CNET Bot] v2026-05-21g — cardHasMod para em container compartilhado');
+  console.log('[CNET Bot] v2026-05-21j — dual-write cnet_propostas + virtual-scroll _scrollToIdx');
   var UASG = '120630';
   var LSKEY = 'cnet_bot_cfg';
 
@@ -360,6 +360,33 @@
         log('Supa INSERT ' + resp.status + ': ' + errText.slice(0,200), 'err');
         return false;
       }
+      // Espelha dados GAPMN para cnet_propostas (projeto CAE) — dashboard lê desta tabela
+      if (isGapmn) {
+        try {
+          await fetch(SUPA_URL + '/rest/v1/cnet_propostas?aba=eq.' + encodeURIComponent(aba), {
+            method: 'DELETE', headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+          });
+          var mirrorBody = rows.map(function(r) {
+            return {
+              aba: aba,
+              processo: r[0]||null, ano: r[1]||null, uasg: r[2]||null,
+              grupo: String(r[3]||''), item: String(r[4]||''), nome_item: r[5]||null,
+              cnpj: r[6]||null, razao_social: r[7]||null, uf: r[8]||null,
+              status: r[9]||null, me_epp: r[10]||null,
+              valor_ofertado: toNum(r[11]), valor_negociado: toNum(r[12]),
+              situacao_item: r[13]||null, qtde_solicitada: r[14]||null,
+              descricao_item: r[15]||null, criterio_julgamento: r[16]||null,
+              sit_processo: r[17]||null, valor_estimado: toNum(r[18])
+            };
+          });
+          var mResp = await fetch(SUPA_URL + '/rest/v1/cnet_propostas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Prefer': 'return=minimal' },
+            body: JSON.stringify(mirrorBody)
+          });
+          log('Dashboard: ' + (mResp.ok ? 'OK ✓' : 'ERRO ' + mResp.status), mResp.ok ? 'ok' : 'err');
+        } catch(me) { log('Mirror: ' + me.message, 'warn'); }
+      }
       log('Tabela: ' + table, 'ok');
       return true;
     } catch(e) { log('ERRO Supabase: ' + e.message, 'err'); return false; }
@@ -607,9 +634,13 @@
 
   // Botão de próxima página (paginação Angular Material e texto ">" )
   function getNextPageBtn() {
+    var ov = document.getElementById('__cbot__');
     return [...document.querySelectorAll('button,a,[role=button]')].find(function(b) {
       if (!b.offsetWidth || b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
-      var arLbl = (b.getAttribute('aria-label') || b.getAttribute('mattooltip') || '').toLowerCase();
+      if (ov && ov.contains(b)) return false;
+      // aria-label, mattooltip ou ng-reflect-aria-label (Angular binding)
+      var arLbl = (b.getAttribute('aria-label') || b.getAttribute('mattooltip') ||
+                   b.getAttribute('ng-reflect-aria-label') || b.getAttribute('ng-reflect-message') || '').toLowerCase();
       if (/próxima|next.*page|navegar.*próx|siguiente/i.test(arLbl)) return true;
       var ic = b.querySelector('mat-icon,.material-icons');
       if (ic && /navigate_next|chevron_right/i.test((ic.textContent || '').trim())) return true;
@@ -712,11 +743,49 @@
     // Método 4: cliques sequenciais (fallback — lento)
     log('↩ Restaurando pág. ' + targetPage + ' (sequencial)...', 'warn');
     for (var p = 1; p < targetPage; p++) {
-      var nxt = getNextPageBtn();
+      // Aguarda botão "próxima" estar realmente habilitado antes de clicar
+      var nxt = null;
+      try { await poll(function(){ nxt = getNextPageBtn(); return !!nxt; }, 150, 4000); } catch(e) { nxt = getNextPageBtn(); }
       if (!nxt) break;
+      var _seqOldBtns = getItemDetBtns();
+      var _seqFirstOld = _seqOldBtns[0] || null;
       nxt.click();
+      await wait(300);
+      // Aguarda Angular destruir a página anterior (botões antigos somem) antes de checar novos
+      if (_seqFirstOld && document.body.contains(_seqFirstOld)) {
+        try { await poll(function(){ return !document.body.contains(_seqFirstOld); }, 100, 2500); } catch(e2) {}
+      }
       await wait(200);
-      try { await poll(function(){ return getItemDetBtns().length > 0; }, 100, 2000); } catch(e) {}
+      try { await poll(function(){ return getItemDetBtns().length > 0; }, 150, 5000); } catch(e) {}
+    }
+  }
+
+  // Rola o viewport para revelar o item no índice idx (Angular CDK virtual scroll ou container com overflow)
+  function _scrollToIdx(idx) {
+    var vsv = document.querySelector('cdk-virtual-scroll-viewport');
+    if (vsv) {
+      var dbs = getItemDetBtns();
+      var itemH = 90;
+      if (dbs.length >= 2) {
+        var r0 = dbs[0].getBoundingClientRect(), r1 = dbs[1].getBoundingClientRect();
+        itemH = Math.max(Math.abs(r1.top - r0.top), 50);
+      }
+      vsv.scrollTop = Math.max(0, (idx - 1) * itemH);
+      return;
+    }
+    var dbs2 = getItemDetBtns();
+    if (!dbs2.length) return;
+    var tgt = dbs2[Math.min(dbs2.length - 1, idx)];
+    if (tgt) tgt.scrollIntoView({ behavior: 'instant', block: 'center' });
+    var el = dbs2[dbs2.length - 1].parentElement;
+    for (var _si = 0; _si < 15; _si++) {
+      if (!el || el === document.body) break;
+      var cs = window.getComputedStyle(el);
+      if (/auto|scroll/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 10) {
+        el.scrollTop = Math.max(0, el.scrollTop + el.clientHeight * 0.7);
+        break;
+      }
+      el = el.parentElement;
     }
   }
 
@@ -764,11 +833,24 @@
     if (currentPage > 1) {
       await goToPageDirect(currentPage);
     }
-    // 3. Aguarda renderização completa (timeout longo para processos com muitos itens)
+    // 3. Aguarda renderização: atinge nBtns OU contagem estabiliza (virtual scroll / lazy render)
     var _exp = Math.max(nBtns, 1);
-    try { await poll(function(){ return getItemDetBtns().length >= _exp; }, 200, 25000); } catch(e) {
-      var _nb = getItemDetBtns().length;
-      if (_nb > 0) return _nb; // aceita o que há
+    var _rl_prev = -1, _rl_stk = 0;
+    for (var _rli = 0; _rli < 60; _rli++) {  // max 15s (60 × 250ms)
+      await wait(250);
+      var _rl_cur = getItemDetBtns().length;
+      if (_rl_cur >= _exp) return _rl_cur;    // atingiu meta → ok
+      if (_rl_cur > 0) {
+        if (_rl_cur === _rl_prev) {
+          _rl_stk++;
+          if (_rl_stk >= 4) return _rl_cur;   // estável por 1s → aceita
+        } else {
+          _rl_stk = 0;
+          // scroll para revelar mais itens (Angular virtual scroll)
+          _scrollToIdx(_exp - 1);
+        }
+      }
+      _rl_prev = _rl_cur;
     }
     return getItemDetBtns().length;
   }
@@ -1319,21 +1401,38 @@
         // Aguarda vigorosamente antes de desistir — crítico para processos grandes (100+ itens / 13+ páginas)
         if (!iibDetBtn) {
           log('detBtn idx=' + g._idx + ' | detBtns=' + freshDetBtns.length + ' — aguardando renderização...', 'warn');
-          // Passo 1: reativa aba Itens se sem botões
-          if (freshDetBtns.length === 0) {
-            var _rt0 = findItensTab();
-            if (_rt0) { _rt0.click(); await wait(700); }
+          // Pré-passo: temos alguns botões mas não suficientes → scroll para revelar mais (virtual scroll Angular)
+          if (freshDetBtns.length > 0 && freshDetBtns.length <= g._idx) {
+            _scrollToIdx(g._idx);
+            await wait(600);
+            try { await poll(function(){ return getItemDetBtns().length > g._idx; }, 200, 4000); } catch(e2) {}
+            freshDetBtns = getItemDetBtns();
+            iibDetBtn = freshDetBtns[g._idx] || null;
+            if (iibDetBtn) log('detBtn idx=' + g._idx + ' desbloqueado por scroll');
           }
-          // Passo 2: aguarda botões suficientes (timeout longo)
-          try { await poll(function(){ return getItemDetBtns().length > g._idx; }, 250, 20000); } catch(e) {}
-          // Passo 3: para página > 1, certifica que está na página certa
-          // (Angular reseta para pág.1 após history.back — índice correto só vale na página correta)
-          if (currentPage > 1) { await goToPageDirect(currentPage); }
-          // Passo 4: aguarda novamente após navegação
-          try { await poll(function(){ return getItemDetBtns().length > g._idx; }, 250, 15000); } catch(e) {}
-          freshDetBtns = getItemDetBtns();
-          iibDetBtn = freshDetBtns[g._idx] || null;
-          if (freshDetBtns.length > 0) nBtns = Math.max(nBtns, freshDetBtns.length);
+          if (!iibDetBtn) {
+            // Passo 1: reativa aba Itens se sem botões
+            if (freshDetBtns.length === 0) {
+              var _rt0 = findItensTab();
+              if (_rt0) { _rt0.click(); await wait(700); }
+            }
+            // Passo 2: aguarda botões suficientes (timeout longo)
+            try { await poll(function(){ return getItemDetBtns().length > g._idx; }, 250, 20000); } catch(e) {}
+            // Passo 3: para página > 1, certifica que está na página certa
+            // (Angular reseta para pág.1 após history.back — índice correto só vale na página correta)
+            if (currentPage > 1) { await goToPageDirect(currentPage); }
+            // Passo 4: aguarda novamente após navegação; tenta scroll antes de desistir
+            try { await poll(function(){ return getItemDetBtns().length > g._idx; }, 250, 15000); } catch(e) {}
+            freshDetBtns = getItemDetBtns();
+            if (freshDetBtns.length > 0 && freshDetBtns.length <= g._idx) {
+              _scrollToIdx(g._idx);
+              await wait(800);
+              try { await poll(function(){ return getItemDetBtns().length > g._idx; }, 200, 5000); } catch(e) {}
+              freshDetBtns = getItemDetBtns();
+            }
+            iibDetBtn = freshDetBtns[g._idx] || null;
+            if (freshDetBtns.length > 0) nBtns = Math.max(nBtns, freshDetBtns.length);
+          }
         }
 
         log('detBtn idx=' + g._idx + ' | detBtns=' + freshDetBtns.length + (iibDetBtn ? '' : ' ← FALHOU'), iibDetBtn ? undefined : 'err');
@@ -1729,7 +1828,18 @@
       // Paginação — SEMPRE verifica (mesmo quando item foi deserto ou sem CNPJs)
       // Híbrido (grupos + itens avulsos): aba Itens não tem paginação própria — nunca pagina
       if (isItemByItemFlow && !isHybridFlow && gi === grupos.length) {
+        // Aguarda paginador Angular estabilizar (botão pode estar disabled durante carregamento)
         var nxtPg = getNextPageBtn();
+        if (!nxtPg) {
+          await wait(600);
+          nxtPg = getNextPageBtn();
+        }
+        if (!nxtPg) {
+          // Última tentativa — 1,5s adicionais
+          await wait(1500);
+          nxtPg = getNextPageBtn();
+          if (!nxtPg) log('Paginação: sem botão próxima pág. após espera — fim dos itens (' + gi + ')', 'warn');
+        }
         if (nxtPg) {
           log('→ próxima página (' + gi + ' itens processados)');
           // Salva referência do primeiro botão ANTES de clicar — para detectar mudança real de página
@@ -2121,6 +2231,7 @@
 
   async function main() {
     getOV();
+    log('✅ DEPLOY OK — v2026-05-21j — gapmn.app/cnet-bot.js', 'ok');
     pedirPermissaoNotif();
     showForm(async function(cfg) {
       UASG = cfg.uasg;
