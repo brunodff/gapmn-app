@@ -568,17 +568,29 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
                               <td className="px-2 py-2">
                                 {itensGanhos.length > 0 ? (
                                   <div className="space-y-0.5">
-                                    {itensGanhos.map(it => (
-                                      <div key={it.id} className="flex items-center gap-2 text-[10px]">
-                                        <span className="text-emerald-700 font-semibold shrink-0">#{it.numero_item}</span>
-                                        <span className="text-slate-600 truncate max-w-[200px]" title={it.descricao_detalhada || it.descricao || ""}>
-                                          {(it.descricao_detalhada || it.descricao || "").slice(0, 50)}{(it.descricao_detalhada || it.descricao || "").length > 50 ? "…" : ""}
-                                        </span>
-                                        {it.valor_vencedor_unitario != null && (
-                                          <span className="text-slate-500 font-mono shrink-0">{fmtBRL(it.valor_vencedor_unitario)}/un</span>
-                                        )}
-                                      </div>
-                                    ))}
+                                    {itensGanhos.map(it => {
+                                      const isGrupo = it.numero_item < 0;
+                                      const label = isGrupo
+                                        ? <span className="text-indigo-600 font-semibold shrink-0">📦 {it.descricao || `Grupo`}</span>
+                                        : <span className="text-emerald-700 font-semibold shrink-0">#{it.numero_item}</span>;
+                                      const desc = isGrupo ? null : (it.descricao_detalhada || it.descricao || "");
+                                      const vlr = it.valor_vencedor_unitario != null
+                                        ? `${fmtBRL(it.valor_vencedor_unitario)}/un`
+                                        : it.valor_vencedor_total != null
+                                          ? `${fmtBRL(it.valor_vencedor_total)} total`
+                                          : null;
+                                      return (
+                                        <div key={it.id} className="flex items-center gap-2 text-[10px]">
+                                          {label}
+                                          {desc && (
+                                            <span className="text-slate-600 truncate max-w-[180px]" title={desc}>
+                                              {desc.slice(0, 45)}{desc.length > 45 ? "…" : ""}
+                                            </span>
+                                          )}
+                                          {vlr && <span className="text-slate-500 font-mono shrink-0">{vlr}</span>}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 ) : (
                                   <span className="text-slate-300 text-[10px]">—</span>
