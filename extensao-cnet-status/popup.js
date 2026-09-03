@@ -630,63 +630,74 @@ async function autoSyncParticipantes(identificacao, participantes) {
   try { await supaUpsert('cnet_participantes', payload, gapmn_token); } catch {}
 }
 
-// Sincroniza vencedor por item — chamado apenas para processos com itens homologados
+// Sincroniza vencedor por item — usa função inline + URL absoluta (mesma abordagem
+// do exportarProcessoXLS, que funciona para processos em qualquer fase)
 async function autoSyncVencedores(identificacao, identificadorInterno, participantes, tabId, token) {
   if (!gapmn_token || !participantes.length) return;
 
-  const itemWinnerMap = {}; // { numeroItem → { cnpj, nome, vlrUnit, qtde } }
+  try {
+    const [res] = await _ext.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (compraId, parts, rawToken) => {
+        const BASE = 'https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-fase-externa';
+        const hdrs = { 'Authorization': 'Bearer ' + rawToken, 'Accept': 'application/json' };
+        const map = {};
+        const PS = 20;
+        await Promise.all(parts.map(async (p) => {
+          const cnpj = p.identificacaoParticipante ?? p.cnpj;
+          const nome = p.nomeParticipante ?? p.nome ?? null;
+          if (!cnpj) return;
+          for (let pg = 0; pg <= 500; pg++) {
+            try {
+              const r = await fetch(
+                BASE + '/v1/compras/' + compraId
+                  + '/em-selecao-fornecedores/participantes/' + cnpj
+                  + '/itens?tamanhoPagina=20&melhorClassificado=true&pagina=' + pg,
+                { credentials: 'include', headers: hdrs }
+              );
+              if (!r.ok) break;
+              const raw = await r.json();
+              const page = Array.isArray(raw) ? raw : (raw.content || []);
+              for (const it of page) {
+                const num = it.numero ?? it.numeroItem;
+                if (num == null) continue;
+                let vlrUnit = null, vlrTotal = null;
+                try {
+                  const calc = it.propostaItem.valores.valorPropostaInicialOuLances.valorCalculado;
+                  vlrUnit  = calc.valorUnitario ?? null;
+                  vlrTotal = calc.valorTotal    ?? null;
+                } catch {}
+                map[num] = { cnpj, nome, vlrUnit, vlrTotal,
+                  qtde: it.quantidadeSolicitada ?? it.quantidade ?? null };
+              }
+              if (!page.length || page.length < PS) break;
+            } catch { break; }
+          }
+        }));
+        return map;
+      },
+      args: [identificadorInterno, participantes, token],
+    });
 
-  for (const p of participantes) {
-    const cnpj = p.identificacaoParticipante ?? p.cnpj;
-    const nome = p.nomeParticipante ?? p.nome ?? null;
-    if (!cnpj) continue;
-    try {
-      const [res] = await _ext.scripting.executeScript({
-        target: { tabId },
-        func: cnetFetchItensParticipante,
-        args: [identificadorInterno, cnpj, token],
-        world: 'MAIN',
-      });
-      const pd = res?.result;
-      if (!pd?.ok) continue;
-      for (const it of (pd.ganhos || [])) {
-        const num = it.numero ?? it.numeroItem;
-        if (num == null) continue;
-        let vlrUnit = null, vlrTotal = null;
-        try {
-          const calc = it.propostaItem.valores.valorPropostaInicialOuLances.valorCalculado;
-          vlrUnit  = calc.valorUnitario ?? null;
-          vlrTotal = calc.valorTotal    ?? null;
-        } catch {}
-        itemWinnerMap[num] = {
-          cnpj, nome, vlrUnit, vlrTotal,
-          qtde: it.quantidadeSolicitada ?? it.quantidade ?? null,
-        };
-      }
-      await new Promise(r => setTimeout(r, 200));
-    } catch {}
-  }
+    const itemWinnerMap = res?.result ?? {};
+    const updates = Object.entries(itemWinnerMap).map(([num, w]) => ({
+      identificacao,
+      numero_item:             Number(num),
+      vencedor_cnpj:           w.cnpj,
+      vencedor_nome:           w.nome,
+      valor_vencedor_unitario: w.vlrUnit,
+      valor_vencedor_total:    w.vlrTotal ?? (w.vlrUnit != null && w.qtde != null ? w.vlrUnit * w.qtde : null),
+    }));
 
-  const updates = Object.entries(itemWinnerMap).map(([num, w]) => ({
-    identificacao,
-    numero_item:             Number(num),
-    vencedor_cnpj:           w.cnpj,
-    vencedor_nome:           w.nome,
-    valor_vencedor_unitario: w.vlrUnit,
-    // Grupos: usar valorTotal direto; itens normais: calcular unitario × qtde
-    valor_vencedor_total:    w.vlrTotal ?? (w.vlrUnit != null && w.qtde != null ? w.vlrUnit * w.qtde : null),
-  }));
-
-  if (updates.length) {
-    try {
+    if (updates.length) {
       await supaUpsert('cnet_itens', updates, gapmn_token);
-      setMsg('✅ Vencedores: ' + updates.length + ' itens salvos — ' + identificacao);
-    } catch (e) {
-      setMsg('❌ Vencedores ERRO (' + identificacao + '): ' + e.message.slice(0, 80));
+      setMsg('✅ Vencedores: ' + updates.length + ' itens — ' + identificacao);
+    } else {
+      setMsg('⚠ Sem vencedores via API: ' + identificacao + ' (' + participantes.length + ' forn.)');
     }
-  } else {
-    // Ganhos vazios: endpoint em-selecao não retornou dados (processo pode estar finalizado)
-    setMsg('⚠ Vencedores: sem ganhos via API para ' + identificacao + ' (' + participantes.length + ' forn. verificados)');
+  } catch (e) {
+    setMsg('❌ Vencedores ERRO (' + identificacao + '): ' + e.message.slice(0, 80));
   }
 }
 
