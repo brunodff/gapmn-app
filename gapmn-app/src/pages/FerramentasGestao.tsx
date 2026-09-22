@@ -20,6 +20,7 @@ interface Tool {
   appsScriptCode?: string;
   videos?: { titulo: string; youtubeId: string }[];
   extensaoDownload?: string; // path relativo em /public para download do zip
+  allowUser?: boolean;       // se true, usuários USER também podem baixar/instalar
 }
 
 const TOOLS: Tool[] = [
@@ -141,6 +142,7 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
       "Na próxima vez, basta clicar a frase desejada para preenchê-la automaticamente",
     ],
     status: "ativo",
+    allowUser: true,
     bookmarklet:
       "javascript:(function(){var s=document.createElement('script');s.src='https://gapmn.app/siloms-despacho.js?v='+Date.now();document.body.appendChild(s);})();",
     videos: [
@@ -152,10 +154,10 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
     category: "licitacoes",
     icon: "🧩",
     title: "Extensão Painel ComprasNet",
-    subtitle: "GAPMN — Painel ComprasNet (Chrome / Firefox)",
-    tagline: "Sincroniza processos do ComprasNet diretamente com o App GAP-MN",
+    subtitle: "Painel ComprasNet v1.14 (Chrome / Firefox)",
+    tagline: "Acompanhe processos, fornecedores e habilitação em tempo real no ComprasNet",
     description:
-      "Extensão para Chrome e Firefox que acessa a API interna do ComprasNet usando sua sessão já autenticada. Exibe os processos da UASG 120630 com situação em tempo real, detalha os itens de cada processo, lista fornecedores participantes com proposta de preço, calcula economia e exporta planilha XLS. Os dados são enviados para o banco do App GAP-MN com um clique.",
+      "Extensão para Chrome e Firefox que acessa a API interna do ComprasNet usando sua sessão já autenticada. Exibe processos com situação em tempo real, três abas por processo (Itens · Licitantes · Habilitação), busca livre por nome do processo ou por descrição de item, alertas de pendências, checklist de habilitação, frases jurídicas padronizadas e exportação XLS.",
     steps: [
       "— CHROME —",
       "Clique em 'Baixar extensão' abaixo e extraia o arquivo ZIP em qualquer pasta",
@@ -172,13 +174,19 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
       "— USO —",
       "Acesse o ComprasNet (cnetmobile.estaleiro.serpro.gov.br) e faça login normalmente",
       "Clique no ícone da extensão na barra do navegador → clique '↺ Sincronizar'",
-      "Os processos da UASG 120630 são carregados automaticamente",
-      "Clique em qualquer processo para ver itens, fornecedores e propostas de preço",
-      "Clique '☁ Sincronizar com App' para enviar os dados ao Painel de Processos do GAP-MN",
+      "Os processos da sua UASG são carregados automaticamente",
+      "Use o campo de busca para filtrar por processo ou por descrição de item (ex: batata)",
+      "Clique em qualquer processo para ver as abas: 📋 Itens · 🏢 Licitantes · ✅ Habilitação",
+      "Na aba Licitantes: copie frases jurídicas padronizadas para convocação de habilitação",
+      "Na aba Habilitação: marque o checklist de documentos por licitante",
       "Use '📥 Exportar XLS' no detalhe do processo para baixar a planilha de itens",
     ],
     status: "ativo",
     extensaoDownload: "/gapmn-cnet-extensao.zip",
+    allowUser: true,
+    videos: [
+      { titulo: "Tutorial: Extensão Painel ComprasNet", youtubeId: "BMmczv-vXSo" },
+    ],
   },
   {
     id: "ne-fornecedor",
@@ -238,6 +246,7 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
       "Clique 'Iniciar Robô' — o robô percorre cada linha: Abrir → Ordem de Pagamento → Upload → gera PDF do dia → anexa → fecha → próxima",
     ],
     status: "beta",
+    extensaoDownload: "/gapmn-ob-siloms.zip",
   },
 ];
 
@@ -431,7 +440,7 @@ export default function FerramentasGestao() {
                         >
                           Como usar →
                         </button>
-                        {hasRole && getBookmarklet(tool) && (
+                        {(hasRole || tool.allowUser) && getBookmarklet(tool) && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleCopy(tool); }}
                             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${colors.btn}`}
@@ -439,7 +448,7 @@ export default function FerramentasGestao() {
                             {copiedId === tool.id ? <>✓ Copiado!</> : <>⬇ Instalar</>}
                           </button>
                         )}
-                        {hasRole && tool.extensaoDownload && (
+                        {(hasRole || tool.allowUser) && tool.extensaoDownload && (
                           <a
                             href={tool.extensaoDownload}
                             download
@@ -449,7 +458,7 @@ export default function FerramentasGestao() {
                             ⬇ Baixar
                           </a>
                         )}
-                        {!hasRole && (
+                        {!hasRole && !tool.allowUser && (
                           <span className="text-xs text-slate-400 border border-slate-200 rounded-xl px-3 py-2">
                             🔒 Restrito
                           </span>
@@ -594,7 +603,7 @@ export default function FerramentasGestao() {
               )}
 
               {(getBookmarklet(selectedTool) || selectedTool.extensaoDownload) && (
-                hasRole ? (
+                (hasRole || selectedTool.allowUser) ? (
                   <div className="space-y-3">
                     {getBookmarklet(selectedTool) && (
                       <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4">

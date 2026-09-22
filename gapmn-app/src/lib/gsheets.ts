@@ -56,23 +56,29 @@ export interface ControleEmpenho {
   incluido:    string;  // "Sim" | "Não" | "–"
 }
 
-/** Linha de nota de empenho (Sheet 1 — tabela principal de empenhos) */
+/** Linha de nota de empenho (Sheet empenhosNF — 5 colunas de item inseridas em C-G) */
 export interface EmpenhoNF {
-  data:              string;  // col 0 — data do empenho (DD/MM/YYYY)
-  nota_empenho:      string;  // col 1 — últimos 14 dígitos ex: 2026NE000001
-  nota_empenho_full: string;  // col 1 — código completo SIAFI
-  descricao:         string;  // col 2 — descrição completa
-  ugcred_code:       string;  // col 3 — código UG credora (ex: 120630)
-  ugr:               string;  // col 4 — UGR nome (filtro)
-  natureza:          string;  // col 5 — Natureza código
-  pi:                string;  // col 7 — PI código
-  pi_desc:           string;  // col 8  (I) — PI descrição
-  pag:               string;  // col 9  (J) — PAG (processo administrativo)
-  cnpj:              string;  // col 10 (K) — CNPJ do favorecido
-  nome_fantasia:     string;  // col 11 (L) — Nome Fantasia do favorecido
-  assinatura:        string;  // col 13 (N) — assinante OD ou "SEM INFORMACAO"
-  pendente_od:       string;  // col 14 (O) — "Pendente" se aguardando ratificação OD
-  valor:             number;  // col 15 (P) — valor do empenho (R$)
+  data:              string;  // col 0 (A) — data do empenho (DD/MM/YYYY)
+  nota_empenho:      string;  // col 1 (B) — ex: 2026NE000001
+  nota_empenho_full: string;  // col 1 (B) — código completo SIAFI
+  // ── colunas de item (novas C-G + Descrição em H) ──
+  item_desc:         string;  // col 7 (H) — Descrição por item: "Item Compra: 00027 - biscoito"
+  item_num:          string;  // extraído de item_desc via regex
+  item_qty:          number;  // col 5 (F) — quantidade do item
+  item_valor:        number;  // col 6 (G) — valor do item (R$)
+  // ── colunas originais (deslocadas +5 após inserção de C-G) ──
+  descricao:         string;  // col 7  (H) — descrição completa
+  ugcred_code:       string;  // col 8  (I) — código UG credora (ex: 120630)
+  ugr:               string;  // col 9  (J) — UGR nome (filtro)
+  natureza:          string;  // col 10 (K) — Natureza código
+  pi:                string;  // col 12 (M) — PI código
+  pi_desc:           string;  // col 13 (N) — PI descrição
+  pag:               string;  // col 14 (O) — PAG (processo administrativo)
+  cnpj:              string;  // col 15 (P) — CNPJ do favorecido
+  nome_fantasia:     string;  // col 16 (Q) — Nome Fantasia do favorecido
+  assinatura:        string;  // col 18 (S) — assinante OD ou "SEM INFORMACAO"
+  pendente_od:       string;  // col 19 (T) — "Pendente" se aguardando ratificação OD
+  valor:             number;  // col 20 (U) — valor total do empenho (R$)
   solicitacao?:      string;  // extraído de descricao via regex /26S\d+/i
 }
 
@@ -390,61 +396,103 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
   return result;
 }
 
-/** Transforma linhas CSV em EmpenhoNF[] (Sheet 1 — notas de empenho)
+/** Transforma linhas CSV em EmpenhoNF[] (planilha empenhosNF)
  *
  * A planilha NÃO tem linha de cabeçalho — apenas título na linha 0.
- * Posições fixas (confirmadas pela estrutura real do CSV):
- *   col 0 = Data (DD/MM/YYYY)
- *   col 1 = NE completo (ex: 120630000012026NE000001) → últimos 12 = chave SIAFI
- *   col 2 = Descrição
- *   col 3 = UGR código
- *   col 4 = UGR nome
- *   col 5 = Natureza código
- *   col 6 = Natureza nome
- *   col 7 = PI código
- *   col 8 = PI nome
- *   col 9  (J) = PAG
- *   col 10 (K) = CNPJ
- *   col 11 (L) = Nome Fantasia
- *   col 12 (M) = CPF (ignorado)
- *   col 13 (N) = Assinatura OD (nome ou "SEM INFORMACAO")
- *   col 14 (O) = Pendente OD ("Pendente" ou vazio)
- *   col 15 (P) = Valor
+ * Estrutura após inserção de 5 colunas de item em C-G:
+ *   col 0  (A) = Data (DD/MM/YYYY)
+ *   col 1  (B) = NE completo (ex: 120630000012026NE000001)
+ *   col 2  (C) = (ignorado)
+ *   col 3  (D) = Descrição do item (ex: "Item Compra: 00027 - biscoito")
+ *   col 4  (E) = (ignorado)
+ *   col 5  (F) = Quantidade do item
+ *   col 6  (G) = Valor do item (R$)
+ *   col 7  (H) = Descrição do empenho — era col 2 (C)
+ *   col 8  (I) = UGR código — era col 3 (D)
+ *   col 9  (J) = UGR nome — era col 4 (E)
+ *   col 10 (K) = Natureza código — era col 5 (F)
+ *   col 11 (L) = Natureza nome — era col 6 (G)
+ *   col 12 (M) = PI código — era col 7 (H)
+ *   col 13 (N) = PI nome — era col 8 (I)
+ *   col 14 (O) = PAG — era col 9 (J)
+ *   col 15 (P) = CNPJ — era col 10 (K)
+ *   col 16 (Q) = Nome Fantasia — era col 11 (L)
+ *   col 17 (R) = CPF (ignorado) — era col 12 (M)
+ *   col 18 (S) = Assinatura OD — era col 13 (N)
+ *   col 19 (T) = Pendente OD — era col 14 (O)
+ *   col 20 (U) = Valor total do empenho — era col 15 (P)
  */
 export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   const result: EmpenhoNF[] = [];
+
+  let skippedDate = 0, skippedNota = 0;
 
   for (let i = 1; i < rows.length; i++) { // linha 0 = título "Notas de Empenho"
     const row = rows[i];
     if (row.length < 3) continue;
 
     const rawData = (row[0] ?? "").trim();
-    if (!rawData.match(/^\d{2}\/\d{2}\/\d{4}$/)) continue;
+    if (!rawData.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) { skippedDate++; continue; }
 
     const rawNota = (row[1] ?? "").trim();
-    if (rawNota.length < 12) continue;
+    if (rawNota.length < 12) { skippedNota++; continue; }
 
-    const descricao = (row[2] ?? "").trim();
+    // Varre a linha buscando a coluna "Item compra: XXXXX - ..." (normalmente col D=3,
+    // mas só existe se as 5 colunas de item C-G foram inseridas na planilha).
+    // Estrutura esperada quando presente:
+    //   ic+0 = "Item compra: 00027 - BISCOITO..."
+    //   ic+1 = ano (ignorado)
+    //   ic+2 = quantidade do item
+    //   ic+3 = valor do item (R$)
+    let itemColIdx = -1;
+    for (let ci = 2; ci < Math.min(row.length, 10); ci++) {
+      if (/item\s*compra\s*:/i.test(row[ci] ?? "")) { itemColIdx = ci; break; }
+    }
+
+    const isCompraItem  = itemColIdx >= 0;
+    const rawItemFull   = isCompraItem ? (row[itemColIdx] ?? "").trim() : "";
+    const itemNumMatch  = isCompraItem ? rawItemFull.match(/item\s*compra\s*:\s*(\d+)/i) : null;
+    const cleanItemNum  = itemNumMatch ? String(parseInt(itemNumMatch[1], 10)) : "";
+
+    // Descrição: tudo após o primeiro " - " em "Item compra: XXXXX - descrição"
+    const dashIdx       = rawItemFull.indexOf(" - ");
+    const cleanItemDesc = dashIdx >= 0 ? rawItemFull.slice(dashIdx + 3).trim() : rawItemFull;
+    const descricao     = cleanItemDesc; // usado para extractSolicitacao
+
+    // qty = ic+2, val = ic+3 (relativo ao itemColIdx encontrado)
+    // Se colunas de item não estiverem na planilha: item_valor = 0
+    const rawF = isCompraItem ? toNum((row[itemColIdx + 2] ?? "").trim()) : 0;
+    const rawG = isCompraItem ? toNum((row[itemColIdx + 3] ?? "").trim()) : 0;
+    const cleanItemQty   = rawF;
+    const cleanItemValor = rawG > 0 ? rawG : (isCompraItem ? rawF : 0);
+
     const neMatch = rawNota.match(/(\d{4}NE\d+)$/i);
     result.push({
       data:              rawData,
-      nota_empenho:      neMatch ? neMatch[1] : rawNota.slice(-12), // ex: 2026NE000001
+      nota_empenho:      neMatch ? neMatch[1] : rawNota.slice(-12),
       nota_empenho_full: rawNota,
+      item_num:          cleanItemNum,
+      item_desc:         cleanItemDesc,
+      item_qty:          cleanItemQty,
+      item_valor:        cleanItemValor,
       descricao,
-      ugcred_code:       (row[3]  ?? "").trim(),
-      ugr:               (row[4]  ?? "").trim(),
-      natureza:          (row[5]  ?? "").trim(),
-      pi:                (row[7]  ?? "").trim(),
-      pi_desc:           (row[8]  ?? "").trim(),
-      pag:               (row[9]  ?? "").trim(),
-      cnpj:              (row[10] ?? "").trim(),
-      nome_fantasia:     (row[11] ?? "").trim(),
-      assinatura:        (row[13] ?? "").trim(),
-      pendente_od:       (row[14] ?? "").trim(),
-      valor:             toNum((row[15] ?? "").trim()),
+      // Offset: se as 5 colunas de item foram inseridas (itemColIdx>=0), os campos
+      // originais estão deslocados +5 a partir do índice 2. Caso contrário, sem deslocamento.
+      ugcred_code:       (row[isCompraItem ? 7  : 2]  ?? "").trim(),
+      ugr:               (row[isCompraItem ? 8  : 3]  ?? "").trim(),
+      natureza:          (row[isCompraItem ? 9  : 4]  ?? "").trim(),
+      pi:                (row[isCompraItem ? 11 : 6]  ?? "").trim(),
+      pi_desc:           (row[isCompraItem ? 12 : 7]  ?? "").trim(),
+      pag:               (row[isCompraItem ? 13 : 8]  ?? "").trim(),
+      cnpj:              (row[isCompraItem ? 14 : 9]  ?? "").trim(),
+      nome_fantasia:     (row[isCompraItem ? 15 : 10] ?? "").trim(),
+      assinatura:        (row[isCompraItem ? 17 : 12] ?? "").trim(),
+      pendente_od:       (row[isCompraItem ? 18 : 13] ?? "").trim(),
+      valor:             toNum((row[isCompraItem ? 20 : 15] ?? "").trim()),
       solicitacao:       extractSolicitacao(descricao),
     });
   }
+
 
   // Ordena pelo número da NE (parte numérica após "NE")
   const neNum = (ne: string) => parseInt(ne.replace(/.*NE0*/i, "") || "0", 10);

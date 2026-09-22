@@ -21,10 +21,6 @@ type Profile = {
   setor: Setor | null;
 };
 
-function isAgent(profile?: Profile | null) {
-  const setor = profile?.setor?.toUpperCase();
-  return setor === "ADMIN" || setor === "DEV" || setor === "SEO" || setor === "SCON" || setor === "SLIC";
-}
 
 function formatSetor(s: string | null | undefined): string {
   switch ((s ?? "").toUpperCase()) {
@@ -50,8 +46,9 @@ export default function SetorInbox() {
   const canImportIndicadores = isDev || me?.setor === "SEO"   || me?.setor === "ADMIN";
   const canImportContratos   = isDev || me?.setor === "SCON"  || me?.setor === "ADMIN";
   const canImportProcessos   = isDev || me?.setor === "SLIC"  || me?.setor === "ADMIN";
-  const canEdit              = isAgent(me);
-  const canManageSolicitacoes = isDev || me?.setor === "SEO" || me?.setor === "ADMIN";
+  const canEditContratos      = isDev || me?.setor === "SCON" || me?.setor === "ADMIN";
+  const canManageSolicitacoes = isDev || me?.setor === "SEO"  || me?.setor === "ADMIN";
+  const canAccessCalendario   = isDev || me?.setor === "SLIC" || me?.setor === "ADMIN";
   const isAdmin              = isDev || me?.setor === "ADMIN";
 
 
@@ -135,7 +132,10 @@ export default function SetorInbox() {
         {/* Abas */}
         {showAnyExtraTab && (
           <div className="flex overflow-x-auto">
-            {(["contratos", "processos", "atas", "indicadores", "solicitacoes", "ata_disciplinar", "calendario"] as const).map((t) => {
+            {(["contratos", "processos", "atas", "indicadores", "solicitacoes", "ata_disciplinar", "calendario"] as const).filter(t =>
+              (t !== "solicitacoes" || canManageSolicitacoes) &&
+              (t !== "calendario"   || canAccessCalendario)
+            ).map((t) => {
               const { label, icon } = TAB_META[t];
               return (
                 <button
@@ -194,10 +194,10 @@ export default function SetorInbox() {
       )}
 
       {/* Conteúdo da aba Gerenciamento de Processos */}
-      {tab === "processos" && <GerenciamentoProcessos canImport={canImportProcessos} canEdit={canEdit} canEditElaboracao={canImportProcessos} />}
+      {tab === "processos" && <GerenciamentoProcessos canImport={canImportProcessos} canEdit={canImportProcessos} canEditElaboracao={canImportProcessos} />}
 
       {/* Conteúdo da aba Gerenciamento de Contratos */}
-      {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEdit} canEditBudget={canImportContratos} />}
+      {tab === "contratos" && <GerenciamentoContratos canImport={canImportContratos} canEdit={canEditContratos} canEditBudget={canImportContratos} />}
 
       {/* Conteúdo da aba Atas de RP */}
       {tab === "atas" && <AtasRegistroPreco canSync={canImportProcessos} />}

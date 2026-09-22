@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAPMN App &#8212; Relat&oacute;rio de Funcionalidades</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: Arial, sans-serif;
+    font-size: 12pt;
+    line-height: 1.7;
+    color: #000;
+    background: #fff;
+  }
+
+  .page {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 60px 70px 80px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .header .org {
+    font-size: 11pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .header .org-sub {
+    font-size: 10.5pt;
+    margin-bottom: 18px;
+  }
+  .header .doc-title {
+    font-size: 14pt;
+    font-weight: bold;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .header .doc-subtitle {
+    font-size: 11.5pt;
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+  .header .meta {
+    font-size: 10pt;
+  }
+
+  h2 {
+    font-size: 12pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-top: 32px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #000;
+    padding-bottom: 4px;
+  }
+
+  h3 {
+    font-size: 12pt;
+    font-weight: bold;
+    margin-top: 18px;
+    margin-bottom: 6px;
+  }
+
+  p {
+    margin-bottom: 10px;
+    text-align: justify;
+  }
+
+  ul {
+    padding-left: 22px;
+    margin-bottom: 10px;
+  }
+
+  li {
+    margin-bottom: 4px;
+  }
+
+  .assinatura {
+    margin-top: 60px;
+    text-align: center;
+  }
+  .assinatura .linha {
+    width: 260px;
+    border-top: 1px solid #000;
+    margin: 0 auto 8px;
+  }
+  .assinatura p {
+    font-size: 10.5pt;
+    text-align: center;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .rodape {
+    margin-top: 40px;
+    border-top: 1px solid #000;
+    padding-top: 10px;
+    font-size: 9.5pt;
+    text-align: center;
+    color: #444;
+  }
+
+  @media print {
+    .toolbar { display: none !important; }
+    .edit-hint { display: none !important; }
+    body { font-size: 11pt; }
+    .page { padding: 40px 50px 60px; }
+  }
+
+  .toolbar {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-end;
+  }
+  .toolbar-group {
+    display: flex;
+    gap: 5px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 5px 7px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  }
+  .toolbar button {
+    font-family: Arial, sans-serif;
+    font-size: 10.5px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    cursor: pointer;
+    background: #f5f5f5;
+    white-space: nowrap;
+  }
+  .toolbar button:hover { background: #e0e0e0; }
+  #btnEdit.active { background: #d4edda; border-color: #a5d6a7; }
+  .edit-hint {
+    font-family: Arial, sans-serif;
+    font-size: 9px;
+    color: #888;
+    text-align: right;
+    padding-right: 2px;
+  }
+
+  body.editing .page {
+    outline: 2px dashed #90caf9;
+    outline-offset: 4px;
+  }
+  body.editing [contenteditable]:hover {
+    background: rgba(0,0,0,0.04);
+    outline: 1px dashed #999;
+    cursor: text;
+  }
+  body.editing [contenteditable]:focus {
+    background: rgba(0,0,200,0.03);
+    outline: 1px solid #3b5bdb;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="org">For&ccedil;a A&eacute;rea Brasileira &#8212; GAP-MN</div>
+    <div class="org-sub">Se&ccedil;&atilde;o de Execu&ccedil;&atilde;o Or&ccedil;ament&aacute;ria</div>
+    <div class="doc-title">Sistema GAPMN &#8212; Plataforma Digital de Gest&atilde;o Or&ccedil;ament&aacute;ria e Administrativa</div>
+    <div class="doc-subtitle">Relat&oacute;rio de Inova&ccedil;&atilde;o e Impacto Operacional</div>
+    <div class="meta">Manaus (AM) &#183; 2025&#8211;2026 &#183; Elaborado para indica&ccedil;&atilde;o a distin&ccedil;&atilde;o por inova&ccedil;&atilde;o</div>
+  </div>
+
+  <h2>1. A Iniciativa</h2>
+
+  <p>
+    A rotina administrativa do GAP-MN envolve um volume expressivo de tarefas que, at&eacute; recentemente, dependiam de consultas manuais a m&uacute;ltiplos portais governamentais, planilhas eletr&ocirc;nicas isoladas e registros dispersos entre as se&ccedil;&otilde;es. O acompanhamento de empenhos, o controle de contratos, a tramita&ccedil;&atilde;o de processos licitat&oacute;rios e a gest&atilde;o de Atas de Registro de Pre&ccedil;o exigiam horas de trabalho repetitivo, com frequentes riscos de perda de informa&ccedil;&atilde;o e dificuldade de vis&atilde;o gerencial consolidada.
+  </p>
+
+  <p>
+    Para superar esse cen&aacute;rio, foi concebida e desenvolvida internamente, pelo pr&oacute;prio efetivo da Se&ccedil;&atilde;o de Execu&ccedil;&atilde;o Or&ccedil;ament&aacute;ria, a plataforma digital GAPMN &#8212; um sistema integrado de gest&atilde;o or&ccedil;ament&aacute;ria e administrativa acess&iacute;vel pelo navegador de qualquer dispositivo, sem instala&ccedil;&atilde;o de nenhum software adicional. Em vez de trabalhar em sistemas desconexos, as se&ccedil;&otilde;es passaram a ter, em uma &uacute;nica tela, tudo o que precisam &#8212; e as tarefas repetitivas passaram a ser feitas automaticamente.
+  </p>
+
+  <p>
+    Trata-se de uma solu&ccedil;&atilde;o nascida dentro da pr&oacute;pria tropa, para resolver problemas reais da rotina administrativa, sem custo com contrata&ccedil;&otilde;es externas e sem aquisi&ccedil;&atilde;o de licen&ccedil;as, com impacto imediato na efici&ecirc;ncia do servi&ccedil;o.
+  </p>
+
+  <h2>2. O Que o Sistema Faz</h2>
+
+  <h3>a) Pain&eacute;is Gerenciais de Execu&ccedil;&atilde;o e Restos a Pagar</h3>
+  <p>
+    Apresenta, de forma visual e sempre atualizada, a execu&ccedil;&atilde;o or&ccedil;ament&aacute;ria de todas as Organiza&ccedil;&otilde;es Militares vinculadas ao GAP-MN &#8212; BAMN, HAMN, DACTA IV, PAMN, SEREP-MN, COMAR VII, SERIPA-MN, entre outras. Conta com painel espec&iacute;fico para os Restos a Pagar, com filtros por unidade, por situa&ccedil;&atilde;o de liquida&ccedil;&atilde;o e por valor pendente, e gera&ccedil;&atilde;o de relat&oacute;rio em PDF. Integra ainda um painel no Power BI para an&aacute;lises gerenciais avan&ccedil;adas.
+  </p>
+
+  <h3>b) Processos Licitat&oacute;rios</h3>
+  <p>
+    Registra e acompanha o ciclo completo dos processos conduzidos pela Se&ccedil;&atilde;o de Licita&ccedil;&otilde;es &#8212; da abertura &agrave; homologa&ccedil;&atilde;o &#8212;, com registro de situa&ccedil;&atilde;o, valores estimados e adjudicados e c&aacute;lculo autom&aacute;tico da economia gerada em cada certame.
+  </p>
+
+  <h3>c) Contratos</h3>
+  <p>
+    Centraliza todos os instrumentos contratuais, com importa&ccedil;&atilde;o em lote via planilha, alertas de vencimento e gera&ccedil;&atilde;o autom&aacute;tica de documentos oficiais: Termos de Apostilamento &#8212; com c&aacute;lculo autom&aacute;tico do reajuste pelo IPCA consultado em tempo real no Banco Central &#8212; e Termos Aditivos nos modelos da Advocacia-Geral da Uni&atilde;o, com cl&aacute;usulas configur&aacute;veis e notas explicativas integradas ao sistema. Documentos em PDF podem ser anexados ao contrato e acessados de qualquer dispositivo.
+  </p>
+
+  <h3>d) Atas de Registro de Pre&ccedil;o</h3>
+  <p>
+    Acompanha todas as ARPs ativas &#8212; itens, fornecedores, vencimentos e valores &#8212;, com sincroniza&ccedil;&atilde;o autom&aacute;tica via rob&ocirc;. Gera Termos de Apostilamento com o reajuste calculado automaticamente pelo &iacute;ndice acumulado (IPCA ou IGP-M), consultado diretamente na API do Banco Central a partir da data do or&ccedil;amento de refer&ecirc;ncia.
+  </p>
+
+  <h3>e) Indicadores de Lota&ccedil;&atilde;o</h3>
+  <p>
+    Organiza os cr&eacute;ditos or&ccedil;ament&aacute;rios por conta-corrente, vinculando empenhos e contratos aos seus respectivos indicadores de dota&ccedil;&atilde;o, utiliza&ccedil;&atilde;o e saldo. Permite identificar, a qualquer momento, onde h&aacute; disponibilidade or&ccedil;ament&aacute;ria e como os recursos est&atilde;o distribu&iacute;dos.
+  </p>
+
+  <h3>f) Ata de Apura&ccedil;&atilde;o por Voz</h3>
+  <p>
+    Ferramenta que permite ditar por voz o conte&uacute;do de uma Ata de Apura&ccedil;&atilde;o de Processos Disciplinares. A transcri&ccedil;&atilde;o &eacute; feita em tempo real pelo navegador, campo a campo &#8212; abertura, membros da comiss&atilde;o, objeto da apura&ccedil;&atilde;o, dilig&ecirc;ncias, delibera&ccedil;&atilde;o e assinaturas. Ao final, o sistema monta o documento no formato oficial e gera o PDF pronto para impress&atilde;o e assinatura.
+  </p>
+
+  <h3>g) Comunica&ccedil;&atilde;o Autom&aacute;tica com Setores Demandantes</h3>
+  <p>
+    O sistema permite o envio de e-mails autom&aacute;ticos diretamente pelo usu&aacute;rio a partir do aplicativo. Ao registrar ou atualizar o andamento de um processo licitat&oacute;rio, o servidor pode disparar, com um &uacute;nico clique, uma mensagem padronizada ao setor que originou a demanda, mantendo-o informado sem nenhum trabalho adicional de reda&ccedil;&atilde;o ou c&oacute;pia de dados.
+  </p>
+  <p>
+    Est&aacute; sendo desenvolvida, em complemento a essa funcionalidade, uma camada de notifica&ccedil;&otilde;es totalmente autom&aacute;ticas, que enviar&aacute; atualiza&ccedil;&otilde;es ao setor demandante a cada mudan&ccedil;a relevante na tramita&ccedil;&atilde;o do processo &#8212; da abertura &agrave; entrega do objeto contratado &#8212;, sem qualquer interven&ccedil;&atilde;o do operador.
+  </p>
+
+  <h2>3. As Ferramentas de Automa&ccedil;&atilde;o</h2>
+
+  <p>
+    O GAPMN conta com ferramentas de automa&ccedil;&atilde;o que eliminam categorias inteiras de trabalho manual repetitivo. Funcionam diretamente no navegador &#8212; como extens&otilde;es ou atalhos de um clique &#8212;, sem instala&ccedil;&atilde;o de programas adicionais e sem armazenar senhas de sistemas governamentais.
+  </p>
+
+  <h3>a) Rob&ocirc; CNET &#8212; Extrator de Propostas de Preg&otilde;es</h3>
+  <p>
+    Navega automaticamente pelo ComprasNet e coleta as propostas de todos os fornecedores de um preg&atilde;o eletr&ocirc;nico &#8212; CNPJ, valores ofertados, valores negociados e situa&ccedil;&atilde;o de cada item &#8212;, consolidando tudo em planilha. Um processo que consumia um dia inteiro de consulta manual &eacute; conclu&iacute;do em menos de meia hora.
+  </p>
+
+  <h3>b) Rob&ocirc; CNET Status &#8212; Monitoramento de Itens em Preg&atilde;o</h3>
+  <p>
+    Verifica automaticamente o andamento de cada item de um preg&atilde;o eletr&ocirc;nico no ComprasNet, identificando o que est&aacute; homologado, deserto, fracassado ou ainda em disputa &#8212; dispensando a consulta manual item a item.
+  </p>
+
+  <h3>c) Rob&ocirc; de ATAs &#8212; Sincronizador de Atas de Registro de Pre&ccedil;o</h3>
+  <p>
+    Acessa o Portal de Contratos Gov.br e sincroniza, com um &uacute;nico clique, todos os dados e itens das Atas de Registro de Pre&ccedil;o do GAP-MN &#8212; substituindo a consulta individual a cada ata e a digita&ccedil;&atilde;o manual em planilha.
+  </p>
+
+  <h3>d) Rob&ocirc; SILOMS &#8212; Rastreador de Subprocessos</h3>
+  <p>
+    Consulta automaticamente o SILOMS para cada empenho pendente, identificando o n&uacute;mero do subprocesso, o perfil de tramita&ccedil;&atilde;o e a solicita&ccedil;&atilde;o de origem. L&ecirc; documentos em tramita&ccedil;&atilde;o e vincula automaticamente registros que, de outra forma, permanecer&iacute;am sem identifica&ccedil;&atilde;o indefinidamente.
+  </p>
+
+  <h3>e) Despachante SILOMS &#8212; Frases de Despacho R&aacute;pido</h3>
+  <p>
+    Exibe, diretamente no SILOMS, um painel com as frases de despacho favoritas de cada servidor. Um clique na frase e ela &eacute; preenchida automaticamente no campo de avan&ccedil;o do subprocesso. As frases ficam salvas na nuvem e permanecem dispon&iacute;veis mesmo ap&oacute;s reinicializa&ccedil;&otilde;es do computador.
+  </p>
+
+  <h3>f) Rob&ocirc; do Empenho &#8212; Preenchimento Autom&aacute;tico de Minuta</h3>
+  <p>
+    O operador carrega a Solicita&ccedil;&atilde;o de Empenho em PDF; o rob&ocirc; l&ecirc; o documento, extrai todos os campos relevantes e os apresenta para confer&ecirc;ncia. Ap&oacute;s confirma&ccedil;&atilde;o, navega pelo Portal de Contratos Gov.br e preenche cada etapa da Minuta de Empenho automaticamente &#8212; eliminando a digita&ccedil;&atilde;o manual em m&uacute;ltiplas telas.
+  </p>
+
+  <h3>g) Extens&atilde;o Criadora de Subprocessos no SILOMS</h3>
+  <p>
+    Extens&atilde;o instalada no navegador que automatiza a cria&ccedil;&atilde;o de subprocessos no SILOMS. Com base nos dados do empenho ou da solicita&ccedil;&atilde;o, a extens&atilde;o preenche e abre o subprocesso no sistema governamental sem necessidade de digita&ccedil;&atilde;o manual, reduzindo drasticamente o tempo gasto nessa etapa da tramita&ccedil;&atilde;o.
+  </p>
+
+  <h3>h) Rob&ocirc; NE SIAFI &#8212; Extra&ccedil;&atilde;o de Notas de Empenho</h3>
+  <p>
+    Extrai automaticamente os dados das Notas de Empenho diretamente do SIAFI, alimentando o painel de controle com informa&ccedil;&otilde;es atualizadas &#8212; sem necessidade de exporta&ccedil;&atilde;o manual ou digita&ccedil;&atilde;o de dados.
+  </p>
+
+  <h2>4. Impacto na Rotina da Organiza&ccedil;&atilde;o</h2>
+
+  <p>A implanta&ccedil;&atilde;o do sistema GAPMN produziu ganhos objetivos e mensur&aacute;veis na rotina das se&ccedil;&otilde;es envolvidas na gest&atilde;o or&ccedil;ament&aacute;ria e administrativa do GAP-MN:</p>
+
+  <ul>
+    <li><strong>Redu&ccedil;&atilde;o do tempo em tarefas repetitivas:</strong> atividades que consumiam horas de trabalho passaram a ser executadas em minutos, liberando os servidores para an&aacute;lise, decis&atilde;o e atividades de maior valor.</li>
+    <li><strong>Menos erros e mais rastreabilidade:</strong> a automa&ccedil;&atilde;o eliminou a digita&ccedil;&atilde;o entre sistemas, principal fonte de erros nas rotinas administrativas. Cada registro &eacute; vinculado &agrave; sua origem com trilha de auditoria.</li>
+    <li><strong>Vis&atilde;o gerencial em tempo real:</strong> chefias t&ecirc;m acesso imediato, de qualquer dispositivo, ao estado atual dos empenhos, contratos, restos a pagar e processos em andamento.</li>
+    <li><strong>Integra&ccedil;&atilde;o de cinco sistemas governamentais:</strong> SIAFI, SILOMS, ComprasNet, Portal de Contratos e API do Banco Central s&atilde;o acessados em um &uacute;nico ambiente, eliminando a consulta paralela a portais distintos.</li>
+    <li><strong>Acesso por perfil de se&ccedil;&atilde;o:</strong> cada servidor acessa apenas o que &eacute; pertinente &agrave; sua se&ccedil;&atilde;o (SEO, SCON, SLIC), com seguran&ccedil;a garantida em todos os n&iacute;veis do sistema.</li>
+    <li><strong>Zero custo com software:</strong> constru&iacute;do integralmente com ferramentas abertas e gratuitas, sem nenhuma contrata&ccedil;&atilde;o externa ou aquisi&ccedil;&atilde;o de licen&ccedil;a.</li>
+  </ul>
+
+  <h2>5. Como Foi Desenvolvido</h2>
+
+  <p>
+    O sistema GAPMN foi concebido, projetado e desenvolvido integralmente por militar da pr&oacute;pria organiza&ccedil;&atilde;o, no exerc&iacute;cio das atribui&ccedil;&otilde;es da Se&ccedil;&atilde;o de Execu&ccedil;&atilde;o Or&ccedil;ament&aacute;ria do GAP-MN. Cada m&oacute;dulo e cada ferramenta de automa&ccedil;&atilde;o surgiu em resposta a um problema real identificado na rotina di&aacute;ria &#8212; com os pr&oacute;prios servidores como usu&aacute;rios finais e avaliadores da solu&ccedil;&atilde;o em cada etapa.
+  </p>
+
+  <p>
+    Todo o c&oacute;digo-fonte &eacute; mantido sob controle de vers&atilde;o, permitindo auditoria cont&iacute;nua, evolu&ccedil;&atilde;o incremental e eventual replica&ccedil;&atilde;o para outras Organiza&ccedil;&otilde;es da FAB com estrutura or&ccedil;ament&aacute;ria similar.
+  </p>
+
+  <p>
+    O GAPMN &eacute; a demonstra&ccedil;&atilde;o de que a moderniza&ccedil;&atilde;o administrativa pode emergir da pr&oacute;pria tropa &#8212; com criatividade, t&eacute;cnica e comprometimento com a melhoria cont&iacute;nua do servi&ccedil;o p&uacute;blico.
+  </p>
+
+  <h2>6. Conclus&atilde;o</h2>
+
+  <p>
+    Em menos de dois anos, o Sistema GAPMN transformou a forma como o GAP-MN gerencia sua execu&ccedil;&atilde;o or&ccedil;ament&aacute;ria, seus contratos e seus processos licitat&oacute;rios. O que antes era feito manualmente, em sistemas desconexos e com frequentes riscos de inconsist&ecirc;ncia, passou a ser realizado de forma integrada, automatizada e rastre&aacute;vel &#8212; produzindo ganhos concretos de efici&ecirc;ncia que beneficiam diretamente todas as se&ccedil;&otilde;es envolvidas na gest&atilde;o da Organiza&ccedil;&atilde;o.
+  </p>
+
+  <p>
+    Mais do que um conjunto de ferramentas, o GAPMN &eacute; o resultado do esp&iacute;rito de inova&ccedil;&atilde;o e do comprometimento permanente com o aprimoramento dos processos internos &#8212; valores que definem quem serve &agrave; For&ccedil;a A&eacute;rea Brasileira.
+  </p>
+
+  <div class="assinatura">
+    <div class="linha"></div>
+    <p><strong>2&ordm; TENENTE BRUNO</strong></p>
+    <p>Se&ccedil;&atilde;o de Execu&ccedil;&atilde;o Or&ccedil;ament&aacute;ria</p>
+    <p>GAP-MN &#183; Manaus (AM)</p>
+  </div>
+
+  <div class="rodape">
+    <p>Sistema GAPMN &#183; Vers&atilde;o 2026 &#183; Desenvolvido internamente pela SEO/GAP-MN</p>
+    <p>Documento gerado em Agosto de 2026 &#183; Uso interno &#183; N&atilde;o classificado</p>
+  </div>
+
+</div>
+
+<!-- Toolbar de edicao -->
+<div class="toolbar">
+  <div class="toolbar-group">
+    <button id="btnEdit">Editar</button>
+    <button id="btnSave">Salvar</button>
+    <button id="btnRestore">Restaurar Original</button>
+    <button id="btnPrint">Imprimir / PDF</button>
+  </div>
+  <div class="edit-hint" id="editHint"></div>
+</div>
+
+<script>
+(function(){
+  var LS_KEY = 'gapmn_relatorio_v3';
+  var page   = document.querySelector('.page');
+  var btnEdit    = document.getElementById('btnEdit');
+  var btnSave    = document.getElementById('btnSave');
+  var btnRestore = document.getElementById('btnRestore');
+  var btnPrint   = document.getElementById('btnPrint');
+  var editHint   = document.getElementById('editHint');
+
+  var EDIT_SELS = [
+    '.header .org', '.header .org-sub',
+    '.header .doc-title', '.header .doc-subtitle', '.header .meta',
+    'h2', 'h3', 'p', 'li', '.rodape p'
+  ].join(', ');
+
+  var editMode = false;
+
+  var saved = localStorage.getItem(LS_KEY);
+  if (saved) {
+    page.innerHTML = saved;
+    editHint.textContent = 'Versão salva carregada';
+    setTimeout(function(){ editHint.textContent = ''; }, 2500);
+  }
+
+  function enableEdit() {
+    editMode = true;
+    document.body.classList.add('editing');
+    btnEdit.textContent = 'Visualizar';
+    btnEdit.classList.add('active');
+    page.querySelectorAll(EDIT_SELS).forEach(function(el){
+      el.setAttribute('contenteditable', 'true');
+      el.setAttribute('spellcheck', 'false');
+    });
+    editHint.textContent = 'Clique em qualquer texto para editar';
+  }
+
+  function disableEdit() {
+    editMode = false;
+    document.body.classList.remove('editing');
+    btnEdit.textContent = 'Editar';
+    btnEdit.classList.remove('active');
+    page.querySelectorAll('[contenteditable]').forEach(function(el){
+      el.removeAttribute('contenteditable');
+    });
+    editHint.textContent = '';
+  }
+
+  btnEdit.addEventListener('click', function(){
+    if (editMode) disableEdit(); else enableEdit();
+  });
+
+  btnSave.addEventListener('click', function(){
+    var wasEditing = editMode;
+    if (wasEditing) disableEdit();
+    localStorage.setItem(LS_KEY, page.innerHTML);
+    if (wasEditing) enableEdit();
+    btnSave.textContent = 'Salvo!';
+    setTimeout(function(){ btnSave.textContent = 'Salvar'; }, 1800);
+    editHint.textContent = 'Alterações salvas no navegador';
+    setTimeout(function(){ editHint.textContent = editMode ? 'Clique em qualquer texto para editar' : ''; }, 2500);
+  });
+
+  btnRestore.addEventListener('click', function(){
+    if (!confirm('Restaurar o texto original? Todas as suas alterações serão perdidas.')) return;
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  });
+
+  btnPrint.addEventListener('click', function(){
+    var wasEditing = editMode;
+    if (wasEditing) disableEdit();
+    window.print();
+    if (wasEditing) setTimeout(enableEdit, 500);
+  });
+
+  document.addEventListener('keydown', function(e){
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      btnSave.click();
+    }
+  });
+})();
+</script>
+</body>
+</html>

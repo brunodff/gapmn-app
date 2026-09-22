@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAPMN — Guia Técnico Completo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --azul:   #1a237e;
+    --azul2:  #3b5bdb;
+    --verde:  #1b5e20;
+    --verde2: #2e7d32;
+    --cinza:  #37474f;
+    --bg:     #ffffff;
+    --bg2:    #f8faff;
+    --borda:  #dde3f0;
+  }
+
+  body {
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 13pt;
+    line-height: 1.85;
+    color: #1a1a2e;
+    background: #fff;
+  }
+
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 60px 64px 80px;
+  }
+
+  /* ── Cabeçalho ── */
+  .header {
+    text-align: center;
+    border-bottom: 3px solid var(--azul);
+    padding-bottom: 28px;
+    margin-bottom: 40px;
+  }
+  .header .brasao { font-size: 44px; margin-bottom: 8px; }
+  .header .org {
+    font-family: 'Inter', sans-serif;
+    font-size: 9pt; font-weight: 700;
+    letter-spacing: 0.18em; color: var(--azul);
+    text-transform: uppercase; margin-bottom: 4px;
+  }
+  .header .org-sub {
+    font-family: 'Inter', sans-serif;
+    font-size: 8.5pt; color: #5c6378;
+    letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .header .doc-title {
+    font-size: 18pt; font-weight: 700;
+    color: #0d1b5e; margin-top: 18px; line-height: 1.3;
+  }
+  .header .doc-subtitle {
+    font-size: 12pt; color: #3d4f7c;
+    font-style: italic; margin-top: 6px;
+  }
+  .header .meta {
+    font-family: 'Inter', sans-serif;
+    font-size: 8.5pt; color: #8892a4;
+    margin-top: 14px; letter-spacing: 0.05em;
+  }
+
+  /* ── Índice ── */
+  .toc {
+    background: var(--bg2);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 20px 26px;
+    margin-bottom: 40px;
+  }
+  .toc-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 9.5pt; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--azul); margin-bottom: 12px;
+  }
+  .toc ol {
+    padding-left: 20px;
+    column-count: 2;
+    column-gap: 24px;
+  }
+  .toc li {
+    font-family: 'Inter', sans-serif;
+    font-size: 10pt; margin-bottom: 4px; color: #3d4f7c;
+  }
+
+  /* ── Seções ── */
+  h2 {
+    font-family: 'Inter', sans-serif;
+    font-size: 10.5pt; font-weight: 700;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--azul);
+    border-left: 4px solid var(--azul);
+    padding-left: 10px;
+    margin-top: 44px; margin-bottom: 16px;
+  }
+  h3 {
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5pt; font-weight: 600;
+    color: #0d1b5e;
+    margin-top: 26px; margin-bottom: 10px;
+  }
+  h4 {
+    font-family: 'Inter', sans-serif;
+    font-size: 10.5pt; font-weight: 600;
+    color: var(--cinza);
+    margin-top: 18px; margin-bottom: 6px;
+  }
+
+  p { margin-bottom: 12px; text-align: justify; hyphens: auto; }
+  ul, ol { padding-left: 24px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+
+  strong { color: #0d1b5e; }
+  em { font-style: italic; }
+
+  /* ── Caixas de destaque ── */
+  .box {
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 18px 0;
+    font-size: 12pt;
+  }
+  .box-azul  { background: #f0f4ff; border-left: 4px solid var(--azul2); color: #1a237e; }
+  .box-verde { background: #f1f8e9; border-left: 4px solid #66bb6a; color: var(--verde); }
+  .box-amber { background: #fffde7; border-left: 4px solid #ffd54f; color: #6d4c00; }
+  .box-cinza { background: #f5f5f5; border-left: 4px solid #90a4ae; color: #37474f; }
+  .box-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 9pt; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 6px; opacity: 0.8;
+  }
+
+  /* ── Código ── */
+  pre {
+    background: #0d1117;
+    color: #e6edf3;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 14px 0;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10.5pt;
+    line-height: 1.6;
+  }
+  code {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10pt;
+    background: #f0f4ff;
+    color: #1a237e;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* Syntax highlight manual */
+  .kw  { color: #ff7b72; }   /* keywords: const, function, return */
+  .str { color: #a5d6ff; }   /* strings */
+  .fn  { color: #d2a8ff; }   /* function names */
+  .cm  { color: #8b949e; font-style: italic; } /* comentários */
+  .num { color: #79c0ff; }   /* números */
+  .typ { color: #ffa657; }   /* tipos TypeScript */
+
+  /* ── Tabelas ── */
+  table {
+    width: 100%; border-collapse: collapse;
+    margin: 16px 0; font-size: 11.5pt;
+  }
+  th {
+    font-family: 'Inter', sans-serif;
+    font-size: 9pt; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: var(--azul); color: white;
+    padding: 8px 12px; text-align: left;
+  }
+  td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--borda);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: var(--bg2); }
+
+  /* ── Camadas / Diagrama ── */
+  .layer-stack { margin: 18px 0; }
+  .layer {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; margin-bottom: 4px;
+    border-radius: 8px; font-family: 'Inter', sans-serif;
+    font-size: 10.5pt; font-weight: 500;
+  }
+  .layer .arrow { color: #90a4ae; font-size: 16px; }
+  .l1 { background: #e8eaf6; color: #283593; border: 1px solid #c5cae9; }
+  .l2 { background: #e3f2fd; color: #0d47a1; border: 1px solid #90caf9; }
+  .l3 { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+  .l4 { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+  .l5 { background: #fce4ec; color: #880e4f; border: 1px solid #f48fb1; }
+  .layer-icon { font-size: 18px; }
+
+  /* ── Glossário ── */
+  .gloss dt {
+    font-family: 'Inter', sans-serif;
+    font-size: 10.5pt; font-weight: 700;
+    color: var(--azul2); margin-top: 14px;
+  }
+  .gloss dd { margin-left: 16px; font-size: 12pt; }
+
+  /* ── Rodapé ── */
+  .footer {
+    margin-top: 60px; padding-top: 20px;
+    border-top: 1px solid var(--borda);
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    font-size: 8.5pt; color: #8892a4;
+    line-height: 1.6;
+  }
+
+  /* ── Toolbar de edição ── */
+  .toolbar {
+    position: fixed; top: 16px; right: 16px;
+    z-index: 9999; display: flex;
+    flex-direction: column; gap: 6px; align-items: flex-end;
+  }
+  .toolbar-group {
+    display: flex; gap: 6px; background: #fff;
+    border: 1px solid var(--borda); border-radius: 10px;
+    padding: 6px 8px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.10);
+  }
+  .toolbar button {
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5px; font-weight: 600;
+    padding: 5px 11px; border-radius: 6px;
+    border: none; cursor: pointer;
+    transition: background 0.15s; white-space: nowrap;
+  }
+  #btnEdit  { background: #1a237e; color: #fff; }
+  #btnEdit:hover { background: #283593; }
+  #btnEdit.active { background: #2e7d32; }
+  #btnSave  { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+  #btnSave:hover { background: #c8e6c9; }
+  #btnRestore { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+  #btnPrint { background: #f0f4ff; color: #1a237e; border: 1px solid #c5cae9; }
+  #btnPrint:hover { background: #dce3fb; }
+  .edit-hint {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px; color: #888; text-align: right; padding-right: 4px;
+  }
+
+  body.editing .page { outline: 2px dashed #90caf9; outline-offset: 6px; }
+  body.editing [contenteditable]:hover {
+    background: rgba(59,91,219,.05);
+    outline: 1px dashed #7986cb; border-radius: 3px; cursor: text;
+  }
+  body.editing [contenteditable]:focus {
+    background: rgba(59,91,219,.04);
+    outline: 2px solid var(--azul2); border-radius: 3px;
+  }
+
+  @media print {
+    body { font-size: 12pt; }
+    .page { padding: 40px 50px 60px; }
+    h2, h3 { page-break-after: avoid; }
+    pre { page-break-inside: avoid; }
+    .toolbar, .edit-hint { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Cabeçalho -->
+  <div class="header">
+    <div class="brasao">⚙️</div>
+    <div class="org">GAP-MN · Seção de Execução Orçamentária</div>
+    <div class="org-sub">Documento de Estudo Técnico</div>
+    <div class="doc-title">Como o GAPMN Foi Construído</div>
+    <div class="doc-subtitle">Guia técnico completo — dos fundamentos ao sistema em produção</div>
+    <div class="meta">Elaborado para estudo pessoal · Versão 2026 · Não classificado</div>
+  </div>
+
+  <!-- Índice -->
+  <div class="toc">
+    <div class="toc-title">📚 Sumário</div>
+    <ol>
+      <li>O que é um aplicativo web?</li>
+      <li>HTML — a estrutura</li>
+      <li>CSS — o visual</li>
+      <li>JavaScript — o comportamento</li>
+      <li>TypeScript — JS com segurança</li>
+      <li>React — interfaces reativas</li>
+      <li>Vite — o motor de build</li>
+      <li>Tailwind CSS — estilo utilitário</li>
+      <li>Banco de dados e SQL</li>
+      <li>Supabase — o backend do GAPMN</li>
+      <li>Autenticação e segurança (RLS)</li>
+      <li>APIs e comunicação HTTP</li>
+      <li>Os bookmarklets — robôs do navegador</li>
+      <li>PDF.js — lendo PDFs no browser</li>
+      <li>Deploy e infraestrutura</li>
+      <li>Arquitetura completa do GAPMN</li>
+      <li>Glossário</li>
+    </ol>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>1. O que é um Aplicativo Web?</h2>
+
+  <p>
+    Um <strong>aplicativo web</strong> é um programa que roda dentro do navegador (Chrome, Edge, Firefox), em vez de ser instalado no computador como um programa comum. Quando você acessa <em>gapmn.app</em>, o navegador baixa o aplicativo de um servidor remoto e o executa localmente — exatamente como o seu navegador já faz com qualquer site.
+  </p>
+
+  <p>
+    A diferença entre um "site" e um "aplicativo web" é apenas de complexidade: o site exibe informações estáticas; o aplicativo permite que o usuário faça coisas (logar, salvar dados, clicar, filtrar, importar arquivos).
+  </p>
+
+  <div class="box box-verde">
+    <div class="box-title">🏗 Analogia</div>
+    Pense em um aplicativo web como um livro que se escreve sozinho conforme você lê: o navegador é o leitor, o servidor é a gráfica que entrega as páginas, e o JavaScript é a caneta invisível que preenche e muda o conteúdo em tempo real.
+  </div>
+
+  <h3>Como o navegador funciona</h3>
+  <p>
+    Quando você digita <code>gapmn.app</code> e pressiona Enter, acontece uma sequência de eventos em milissegundos:
+  </p>
+  <ol>
+    <li><strong>DNS</strong>: o navegador pergunta a um servidor de nomes "qual é o endereço IP do gapmn.app?"</li>
+    <li><strong>TCP/HTTPS</strong>: o navegador abre uma conexão criptografada com esse IP</li>
+    <li><strong>Requisição HTTP</strong>: o navegador pede o arquivo <code>index.html</code></li>
+    <li><strong>Resposta</strong>: o servidor envia o HTML, que referencia arquivos JS e CSS</li>
+    <li><strong>Execução</strong>: o navegador lê o HTML, baixa os demais arquivos e executa o JavaScript</li>
+    <li><strong>Renderização</strong>: a interface aparece na tela</li>
+  </ol>
+
+  <p>
+    Todo esse processo leva tipicamente menos de 2 segundos. No GAPMN, após esse carregamento inicial, o aplicativo consulta o Supabase (banco de dados) para buscar os dados do usuário logado.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>2. HTML — A Estrutura</h2>
+
+  <p>
+    <strong>HTML</strong> (HyperText Markup Language) é a linguagem que define <em>o quê</em> existe na página: títulos, parágrafos, botões, tabelas, formulários. Não define cores nem posições — só diz o que cada coisa é.
+  </p>
+
+  <pre><code><span class="cm">&lt;!-- Isso é HTML --&gt;</span>
+<span class="kw">&lt;div</span> <span class="typ">class</span>=<span class="str">"card"</span><span class="kw">&gt;</span>
+  <span class="kw">&lt;h2&gt;</span>Título do Card<span class="kw">&lt;/h2&gt;</span>
+  <span class="kw">&lt;p&gt;</span>Um parágrafo de texto.<span class="kw">&lt;/p&gt;</span>
+  <span class="kw">&lt;button&gt;</span>Clique aqui<span class="kw">&lt;/button&gt;</span>
+<span class="kw">&lt;/div&gt;</span></code></pre>
+
+  <p>
+    Cada par <code>&lt;tag&gt;...&lt;/tag&gt;</code> é um <strong>elemento</strong>. O navegador converte todos esses elementos em uma árvore chamada <strong>DOM</strong> (Document Object Model) — uma representação em memória de toda a página, que o JavaScript pode ler e modificar a qualquer momento.
+  </p>
+
+  <div class="box box-azul">
+    <div class="box-title">📌 No GAPMN</div>
+    Cada componente React (ex.: o card de uma NE) gera HTML dinamicamente. Você nunca escreve HTML estático para dados do banco — o React cria o HTML a partir dos dados que chegam do Supabase.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>3. CSS — O Visual</h2>
+
+  <p>
+    <strong>CSS</strong> (Cascading Style Sheets) define a aparência: cores, fontes, tamanhos, espaçamentos, posições, sombras, gradientes. Opera sobre os elementos HTML selecionando-os por classe (<code>.card</code>), por tipo (<code>button</code>) ou por identificador (<code>#menu</code>).
+  </p>
+
+  <pre><code><span class="cm">/* Seleciona todos os elementos com class="card" */</span>
+<span class="fn">.card</span> {
+  <span class="typ">background</span>: <span class="str">#f0f4ff</span>;
+  <span class="typ">border-radius</span>: <span class="num">8px</span>;
+  <span class="typ">padding</span>: <span class="num">16px</span>;
+  <span class="typ">box-shadow</span>: <span class="num">0 2px 8px</span> <span class="str">rgba(0,0,0,0.1)</span>;
+}</code></pre>
+
+  <p>
+    O "Cascading" (em cascata) do nome significa que regras mais específicas sobrescrevem regras mais gerais. Se você definir uma cor para <code>body</code> e outra para <code>.card p</code>, o parágrafo dentro do card usa a segunda regra.
+  </p>
+
+  <div class="box box-verde">
+    <div class="box-title">🎨 No GAPMN</div>
+    O GAPMN usa <strong>Tailwind CSS</strong> (ver seção 8), que substitui arquivos CSS manuais por classes prontas diretamente no HTML — ex.: <code>bg-sky-100 rounded-xl p-4</code>. O CSS manual só aparece em elementos muito específicos, como o documento que você está lendo agora.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>4. JavaScript — O Comportamento</h2>
+
+  <p>
+    <strong>JavaScript</strong> (JS) é a linguagem de programação do navegador. É ela que torna a página dinâmica: responde a cliques, faz cálculos, busca dados de servidores, modifica o DOM em tempo real. É a única linguagem que roda nativamente dentro do navegador.
+  </p>
+
+  <h3>Conceitos fundamentais</h3>
+
+  <h4>Variáveis</h4>
+  <p>Uma variável é uma caixa com nome que guarda um valor.</p>
+  <pre><code><span class="kw">const</span> nome = <span class="str">"Bruno"</span>;          <span class="cm">// valor fixo (não muda)</span>
+<span class="kw">let</span>   contador = <span class="num">0</span>;            <span class="cm">// valor que pode mudar</span>
+contador = contador + <span class="num">1</span>;       <span class="cm">// agora contador = 1</span></code></pre>
+
+  <h4>Funções</h4>
+  <p>Uma função é um bloco de código com nome que pode ser chamado várias vezes.</p>
+  <pre><code><span class="kw">function</span> <span class="fn">somar</span>(a, b) {
+  <span class="kw">return</span> a + b;
+}
+
+<span class="kw">const</span> resultado = <span class="fn">somar</span>(<span class="num">3</span>, <span class="num">4</span>);  <span class="cm">// resultado = 7</span></code></pre>
+
+  <h4>Arrays e Objetos</h4>
+  <pre><code><span class="cm">// Array: lista ordenada de itens</span>
+<span class="kw">const</span> nes = [<span class="str">"2026NE000001"</span>, <span class="str">"2026NE000002"</span>, <span class="str">"2026NE000003"</span>];
+nes[<span class="num">0</span>];  <span class="cm">// "2026NE000001" (índice começa em 0)</span>
+
+<span class="cm">// Objeto: conjunto de propriedades nomeadas</span>
+<span class="kw">const</span> empenho = {
+  ne_siafi: <span class="str">"2026NE000001"</span>,
+  valor: <span class="num">102024.70</span>,
+  fornecedor: <span class="str">"Prime Consultoria"</span>
+};
+empenho.valor;  <span class="cm">// 102024.70</span></code></pre>
+
+  <h4>Async / Await — código assíncrono</h4>
+  <p>
+    Quando o navegador busca dados no banco de dados (Supabase), ele não pode travar e esperar — o usuário ficaria com a tela congelada. Por isso o JavaScript usa código <strong>assíncrono</strong>: o programa continua rodando enquanto espera a resposta, e uma função especial é chamada quando os dados chegam.
+  </p>
+  <pre><code><span class="cm">// async/await: jeito moderno de lidar com operações demoradas</span>
+<span class="kw">async function</span> <span class="fn">buscarEmpenhos</span>() {
+  <span class="kw">const</span> resposta = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'https://meuservidor.com/empenhos'</span>);
+  <span class="kw">const</span> dados = <span class="kw">await</span> resposta.<span class="fn">json</span>();
+  <span class="cm">// só chega aqui DEPOIS que os dados chegaram</span>
+  console.<span class="fn">log</span>(dados);
+}</code></pre>
+
+  <div class="box box-amber">
+    <div class="box-title">💡 Por que isso importa no GAPMN</div>
+    Toda comunicação com o Supabase (buscar NEs, salvar solicitações, atualizar subprocessos) é assíncrona. Se uma chamada falha, o GAPMN trata o erro silenciosamente — sem derrubar a tela — usando blocos <code>try/catch</code> ao redor dos <code>await</code>.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>5. TypeScript — JavaScript com Segurança de Tipos</h2>
+
+  <p>
+    <strong>TypeScript</strong> (TS) é JavaScript com um sistema de tipos. Você declara explicitamente que tipo de valor cada variável pode ter (<code>string</code>, <code>number</code>, <code>boolean</code>, <code>Date</code> etc.), e o compilador avisa se você tentar misturar tipos incompatíveis — antes mesmo de rodar o código.
+  </p>
+
+  <pre><code><span class="cm">// JavaScript puro — sem proteção:</span>
+<span class="kw">function</span> <span class="fn">calcularJuros</span>(valor, taxa) {
+  <span class="kw">return</span> valor * taxa;   <span class="cm">// e se taxa vier como "5%" (texto) por acidente?</span>
+}
+
+<span class="cm">// TypeScript — com proteção:</span>
+<span class="kw">function</span> <span class="fn">calcularJuros</span>(valor: <span class="typ">number</span>, taxa: <span class="typ">number</span>): <span class="typ">number</span> {
+  <span class="kw">return</span> valor * taxa;   <span class="cm">// compilador garante que ambos são números</span>
+}</code></pre>
+
+  <h3>Interfaces — descrevendo a forma dos dados</h3>
+  <p>
+    Uma <strong>interface</strong> descreve o formato de um objeto. No GAPMN, cada tabela do banco tem uma interface correspondente no TypeScript:
+  </p>
+
+  <pre><code><span class="cm">// Descreve como é uma linha da tabela de empenhos</span>
+<span class="kw">interface</span> <span class="typ">EmpenhoSeo</span> {
+  id:                 <span class="typ">string</span>;
+  nota_empenho:       <span class="typ">string</span>;        <span class="cm">// ex: "2026NE000001"</span>
+  valor:              <span class="typ">number</span> | <span class="typ">null</span>;  <span class="cm">// pode ser nulo</span>
+  indicador_lotacao:  <span class="typ">string</span> | <span class="typ">null</span>;
+  responsavel:        <span class="typ">string</span> | <span class="typ">null</span>;
+}</code></pre>
+
+  <div class="box box-cinza">
+    <div class="box-title">🔧 Como o TypeScript é usado no projeto</div>
+    Os arquivos do GAPMN têm extensão <code>.tsx</code> (TypeScript + JSX/React) ou <code>.ts</code>. O comando <code>npm run build</code> compila todo o código TypeScript para JavaScript puro antes de publicar. Erros de tipo são detectados com <code>npx tsc --noEmit</code>.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>6. React — Interfaces Reativas</h2>
+
+  <p>
+    <strong>React</strong> é uma biblioteca JavaScript criada pelo Facebook que permite construir interfaces a partir de <strong>componentes</strong> — pedaços reutilizáveis de interface que gerenciam seu próprio estado e atualizam a tela automaticamente quando os dados mudam.
+  </p>
+
+  <h3>O que é um componente?</h3>
+  <p>
+    Um componente é uma função que recebe dados (chamados <strong>props</strong>) e retorna HTML. É como um "carimbo": você define uma vez e usa quantas vezes quiser.
+  </p>
+
+  <pre><code><span class="cm">// Componente simples que mostra uma NE</span>
+<span class="kw">function</span> <span class="fn">CardNE</span>({ ne_siafi, valor }: { ne_siafi: <span class="typ">string</span>; valor: <span class="typ">number</span> }) {
+  <span class="kw">return</span> (
+    <span class="kw">&lt;div</span> <span class="typ">className</span>=<span class="str">"card"</span><span class="kw">&gt;</span>
+      <span class="kw">&lt;strong&gt;</span>{ne_siafi}<span class="kw">&lt;/strong&gt;</span>
+      <span class="kw">&lt;span&gt;</span>R$ {valor.toFixed(2)}<span class="kw">&lt;/span&gt;</span>
+    <span class="kw">&lt;/div&gt;</span>
+  );
+}
+
+<span class="cm">// Usando o componente:</span>
+<span class="kw">&lt;</span><span class="fn">CardNE</span> ne_siafi=<span class="str">"2026NE000001"</span> valor=<span class="num">{102024.70}</span> <span class="kw">/&gt;</span></code></pre>
+
+  <h3>Estado — useState</h3>
+  <p>
+    O <strong>estado</strong> é um dado que, quando muda, faz o componente se redesenhar automaticamente. O hook <code>useState</code> cria um estado:
+  </p>
+
+  <pre><code><span class="kw">import</span> { useState } <span class="kw">from</span> <span class="str">"react"</span>;
+
+<span class="kw">function</span> <span class="fn">Filtro</span>() {
+  <span class="cm">// busca = valor atual; setBusca = função para mudar o valor</span>
+  <span class="kw">const</span> [busca, setBusca] = <span class="fn">useState</span>(<span class="str">""</span>);
+
+  <span class="kw">return</span> (
+    <span class="kw">&lt;input</span>
+      <span class="typ">value</span>={busca}
+      <span class="typ">onChange</span>={e => <span class="fn">setBusca</span>(e.target.value)}
+      <span class="typ">placeholder</span>=<span class="str">"Buscar NE..."</span>
+    <span class="kw">/&gt;</span>
+  );
+}</code></pre>
+
+  <p>
+    Toda vez que <code>setBusca</code> é chamado, o React redesenha o componente com o novo valor — e você vê o campo de texto atualizado instantaneamente, sem recarregar a página.
+  </p>
+
+  <h3>Efeitos — useEffect</h3>
+  <p>
+    O <code>useEffect</code> executa um bloco de código quando o componente aparece na tela (ou quando um dado muda). É usado para buscar dados do banco assim que a página carrega:
+  </p>
+
+  <pre><code><span class="kw">import</span> { useEffect, useState } <span class="kw">from</span> <span class="str">"react"</span>;
+
+<span class="kw">function</span> <span class="fn">ListaEmpenhos</span>() {
+  <span class="kw">const</span> [empenhos, setEmpenhos] = <span class="fn">useState</span>([]);
+
+  <span class="fn">useEffect</span>(() => {
+    <span class="cm">// Roda quando o componente aparece na tela</span>
+    supabase
+      .from(<span class="str">"empenhos_seo"</span>)
+      .select(<span class="str">"*"</span>)
+      .then(({ data }) => <span class="fn">setEmpenhos</span>(data ?? []));
+  }, []);  <span class="cm">// [] = roda só uma vez</span>
+
+  <span class="kw">return</span> <span class="kw">&lt;ul&gt;</span>{empenhos.map(e => <span class="kw">&lt;li&gt;</span>{e.nota_empenho}<span class="kw">&lt;/li&gt;</span>)}<span class="kw">&lt;/ul&gt;</span>;
+}</code></pre>
+
+  <h3>Memoização — useMemo</h3>
+  <p>
+    O <code>useMemo</code> memoriza o resultado de um cálculo pesado e só o recalcula quando os dados de entrada mudam. Sem ele, o cálculo rodaria a cada redesenho (que pode acontecer centenas de vezes por segundo):
+  </p>
+
+  <pre><code><span class="kw">const</span> sePendentes = <span class="fn">useMemo</span>(() => {
+  <span class="cm">// Filtra SEs que ainda não têm NE emitida — pode ser cálculo lento</span>
+  <span class="kw">return</span> solicitacoes.filter(s => !neEmitidas.has(s.numero));
+}, [solicitacoes, neEmitidas]);  <span class="cm">// recalcula só quando esses dois mudam</span></code></pre>
+
+  <div class="box box-azul">
+    <div class="box-title">📌 No GAPMN</div>
+    O componente <code>GerenciamentoEmpenhos</code> usa vários <code>useMemo</code> encadeados: busca os dados brutos do Supabase, filtra por ano, cruza planilha com SILOMS, calcula pendentes, calcula estatísticas — tudo em memória, sem nova chamada ao banco.
+  </div>
+
+  <h3>JSX — HTML dentro do JavaScript</h3>
+  <p>
+    O código que parece HTML dentro das funções React é <strong>JSX</strong> — uma extensão de sintaxe que o compilador converte em chamadas JavaScript. Não é HTML real; é açúcar sintático:
+  </p>
+  <pre><code><span class="cm">// JSX (o que você escreve):</span>
+<span class="kw">&lt;div</span> <span class="typ">className</span>=<span class="str">"card"</span><span class="kw">&gt;</span>Olá<span class="kw">&lt;/div&gt;</span>
+
+<span class="cm">// JavaScript real (o que o compilador gera):</span>
+React.<span class="fn">createElement</span>(<span class="str">"div"</span>, { className: <span class="str">"card"</span> }, <span class="str">"Olá"</span>)</code></pre>
+
+  <p>
+    Note: em JSX usa-se <code>className</code> em vez de <code>class</code> (porque <code>class</code> é palavra reservada do JavaScript).
+  </p>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>7. Vite — O Motor de Build</h2>
+
+  <p>
+    <strong>Vite</strong> é a ferramenta que transforma os arquivos <code>.tsx</code> e <code>.ts</code> do projeto em arquivos JavaScript, CSS e HTML que o navegador entende.
+  </p>
+
+  <h3>O que ele faz</h3>
+  <ul>
+    <li><strong>Compilação</strong>: converte TypeScript → JavaScript</li>
+    <li><strong>Bundling</strong>: junta dezenas de arquivos em poucos arquivos otimizados</li>
+    <li><strong>Minificação</strong>: remove espaços, comentários e encurta nomes de variáveis para reduzir tamanho</li>
+    <li><strong>Hot Module Replacement (HMR)</strong>: durante o desenvolvimento, atualiza só o componente alterado em milissegundos, sem recarregar a página inteira</li>
+  </ul>
+
+  <table>
+    <tr><th>Comando</th><th>O que faz</th></tr>
+    <tr><td><code>npm run dev</code></td><td>Inicia servidor local de desenvolvimento (localhost:5173) com HMR</td></tr>
+    <tr><td><code>npm run build</code></td><td>Compila e empacota tudo para a pasta <code>dist/</code></td></tr>
+    <tr><td><code>npm run preview</code></td><td>Serve a pasta <code>dist/</code> localmente para testar a versão final</td></tr>
+  </table>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>8. Tailwind CSS — Estilo Utilitário</h2>
+
+  <p>
+    Tailwind é um framework CSS que fornece centenas de classes pequenas e específicas em vez de componentes prontos. Em vez de criar um arquivo <code>.css</code> com regras, você aplica as classes diretamente no HTML:
+  </p>
+
+  <pre><code><span class="cm">&lt;!-- Sem Tailwind (CSS separado): --&gt;</span>
+<span class="kw">&lt;div</span> <span class="typ">class</span>=<span class="str">"card"</span><span class="kw">&gt;</span>...
+
+<span class="cm">&lt;!-- Com Tailwind (tudo inline): --&gt;</span>
+<span class="kw">&lt;div</span> <span class="typ">class</span>=<span class="str">"bg-sky-50 rounded-2xl border border-sky-200 p-6 shadow-sm"</span><span class="kw">&gt;</span>...</code></pre>
+
+  <p>
+    Cada classe tem um efeito preciso e previsível: <code>bg-sky-50</code> é uma cor específica de azul claro, <code>rounded-2xl</code> é um arredondamento de 16px, <code>p-6</code> é um padding de 24px (6 × 4px de escala base).
+  </p>
+
+  <div class="box box-cinza">
+    <div class="box-title">📐 Escala do Tailwind</div>
+    Tailwind usa escala em múltiplos de 4px: <code>p-1</code>=4px, <code>p-2</code>=8px, <code>p-4</code>=16px, <code>p-6</code>=24px, <code>p-8</code>=32px. As cores têm gradações numéricas: <code>sky-50</code> (mais claro) → <code>sky-900</code> (mais escuro).
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>9. Banco de Dados e SQL</h2>
+
+  <p>
+    Um <strong>banco de dados relacional</strong> organiza informações em <strong>tabelas</strong>, como planilhas Excel, mas com regras rígidas de estrutura, busca eficiente e relacionamentos entre tabelas.
+  </p>
+
+  <h3>Conceitos básicos</h3>
+  <ul>
+    <li><strong>Tabela</strong>: conjunto de linhas (registros) e colunas (campos). Ex.: <code>empenhos_seo</code></li>
+    <li><strong>Linha (row)</strong>: um registro individual. Ex.: uma NE específica</li>
+    <li><strong>Coluna (column)</strong>: um atributo. Ex.: <code>nota_empenho</code>, <code>valor</code>, <code>responsavel</code></li>
+    <li><strong>Chave primária (PK)</strong>: coluna que identifica unicamente cada linha. Geralmente um <code>id</code> automático (UUID)</li>
+    <li><strong>Chave estrangeira (FK)</strong>: coluna em uma tabela que aponta para uma linha em outra tabela</li>
+  </ul>
+
+  <h3>SQL — a linguagem do banco</h3>
+  <p>
+    <strong>SQL</strong> (Structured Query Language) é a linguagem para consultar e manipular bancos de dados. Os quatro comandos fundamentais:
+  </p>
+
+  <pre><code><span class="cm">-- Buscar todos os empenhos de 2026</span>
+<span class="kw">SELECT</span> nota_empenho, valor, responsavel
+<span class="kw">FROM</span>   empenhos_seo
+<span class="kw">WHERE</span>  nota_empenho <span class="kw">LIKE</span> <span class="str">'2026NE%'</span>
+<span class="kw">ORDER BY</span> nota_empenho;
+
+<span class="cm">-- Inserir um novo registro</span>
+<span class="kw">INSERT INTO</span> empenhos_seo (nota_empenho, valor, responsavel)
+<span class="kw">VALUES</span> (<span class="str">'2026NE000999'</span>, <span class="num">50000.00</span>, <span class="str">'Bruno'</span>);
+
+<span class="cm">-- Atualizar um registro existente</span>
+<span class="kw">UPDATE</span> empenhos_seo
+<span class="kw">SET</span>    responsavel = <span class="str">'Anne'</span>
+<span class="kw">WHERE</span>  nota_empenho = <span class="str">'2026NE000999'</span>;
+
+<span class="cm">-- Deletar um registro</span>
+<span class="kw">DELETE FROM</span> empenhos_seo
+<span class="kw">WHERE</span>  nota_empenho = <span class="str">'2026NE000999'</span>;</code></pre>
+
+  <p>
+    O banco de dados do GAPMN usa <strong>PostgreSQL</strong>, um dos sistemas de banco de dados mais robustos e confiáveis do mundo, mantido como software livre há mais de 30 anos.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>10. Supabase — O Backend do GAPMN</h2>
+
+  <p>
+    <strong>Supabase</strong> é um serviço de "Backend as a Service" (BaaS): ele fornece banco de dados PostgreSQL, autenticação de usuários, armazenamento de arquivos e APIs automáticas — tudo pronto, sem precisar programar um servidor.
+  </p>
+
+  <div class="box box-verde">
+    <div class="box-title">🏗 Analogia</div>
+    Se o banco de dados fosse um almoxarifado, o Supabase seria o almoxarifado já montado, com câmeras de segurança (autenticação), fichas de controle de acesso (RLS), balcão de atendimento (API) e registro automático de quem entrou e saiu — sem você precisar construir nada disso.
+  </div>
+
+  <h3>Como o GAPMN usa o Supabase</h3>
+
+  <p>
+    O Supabase gera automaticamente uma <strong>API REST</strong> para cada tabela do banco. O cliente JavaScript do Supabase transforma esse código:
+  </p>
+
+  <pre><code><span class="kw">const</span> { data, error } = <span class="kw">await</span> supabase
+  .from(<span class="str">"empenhos_seo"</span>)
+  .select(<span class="str">"nota_empenho, valor, responsavel"</span>)
+  .like(<span class="str">"nota_empenho"</span>, <span class="str">"2026NE%"</span>)
+  .order(<span class="str">"nota_empenho"</span>);</code></pre>
+
+  <p>…em uma requisição HTTP para:</p>
+  <pre><code>GET https://seu-projeto.supabase.co/rest/v1/empenhos_seo
+    ?select=nota_empenho,valor,responsavel
+    &nota_empenho=like.2026NE%25
+    &order=nota_empenho</code></pre>
+
+  <h3>Variáveis de ambiente</h3>
+  <p>
+    O endereço e a chave de acesso do Supabase ficam no arquivo <code>.env</code> (não versionado no Git por segurança):
+  </p>
+  <pre><code>VITE_SUPABASE_URL=https://xxxxxxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciO...</code></pre>
+
+  <p>
+    A <strong>anon key</strong> é uma chave pública — qualquer pessoa poderia vê-la. A segurança real vem do RLS (próxima seção), que garante que mesmo com a chave, você só acessa o que tem permissão.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>11. Autenticação e Segurança (RLS)</h2>
+
+  <h3>Autenticação — como o login funciona</h3>
+  <p>
+    Quando o usuário digita email e senha, o Supabase verifica as credenciais e retorna um <strong>JWT</strong> (JSON Web Token) — um token criptografado que prova a identidade do usuário. Esse token é salvo no navegador e enviado em todas as requisições subsequentes ao banco.
+  </p>
+
+  <div class="box box-cinza">
+    <div class="box-title">🔐 O que é um JWT</div>
+    Um JWT é um texto longo codificado (começa com "eyJ...") que contém o ID do usuário, quando o token foi criado e quando expira — tudo assinado criptograficamente. O servidor pode verificar a autenticidade sem precisar consultar o banco a cada requisição.
+  </div>
+
+  <h3>Row Level Security (RLS)</h3>
+  <p>
+    <strong>RLS</strong> é um mecanismo do PostgreSQL que aplica regras de acesso diretamente no banco de dados, linha a linha. Mesmo que alguém tente acessar os dados diretamente pela API (sem passar pelo aplicativo), as políticas RLS bloqueiam o acesso não autorizado.
+  </p>
+
+  <pre><code><span class="cm">-- Exemplo de política RLS: usuários só veem seus próprios registros</span>
+<span class="kw">CREATE POLICY</span> <span class="str">"usuarios_proprios_dados"</span>
+  <span class="kw">ON</span> chat_messages
+  <span class="kw">FOR ALL</span>
+  <span class="kw">USING</span> (user_id = auth.<span class="fn">uid</span>());
+  <span class="cm">-- auth.uid() retorna o ID do usuário logado no token JWT</span></code></pre>
+
+  <h3>Sistema de perfis (roles) no GAPMN</h3>
+
+  <table>
+    <tr><th>Perfil</th><th>Permissões</th></tr>
+    <tr><td><code>ADMIN / DEV</code></td><td>Acesso total a todos os módulos e operações de importação</td></tr>
+    <tr><td><code>SEO</code></td><td>Importação de indicadores de lotação e empenhos SEO</td></tr>
+    <tr><td><code>SCON</code></td><td>Importação e gestão de contratos</td></tr>
+    <tr><td><code>SLIC</code></td><td>Importação e gestão de processos licitatórios</td></tr>
+  </table>
+
+  <p>
+    O perfil fica na tabela <code>profiles.setor</code>. O componente lê o setor do usuário logado e habilita ou desabilita botões de importação usando props como <code>canImport</code> e <code>canEdit</code>.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>12. APIs e Comunicação HTTP</h2>
+
+  <p>
+    Uma <strong>API</strong> (Application Programming Interface) é um conjunto de regras que define como dois programas conversam entre si. No contexto web, é um servidor que responde perguntas específicas via HTTP.
+  </p>
+
+  <h3>HTTP — o protocolo da web</h3>
+  <p>
+    Toda comunicação na web usa HTTP (ou HTTPS, a versão criptografada). Uma requisição HTTP tem:
+  </p>
+  <ul>
+    <li><strong>Método</strong>: <code>GET</code> (buscar), <code>POST</code> (criar), <code>PATCH</code> (atualizar parcialmente), <code>DELETE</code> (apagar)</li>
+    <li><strong>URL</strong>: o endereço do recurso</li>
+    <li><strong>Headers</strong>: metadados (ex.: chave de autenticação, tipo do conteúdo)</li>
+    <li><strong>Body</strong>: dados enviados (só em POST/PATCH)</li>
+  </ul>
+
+  <h3>APIs usadas no GAPMN</h3>
+
+  <table>
+    <tr><th>API</th><th>Dados fornecidos</th><th>Onde é usada</th></tr>
+    <tr><td>Supabase REST</td><td>Todos os dados do banco</td><td>Todo o app</td></tr>
+    <tr><td>Banco Central do Brasil</td><td>Índices IPCA, IGP-M acumulados</td><td>Gerador de Apostilamento</td></tr>
+    <tr><td>Google Sheets CSV</td><td>Dados SIAFI, Restos a Pagar</td><td>Painéis Gerenciais</td></tr>
+    <tr><td>PNCP</td><td>Propostas de pregões eletrônicos</td><td>Robô CNET (backup)</td></tr>
+  </table>
+
+  <h3>Exemplo: consultando o Banco Central</h3>
+  <pre><code><span class="cm">// Busca a variação acumulada do IPCA entre duas datas</span>
+<span class="kw">const</span> url = <span class="str">`https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados`</span>
+          + <span class="str">`?formato=json&dataInicial=01/01/2023&dataFinal=31/12/2023`</span>;
+
+<span class="kw">const</span> resposta = <span class="kw">await</span> <span class="fn">fetch</span>(url);
+<span class="kw">const</span> dados = <span class="kw">await</span> resposta.<span class="fn">json</span>();
+<span class="cm">// dados = [{ data: "02/01/2023", valor: "0.53" }, ...]</span></code></pre>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>13. Os Bookmarklets — Robôs do Navegador</h2>
+
+  <p>
+    Um <strong>bookmarklet</strong> é um favorito do navegador cujo endereço, em vez de uma URL normal, é um pequeno programa JavaScript que começa com <code>javascript:</code>. Ao clicar no favorito, o navegador executa esse código na página aberta.
+  </p>
+
+  <h3>Como o GAPMN injeta os robôs</h3>
+
+  <p>
+    Os robôs do GAPMN são scripts grandes demais para caber no favorito. Por isso o bookmarklet faz apenas uma coisa: cria uma tag <code>&lt;script&gt;</code> que baixa o robô do servidor:
+  </p>
+
+  <pre><code><span class="cm">// O bookmarklet que você salva no favorito:</span>
+javascript:(<span class="kw">function</span>(){
+  <span class="kw">var</span> s = document.<span class="fn">createElement</span>(<span class="str">'script'</span>);
+  s.src = <span class="str">'https://gapmn.app/cnet-bot.js?v='</span> + Date.<span class="fn">now</span>();
+  document.body.<span class="fn">appendChild</span>(s);
+})();</code></pre>
+
+  <p>
+    O <code>?v='+Date.now()</code> força o navegador a sempre baixar a versão mais recente (sem usar cache), adicionando um número diferente (timestamp) a cada clique.
+  </p>
+
+  <h3>O que o robô pode fazer na página</h3>
+  <p>
+    Por rodar na mesma aba que o portal governamental, o robô tem acesso total ao DOM daquela página e às credenciais da sessão já logada. Ele pode:
+  </p>
+  <ul>
+    <li>Ler textos de qualquer elemento (<code>element.innerText</code>)</li>
+    <li>Clicar em botões (<code>button.click()</code>)</li>
+    <li>Preencher campos de formulário (<code>input.value = "texto"</code>)</li>
+    <li>Navegar entre páginas (<code>window.location.href = "nova-url"</code>)</li>
+    <li>Fazer requisições ao Supabase para salvar os dados coletados</li>
+  </ul>
+
+  <h3>Persistência entre recarregamentos — sessionStorage</h3>
+  <p>
+    Quando o portal recarrega a página (como o Portal de Contratos faz entre etapas da Minuta de Empenho), todo o estado JavaScript é perdido. O Robô do Empenho resolve isso com <code>sessionStorage</code> — um armazenamento local no navegador que sobrevive a recarregamentos dentro da mesma aba:
+  </p>
+  <pre><code><span class="cm">// Salvar dados antes do recarregamento:</span>
+sessionStorage.<span class="fn">setItem</span>(<span class="str">'empBotStep'</span>, <span class="str">'3'</span>);
+sessionStorage.<span class="fn">setItem</span>(<span class="str">'empBotData'</span>, JSON.<span class="fn">stringify</span>(dadosExtraidos));
+
+<span class="cm">// Recuperar após recarregar:</span>
+<span class="kw">const</span> step = sessionStorage.<span class="fn">getItem</span>(<span class="str">'empBotStep'</span>);
+<span class="kw">const</span> data = JSON.<span class="fn">parse</span>(sessionStorage.<span class="fn">getItem</span>(<span class="str">'empBotData'</span>));</code></pre>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>14. PDF.js — Lendo PDFs no Navegador</h2>
+
+  <p>
+    <strong>PDF.js</strong> é uma biblioteca JavaScript criada pela Mozilla (fabricante do Firefox) que lê e renderiza arquivos PDF diretamente no navegador, sem plugin externo. O Robô do Empenho a usa para extrair o texto da Solicitação de Empenho.
+  </p>
+
+  <h3>Como a extração funciona</h3>
+  <p>
+    Um PDF não é um documento de texto — é um conjunto de instruções de posicionamento: "coloque o texto 'CNPJ' nas coordenadas (X=50, Y=300)". O PDF.js lê essas instruções e reconstrói o conteúdo:
+  </p>
+
+  <pre><code><span class="cm">// 1. Carregar o arquivo PDF (buffer de bytes)</span>
+<span class="kw">const</span> pdfDoc = <span class="kw">await</span> pdfjsLib.<span class="fn">getDocument</span>({ data: buffer }).<span class="fn">promise</span>;
+
+<span class="cm">// 2. Ler a primeira página</span>
+<span class="kw">const</span> page = <span class="kw">await</span> pdfDoc.<span class="fn">getPage</span>(<span class="num">1</span>);
+
+<span class="cm">// 3. Extrair todos os fragmentos de texto com posição X,Y</span>
+<span class="kw">const</span> content = <span class="kw">await</span> page.<span class="fn">getTextContent</span>();
+content.items.<span class="fn">forEach</span>(item => {
+  <span class="kw">const</span> x = item.transform[<span class="num">4</span>];  <span class="cm">// posição horizontal</span>
+  <span class="kw">const</span> y = item.transform[<span class="num">5</span>];  <span class="cm">// posição vertical</span>
+  console.<span class="fn">log</span>(item.str, <span class="str">`@ (${x}, ${y})`</span>);
+});</code></pre>
+
+  <p>
+    A posição X é especialmente importante para identificar colunas de tabelas — como o campo <strong>SUB</strong> (subelemento) da SE, que aparece em uma coluna específica sem label próxima.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>15. Deploy e Infraestrutura</h2>
+
+  <p>
+    <strong>Deploy</strong> é o ato de publicar o aplicativo em um servidor público para que outros possam acessá-lo. O GAPMN usa dois serviços diferentes para hospedar partes distintas do sistema.
+  </p>
+
+  <h3>Vercel — hospedagem do app e dos bookmarklets</h3>
+  <p>
+    <strong>Vercel</strong> é uma plataforma de hospedagem otimizada para aplicações React/Vite. Quando o código é enviado via <code>vercel deploy --prod</code>, a Vercel:
+  </p>
+  <ol>
+    <li>Executa o build (<code>npm run build</code>)</li>
+    <li>Publica os arquivos gerados em sua CDN global (servidores em todo o mundo)</li>
+    <li>Configura o domínio <code>gapmn.app</code> para apontar para esses arquivos</li>
+    <li>Configura HTTPS automaticamente</li>
+  </ol>
+
+  <div class="box box-cinza">
+    <div class="box-title">🌐 CDN — Content Delivery Network</div>
+    Uma CDN mantém cópias dos seus arquivos em dezenas de servidores ao redor do mundo. Quando um usuário em Manaus acessa <em>gapmn.app</em>, ele baixa os arquivos do servidor CDN mais próximo (ex.: São Paulo), não dos EUA — tornando o carregamento mais rápido.
+  </div>
+
+  <h3>Netlify — hospedagem alternativa</h3>
+  <p>
+    O GAPMN também tem configuração para a <strong>Netlify</strong>, outra plataforma similar à Vercel, usada como alternativa ou para funções serverless específicas.
+  </p>
+
+  <h3>O arquivo vercel.json</h3>
+  <p>
+    Este arquivo na raiz do projeto instrui a Vercel sobre como servir o app:
+  </p>
+  <pre><code>{
+  <span class="str">"rewrites"</span>: [
+    { <span class="str">"source"</span>: <span class="str">"/(.*)"</span>, <span class="str">"destination"</span>: <span class="str">"/index.html"</span> }
+  ]
+}</code></pre>
+  <p>
+    Isso diz: "qualquer URL que não corresponda a um arquivo existente, sirva o <code>index.html</code>". Isso é necessário porque o React Router controla as rotas no lado do cliente — o servidor não precisa conhecer <code>/setor</code> ou <code>/orcamento</code>; ele sempre entrega o mesmo <code>index.html</code> e o React cuida do resto.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>16. Arquitetura Completa do GAPMN</h2>
+
+  <p>
+    Com todos os conceitos apresentados, veja como as camadas do GAPMN se encaixam:
+  </p>
+
+  <div class="layer-stack">
+    <div class="layer l1">
+      <span class="layer-icon">🌐</span>
+      <div>
+        <strong>Navegador do usuário</strong>
+        <div style="font-size:10pt;opacity:.75">Chrome / Edge · Executa o React App · Roda os bookmarklets</div>
+      </div>
+    </div>
+    <div style="text-align:center;color:#90a4ae;font-size:20px;margin:2px 0">↕</div>
+    <div class="layer l2">
+      <span class="layer-icon">⚛️</span>
+      <div>
+        <strong>React App (gapmn.app)</strong>
+        <div style="font-size:10pt;opacity:.75">TypeScript · React 19 · Tailwind CSS · Vite · Recharts · SheetJS</div>
+      </div>
+    </div>
+    <div style="text-align:center;color:#90a4ae;font-size:20px;margin:2px 0">↕</div>
+    <div class="layer l3">
+      <span class="layer-icon">🔌</span>
+      <div>
+        <strong>Supabase (BaaS)</strong>
+        <div style="font-size:10pt;opacity:.75">API REST automática · Autenticação JWT · Row Level Security</div>
+      </div>
+    </div>
+    <div style="text-align:center;color:#90a4ae;font-size:20px;margin:2px 0">↕</div>
+    <div class="layer l4">
+      <span class="layer-icon">🗄️</span>
+      <div>
+        <strong>PostgreSQL (banco de dados)</strong>
+        <div style="font-size:10pt;opacity:.75">~15 tabelas · Triggers · RLS policies · Migrações versionadas</div>
+      </div>
+    </div>
+    <div style="text-align:center;color:#90a4ae;font-size:20px;margin:2px 0">↕</div>
+    <div class="layer l5">
+      <span class="layer-icon">🌍</span>
+      <div>
+        <strong>APIs externas</strong>
+        <div style="font-size:10pt;opacity:.75">Banco Central · Google Sheets · PNCP · ComprasNet · SILOMS · Portal de Contratos</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Fluxo de uma ação típica — usuário filtra empenhos</h3>
+
+  <ol>
+    <li>Usuário digita "2026NE000463" no campo de busca da tela de Empenhos</li>
+    <li>React chama <code>setBusca("2026NE000463")</code> → estado muda</li>
+    <li>React redesenha o componente com o novo estado</li>
+    <li>O <code>useMemo</code> <em>filtrado</em> recalcula: filtra os dados já em memória</li>
+    <li>A tabela exibe apenas as linhas que contêm "2026NE000463"</li>
+    <li><em>Nenhuma chamada ao banco é feita</em> — os dados já estavam em memória desde o carregamento inicial</li>
+  </ol>
+
+  <h3>Fluxo do Robô CNET — extração de propostas</h3>
+
+  <ol>
+    <li>Usuário abre o ComprasNet com o pregão no navegador</li>
+    <li>Usuário clica no favorito (bookmarklet)</li>
+    <li>O bookmarklet cria um <code>&lt;script&gt;</code> que baixa <code>cnet-bot.js</code> de <code>gapmn.app</code></li>
+    <li>O script roda: exibe overlay, lê os itens da página via DOM</li>
+    <li>Para cada item: clica no botão "Visualizar propostas", aguarda carregamento, extrai dados</li>
+    <li>Ao concluir todos os itens: faz POST para o Supabase salvando todas as linhas de uma vez</li>
+    <li>Usuário pode ver os dados no Google Sheets via integração configurada</li>
+  </ol>
+
+  <h3>Estrutura de pastas do projeto</h3>
+
+  <pre><code>gapmn-app/
+├── src/
+│   ├── pages/          <span class="cm">← Páginas (AppChat, SetorInbox, ControleOrcamentario...)</span>
+│   ├── components/     <span class="cm">← Componentes reutilizáveis (GerenciamentoEmpenhos...)</span>
+│   ├── lib/            <span class="cm">← Utilitários (supabaseClient, gsheets, botEngine)</span>
+│   └── routes/         <span class="cm">← Guardas de rota (RequireAuth)</span>
+├── public/             <span class="cm">← Arquivos servidos diretamente (robôs .js, imagens)</span>
+│   ├── cnet-bot.js
+│   ├── arp-bot.js
+│   ├── siloms-despacho.js
+│   ├── empenho-bot.js
+│   └── relatorio-gapmn.html
+├── supabase/
+│   └── migrations/     <span class="cm">← Arquivos SQL de evolução do banco</span>
+├── .env                <span class="cm">← Variáveis secretas (não vai pro Git)</span>
+├── CLAUDE.md           <span class="cm">← Instruções para o assistente de IA</span>
+└── vercel.json         <span class="cm">← Configuração do deploy</span></code></pre>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>17. Glossário</h2>
+
+  <dl class="gloss">
+    <dt>API</dt>
+    <dd>Interface de comunicação entre programas. Na web, geralmente um servidor que responde a requisições HTTP com dados em formato JSON.</dd>
+
+    <dt>Array</dt>
+    <dd>Lista ordenada de itens em JavaScript: <code>["a", "b", "c"]</code>. O índice começa em 0.</dd>
+
+    <dt>Async / Await</dt>
+    <dd>Palavras-chave do JavaScript para lidar com operações demoradas (como buscar dados) sem travar a interface do usuário.</dd>
+
+    <dt>BaaS</dt>
+    <dd>Backend as a Service — serviço que fornece infraestrutura de servidor pronta (banco, autenticação, armazenamento) sem precisar programar um servidor do zero.</dd>
+
+    <dt>Bookmarklet</dt>
+    <dd>Favorito de navegador cujo endereço é um programa JavaScript. Ao clicar, executa código na página atual.</dd>
+
+    <dt>Build</dt>
+    <dd>Processo de compilar, empacotar e minificar o código-fonte para produzir arquivos prontos para publicação.</dd>
+
+    <dt>CDN</dt>
+    <dd>Rede de servidores distribuídos globalmente que entrega arquivos estáticos ao usuário pelo servidor mais próximo geograficamente.</dd>
+
+    <dt>Componente (React)</dt>
+    <dd>Função JavaScript que recebe dados e retorna HTML. Unidade básica de construção de interfaces no React.</dd>
+
+    <dt>CSS</dt>
+    <dd>Linguagem que define a aparência visual dos elementos HTML: cores, fontes, tamanhos, posições.</dd>
+
+    <dt>Deploy</dt>
+    <dd>Ato de publicar uma versão do aplicativo em um servidor de produção acessível ao público.</dd>
+
+    <dt>DOM</dt>
+    <dd>Representação em memória de todos os elementos HTML de uma página, que o JavaScript pode ler e modificar.</dd>
+
+    <dt>HTML</dt>
+    <dd>Linguagem de marcação que define a estrutura e o conteúdo de páginas web.</dd>
+
+    <dt>HTTPS</dt>
+    <dd>Versão criptografada do protocolo HTTP. Toda comunicação é cifrada, impedindo interceptação por terceiros.</dd>
+
+    <dt>Interface (TypeScript)</dt>
+    <dd>Definição da estrutura esperada de um objeto: quais campos tem, de qual tipo é cada campo.</dd>
+
+    <dt>JavaScript</dt>
+    <dd>A linguagem de programação nativa do navegador. Torna as páginas dinâmicas e interativas.</dd>
+
+    <dt>JSX</dt>
+    <dd>Extensão de sintaxe do JavaScript usada no React que permite escrever código similar a HTML dentro das funções.</dd>
+
+    <dt>JSON</dt>
+    <dd>Formato de texto para representar objetos JavaScript. Padrão universal de troca de dados entre sistemas.</dd>
+
+    <dt>JWT</dt>
+    <dd>Token criptografado que prova a identidade de um usuário. Gerado no login, enviado em todas as requisições subsequentes.</dd>
+
+    <dt>localStorage / sessionStorage</dt>
+    <dd>Armazenamentos locais no navegador. localStorage persiste após fechar o browser; sessionStorage dura só enquanto a aba está aberta.</dd>
+
+    <dt>PostgreSQL</dt>
+    <dd>Sistema de banco de dados relacional avançado. Suporta JSON, triggers, RLS e extensões poderosas.</dd>
+
+    <dt>Props</dt>
+    <dd>Parâmetros passados para um componente React — como argumentos de uma função.</dd>
+
+    <dt>React</dt>
+    <dd>Biblioteca JavaScript para construir interfaces baseadas em componentes com atualização automática quando o estado muda.</dd>
+
+    <dt>RLS</dt>
+    <dd>Row Level Security — mecanismo do PostgreSQL que aplica regras de acesso linha a linha, diretamente no banco de dados.</dd>
+
+    <dt>SQL</dt>
+    <dd>Linguagem padrão para consultar e manipular bancos de dados relacionais.</dd>
+
+    <dt>Supabase</dt>
+    <dd>Plataforma BaaS que combina PostgreSQL, API REST automática, autenticação e armazenamento de arquivos.</dd>
+
+    <dt>TypeScript</dt>
+    <dd>Superset do JavaScript que adiciona tipos estáticos. Detecta erros em tempo de desenvolvimento, antes de rodar o código.</dd>
+
+    <dt>useMemo</dt>
+    <dd>Hook do React que memoriza o resultado de um cálculo pesado, recalculando só quando as dependências mudam.</dd>
+
+    <dt>useEffect</dt>
+    <dd>Hook do React que executa código quando o componente aparece na tela ou quando uma dependência muda. Usado para buscar dados.</dd>
+
+    <dt>useState</dt>
+    <dd>Hook do React que cria um estado local: um valor que, ao mudar, redesenha o componente automaticamente.</dd>
+
+    <dt>Vercel</dt>
+    <dd>Plataforma de hospedagem otimizada para React/Next.js. Faz build e deploy automáticos com CDN global.</dd>
+
+    <dt>Vite</dt>
+    <dd>Ferramenta de build rápida para projetos JavaScript modernos. Compila TypeScript, empacota módulos e serve o app em desenvolvimento.</dd>
+  </dl>
+
+  <!-- Rodapé -->
+  <div class="footer">
+    <p>Sistema GAPMN · Guia Técnico para Estudo Pessoal · SEO/GAP-MN · 2026</p>
+    <p>Documento elaborado com o auxílio de Claude Code (Anthropic) · Uso interno</p>
+  </div>
+
+</div>
+
+<!-- ── Toolbar de edição ── -->
+<div class="toolbar">
+  <div class="toolbar-group">
+    <button id="btnEdit">✏️ Editar</button>
+    <button id="btnSave">💾 Salvar</button>
+    <button id="btnRestore">🔄 Original</button>
+    <button id="btnPrint">🖨️ Imprimir PDF</button>
+  </div>
+  <div class="edit-hint" id="editHint"></div>
+</div>
+
+<script>
+(function(){
+  var LS_KEY  = 'gapmn_tecnico_v1';
+  var page    = document.querySelector('.page');
+  var btnEdit    = document.getElementById('btnEdit');
+  var btnSave    = document.getElementById('btnSave');
+  var btnRestore = document.getElementById('btnRestore');
+  var btnPrint   = document.getElementById('btnPrint');
+  var editHint   = document.getElementById('editHint');
+
+  var EDIT_SELS = 'h2, h3, h4, p, li, dt, dd, td, th, .box, .box-title, .layer > div, .header .brasao, .header .org, .header .org-sub, .header .doc-title, .header .doc-subtitle, .header .meta, .toc-title, .footer p';
+
+  var editMode = false;
+
+  var saved = localStorage.getItem(LS_KEY);
+  if (saved) {
+    page.innerHTML = saved;
+    editHint.textContent = 'Versão salva carregada';
+    setTimeout(function(){ editHint.textContent = ''; }, 2500);
+  }
+
+  function enableEdit() {
+    editMode = true;
+    document.body.classList.add('editing');
+    btnEdit.textContent = '👁️ Visualizar';
+    btnEdit.classList.add('active');
+    page.querySelectorAll(EDIT_SELS).forEach(function(el){
+      el.setAttribute('contenteditable', 'true');
+      el.setAttribute('spellcheck', 'false');
+    });
+    editHint.textContent = 'Clique em qualquer texto para editar';
+  }
+
+  function disableEdit() {
+    editMode = false;
+    document.body.classList.remove('editing');
+    btnEdit.textContent = '✏️ Editar';
+    btnEdit.classList.remove('active');
+    page.querySelectorAll('[contenteditable]').forEach(function(el){
+      el.removeAttribute('contenteditable');
+    });
+    editHint.textContent = '';
+  }
+
+  btnEdit.addEventListener('click', function(){ if (editMode) disableEdit(); else enableEdit(); });
+
+  btnSave.addEventListener('click', function(){
+    var was = editMode;
+    if (was) disableEdit();
+    localStorage.setItem(LS_KEY, page.innerHTML);
+    if (was) enableEdit();
+    btnSave.textContent = '✓ Salvo!';
+    setTimeout(function(){ btnSave.textContent = '💾 Salvar'; }, 1800);
+    editHint.textContent = 'Salvo no navegador';
+    setTimeout(function(){ editHint.textContent = editMode ? 'Clique em qualquer texto para editar' : ''; }, 2500);
+  });
+
+  btnRestore.addEventListener('click', function(){
+    if (!confirm('Restaurar o texto original? Suas alterações serão perdidas.')) return;
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  });
+
+  btnPrint.addEventListener('click', function(){
+    var was = editMode;
+    if (was) disableEdit();
+    window.print();
+    if (was) setTimeout(enableEdit, 500);
+  });
+
+  document.addEventListener('keydown', function(e){
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); btnSave.click(); }
+  });
+})();
+</script>
+</body>
+</html>

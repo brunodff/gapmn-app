@@ -316,7 +316,7 @@ function fmtSetor(s?: string | null) {
 }
 
 // ── Nav tree ──────────────────────────────────────────────────────────────────
-type NavChild = { label: string; path: string; icon: string; wip?: boolean; adminOnly?: boolean };
+type NavChild = { label: string; path: string; icon: string; wip?: boolean; adminOnly?: boolean; seoOnly?: boolean; slicOnly?: boolean };
 type NavNode  = { id: string; label: string; icon: string; path?: string; children?: NavChild[] };
 
 const NAV: NavNode[] = [
@@ -324,12 +324,12 @@ const NAV: NavNode[] = [
   { id: "lic",     label: "Licitações",           icon: "⚖️", children: [
     { label: "Processos",   path: "view:processos",  icon: "📋" },
     { label: "Atas de RP",  path: "view:atas",       icon: "📄" },
-    { label: "Planejamento", path: "view:calendario", icon: "📅" },
+    { label: "Planejamento", path: "view:calendario", icon: "📅", slicOnly: true },
   ]},
   { id: "ctr",     label: "Contratos",            icon: "📑", path: "view:contratos" },
   { id: "eo",      label: "Exec. Orçamentária",   icon: "💰", children: [
     { label: "Indicadores de Lotação", path: "view:indicadores",    icon: "📊" },
-    { label: "Solicitações",           path: "view:solicitacoes",   icon: "📬" },
+    { label: "Solicitações",           path: "view:solicitacoes",   icon: "📬", seoOnly: true },
   ]},
   { id: "paineis", label: "Painéis Gerenciais",   icon: "📈", children: [
     { label: "Painel Orçamentário",  path: "view:painel-orcamento",  icon: "💰" },
@@ -597,7 +597,11 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
 
             {!collapsed && n.children && open[n.id] && (
               <div style={{ paddingLeft: 12, paddingBottom: 4 }}>
-                {n.children.filter(c => !c.adminOnly || user.setor === "ADMIN" || user.setor === "DEV").map(c => {
+                {n.children.filter(c =>
+                  (!c.adminOnly || user.setor === "ADMIN" || user.setor === "DEV") &&
+                  (!c.seoOnly   || user.setor === "SEO"   || user.setor === "ADMIN" || user.setor === "DEV") &&
+                  (!c.slicOnly  || user.setor === "SLIC"  || user.setor === "ADMIN" || user.setor === "DEV")
+                ).map(c => {
                   const cid = `${n.id}:${c.label}`;
                   return (
                     <button key={c.label}
@@ -1166,6 +1170,105 @@ function PainelGovernanca() {
   );
 }
 
+// ── Notificação de atualização da extensão ────────────────────────────────────
+const NOTIF_EXPIRY = new Date("2026-10-15T23:59:59");
+
+function NotificacaoAtualizacao({ onFerramentas }: { onFerramentas: () => void }) {
+  const expirou = new Date() > NOTIF_EXPIRY;
+  const [visivel, setVisivel] = useState(!expirou);
+  const [seg,     setSeg]     = useState(30);
+
+  useEffect(() => {
+    if (!visivel) return;
+    const t = setInterval(() => {
+      setSeg(s => {
+        if (s <= 1) { fechar(); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [visivel]);
+
+  function fechar() {
+    setVisivel(false);
+  }
+
+  if (!visivel) return null;
+
+  return (
+    <div style={{
+      position: "fixed", top: 24, right: 24, zIndex: 9999,
+      width: 380, borderRadius: 18,
+      background: "rgba(8,14,30,0.97)",
+      border: "1px solid rgba(99,102,241,0.4)",
+      boxShadow: "0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,102,241,0.1)",
+      overflow: "hidden",
+      animation: "dashFadeIn 0.3s ease-out",
+    }}>
+      {/* Barra de progresso */}
+      <div style={{ height: 3, background: "rgba(255,255,255,0.06)" }}>
+        <div style={{
+          height: "100%", background: "linear-gradient(90deg,#6366f1,#38bdf8)",
+          width: `${(seg / 30) * 100}%`,
+          transition: "width 1s linear",
+        }} />
+      </div>
+
+      <div style={{ padding: "18px 20px 20px" }}>
+        {/* Cabeçalho */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 22 }}>🔔</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#a5b4fc" }}>Extensão ComprasNet v1.14 disponível</div>
+              <div style={{ fontSize: 10, color: "rgba(148,163,184,0.6)", marginTop: 1 }}>Acesse Ferramentas → Baixar extensão</div>
+            </div>
+          </div>
+          <button onClick={fechar} style={{
+            background: "none", border: "none", color: "rgba(148,163,184,0.5)",
+            fontSize: 18, cursor: "pointer", padding: "2px 6px", borderRadius: 6,
+          }}>✕</button>
+        </div>
+
+        {/* Novidades */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+          {[
+            { icon: "📋", bold: "3 abas por processo",         rest: " — Itens, Licitantes e Habilitação, cada uma com visão especializada" },
+            { icon: "🔎", bold: "Busca por item",              rest: " — pesquise por descrição de item (ex: 'batata') e encontre o processo certo" },
+            { icon: "✅", bold: "Checklist de habilitação",    rest: " — marque os documentos entregues por licitante diretamente no painel" },
+            { icon: "🏢", bold: "Frases jurídicas prontas",    rest: " — copie convocações e comunicados padronizados na aba Licitantes" },
+          ].map(({ icon, bold, rest }) => (
+            <div key={bold} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "rgba(234,241,251,0.7)" }}>
+              <span style={{ flexShrink: 0, marginTop: 1 }}>{icon}</span>
+              <span><strong style={{ color: "#e2e8f0" }}>{bold}</strong>{rest}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Ações */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => { fechar(); onFerramentas(); }} style={{
+            flex: 1, textAlign: "center", border: "none", cursor: "pointer",
+            background: "linear-gradient(135deg,#4f46e5,#6366f1)",
+            color: "#fff", fontWeight: 700, fontSize: 12,
+            padding: "9px 0", borderRadius: 10,
+            boxShadow: "0 4px 16px rgba(99,102,241,0.35)",
+          }}>
+            🔧 Baixar nova versão → Ferramentas
+          </button>
+          <button onClick={fechar} style={{
+            background: "none", border: "1px solid rgba(148,163,184,0.15)",
+            color: "rgba(148,163,184,0.5)", fontSize: 11, cursor: "pointer",
+            padding: "9px 12px", borderRadius: 10, whiteSpace: "nowrap",
+          }}>
+            Fechar ({seg}s)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 export default function AppChat() {
   const navigate   = useNavigate();
@@ -1568,6 +1671,8 @@ export default function AppChat() {
         .svdark .svmodal .bg-red-50       { background: #fef2f2 !important; }
         .svdark .svmodal .bg-sky-50       { background: #f0f9ff !important; }
       `}</style>
+
+      <NotificacaoAtualizacao onFerramentas={() => setView("ferramentas")} />
 
       <div style={{
         position: "fixed", inset: 0, overflow: "hidden",

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
+import { utils, writeFile } from "xlsx";
 import { supabase } from "../lib/supabase";
 import { Card } from "./Card";
 
@@ -46,8 +47,12 @@ type CnetParticipante = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function classeSit(s: string): string {
   const l = (s ?? "").toLowerCase();
-  if (/homolog/.test(l))                                                                   return "bg-green-50 border-green-200 text-green-800";
-  if (/cancel|fracass|desert|revog|anulad/.test(l))                                       return "bg-slate-100 border-slate-300 text-slate-600";
+  if (/homolog/.test(l))                                                                        return "bg-emerald-100 border-emerald-300 text-emerald-800";
+  if (/desert/.test(l))                                                                         return "bg-amber-100 border-amber-300 text-amber-800";
+  if (/fracass/.test(l))                                                                        return "bg-orange-100 border-orange-300 text-orange-800";
+  if (/cancel/.test(l))                                                                         return "bg-red-100 border-red-300 text-red-700";
+  if (/revog/.test(l))                                                                          return "bg-purple-100 border-purple-300 text-purple-800";
+  if (/anulad/.test(l))                                                                         return "bg-pink-100 border-pink-300 text-pink-800";
   if (/julgamento|adjudic|abertura|aguardando|andamento|analise|recurso|proposta|selec/.test(l)) return "bg-sky-50 border-sky-200 text-sky-800";
   return "bg-amber-50 border-amber-200 text-amber-800";
 }
@@ -141,6 +146,16 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
     return [...processos].sort((a, b) => b.sincronizado_em?.localeCompare(a.sincronizado_em ?? "") ?? 0)[0]?.sincronizado_em ?? null;
   }, [processos]);
 
+  // CNPJ → nome: resolve vencedor_nome ausente via cnet_participantes
+  const cnpjNome = useMemo(() =>
+    Object.fromEntries(participantes.map(p => [p.cnpj, p.nome ?? ""])),
+  [participantes]);
+
+  function resolveNome(cnpj: string | null | undefined): string | null {
+    if (!cnpj) return null;
+    return cnpjNome[cnpj] || cnpj;
+  }
+
   const filtered = useMemo(() => {
     const q = filtroTexto.trim().toLowerCase();
     return processos.filter(p => {
@@ -150,67 +165,86 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
         const l = (p.situacao ?? "").toLowerCase();
         if (filtroSit === "andamento"  &&  /homolog|cancel|fracass|desert|revog|anulad/.test(l)) return false;
         if (filtroSit === "homologado" && !/homolog/.test(l))                                    return false;
-        if (filtroSit === "cancelado"  && !/cancel|fracass|desert|revog|anulad/.test(l))        return false;
+        if (filtroSit === "deserto"    && !/desert/.test(l))                                     return false;
+        if (filtroSit === "fracassado" && !/fracass/.test(l))                                    return false;
+        if (filtroSit === "cancelado"  && !/cancel/.test(l))                                     return false;
+        if (filtroSit === "revogado"   && !/revog|anulad/.test(l))                               return false;
       }
       if (q && ![p.identificacao, p.acao, p.situacao].some(v => v?.toLowerCase().includes(q))) return false;
       return true;
     });
   }, [processos, filtroAno, filtroSit, filtroGrupo, filtroTexto]);
 
-  // ── Export CSV ────────────────────────────────────────────────────────────
+  // ── Export XLS ────────────────────────────────────────────────────────────
   function exportarCSV() {
-    const esc = (v: unknown) => {
-      const s = String(v ?? "");
-      return s.includes(";") || s.includes('"') || s.includes("\n")
-        ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-
     if (selected && itens.length > 0) {
-      // Exporta itens homologados (prefere) — cai para todos se não houver homologados com vencedor
-      const homologados = itens.filter(it => it.grupo_numero == null && it.homologado && it.vencedor_cnpj != null);
-      const topLevel = homologados.length > 0
-        ? homologados
-        : itens.filter(it => it.grupo_numero == null);
-      if (!topLevel.length) return;
+      // Resumo de grupo = sem quantidade E sem valor unitário mas com valor total
+      // (mesma lógica da extensão para detectar grupos/lotes)
+      const ehResumo = (it: CnetItem) =>
+        it.quantidade == null && it.valor_estimado_unitario == null && it.valor_estimado_total != null;
+
+      // Sub-itens com grupo_numero explícito (linkados ao pai)
+      const subItens  = itens.filter(it => it.grupo_numero != null && it.numero_item > 0);
+      // Itens reais: positivo E não é resumo de grupo
+      const reais     = itens.filter(it => it.numero_item > 0 && !ehResumo(it));
+      // Se não há itens reais, cai de volta nos resumos (nada mais para mostrar)
+      const base      = reais.length > 0 ? reais : itens.filter(it => it.numero_item > 0);
+
+      const xlsItens  = base
+        .sort((a, b) => a.numero_item - b.numero_item)
+        .map(it => {
+          if (it.vencedor_cnpj) return it;
+          // Propaga vencedor do grupo pai (quando sub-item tem grupo_numero linkado)
+          if (it.grupo_numero != null) {
+            const pai = itens.find(g => g.numero_item === it.grupo_numero);
+            if (pai?.vencedor_cnpj) return { ...it, vencedor_cnpj: pai.vencedor_cnpj, vencedor_nome: pai.vencedor_nome };
+          }
+          // Propaga vencedor de sub-itens já linkados: se há sub-itens do mesmo grupo que têm vencedor
+          if (subItens.length > 0) {
+            const irmao = subItens.find(s => s.vencedor_cnpj && s.grupo_numero === it.grupo_numero);
+            if (irmao) return { ...it, vencedor_cnpj: irmao.vencedor_cnpj, vencedor_nome: irmao.vencedor_nome };
+          }
+          return it;
+        });
+
+      if (!xlsItens.length) return;
       const rows: unknown[][] = [
         ["LOTE", "ITEM", "REQUISIÇÃO", "CNPJ", "EMPRESA", "QTDE", "UND", "VALOR UNIT", "VALOR TOTAL", "PRAZO", "DESCRIÇÃO", "SITUAÇÃO", "FORNECEDOR", "MODELO/VERSAO", "MARCA"],
-        ...topLevel.map((it, idx) => [
-          it.lote ?? "",
-          idx + 1,
-          selected.numero + "/" + selected.ano,
-          it.vencedor_cnpj ?? "",
-          it.vencedor_nome ?? "",
-          it.quantidade ?? "",
-          it.unidade ?? "",
-          it.valor_vencedor_unitario ?? it.valor_estimado_unitario ?? "",
-          it.valor_vencedor_total ?? it.valor_estimado_total ?? "",
-          30,
-          it.descricao_detalhada || it.descricao || "",
-          it.situacao ?? "",
-          it.vencedor_nome ?? "",
-          "",
-          "",
-        ]),
+        ...xlsItens.map((it) => {
+          const nomeVencedor = it.vencedor_nome ?? resolveNome(it.vencedor_cnpj) ?? "";
+          return [
+            it.lote ?? "",
+            it.numero_item,
+            selected.numero + "/" + selected.ano,
+            it.vencedor_cnpj ?? "",
+            nomeVencedor,
+            it.quantidade ?? "",
+            it.unidade ?? "",
+            it.valor_vencedor_unitario ?? it.valor_estimado_unitario ?? "",
+            it.valor_vencedor_total ?? it.valor_estimado_total ?? "",
+            30,
+            it.descricao_detalhada || it.descricao || "",
+            it.situacao ?? "",
+            nomeVencedor,
+            "",
+            "",
+          ];
+        }),
       ];
-      const csv = "﻿" + rows.map(r => r.map(esc).join(";")).join("\r\n");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      a.download = selected.identificacao.replace(/[/\\:*?"<>|]/g, "-") + ".csv";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      const ws = utils.aoa_to_sheet(rows);
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, "Itens");
+      writeFile(wb, selected.identificacao.replace(/[/\\:*?"<>|]/g, "-") + ".xlsx");
     } else {
-      // Exporta lista de processos filtrados
       if (!filtered.length) return;
       const rows: unknown[][] = [
         ["Identificação", "Número", "Ano", "Situação", "Grupo", "Ação"],
         ...filtered.map(p => [p.identificacao, p.numero, p.ano, p.situacao, p.agrupamento, p.acao]),
       ];
-      const csv = "﻿" + rows.map(r => r.map(esc).join(";")).join("\r\n");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      a.download = `processos-cnet-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      const ws = utils.aoa_to_sheet(rows);
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, "Processos");
+      writeFile(wb, `processos-cnet-${new Date().toISOString().slice(0, 10)}.xlsx`);
     }
   }
 
@@ -255,7 +289,10 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
             <option value="todos">Todas as situações</option>
             <option value="andamento">Em Andamento</option>
             <option value="homologado">Homologado</option>
-            <option value="cancelado">Cancelado / Fracassado</option>
+            <option value="deserto">Deserto</option>
+            <option value="fracassado">Fracassado</option>
+            <option value="cancelado">Cancelado</option>
+            <option value="revogado">Revogado / Anulado</option>
           </select>
           <select value={filtroGrupo} onChange={e => setFiltroGrupo(e.target.value)}
             className="rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200">
@@ -270,7 +307,7 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
           </span>
           <button onClick={exportarCSV} disabled={selected ? itens.length === 0 : filtered.length === 0}
             className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors">
-            {selected && itens.length > 0 ? "📥 Exportar CSV do Processo" : "📥 Exportar Processos"}
+            {selected && itens.length > 0 ? "📥 Exportar XLS do Processo" : "📥 Exportar Processos"}
           </button>
         </div>
       </Card>
@@ -461,14 +498,14 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
                                         <td className="pl-5 pr-2 py-1.5 text-indigo-400 text-[11px] font-medium">↳ {si.numero_item}</td>
                                         <td className="px-2 py-1.5 text-slate-800 max-w-[300px]">
                                           <div className="text-[11px] font-medium leading-snug">{si.descricao_detalhada || si.descricao || "—"}</div>
-                                          {si.vencedor_nome ? (
-                                            <div className="mt-1 rounded border border-emerald-100 bg-emerald-50/60 px-2 py-1">
-                                              <div className="text-[9px] font-bold text-emerald-600 mb-0.5">🏆 Vencedor</div>
-                                              <div className="text-[10px] text-slate-700 font-medium truncate max-w-[220px]">{si.vencedor_nome}</div>
-                                              {si.vencedor_cnpj && <div className="text-[9px] text-slate-400 font-mono">{fmtCnpj(si.vencedor_cnpj)}</div>}
+                                          {si.vencedor_cnpj ? (
+                                            <div className="mt-1 rounded border border-slate-200 border-l-2 border-l-emerald-500 bg-white px-2 py-1">
+                                              <div className="text-[9px] font-bold text-emerald-700 mb-0.5">🏆 Vencedor</div>
+                                              <div className="text-[10px] text-slate-800 font-semibold truncate max-w-[220px]">{si.vencedor_nome ?? resolveNome(si.vencedor_cnpj)}</div>
+                                              <div className="text-[9px] text-slate-500 font-mono">{fmtCnpj(si.vencedor_cnpj)}</div>
                                             </div>
                                           ) : (
-                                            <div className="mt-0.5 text-[9px] text-slate-300 italic">sem vencedor</div>
+                                            <div className="mt-0.5 text-[9px] text-slate-400 italic">sem vencedor</div>
                                           )}
                                         </td>
                                         <td className="px-2 py-1.5 text-slate-500 text-[11px]">{si.unidade || "—"}</td>
@@ -510,10 +547,10 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
                                 </td>
                                 <td className="px-2 py-2 text-slate-800 max-w-[340px]">
                                   <div className="font-medium leading-snug">{it.descricao || "—"}</div>
-                                  {it.vencedor_nome && (
+                                  {it.vencedor_cnpj && (
                                     <div className="mt-0.5 flex items-center gap-1 flex-wrap">
                                       <span className="text-emerald-600 text-[9px] font-semibold">🏆</span>
-                                      <span className="text-[9px] text-slate-500 truncate max-w-[220px]">{it.vencedor_nome}</span>
+                                      <span className="text-[9px] text-slate-500 truncate max-w-[220px]">{it.vencedor_nome ?? resolveNome(it.vencedor_cnpj)}</span>
                                     </div>
                                   )}
                                 </td>
@@ -543,22 +580,22 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
                                     {it.descricao_detalhada && it.descricao_detalhada !== it.descricao && (
                                       <p className="text-[11px] text-slate-600 mb-2 leading-relaxed">{it.descricao_detalhada}</p>
                                     )}
-                                    {it.vencedor_nome ? (
-                                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3 max-w-xl">
-                                        <div className="text-[10px] font-bold text-emerald-700 mb-1.5">🏆 Vencedor</div>
-                                        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
-                                          <div><span className="text-slate-400">Empresa:</span> <span className="font-medium text-slate-800">{it.vencedor_nome}</span></div>
-                                          {it.vencedor_cnpj && <div><span className="text-slate-400">CNPJ:</span> <span className="font-mono text-slate-600">{fmtCnpj(it.vencedor_cnpj)}</span></div>}
+                                    {it.vencedor_cnpj ? (
+                                      <div className="rounded-lg border border-slate-200 border-l-4 border-l-emerald-500 bg-white px-4 py-3 max-w-xl shadow-sm">
+                                        <div className="text-[10px] font-bold text-emerald-700 mb-1.5 flex items-center gap-1">🏆 Vencedor</div>
+                                        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
+                                          <div><span className="text-slate-500">Empresa:</span> <span className="font-semibold text-slate-800">{it.vencedor_nome ?? resolveNome(it.vencedor_cnpj)}</span></div>
+                                          <div><span className="text-slate-500">CNPJ:</span> <span className="font-mono text-slate-700">{fmtCnpj(it.vencedor_cnpj)}</span></div>
                                           {it.valor_vencedor_unitario != null && (
-                                            <div><span className="text-slate-400">Val. proposto:</span> <span className="font-semibold text-slate-800">{fmtBRL(it.valor_vencedor_unitario)}/un</span></div>
+                                            <div><span className="text-slate-500">Val. proposto:</span> <span className="font-semibold text-slate-800">{fmtBRL(it.valor_vencedor_unitario)}/un</span></div>
                                           )}
                                           {it.valor_vencedor_total != null && (
-                                            <div><span className="text-slate-400">Val. total:</span> <span className="font-semibold text-slate-800">{fmtBRL(it.valor_vencedor_total)}</span></div>
+                                            <div><span className="text-slate-500">Val. total:</span> <span className="font-semibold text-slate-800">{fmtBRL(it.valor_vencedor_total)}</span></div>
                                           )}
                                           {eco != null && (
-                                            <div><span className="text-slate-400">Economia:</span> <span className={`font-bold ${eco >= 0 ? "text-emerald-600" : "text-red-500"}`}>{eco >= 0 ? "-" : "+"}{Math.abs(eco).toFixed(1)}%</span></div>
+                                            <div><span className="text-slate-500">Economia:</span> <span className={`font-bold ${eco >= 0 ? "text-emerald-600" : "text-red-500"}`}>{eco >= 0 ? "-" : "+"}{Math.abs(eco).toFixed(1)}%</span></div>
                                           )}
-                                          <div><span className="text-slate-400">Homologado:</span> {it.homologado ? <span className="font-bold text-emerald-600">✓ Sim</span> : <span className="text-slate-400">Não</span>}</div>
+                                          <div><span className="text-slate-500">Homologado:</span> {it.homologado ? <span className="font-bold text-emerald-600">✓ Sim</span> : <span className="text-slate-500">Não</span>}</div>
                                         </div>
                                       </div>
                                     ) : (
@@ -673,18 +710,18 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
                                           : "Este fornecedor não ganhou nenhum item neste processo."}
                                       </div>
                                     ) : (
-                                      <div className="bg-slate-50/60 px-4 py-3">
+                                      <div className="bg-white px-4 py-3">
                                         <div className="text-[10px] font-bold text-emerald-700 mb-2">🏆 Itens ganhos ({itensGanhos.length})</div>
                                         <table className="w-full text-[11px] border-collapse">
                                           <thead>
                                             <tr className="border-b border-slate-200">
-                                              <th className="text-left py-1 pr-3 text-slate-400 font-semibold w-8">#</th>
-                                              <th className="text-left py-1 pr-3 text-slate-400 font-semibold">Item</th>
-                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-14">Qtde</th>
-                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-28">Val. Est.</th>
-                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-28 text-sky-600">Val. Proposto</th>
-                                              <th className="text-right py-1 pr-3 text-slate-400 font-semibold w-16 text-emerald-600">Eco.</th>
-                                              <th className="text-center py-1 text-slate-400 font-semibold w-12 text-emerald-600">Hom.</th>
+                                              <th className="text-left py-1 pr-3 text-slate-500 font-semibold w-8">#</th>
+                                              <th className="text-left py-1 pr-3 text-slate-500 font-semibold">Item</th>
+                                              <th className="text-right py-1 pr-3 text-slate-500 font-semibold w-14">Qtde</th>
+                                              <th className="text-right py-1 pr-3 text-slate-500 font-semibold w-28">Val. Est.</th>
+                                              <th className="text-right py-1 pr-3 text-sky-600 font-semibold w-28">Val. Proposto</th>
+                                              <th className="text-right py-1 pr-3 text-emerald-600 font-semibold w-16">Eco.</th>
+                                              <th className="text-center py-1 text-emerald-600 font-semibold w-12">Hom.</th>
                                             </tr>
                                           </thead>
                                           <tbody>

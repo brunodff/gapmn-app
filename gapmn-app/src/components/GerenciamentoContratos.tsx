@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase";
 import { Card } from "./Card";
 import * as XLSX from "xlsx";
 import TermoApostilamentoContrato from "./TermoApostilamentoContrato";
-import { fetchCSV, toExecucaoLinhas, toRPNEs, normalizeNE, type ExecucaoLinha, type LinhaRPNE, SHEET_URLS } from "../lib/gsheets";
+import { fetchCSV, toExecucaoLinhas, toRPNEs, toEmpenhosNF, normalizeNE, type ExecucaoLinha, type LinhaRPNE, type EmpenhoNF, SHEET_URLS } from "../lib/gsheets";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -490,6 +490,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [rpMap, setRpMap]             = useState<Map<string, LinhaRPNE>>(new Map());
   const [execLoading, setExecLoading] = useState(false);
   const [execExpandedNE, setExecExpandedNE] = useState<string | null>(null);
+  const [execNFMap, setExecNFMap]           = useState<Map<string, EmpenhoNF[]>>(new Map());
 
   // Rola para o painel de detalhes ao selecionar (mobile) e reseta estados de edição
   useEffect(() => {
@@ -506,6 +507,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     setDetailMode("dados");
     setExecLinhas([]);
     setRpMap(new Map());
+    setExecNFMap(new Map());
     setExecExpandedNE(null);
     setReajusteMsg(null);
     setContratoDocs([]);
@@ -528,12 +530,24 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     Promise.all([
       fetchCSV(SHEET_URLS.execucao),
       fetchCSV(SHEET_URLS.rpNE),
-    ]).then(([execRows, rpRows]) => {
+      fetchCSV(SHEET_URLS.empenhosNF).catch(() => [] as string[][]),
+    ]).then(([execRows, rpRows, nfRows]) => {
       // Filtra NEs do contrato pela planilha de execução
       const { linhas } = toExecucaoLinhas(execRows);
       const filtered = pag
         ? linhas.filter((l) => l.info_g.replace(/[\s]/g, "").toUpperCase() === pag)
         : [];
+
+      // Constrói mapa NE → itens (empenhosNF com dados por item)
+      const nfItems = toEmpenhosNF(nfRows);
+      const nfMap = new Map<string, EmpenhoNF[]>();
+      for (const ne of nfItems) {
+        const key = normalizeNE(ne.nota_empenho);
+        const arr = nfMap.get(key) ?? [];
+        arr.push(ne);
+        nfMap.set(key, arr);
+      }
+      setExecNFMap(nfMap);
 
       // Constrói mapa de RP
       const rps = toRPNEs(rpRows);
@@ -1412,10 +1426,9 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
       {/* Seletor de visão principal */}
       <div className="flex gap-2">
-        {([
-          { id: "lista",    label: "📋 Lista de Contratos" },
-          { id: "previsao", label: "📊 Previsão Orçamentária" },
-        ] as const).map(({ id, label }) => (
+        {([ { id: "lista" as const, label: "📋 Lista de Contratos" },
+             ...(canEditBudget ? [{ id: "previsao" as const, label: "📊 Previsão Orçamentária" }] : []),
+        ]).map(({ id, label }) => (
           <button
             key={id}
             onClick={() => setMainView(id)}
@@ -2479,7 +2492,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   </p>
                 )}
                 {!execLoading && execLinhas.length > 0 && (() => {
-                  // Para cada NE: emite linha do ano de origem + linha RP (se houver)
                   const rows = execLinhas.flatMap((l) => {
                     const rp = rpMap.get(normalizeNE(l.nota_empenho));
                     const execRow = {
@@ -2505,7 +2517,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                         favorecido: rp.favorecido || l.info_e || l.info_d,
                         descricao:  rp.descricao  || l.info_f,
                       };
-                      // NE existe apenas no RP (linha sintética com zeros) — omite linha exec em branco
                       const execIsZero = l.a_liquidar === 0 && l.liquidado_pagar === 0 && l.pago === 0;
                       return execIsZero ? [rpRow] : [execRow, rpRow];
                     }
@@ -2523,10 +2534,10 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                       {/* KPIs */}
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         {[
-                          { label: "Total Empenhado", val: totalEmp,  bg: "bg-sky-50 border-sky-200",       txt: "text-sky-800" },
-                          { label: "A Liquidar",      val: totalALiq, bg: "bg-amber-50 border-amber-200",   txt: "text-amber-800" },
-                          { label: "Liq. a Pagar",    val: totalLiq,  bg: "bg-indigo-50 border-indigo-200", txt: "text-indigo-800" },
-                          { label: "Pago",            val: totalPago, bg: "bg-green-50 border-green-200",   txt: "text-green-800" },
+                          { label: "Total Empenhado", val: totalEmp,  bg: "bg-sky-900/30 border-sky-700/40",       txt: "text-sky-300" },
+                          { label: "A Liquidar",      val: totalALiq, bg: "bg-amber-900/30 border-amber-700/40",   txt: "text-amber-300" },
+                          { label: "Liq. a Pagar",    val: totalLiq,  bg: "bg-indigo-900/30 border-indigo-700/40", txt: "text-indigo-300" },
+                          { label: "Pago",            val: totalPago, bg: "bg-green-900/30 border-green-700/40",   txt: "text-green-300" },
                         ].map(k => (
                           <div key={k.label} className={`rounded-lg border p-2 ${k.bg}`}>
                             <div className="text-slate-500">{k.label}</div>
@@ -2535,107 +2546,105 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                         ))}
                       </div>
 
-                      {/* Aviso de RP */}
                       {nRP > 0 && (
-                        <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] text-orange-700 flex items-center gap-2">
+                        <div className="rounded-lg border border-orange-700/40 bg-orange-950/20 px-3 py-2 text-[11px] text-orange-300 flex items-center gap-2">
                           <span>⚠️</span>
-                          <span>
-                            <strong>{nRP} NE{nRP > 1 ? "s" : ""}</strong> com Restos a Pagar — histórico completo exibido (ano de origem + RP).
-                          </span>
+                          <span><strong>{nRP} NE{nRP > 1 ? "s" : ""}</strong> com Restos a Pagar — histórico completo exibido (ano de origem + RP).</span>
                         </div>
                       )}
 
-                      {/* Tabela */}
-                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      {/* ── Tabela de NEs ── */}
+                      <div className="overflow-x-auto rounded-xl border border-slate-700/40">
                         <table className="w-full text-[11px]">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-left">
-                              <th className="px-3 py-2">NE</th>
-                              <th className="px-3 py-2">Favorecido</th>
-                              <th className="px-3 py-2 text-right">A Liquidar</th>
-                              <th className="px-3 py-2 text-right">Liq/Pagar</th>
-                              <th className="px-3 py-2 text-right">Pago</th>
-                              <th className="px-2 py-2"></th>
+                            <tr className="bg-slate-800/60 border-b border-slate-700/40 text-slate-500 text-left">
+                              <th className="px-3 py-2 whitespace-nowrap font-semibold">NE</th>
+                              <th className="px-3 py-2 font-semibold">Favorecido</th>
+                              <th className="px-2 py-2 text-right whitespace-nowrap font-semibold">A Liquidar</th>
+                              <th className="px-2 py-2 text-right whitespace-nowrap font-semibold">Liq. a Pagar</th>
+                              <th className="px-2 py-2 text-right whitespace-nowrap font-semibold">Pago</th>
                             </tr>
                           </thead>
-                          <tbody>
-                            {rows.map((r) => {
-                              const key = r.rowKey;
-                              const exp = execExpandedNE === key;
-                              return (
-                                <>
-                                  <tr
-                                    key={key}
-                                    onClick={() => setExecExpandedNE(exp ? null : key)}
-                                    className={`border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${r.isRP ? "bg-orange-50/40" : ""}`}
-                                  >
-                                    <td className="px-3 py-2 whitespace-nowrap">
-                                      <span className="font-mono font-semibold text-sky-700">
-                                        {r.l.nota_empenho.slice(-6)}
-                                      </span>
-                                      {r.isRP ? (
-                                        <span className="ml-1.5 rounded px-1 py-0.5 text-[9px] font-bold bg-orange-200 text-orange-800 align-middle">RP</span>
-                                      ) : (
-                                        <span className="ml-1.5 rounded px-1 py-0.5 text-[9px] font-semibold bg-sky-100 text-sky-700 align-middle">
-                                          {r.l.nota_empenho.slice(0, 4)}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2 text-slate-600 truncate max-w-[120px]">{r.favorecido}</td>
-                                    <td className="px-3 py-2 text-right text-amber-700">{r.aLiquidar > 0 ? fmtMoney(r.aLiquidar) : <span className="text-slate-300">–</span>}</td>
-                                    <td className="px-3 py-2 text-right text-indigo-700">{r.liquidado > 0 ? fmtMoney(r.liquidado) : <span className="text-slate-300">–</span>}</td>
-                                    <td className="px-3 py-2 text-right text-green-700">{r.pago > 0 ? fmtMoney(r.pago) : <span className="text-slate-300">–</span>}</td>
-                                    <td className="px-2 py-2 text-slate-400">{exp ? "▲" : "▼"}</td>
-                                  </tr>
-                                  {exp && (
-                                    <tr key={key + "_det"} className="bg-slate-50">
-                                      <td colSpan={6} className="px-4 py-3 text-[11px] text-slate-600">
-                                        <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                                          <div><span className="font-semibold">NE Completa:</span> {r.l.nota_empenho}</div>
-                                          <div><span className="font-semibold">Favorecido:</span> {r.favorecido}</div>
-                                          <div><span className="font-semibold">Descrição:</span> {r.descricao || "–"}</div>
-                                          <div><span className="font-semibold">PAG:</span> {r.l.info_g || "–"}</div>
-                                          <div><span className="font-semibold">Total linha:</span> {fmtMoney(r.total)}</div>
-                                          {r.isRP && (
-                                            <div className="col-span-2 mt-1 text-orange-700 font-medium">
-                                              ⚠️ Restos a Pagar — A Liq.: {fmtMoney(r.aLiquidar)} · Liq/Pagar: {fmtMoney(r.liquidado)} · Pago: {fmtMoney(r.pago)}
-                                            </div>
-                                          )}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </>
-                              );
-                            })}
+                          <tbody className="divide-y divide-slate-700/20">
+                            {rows.map((r) => (
+                              <tr key={r.rowKey} className={r.isRP ? "bg-orange-950/20" : ""}>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <span className="font-mono font-bold text-sky-400">{r.l.nota_empenho}</span>
+                                  {r.isRP && <span className="ml-1.5 rounded px-1 py-0.5 text-[9px] font-bold bg-orange-800/60 text-orange-300">RP</span>}
+                                </td>
+                                <td className="px-3 py-2 text-slate-400 max-w-[160px] truncate" title={r.favorecido || r.descricao}>
+                                  {r.favorecido || r.descricao || "–"}
+                                </td>
+                                <td className="px-2 py-2 text-right font-mono">
+                                  {r.aLiquidar > 0 ? <span className="text-amber-400">{fmtMoney(r.aLiquidar)}</span> : <span className="text-slate-700">–</span>}
+                                </td>
+                                <td className="px-2 py-2 text-right font-mono">
+                                  {r.liquidado > 0 ? <span className="text-indigo-400">{fmtMoney(r.liquidado)}</span> : <span className="text-slate-700">–</span>}
+                                </td>
+                                <td className="px-2 py-2 text-right font-mono">
+                                  {r.pago > 0 ? <span className="text-green-400">{fmtMoney(r.pago)}</span> : <span className="text-slate-700">–</span>}
+                                </td>
+                              </tr>
+                            ))}
                           </tbody>
                         </table>
-                      {/* Estimativa para o próximo ano — usa início do contrato como âncora */}
+                      </div>
+
+                      {/* ── Itens empenhados: NE + Nº Item + Valor ── */}
+                      {(() => {
+                        const flatItens: Array<{ ne: string; num: string; valor: number }> = [];
+                        for (const r of rows) {
+                          const key = normalizeNE(r.l.nota_empenho);
+                          const nfItens = execNFMap.get(key);
+                          if (!nfItens) continue;
+                          for (const it of nfItens) {
+                            if (it.item_valor > 0)
+                              flatItens.push({ ne: r.l.nota_empenho, num: it.item_num || "–", valor: it.item_valor });
+                          }
+                        }
+                        if (!flatItens.length) return null;
+                        return (
+                          <div>
+                            <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide mb-1.5 px-0.5">
+                              Itens Empenhados
+                            </div>
+                            <div className="rounded-xl border border-slate-700/40 overflow-hidden divide-y divide-slate-700/20">
+                              {flatItens.map(({ ne, num, valor }, i) => (
+                                <div key={i} className="flex items-center gap-3 px-3 py-1.5 text-[11px]">
+                                  <span className="font-mono text-sky-400/70 text-[10px] whitespace-nowrap shrink-0 w-28">{ne}</span>
+                                  {num !== "–" && (
+                                    <span className="text-slate-500 text-[10px] whitespace-nowrap shrink-0">Item {num}</span>
+                                  )}
+                                  <span className="text-indigo-400 font-mono text-[10px] whitespace-nowrap ml-auto">{fmtMoney(valor)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Estimativa para o próximo ano */}
                       {(() => {
                         const todayYear  = new Date().getFullYear();
                         const todayMonth = new Date().getMonth() + 1;
                         const IPCA       = 0.051;
 
-                        // Soma TODOS os pagamentos (qualquer NE, incluindo RP):
-                        // NEs de exercícios anteriores podem estar liquidando faturas do contrato atual.
-                        const totalPago = rows.reduce((s, r) =>
+                        const totalPagoCalc = rows.reduce((s, r) =>
                           s + r.pago + (r.isRP ? 0 : r.liquidado), 0
                         );
-                        if (totalPago === 0) return null;
+                        if (totalPagoCalc === 0) return null;
 
-                        // Denominador: meses desde o início do contrato até o mês anterior
-                        const ini        = selected.data_inicio ? new Date(selected.data_inicio + "T12:00:00") : null;
+                        const ini         = selected.data_inicio ? new Date(selected.data_inicio + "T12:00:00") : null;
                         const cStartYear  = ini ? ini.getFullYear() : todayYear;
                         const cStartMonth = ini ? ini.getMonth() + 1 : 1;
                         const monthsElapsed = Math.max(1,
                           (todayYear * 12 + todayMonth - 1) - (cStartYear * 12 + cStartMonth - 1)
                         );
 
-                        const predMensal = (totalPago / monthsElapsed) * (1 + IPCA);
+                        const predMensal = (totalPagoCalc / monthsElapsed) * (1 + IPCA);
                         const predAnual  = predMensal * 12;
                         const nextYear   = todayYear + 1;
 
-                        // Agrupa por ano do NE apenas para exibição informativa
                         const byYear = new Map<number, number>();
                         for (const r of rows) {
                           const m = r.l.nota_empenho.match(/^(\d{4})NE/i);
@@ -2647,40 +2656,32 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                         const pts = [...byYear.entries()].sort((a, b) => a[0] - b[0]);
 
                         return (
-                          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs space-y-2">
-                            <div className="font-semibold text-sky-800">
-                              Estimativa de empenho para {nextYear}
-                            </div>
-
-                            {/* Histórico por ano do NE (informativo) */}
+                          <div className="rounded-xl border border-sky-700/40 bg-sky-900/20 px-4 py-3 text-xs space-y-2">
+                            <div className="font-semibold text-sky-300">Estimativa de empenho para {nextYear}</div>
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
                               {pts.map(([yr, v]) => (
                                 <span key={yr} className="text-slate-500">
-                                  <span className="font-semibold text-slate-700">{yr}:</span>{" "}
-                                  {fmtMoney(v)}
+                                  <span className="font-semibold text-slate-400">{yr}:</span> {fmtMoney(v)}
                                 </span>
                               ))}
                             </div>
-
                             <div className="grid grid-cols-2 gap-3 pt-1">
                               <div>
                                 <div className="text-slate-500">Previsão anual</div>
-                                <div className="font-bold text-sky-700 text-sm">{fmtMoney(predAnual)}</div>
-                                <div className="text-[10px] text-slate-400">base {fmtMoney(predAnual / (1 + IPCA))} + IPCA {(IPCA * 100).toFixed(1)}%</div>
+                                <div className="font-bold text-sky-400 text-sm">{fmtMoney(predAnual)}</div>
+                                <div className="text-[10px] text-slate-600">base {fmtMoney(predAnual / (1 + IPCA))} + IPCA {(IPCA * 100).toFixed(1)}%</div>
                               </div>
                               <div>
                                 <div className="text-slate-500">Estimativa mensal</div>
-                                <div className="font-bold text-sky-700 text-sm">{fmtMoney(predMensal)}</div>
+                                <div className="font-bold text-sky-400 text-sm">{fmtMoney(predMensal)}</div>
                               </div>
                             </div>
-
-                            <div className="text-slate-400 text-[10px]">
-                              Base: {fmtMoney(totalPago)} em {monthsElapsed} mes{monthsElapsed !== 1 ? "es" : ""} (desde {String(cStartMonth).padStart(2, "0")}/{cStartYear}) + IPCA {(IPCA * 100).toFixed(1)}%
+                            <div className="text-slate-600 text-[10px]">
+                              Base: {fmtMoney(totalPagoCalc)} em {monthsElapsed} mes{monthsElapsed !== 1 ? "es" : ""} (desde {String(cStartMonth).padStart(2, "0")}/{cStartYear}) + IPCA {(IPCA * 100).toFixed(1)}%
                             </div>
                           </div>
                         );
                       })()}
-                      </div>
                     </>
                   );
                 })()}

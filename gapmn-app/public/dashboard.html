@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard CAE</title>
+<link rel="icon" href="/CAE.png" type="image/png">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f172a;--sur:#1e293b;--bdr:#334155;--txt:#e2e8f0;--mut:#94a3b8;
+  --blu:#3b82f6;--grn:#4ade80;--amb:#fbbf24;--red:#f87171;--tel:#2dd4bf;
+  --pur:#a78bfa;--org:#fb923c
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:13px/1.5 system-ui,sans-serif;min-height:100vh}
+
+/* ── Login ── */
+#loginWrap{
+  display:flex;align-items:center;justify-content:center;min-height:100vh;
+  background:radial-gradient(ellipse at 60% 40%, #0f2040 0%, var(--bg) 70%);
+  position:relative;overflow:hidden
+}
+#loginWrap::before{
+  content:'';position:absolute;inset:0;
+  background:repeating-linear-gradient(
+    -45deg,transparent,transparent 60px,rgba(59,130,246,.03) 60px,rgba(59,130,246,.03) 61px
+  );pointer-events:none
+}
+.lcard{
+  position:relative;z-index:1;
+  background:rgba(15,23,42,.92);
+  border:1px solid #1e3a5f;
+  border-radius:20px;
+  padding:44px 40px 36px;
+  width:380px;
+  box-shadow:0 0 60px rgba(59,130,246,.12),0 24px 60px rgba(0,0,0,.5);
+  backdrop-filter:blur(8px)
+}
+.lcard::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:60%;height:1px;background:linear-gradient(90deg,transparent,#3b82f6,transparent)
+}
+.llogo-wrap{text-align:center;margin-bottom:20px}
+.llogo{height:80px;width:auto;object-fit:contain;filter:drop-shadow(0 0 12px rgba(59,130,246,.4))}
+.ltitle{
+  font-family:'Raleway',system-ui,sans-serif;
+  font-size:14px;font-weight:800;letter-spacing:1.5px;
+  color:var(--txt);text-align:center;text-transform:uppercase;
+  margin-bottom:4px;line-height:1.3
+}
+.lsub{font-size:11px;color:#475569;text-align:center;margin-bottom:28px;letter-spacing:.4px}
+.ldivider{border:none;border-top:1px solid #1e293b;margin:0 0 22px}
+.fld{margin-bottom:16px}
+.fld label{display:block;font-size:10px;color:#64748b;margin-bottom:5px;font-weight:600;letter-spacing:.8px;text-transform:uppercase}
+.fld input{
+  width:100%;background:#0b1221;border:1px solid #1e293b;
+  border-radius:8px;color:var(--txt);font-size:13px;padding:10px 13px;
+  transition:border-color .2s
+}
+.fld input:focus{outline:none;border-color:var(--blu);box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.btnpri{
+  width:100%;padding:11px;margin-top:6px;
+  background:linear-gradient(135deg,#2563eb,#3b82f6);
+  color:#fff;border:none;border-radius:9px;cursor:pointer;
+  font-size:13px;font-weight:700;letter-spacing:.5px;
+  box-shadow:0 4px 16px rgba(59,130,246,.35);
+  transition:opacity .15s,transform .1s
+}
+.btnpri:hover{opacity:.9;transform:translateY(-1px)}
+.btnpri:active{transform:translateY(0)}
+.lerr{color:var(--red);font-size:11px;text-align:center;margin-top:10px;min-height:16px}
+.lfoot{text-align:center;margin-top:18px;font-size:10px;color:#334155;letter-spacing:.3px}
+
+/* ── Shell ── */
+#appWrap{display:none;flex-direction:column;min-height:100vh}
+.hdr{background:var(--sur);border-bottom:1px solid var(--bdr);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-shrink:0}
+.hdr-logo{height:38px;width:auto;object-fit:contain;border-radius:4px;flex-shrink:0}
+.hdr-title{font-family:'Raleway',system-ui,sans-serif;font-size:15px;font-weight:800;letter-spacing:.6px;color:var(--txt);flex:1;text-transform:uppercase}
+.hdr-sub{font-size:11px;color:var(--mut)}
+.btnsm{padding:5px 12px;border:1px solid var(--bdr);background:none;color:var(--mut);border-radius:6px;cursor:pointer;font-size:12px}
+.btnsm:hover{background:#111827;color:var(--txt)}
+.tabs{display:flex;gap:2px;padding:0 20px;border-bottom:1px solid var(--bdr);background:var(--sur);flex-shrink:0}
+.tab{padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;color:var(--mut);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--blu);border-bottom-color:var(--blu)}
+.content{flex:1;padding:16px 20px;overflow-y:auto}
+
+/* ── Process bar / picker ── */
+.proc-bar{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.proc-picker-btn{background:var(--sur);border:1px solid var(--bdr);color:var(--txt);border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:border-color .15s}
+.proc-picker-btn:hover{border-color:var(--blu);color:var(--blu)}
+/* Legacy pill styles kept for any references */
+.proc-pills{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.proc-pill{padding:4px 11px;border:1px solid var(--bdr);border-radius:20px;cursor:pointer;font-size:11px;font-weight:600;background:var(--bg);color:var(--mut);transition:all .15s;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.proc-pill.on{background:#1e3a5f;border-color:var(--blu);color:#60a5fa}
+.proc-pill:hover:not(.on){border-color:#64748b;color:var(--txt)}
+.pill-del{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#450a0a;color:#f87171;font-size:11px;line-height:1;cursor:pointer;opacity:0;transition:opacity .15s;flex-shrink:0}
+.proc-pill:hover .pill-del{opacity:1}
+.pill-del:hover{background:#7f1d1d}
+.proc-bar-btns{display:flex;gap:6px;flex-shrink:0}
+.proc-bar-btns button{padding:4px 9px;background:none;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:11px}
+.proc-bar-btns button:hover{color:var(--txt);border-color:#64748b}
+
+/* ── KPIs ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,200px));gap:10px;margin-bottom:14px;justify-content:center}
+.kcard{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:13px 15px;position:relative;overflow:hidden}
+.kcard::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--kc,var(--blu))}
+.kval{font-size:19px;font-weight:700;color:var(--kc,var(--blu));line-height:1.2;margin-bottom:2px;word-break:break-word}
+.klbl{font-size:10px;color:var(--mut);line-height:1.3;text-transform:uppercase;letter-spacing:.4px}
+.ksub{font-size:10px;color:#475569;margin-top:2px}
+.kcard-sm{padding:9px 13px}
+.kcard-sm .kval{font-size:16px}
+.kcard-sm[draggable]{cursor:grab;user-select:none}
+.kcard-sm[draggable]:active{cursor:grabbing}
+.kcard-sm.drag-over{outline:2px dashed var(--amb);opacity:.65}
+.kpi-sit{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,190px));gap:8px;margin-bottom:14px;justify-content:center}
+
+/* ── Charts ── */
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,380px));gap:12px;margin-bottom:14px;justify-content:center}
+.chart-card{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:14px 16px}
+.chart-card.wide{grid-column:1/-1}
+.chart-ttl{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.chart-wrap{position:relative}
+.chart-wrap.h180{height:180px}
+.chart-wrap.h220{height:220px}
+.chart-wrap.h260{height:260px}
+
+/* ── Detail table ── */
+.dtl-toggle-btn{padding:6px 14px;background:none;border:1px solid var(--bdr);border-radius:8px;color:var(--mut);cursor:pointer;font-size:12px;margin-bottom:10px}
+.dtl-toggle-btn:hover{color:var(--txt);border-color:#64748b}
+.tbar{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.srch{background:var(--sur);border:1px solid var(--bdr);border-radius:8px;color:var(--txt);font-size:12px;padding:6px 10px;flex:1;min-width:180px}
+.srch:focus{outline:none;border-color:var(--blu)}
+select.filt{background:var(--sur);border:1px solid var(--bdr);border-radius:8px;color:var(--txt);font-size:12px;padding:6px 8px;cursor:pointer}
+.twrap{overflow-x:auto;border:1px solid var(--bdr);border-radius:10px;max-height:400px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{background:#0b1221;color:var(--mut);padding:8px 10px;text-align:left;font-weight:600;font-size:11px;border-bottom:1px solid var(--bdr);white-space:nowrap;position:sticky;top:0;z-index:1;cursor:pointer;user-select:none}
+th:hover{color:var(--txt)}
+td{padding:7px 10px;border-bottom:1px solid #162032;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#172033}
+.badge{display:inline-block;padding:2px 7px;border-radius:12px;font-size:10px;font-weight:600}
+.b-grn{background:#14532d;color:#4ade80}
+.b-amb{background:#78350f;color:#fbbf24}
+.b-red{background:#450a0a;color:#f87171}
+.b-blu{background:#1e3a5f;color:#60a5fa}
+.b-gry{background:#1e293b;color:#94a3b8}
+.val{color:#4ade80;font-family:monospace;font-size:11px}
+#dtlCount{font-size:11px;color:#475569;margin-top:6px;text-align:right}
+td.td-wrap{white-space:normal !important;max-width:280px;vertical-align:top}
+
+/* ── Bot & Config tabs ── */
+.bsec,.cfgsec{max-width:680px}
+.bcard,.cfgblock{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;padding:20px;margin-bottom:14px}
+.bcard h3,.cfgblock h3{font-size:14px;font-weight:700;margin-bottom:10px;color:var(--blu)}
+.bcard p,.cfgblock p{font-size:12px;color:var(--mut);line-height:1.7;margin-bottom:10px}
+.bmark-wrap{background:var(--bg);border:1px solid var(--bdr);border-radius:8px;padding:14px;margin:10px 0;display:flex;align-items:center;gap:14px}
+a.bmark-btn{background:var(--blu);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:move;text-decoration:none;white-space:nowrap;user-select:none}
+.bmark-hint{font-size:11px;color:var(--mut);line-height:1.6}
+ol.steps{font-size:12px;color:var(--mut);line-height:2;padding-left:18px}
+ol.steps li b{color:var(--txt)}
+.codebox{background:var(--bg);border:1px solid var(--bdr);border-radius:8px;padding:12px;font-size:10px;font-family:monospace;color:#7dd3fc;white-space:pre-wrap;cursor:pointer;margin:10px 0;line-height:1.6}
+.codebox:hover{border-color:var(--blu)}
+.copyhint{font-size:10px;color:var(--mut)}
+.cfgrow{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.cfgrow input,.cfgrow textarea{flex:1;background:var(--bg);border:1px solid var(--bdr);border-radius:8px;color:var(--txt);font-size:12px;padding:8px 10px}
+.cfgrow textarea{height:80px;resize:vertical;font-family:monospace}
+.cfgrow input:focus,.cfgrow textarea:focus{outline:none;border-color:var(--blu)}
+.btnsave{padding:8px 14px;background:var(--blu);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;flex-shrink:0}
+.cfgmsg{font-size:12px;margin-top:4px;min-height:16px}
+.info-box{background:#0c1a2e;border:1px solid #1e3a5f;border-radius:8px;padding:10px 12px;font-size:11px;color:#7dd3fc;line-height:1.7;margin-bottom:10px}
+
+/* ── Admin panel ── */
+.adm-lock{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;padding:20px;margin-bottom:14px}
+.adm-lock h3{font-size:14px;font-weight:700;margin-bottom:8px;color:var(--amb)}
+.adm-lock p{font-size:12px;color:var(--mut);margin-bottom:12px}
+.adm-panel{display:none}
+.adm-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding:10px 14px;background:#1a1200;border:1px solid #78350f;border-radius:10px}
+.adm-badge{font-size:11px;font-weight:800;letter-spacing:1px;color:var(--amb);text-transform:uppercase}
+.adm-logout{font-size:11px;color:var(--mut);background:none;border:1px solid var(--bdr);border-radius:6px;padding:4px 10px;cursor:pointer}
+.adm-logout:hover{color:var(--txt);border-color:#64748b}
+.adm-section{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;padding:18px 20px;margin-bottom:12px}
+.adm-section h4{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--txt)}
+.adm-proc-list{display:flex;flex-direction:column;gap:4px;max-height:240px;overflow-y:auto;margin-bottom:10px}
+.adm-proc-row{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg);border:1px solid var(--bdr);border-radius:7px;font-size:12px}
+.adm-del-btn{background:#450a0a;color:#f87171;border:none;border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;font-weight:700}
+.adm-del-btn:hover{background:#7f1d1d}
+.adm-danger{padding:8px 14px;background:#450a0a;color:#f87171;border:1px solid #7f1d1d;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700}
+.adm-danger:hover{background:#7f1d1d}
+
+/* ── Misc ── */
+.empty,.loading{text-align:center;color:var(--mut);padding:40px;font-size:13px}
+.state-empty{text-align:center;padding:40px 20px;color:var(--mut)}
+.state-empty p{font-size:13px;margin-bottom:8px}
+.state-empty small{font-size:11px;color:#475569}
+</style>
+</head>
+<body>
+
+<!-- ════════ LOGIN ════════ -->
+<div id="loginWrap">
+  <div class="lcard">
+    <div class="llogo-wrap">
+      <img src="/CAE.png" class="llogo" alt="CAE">
+    </div>
+    <div class="ltitle">Centro de Aquisições<br>Específicas</div>
+    <div class="lsub">Sistema de Controle de Processos Licitatórios</div>
+    <hr class="ldivider">
+    <div class="fld"><label>Usuário</label><input id="lUser" type="text" autocomplete="off"></div>
+    <div class="fld"><label>Senha</label><input id="lPass" type="password" autocomplete="new-password"></div>
+    <button class="btnpri" onclick="doLogin()">Acessar Sistema</button>
+    <div class="lerr" id="lErr"></div>
+    <div class="lfoot">Divisão de Obtenções - CAE</div>
+  </div>
+</div>
+
+<!-- ════════ APP ════════ -->
+<div id="appWrap">
+  <div class="hdr">
+    <img src="/CAE.png" class="hdr-logo" alt="CAE">
+    <span class="hdr-title">Dashboard Centro de Aquisições Específicas</span>
+    <span id="hdrUser" style="font-size:12px;color:var(--tel);font-weight:600;margin-left:auto"></span>
+    <span class="hdr-sub" id="hdrSub"></span>
+    <button class="btnsm" onclick="loadAll()">↺ Recarregar</button>
+    <button class="btnsm" onclick="doLogout()">Sair</button>
+  </div>
+  <div class="tabs">
+    <button class="tab on" onclick="showTab('Dash',this)">📊 Dashboard</button>
+    <button class="tab"    onclick="showTab('Bot',this)">🤖 Bot CNET</button>
+    <button class="tab"    onclick="showTab('Cfg',this)">⚙️ Config</button>
+  </div>
+
+  <!-- ── TAB DASHBOARD ── -->
+  <div class="content" id="tabDash">
+
+    <!-- Process picker bar -->
+    <div class="proc-bar" id="procBar">
+      <button class="proc-picker-btn" id="procPickerBtn" onclick="openProcPicker()">📂 Meus Processos (<span id="procCount">0</span>)</button>
+      <span id="hdrSub2" style="font-size:11px;color:var(--mut);margin-left:12px"></span>
+    </div>
+
+    <!-- KPI cards -->
+    <div class="kpi-grid" id="kpiGrid"></div>
+    <!-- Situações dos itens -->
+    <div class="kpi-sit" id="kpiSit"></div>
+
+    <!-- Charts -->
+    <div class="charts-grid" id="chartsGrid">
+      <div class="chart-card">
+        <div class="chart-ttl">Critério de Julgamento</div>
+        <div class="chart-wrap h180"><canvas id="cCriterio"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-ttl">Situação dos Itens</div>
+        <div class="chart-wrap h180"><canvas id="cSituacao"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-ttl">Top 10 Regiões (UF) por Fornecedores</div>
+        <div class="chart-wrap h180"><canvas id="cUF"></canvas></div>
+      </div>
+      <div class="chart-card wide">
+        <div class="chart-ttl">Top 10 Empresas que mais Participam</div>
+        <div class="chart-wrap h260"><canvas id="cEmpresas"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Detail table -->
+    <div id="dtlSection">
+      <button class="dtl-toggle-btn" onclick="toggleDtl()">▲ Ocultar tabela</button>
+      <div id="dtlContent">
+        <div class="tbar">
+          <input class="srch" id="dtlSrch" placeholder="Filtrar por empresa, CNPJ, item…" oninput="renderDtl()">
+          <select class="filt" id="dtlStatus"  onchange="renderDtl()"><option value="">Todos os status</option></select>
+          <select class="filt" id="dtlSitItem" onchange="renderDtl()"><option value="">Todas as situações</option></select>
+          <select class="filt" id="dtlItem"    onchange="renderDtl()"><option value="">Todos os itens</option></select>
+        </div>
+        <div class="twrap">
+          <table>
+            <thead id="dtlHead"></thead>
+            <tbody id="dtlBody"><tr><td class="loading">…</td></tr></tbody>
+          </table>
+        </div>
+        <div id="dtlCount"></div>
+      </div>
+    </div>
+
+  </div><!-- /tabDash -->
+
+  <!-- ── TAB BOT ── -->
+  <div class="content" id="tabBot" style="display:none">
+    <div class="bsec">
+      <div class="bcard">
+        <h3>🔖 Bookmarklet — instalar o robô</h3>
+        <p>Arraste o botão abaixo para a sua <b style="color:var(--txt)">barra de favoritos</b>. Depois, abra o ComprasNet e clique nele para iniciar o robô.</p>
+        <div class="bmark-wrap">
+          <a id="bmarkLink" class="bmark-btn">📋 CNET Bot</a>
+          <div class="bmark-hint">Arraste este botão para a barra de favoritos.<br>No ComprasNet, clique para abrir o painel do robô.</div>
+        </div>
+      </div>
+      <div class="bcard">
+        <h3>🚀 Passo a passo</h3>
+        <ol class="steps">
+          <li>Acesse <b>cnetmobile.estaleiro.serpro.gov.br</b></li>
+          <li>Clique no favorito <b>CNET Bot</b> na barra</li>
+          <li>Configure <b>UASG</b> e <b>Apps Script URL</b></li>
+          <li>Clique <b>⟳ PNCP</b> — importa lista de processos</li>
+          <li>Cole os números no campo <b>Processos</b> → <b>▶ Executar</b></li>
+          <li>O robô lê propostas por item e salva uma aba por processo</li>
+          <li>Volte aqui, clique <b>↺ Recarregar</b> — novos processos aparecem</li>
+        </ol>
+      </div>
+      <div class="bcard">
+        <h3>⚙️ Apps Script — cole na planilha</h3>
+        <p>Na planilha: <b>Extensões → Apps Script</b> → apague tudo → cole → salve → <b>Implantar → Nova implantação → App da Web → Acesso: Qualquer pessoa</b> → copie a URL.</p>
+        <div class="codebox" id="scriptBox" onclick="copyScript(this)"></div>
+        <div class="copyhint">↑ Clique para copiar</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB CONFIG ── -->
+  <div class="content" id="tabCfg" style="display:none">
+    <div class="cfgsec">
+      <div class="cfgblock">
+        <h3>📡 Fonte de dados</h3>
+        <div class="info-box">
+          Os dados são lidos diretamente do <b>Supabase</b> (tabela <code>cnet_propostas</code>).<br>
+          Execute o <b>Bot CNET</b> para raspar os processos no ComprasNet — ele salva automaticamente no Supabase.<br>
+          Clique <b>↺ Recarregar</b> no cabeçalho para atualizar o dashboard após uma execução do bot.
+        </div>
+      </div>
+      <div class="cfgblock">
+        <h3>🔐 Alterar Senha de Acesso</h3>
+        <p>Altere a senha da sua conta.</p>
+        <div class="cfgrow">
+          <input id="cfgPass" type="password" placeholder="Nova senha (mín. 4 caracteres)">
+          <button class="btnsave" onclick="changePass()">Alterar</button>
+        </div>
+        <div class="cfgmsg" id="passMsg"></div>
+      </div>
+
+      <!-- ── ADMIN PANEL (shown only when currentUser.is_admin) ── -->
+      <div class="adm-panel" id="admPanel" style="display:none">
+        <div class="adm-header">
+          <span class="adm-badge">⚙ Modo Administrador</span>
+        </div>
+
+        <!-- Configurações do robô -->
+        <div class="adm-section">
+          <h4>🤖 Configurações do Robô</h4>
+          <p style="font-size:11px;color:var(--mut);margin-bottom:10px">Salvas no navegador e pré-preenchidas automaticamente ao abrir o robô.</p>
+          <div class="cfgrow" style="margin-bottom:8px">
+            <input id="admUasg" type="text" placeholder="UASG (ex: 120630)" style="max-width:180px">
+            <span style="font-size:11px;color:var(--mut);flex:1">UASG da unidade</span>
+          </div>
+          <div class="cfgrow" style="margin-bottom:8px">
+            <input id="admScriptUrl" type="text" placeholder="URL do Apps Script (https://script.google.com/…)">
+          </div>
+          <div class="cfgrow">
+            <button class="btnsave" onclick="saveBotCfg()">Salvar configurações</button>
+          </div>
+          <div class="cfgmsg" id="botCfgMsg"></div>
+        </div>
+
+        <!-- Gerenciar processos -->
+        <div class="adm-section">
+          <h4>🗂️ Gerenciar Processos no Supabase</h4>
+          <div class="adm-proc-list" id="admProcList"><span style="color:var(--mut);font-size:11px">Carregando…</span></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btnsm" onclick="loadAdmProcs()" style="font-size:11px">↺ Atualizar lista</button>
+            <button class="adm-danger" onclick="admDelAll()">⚠ Deletar TODOS os processos</button>
+          </div>
+          <div class="cfgmsg" id="admProcMsg"></div>
+        </div>
+
+        <!-- Limpar cache -->
+        <div class="adm-section">
+          <h4>🗑️ Cache Local</h4>
+          <p style="font-size:11px;color:var(--mut);margin-bottom:10px">Limpa os dados salvos no navegador. O dashboard buscará dados frescos do Supabase no próximo acesso.</p>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btnsave" onclick="clearAdmCache()">Limpar cache</button>
+            <span class="cfgmsg" id="cacheMsg" style="display:inline"></span>
+          </div>
+        </div>
+
+        <!-- Gerenciar usuários -->
+        <div class="adm-section">
+          <h4>👥 Gerenciar Usuários</h4>
+          <div style="margin-bottom:12px">
+            <div class="cfgrow" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <input id="newUserNomeGuerra" type="text" placeholder="Nome de guerra (ex: SILVA)" style="max-width:180px">
+              <input id="newUserIniciais" type="text" placeholder="Iniciais/login (ex: silva)" style="max-width:130px">
+              <input id="newUserSenha" type="password" placeholder="Senha inicial">
+              <button class="btnsave" onclick="admCreateUser()">Criar usuário</button>
+            </div>
+            <div class="cfgmsg" id="newUserMsg"></div>
+          </div>
+          <div id="userList" style="margin-top:8px"><span style="color:var(--mut);font-size:11px">Carregando…</span></div>
+          <button class="btnsm" onclick="loadUserList()" style="margin-top:8px;font-size:11px">↺ Atualizar lista</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /appWrap -->
+
+<!-- Process picker modal -->
+<div id="procPickerModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);align-items:center;justify-content:center">
+  <div style="background:var(--sur);border:1px solid var(--bdr);border-radius:12px;width:min(560px,95vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:12px">
+      <span style="font-weight:700;font-size:15px">📂 Meus Processos</span>
+      <span style="font-size:11px;color:var(--mut);flex:1">Selecione os processos que deseja monitorar</span>
+      <button class="btnsm" onclick="pickerSelAll()">Todos</button>
+      <button class="btnsm" onclick="pickerSelNone()">Nenhum</button>
+    </div>
+    <div id="procPickerList" style="overflow-y:auto;flex:1;padding:12px 20px"></div>
+    <div style="padding:12px 20px;border-top:1px solid var(--bdr);display:flex;gap:8px;justify-content:flex-end">
+      <button class="btnsm" onclick="closeProcPicker()">Cancelar</button>
+      <button class="btnpri" style="width:auto;padding:8px 20px" onclick="saveProcPicker()">Salvar seleção</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+ * ═══════════════════════════════════════════════════════════
+ *  EXECUTE NO SUPABASE SQL EDITOR ANTES DE USAR O SISTEMA:
+ * ═══════════════════════════════════════════════════════════
+ *
+ * CREATE TABLE IF NOT EXISTS cnet_users (
+ *   iniciais TEXT PRIMARY KEY,
+ *   nome_guerra TEXT NOT NULL,
+ *   password_hash TEXT NOT NULL,
+ *   is_admin BOOLEAN DEFAULT FALSE,
+ *   created_at TIMESTAMPTZ DEFAULT NOW()
+ * );
+ * CREATE TABLE IF NOT EXISTS cnet_user_prefs (
+ *   user_id TEXT PRIMARY KEY REFERENCES cnet_users(iniciais) ON DELETE CASCADE,
+ *   selected_procs JSONB DEFAULT '[]',
+ *   sit_order JSONB DEFAULT '[]',
+ *   updated_at TIMESTAMPTZ DEFAULT NOW()
+ * );
+ * ALTER TABLE cnet_users ENABLE ROW LEVEL SECURITY;
+ * ALTER TABLE cnet_user_prefs ENABLE ROW LEVEL SECURITY;
+ * CREATE POLICY "anon_all_users" ON cnet_users FOR ALL TO anon USING (true) WITH CHECK (true);
+ * CREATE POLICY "anon_all_prefs" ON cnet_user_prefs FOR ALL TO anon USING (true) WITH CHECK (true);
+ *
+ * ═══════════════════════════════════════════════════════════
+ */
+
+// ═══════════════════════════════════════════════════
+//  Constantes / Config
+// ═══════════════════════════════════════════════════
+var LS_CACHE = 'cnetdb_cache', LS_BOT = 'cnetdb_bot';
+var currentUser = null; // { iniciais, nome_guerra, is_admin, password_hash }
+
+var SIT_ORDER = [
+  'Aguardando Julgamento','Aguardando Habilitação','Julgado e Habilitado',
+  'Aguardando Encerramento','Fracassado (Aberto para Contrarrazões)',
+  'Revogado','Anulado','Homologado (Deserto)','Homologado (Fracassado)','Homologado'
+];
+function getSitOrder(){
+  // Check user prefs first
+  if (currentUser && currentUser._prefs && currentUser._prefs.sit_order && Array.isArray(currentUser._prefs.sit_order) && currentUser._prefs.sit_order.length) {
+    return currentUser._prefs.sit_order;
+  }
+  // Legacy localStorage fallback
+  try{ var o=JSON.parse(localStorage.getItem('cnetdb_sit_order')||'null'); if(Array.isArray(o)) return o; }catch(e){}
+  return null;
+}
+function sitSortIdx(name){
+  var custom=getSitOrder();
+  if(custom){ var i=custom.indexOf(name); return i>=0 ? i : custom.length; }
+  var i=SIT_ORDER.indexOf(name);
+  return i>=0 ? i : SIT_ORDER.length - 1; // desconhecido vai antes de Homologado
+}
+
+// Drag-to-reorder — inicializado UMA vez; usa delegação no container fixo #kpiSit
+var _dragSit = null;
+var _dragInited = false;
+function initSitDrag(){
+  if (_dragInited) return;
+  _dragInited = true;
+  var sitEl = document.getElementById('kpiSit');
+  if (!sitEl) return;
+
+  sitEl.addEventListener('dragstart', function(e){
+    var card = e.target.closest('[data-sit]');
+    if (!card) return;
+    _dragSit = card.dataset.sit;
+    e.dataTransfer.effectAllowed = 'move';
+    // pequeno timeout para não capturar o card na imagem de arrastar
+    setTimeout(function(){ card.style.opacity = '.4'; }, 0);
+  });
+
+  sitEl.addEventListener('dragover', function(e){
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var card = e.target.closest('[data-sit]');
+    sitEl.querySelectorAll('.drag-over').forEach(function(el){ el.classList.remove('drag-over'); });
+    if (card && card.dataset.sit !== _dragSit) card.classList.add('drag-over');
+  });
+
+  sitEl.addEventListener('dragleave', function(e){
+    // só remove se o mouse realmente saiu do card (não para filho)
+    var card = e.target.closest('[data-sit]');
+    if (card && !card.contains(e.relatedTarget)) card.classList.remove('drag-over');
+  });
+
+  sitEl.addEventListener('drop', function(e){
+    e.preventDefault();
+    sitEl.querySelectorAll('.drag-over').forEach(function(el){ el.classList.remove('drag-over'); });
+    var target = e.target.closest('[data-sit]');
+    if (!target || !_dragSit || target.dataset.sit === _dragSit) return;
+    // Lê ordem visual ATUAL dos cards no DOM
+    var cards = [...sitEl.querySelectorAll('[data-sit]')];
+    var names = cards.map(function(c){ return c.dataset.sit; });
+    var fromIdx = names.indexOf(_dragSit);
+    var toIdx   = names.indexOf(target.dataset.sit);
+    if (fromIdx < 0 || toIdx < 0) return;
+    names.splice(fromIdx, 1);
+    names.splice(toIdx, 0, _dragSit);
+    // Preserva situações não visíveis no final
+    SIT_ORDER.forEach(function(s){ if (!names.includes(s)) names.push(s); });
+    localStorage.setItem('cnetdb_sit_order', JSON.stringify(names));
+    if (currentUser && currentUser._prefs) { currentUser._prefs.sit_order = names; }
+    saveUserPrefs();
+    renderKPIs(); // re-render só atualiza innerHTML — listeners não são re-adicionados
+  });
+
+  sitEl.addEventListener('dragend', function(){
+    sitEl.querySelectorAll('[data-sit]').forEach(function(el){ el.style.opacity = ''; });
+    sitEl.querySelectorAll('.drag-over').forEach(function(el){ el.classList.remove('drag-over'); });
+    _dragSit = null;
+  });
+}
+
+var SCRIPT_CODE =
+'function doPost(e) {\n' +
+'  if (!e || !e.postData) return ContentService.createTextOutput("no data");\n' +
+'  var data = JSON.parse(e.postData.contents);\n' +
+'  var ss = SpreadsheetApp.getActiveSpreadsheet();\n' +
+'  var sh = ss.getSheetByName(data.aba) || ss.insertSheet(data.aba);\n' +
+'  if (data.clear) sh.clearContents();\n' +
+'  if (data.moveFirst) { ss.setActiveSheet(sh); ss.moveActiveSheet(1); }\n' +
+'  if (sh.getLastRow() === 0) sh.appendRow(data.headers);\n' +
+'  data.rows.forEach(function(r) { sh.appendRow(r); });\n' +
+'  return ContentService.createTextOutput("ok");\n' +
+'}';
+
+document.getElementById('scriptBox').textContent = SCRIPT_CODE;
+document.getElementById('bmarkLink').href =
+  "javascript:(function(){var s=document.createElement('script');s.src='https://processoscae.vercel.app/cnet-bot.js?_='+Date.now();document.head.appendChild(s)})();";
+
+// Chart.js defaults
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1e293b';
+Chart.defaults.font.family = 'system-ui, sans-serif';
+Chart.defaults.font.size = 11;
+Chart.defaults.plugins.tooltip.backgroundColor = '#1e293b';
+Chart.defaults.plugins.tooltip.titleColor = '#e2e8f0';
+Chart.defaults.plugins.tooltip.bodyColor = '#94a3b8';
+Chart.defaults.plugins.tooltip.borderColor = '#334155';
+Chart.defaults.plugins.tooltip.borderWidth = 1;
+Chart.defaults.plugins.legend.labels.padding = 10;
+Chart.defaults.plugins.legend.labels.boxWidth = 11;
+Chart.defaults.plugins.legend.labels.font = { size: 11 };
+
+var COLORS = ['#3b82f6','#4ade80','#fbbf24','#f87171','#2dd4bf','#a78bfa','#fb923c','#e879f9','#34d399','#f472b6','#60a5fa','#86efac'];
+
+// ═══════════════════════════════════════════════════
+//  Supabase
+// ═══════════════════════════════════════════════════
+var SUPA_URL = 'https://uhkkparwcayrbvvbjple.supabase.co';
+var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVoa2twYXJ3Y2F5cmJ2dmJqcGxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY3ODk1MTIsImV4cCI6MjA3MjM2NTUxMn0.AQC2SdFMbas3MhmW7jRBXrFLkiMreQpUI14eCUVELP8';
+
+function supaHeaders(extra) {
+  return Object.assign({ 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }, extra||{});
+}
+
+// ═══════════════════════════════════════════════════
+//  Auth
+// ═══════════════════════════════════════════════════
+async function sha256(s){
+  var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(function(b){return b.toString(16).padStart(2,'0')}).join('');
+}
+
+// Auto-migrate: on first use, create caedo admin in Supabase using old localStorage hash
+(async function init(){
+  // Try to restore session from sessionStorage
+  var oldSess = sessionStorage.getItem('cnetdb_sess2');
+  if (oldSess) {
+    try {
+      var u = JSON.parse(oldSess);
+      currentUser = u;
+      showApp();
+      return;
+    } catch(e) {}
+  }
+  // Check if caedo exists in Supabase, if not, seed from old localStorage
+  await ensureAdminSeeded();
+})();
+
+async function ensureAdminSeeded() {
+  try {
+    var r = await fetch(SUPA_URL + '/rest/v1/cnet_users?iniciais=eq.caedo&select=iniciais', { headers: supaHeaders() });
+    var rows = await r.json();
+    if (!Array.isArray(rows) || !rows.length) {
+      // Seed caedo with default password 'cae2026'
+      var defaultHash = await sha256('cae2026');
+      await fetch(SUPA_URL + '/rest/v1/cnet_users', {
+        method: 'POST',
+        headers: supaHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+        body: JSON.stringify({ iniciais: 'caedo', nome_guerra: 'CAEDO', password_hash: defaultHash, is_admin: true })
+      });
+    }
+  } catch(e) { console.warn('Seed admin failed:', e); }
+}
+
+async function doLogin(){
+  var u = document.getElementById('lUser').value.trim().toLowerCase();
+  var p = document.getElementById('lPass').value;
+  if (!u || !p) { document.getElementById('lErr').textContent = 'Preencha usuário e senha.'; return; }
+  var h = await sha256(p);
+  try {
+    var r = await fetch(SUPA_URL + '/rest/v1/cnet_users?iniciais=eq.' + encodeURIComponent(u), { headers: supaHeaders() });
+    var users = await r.json();
+    if (!Array.isArray(users) || !users.length || users[0].password_hash !== h) {
+      document.getElementById('lErr').textContent = 'Usuário ou senha incorretos.';
+      return;
+    }
+    currentUser = users[0];
+    sessionStorage.setItem('cnetdb_sess2', JSON.stringify(currentUser));
+    showApp();
+  } catch(e) {
+    document.getElementById('lErr').textContent = 'Erro de conexão: ' + e.message;
+  }
+}
+document.getElementById('lUser').onkeydown = function(e){ if(e.key==='Enter') document.getElementById('lPass').focus(); };
+document.getElementById('lPass').onkeydown = function(e){ if(e.key==='Enter') doLogin(); };
+
+function doLogout(){
+  currentUser = null;
+  sessionStorage.removeItem('cnetdb_sess2');
+  document.getElementById('appWrap').style.display = 'none';
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('lUser').value = '';
+  document.getElementById('lPass').value = '';
+  document.getElementById('lErr').textContent = '';
+}
+
+async function showApp(){
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('appWrap').style.display = 'flex';
+  // Update header with current user name
+  document.getElementById('hdrUser').textContent = currentUser ? currentUser.nome_guerra : '';
+  // Show/hide admin panel based on user role
+  var admPanel = document.getElementById('admPanel');
+  if (admPanel) admPanel.style.display = currentUser && currentUser.is_admin ? 'block' : 'none';
+  if (currentUser && currentUser.is_admin) {
+    var bc = loadBotCfg();
+    document.getElementById('admUasg').value = bc.uasg || '';
+    document.getElementById('admScriptUrl').value = bc.scriptUrl || '';
+    loadAdmProcs();
+    loadUserList();
+  }
+  // Load user prefs (selected processes, sit order)
+  await loadUserPrefs();
+  // Restore cache
+  try {
+    var cached = JSON.parse(localStorage.getItem(LS_CACHE + '_' + (currentUser ? currentUser.iniciais : '')) || 'null');
+    if (cached && cached.allProcs && cached.allProcs.length) {
+      allData = cached.allData; allProcs = cached.allProcs;
+      applyUserProcsSelection();
+      renderProcBtn(); renderAll();
+    }
+  } catch(e) {}
+  loadAll({ silent: allProcs.length > 0 });
+}
+
+async function loadUserPrefs() {
+  if (!currentUser) return;
+  try {
+    var r = await fetch(SUPA_URL + '/rest/v1/cnet_user_prefs?user_id=eq.' + encodeURIComponent(currentUser.iniciais), { headers: supaHeaders() });
+    var rows = await r.json();
+    if (Array.isArray(rows) && rows.length) {
+      currentUser._prefs = rows[0];
+      // Parse JSON fields if stored as strings
+      if (typeof currentUser._prefs.selected_procs === 'string') {
+        try { currentUser._prefs.selected_procs = JSON.parse(currentUser._prefs.selected_procs); } catch(e) { currentUser._prefs.selected_procs = []; }
+      }
+      if (typeof currentUser._prefs.sit_order === 'string') {
+        try { currentUser._prefs.sit_order = JSON.parse(currentUser._prefs.sit_order); } catch(e) { currentUser._prefs.sit_order = []; }
+      }
+    } else {
+      currentUser._prefs = { selected_procs: [], sit_order: [] };
+    }
+  } catch(e) {
+    currentUser._prefs = { selected_procs: [], sit_order: [] };
+  }
+}
+
+async function saveUserPrefs() {
+  if (!currentUser) return;
+  var prefs = {
+    user_id: currentUser.iniciais,
+    selected_procs: JSON.stringify([...selectedProcs]),
+    sit_order: JSON.stringify(getSitOrder() || []),
+    updated_at: new Date().toISOString()
+  };
+  try {
+    await fetch(SUPA_URL + '/rest/v1/cnet_user_prefs', {
+      method: 'POST',
+      headers: supaHeaders({ 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify(prefs)
+    });
+    if (currentUser._prefs) {
+      currentUser._prefs.selected_procs = [...selectedProcs];
+    }
+  } catch(e) { console.warn('saveUserPrefs failed:', e); }
+}
+
+function applyUserProcsSelection() {
+  var saved = currentUser && currentUser._prefs && currentUser._prefs.selected_procs;
+  if (saved && Array.isArray(saved) && saved.length) {
+    // Keep only procs that still exist in allProcs
+    selectedProcs = new Set(saved.filter(function(p) { return allData[p]; }));
+  } else {
+    selectedProcs = new Set(allProcs);
+  }
+}
+
+async function changePass(){
+  var np = document.getElementById('cfgPass').value;
+  if (!np || np.length < 4) { cfgMsg('passMsg','Mínimo 4 caracteres','var(--red)'); return; }
+  if (!currentUser) return;
+  var h = await sha256(np);
+  try {
+    var r = await fetch(SUPA_URL + '/rest/v1/cnet_users?iniciais=eq.' + encodeURIComponent(currentUser.iniciais), {
+      method: 'PATCH',
+      headers: supaHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+      body: JSON.stringify({ password_hash: h })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    currentUser.password_hash = h;
+    sessionStorage.setItem('cnetdb_sess2', JSON.stringify(currentUser));
+    cfgMsg('passMsg','Senha alterada com sucesso.','var(--grn)');
+    document.getElementById('cfgPass').value = '';
+  } catch(e) {
+    cfgMsg('passMsg','Erro: ' + e.message,'var(--red)');
+  }
+}
+
+function showTab(name, el){
+  ['Dash','Bot','Cfg'].forEach(function(t){ document.getElementById('tab'+t).style.display = 'none'; });
+  document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('on'); });
+  document.getElementById('tab'+name).style.display = 'block';
+  el.classList.add('on');
+}
+
+function cfgMsg(id, txt, col){ var el = document.getElementById(id); if(!el) return; el.textContent = txt; el.style.color = col; setTimeout(function(){ el.textContent=''; }, 3500); }
+function copyScript(el){
+  navigator.clipboard.writeText(SCRIPT_CODE).catch(function(){});
+  el.style.borderColor = '#4ade80';
+  setTimeout(function(){ el.style.borderColor = ''; }, 1500);
+}
+
+// ═══════════════════════════════════════════════════
+//  Admin panel
+// ═══════════════════════════════════════════════════
+function loadBotCfg(){ try{ return JSON.parse(localStorage.getItem(LS_BOT)||'{}'); }catch(e){ return {}; } }
+
+function saveBotCfg(){
+  var uasg = document.getElementById('admUasg').value.trim();
+  var url  = document.getElementById('admScriptUrl').value.trim();
+  localStorage.setItem(LS_BOT, JSON.stringify({ uasg: uasg, scriptUrl: url }));
+  cfgMsg('botCfgMsg','Configurações do robô salvas.','var(--grn)');
+}
+
+function clearAdmCache(){
+  // Clear all per-user caches
+  var keysToRemove = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k && k.startsWith(LS_CACHE)) keysToRemove.push(k);
+  }
+  keysToRemove.forEach(function(k){ localStorage.removeItem(k); });
+  cfgMsg('cacheMsg','Cache limpo. Clique ↺ Recarregar para buscar dados frescos.','var(--grn)');
+}
+
+async function admCreateUser() {
+  var nome = document.getElementById('newUserNomeGuerra').value.trim().toUpperCase();
+  var ini = document.getElementById('newUserIniciais').value.trim().toLowerCase().replace(/\s/g,'');
+  var senha = document.getElementById('newUserSenha').value;
+  if (!nome || !ini || !senha) { cfgMsg('newUserMsg','Preencha todos os campos','var(--red)'); return; }
+  if (senha.length < 4) { cfgMsg('newUserMsg','Senha mínima: 4 caracteres','var(--red)'); return; }
+  var h = await sha256(senha);
+  try {
+    var r = await fetch(SUPA_URL + '/rest/v1/cnet_users', {
+      method: 'POST',
+      headers: supaHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+      body: JSON.stringify({ iniciais: ini, nome_guerra: nome, password_hash: h, is_admin: false })
+    });
+    if (!r.ok) { var e2 = await r.text(); cfgMsg('newUserMsg','Erro: ' + e2,'var(--red)'); return; }
+    cfgMsg('newUserMsg','Usuário "' + ini + '" criado com sucesso.','var(--grn)');
+    document.getElementById('newUserNomeGuerra').value = '';
+    document.getElementById('newUserIniciais').value = '';
+    document.getElementById('newUserSenha').value = '';
+    loadUserList();
+  } catch(e) { cfgMsg('newUserMsg','Erro: ' + e.message,'var(--red)'); }
+}
+
+async function loadUserList() {
+  var el = document.getElementById('userList');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--mut);font-size:11px">Carregando…</span>';
+  try {
+    var r = await fetch(SUPA_URL + '/rest/v1/cnet_users?select=iniciais,nome_guerra,is_admin,created_at&order=created_at', { headers: supaHeaders() });
+    var users = await r.json();
+    if (!Array.isArray(users) || !users.length) { el.innerHTML = '<span style="color:var(--mut);font-size:11px">Nenhum usuário.</span>'; return; }
+    el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--bdr);color:var(--mut)">Login</th>'
+      + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--bdr);color:var(--mut)">Nome</th>'
+      + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--bdr);color:var(--mut)">Admin</th>'
+      + '<th style="padding:6px 8px;border-bottom:1px solid var(--bdr)"></th>'
+      + '</tr></thead><tbody>'
+      + users.map(function(u) {
+          var isSelf = currentUser && u.iniciais === currentUser.iniciais;
+          var delBtn = isSelf ? '' : '<button class="adm-del-btn" onclick="admDeleteUser(\''+escH(u.iniciais)+'\')">✕</button>';
+          return '<tr>'
+            + '<td style="padding:6px 8px;font-family:monospace">' + escH(u.iniciais) + (isSelf ? ' <span style="color:var(--grn);font-size:10px">(você)</span>' : '') + '</td>'
+            + '<td style="padding:6px 8px">' + escH(u.nome_guerra) + '</td>'
+            + '<td style="padding:6px 8px">' + (u.is_admin ? '✓' : '—') + '</td>'
+            + '<td style="padding:6px 8px">' + delBtn + '</td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table>';
+  } catch(e) { el.innerHTML = '<span style="color:var(--red);font-size:11px">Erro: ' + escH(e.message) + '</span>'; }
+}
+
+async function admDeleteUser(iniciais) {
+  if (!confirm('Excluir usuário "' + iniciais + '"?\n\nEsta ação não pode ser desfeita.')) return;
+  try {
+    var r = await fetch(SUPA_URL + '/rest/v1/cnet_users?iniciais=eq.' + encodeURIComponent(iniciais), {
+      method: 'DELETE', headers: supaHeaders({ 'Prefer': 'return=minimal' })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    loadUserList();
+  } catch(e) { alert('Erro: ' + e.message); }
+}
+
+async function loadAdmProcs(){
+  var el = document.getElementById('admProcList');
+  el.innerHTML = '<span style="color:var(--mut);font-size:11px">Carregando…</span>';
+  try {
+    // Busca abas distintas (bot GAPMN espelha para cnet_propostas)
+    var r1 = await fetch(SUPA_URL + '/rest/v1/cnet_propostas?select=aba&limit=2000', { headers: supaHeaders() }).then(function(r){ return r.json(); });
+    var abas = [...new Set((Array.isArray(r1)?r1:[]).map(function(r){ return r.aba; }).filter(Boolean))].sort();
+    if (!abas.length) { el.innerHTML = '<span style="color:var(--mut);font-size:11px">Nenhum processo no Supabase.</span>'; return; }
+    el.innerHTML = abas.map(function(aba){
+      var safe = escH(aba), safeQ = aba.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      return '<div class="adm-proc-row"><span style="font-family:monospace">' + safe + '</span>'
+           + '<button class="adm-del-btn" onclick="admDelProc(\''+safeQ+'\')">✕ Deletar</button></div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<span style="color:var(--red);font-size:11px">Erro: ' + escH(e.message) + '</span>';
+  }
+}
+
+async function admDelProc(aba){
+  if (!confirm('Deletar todos os dados do processo "' + aba + '" do Supabase?\n\nEsta ação não pode ser desfeita.')) return;
+  try {
+    await fetch(SUPA_URL + '/rest/v1/cnet_propostas?aba=eq.' + encodeURIComponent(aba), { method:'DELETE', headers: supaHeaders() });
+    // Atualiza cache local
+    if (allData[aba]) {
+      delete allData[aba];
+      allProcs = allProcs.filter(function(p){ return p !== aba; });
+      selectedProcs.delete(aba);
+      try { localStorage.setItem(LS_CACHE + '_' + (currentUser ? currentUser.iniciais : ''), JSON.stringify({ts:Date.now(), allData:allData, allProcs:allProcs})); } catch(e2){}
+      renderProcBtn(); renderAll();
+    }
+    loadAdmProcs();
+    cfgMsg('admProcMsg','Processo "' + aba + '" deletado.','var(--grn)');
+  } catch(e) {
+    cfgMsg('admProcMsg','Erro: ' + e.message,'var(--red)');
+  }
+}
+
+async function admDelAll(){
+  if (!confirm('ATENÇÃO: Isso deletará TODOS os processos de AMBAS as tabelas do Supabase.\n\nEsta ação NÃO pode ser desfeita. Confirmar?')) return;
+  if (!confirm('Segunda confirmação: tem CERTEZA que deseja apagar tudo?')) return;
+  try {
+    await fetch(SUPA_URL + '/rest/v1/cnet_propostas?aba=neq.__placeholder__', { method:'DELETE', headers: supaHeaders({'Prefer':'return=minimal'}) });
+    localStorage.removeItem(LS_CACHE + '_' + (currentUser ? currentUser.iniciais : ''));
+    allData = {}; allProcs = []; selectedProcs = new Set();
+    renderProcBtn(); renderAll();
+    loadAdmProcs();
+    cfgMsg('admProcMsg','Todos os processos deletados.','var(--amb)');
+  } catch(e) {
+    cfgMsg('admProcMsg','Erro: ' + e.message,'var(--red)');
+  }
+}
+
+// Converte linha do Supabase (snake_case) para os nomes de coluna usados nos gráficos
+function supaToRow(r) {
+  return {
+    'Processo': r.processo||'', 'Ano': r.ano||'', 'UASG': r.uasg||'',
+    'Grupo': r.grupo||'', 'Item': r.item||'', 'Nome Item': r.nome_item||'',
+    'CNPJ': r.cnpj||'', 'Razão Social': r.razao_social||'', 'UF': r.uf||'',
+    'Status': r.status||'', 'ME/EPP': r.me_epp||'',
+    'Valor Ofertado':  r.valor_ofertado  != null ? r.valor_ofertado  : '',
+    'Valor Negociado': r.valor_negociado != null ? r.valor_negociado : '',
+    'Situação Item': r.situacao_item||'', 'Qtde Solicitada': r.qtde_solicitada||'',
+    'Descrição Item': r.descricao_item||'', 'Critério Julgamento': r.criterio_julgamento||'',
+    'Sit. Processo': r.sit_processo||'',
+    'Valor Estimado': r.valor_estimado != null ? r.valor_estimado : ''
+  };
+}
+
+// ═══════════════════════════════════════════════════
+//  Dados
+// ═══════════════════════════════════════════════════
+var allData = {};       // { 'proc-ano': [{...row}] }
+var allProcs = [];      // sorted list of tab names
+var selectedProcs = new Set();
+var pncpInfo = {};      // { 'proc-ano': { objeto, situacao } }
+var charts_inst = {};
+
+function parseBRL(s){
+  if (!s && s !== 0) return 0;
+  if (typeof s === 'number') return isNaN(s) ? 0 : s;
+  var str = String(s).replace(/R\$\s*/,'').replace(/\s/g,'');
+  if (str.includes(',')) { str = str.replace(/\./g,'').replace(',','.'); }
+  var n = parseFloat(str);
+  return isNaN(n) ? 0 : n;
+}
+function fmtBRL(v, short){
+  if (short){
+    if (v >= 1e6) return 'R$ ' + (v/1e6).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + ' M';
+    if (v >= 1e3) return 'R$ ' + (v/1e3).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0}) + ' K';
+  }
+  return 'R$ ' + v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtNum(v){ return v.toLocaleString('pt-BR'); }
+function pct(v){ return v.toFixed(1).replace('.',',') + '%'; }
+function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function csvLine(l){
+  var res=[],cur='',inQ=false;
+  for(var i=0;i<l.length;i++){
+    var c=l[i];
+    if(c==='"'){ if(inQ&&l[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
+    else if(c===','&&!inQ){res.push(cur.trim());cur='';}
+    else cur+=c;
+  }
+  res.push(cur.trim()); return res;
+}
+function parseCSV(text){
+  text = text.replace(/^﻿/, '');
+  var lines = text.split('\n').map(function(l){ return l.replace(/\r$/,''); });
+  if (!lines.length) return [];
+  // Find header row: pick the row (within first 8) with most keyword matches
+  var HINTS = ['processo','cnpj','item','valor','status','objeto','modalidade','situa','razao','uf','nome'];
+  var headerIdx = 0, bestScore = -1;
+  for (var i = 0; i < Math.min(lines.length, 8); i++){
+    var norm = lines[i].toLowerCase()
+      .replace(/[áàãâ]/g,'a').replace(/[éê]/g,'e')
+      .replace(/[íî]/g,'i').replace(/[óõô]/g,'o').replace(/[úû]/g,'u');
+    var score = HINTS.reduce(function(s,h){ return s+(norm.includes(h)?1:0); }, 0);
+    if (score > bestScore){ bestScore = score; headerIdx = i; }
+  }
+  var headers = csvLine(lines[headerIdx]).map(function(h){ return h.trim(); });
+  var rows = [];
+  for (var i = headerIdx+1; i < lines.length; i++){
+    if (!lines[i].trim()) continue;
+    var cols = csvLine(lines[i]); var row = {};
+    headers.forEach(function(h,j){ row[h] = (cols[j]||'').trim(); });
+    rows.push(row);
+  }
+  return rows;
+}
+
+  // ═══════════════════════════════════════════════════
+  //  LOAD GERAL — lê do Supabase
+  // ═══════════════════════════════════════════════════
+
+  async function loadAll(opts) {
+    var hasCached = allProcs.length > 0;
+    var silent = (opts && opts.silent) || hasCached;
+
+    if (!silent) {
+      var hdrSub2El = document.getElementById('hdrSub2');
+      if (hdrSub2El) hdrSub2El.textContent = 'Conectando ao Supabase…';
+      document.getElementById('kpiGrid').innerHTML = '';
+      document.getElementById('kpiSit').innerHTML = '';
+      document.getElementById('hdrSub').textContent = '';
+    } else {
+      document.getElementById('hdrSub').textContent = '↺ atualizando…';
+    }
+
+    var MAX_MS = 40000; // 40 segundos — cobre wakeup do Supabase free tier
+    var RETRY_INTERVAL = 2500;
+    var t0 = Date.now(), attempt = 0, lastErr;
+
+    while (true) {
+      attempt++;
+      try {
+        // Paginação — busca até esgotar (sem limite de linhas)
+        var data = [];
+        var PAGE = 1000, pageOffset = 0;
+        while (true) {
+          var pageResp = await fetch(
+            SUPA_URL + '/rest/v1/cnet_propostas?select=*&order=aba,item',
+            { headers: supaHeaders({ 'Range': pageOffset + '-' + (pageOffset + PAGE - 1), 'Range-Unit': 'items' }) }
+          );
+          if (!pageResp.ok) throw new Error('Supabase HTTP ' + pageResp.status);
+          var chunk = await pageResp.json();
+          data = data.concat(chunk);
+          if (chunk.length < PAGE) break;
+          pageOffset += PAGE;
+        }
+
+        allData = {}; allProcs = [];
+        data.forEach(function(r) {
+          var aba = r.aba || 'sem-aba';
+          if (!allData[aba]) { allData[aba] = []; allProcs.push(aba); }
+          allData[aba].push(supaToRow(r));
+        });
+        allProcs.sort(function(a,b){ return a.localeCompare(b,'pt-BR',{numeric:true}); });
+
+        // Salva cache local (por usuário)
+        try { localStorage.setItem(LS_CACHE + '_' + (currentUser ? currentUser.iniciais : ''), JSON.stringify({ts: Date.now(), allData: allData, allProcs: allProcs})); } catch(e) {}
+
+        if (!allProcs.length) {
+          var hdrSub2Empty = document.getElementById('hdrSub2');
+          if (hdrSub2Empty) hdrSub2Empty.textContent = 'Nenhum dado no Supabase. Execute o Bot CNET para popular os dados.';
+          renderEmptyState(); return;
+        }
+        applyUserProcsSelection();
+        document.getElementById('hdrSub').textContent = '';
+        var hdrSub2Done = document.getElementById('hdrSub2');
+        if (hdrSub2Done) hdrSub2Done.textContent = '';
+        renderProcBtn(); renderAll();
+        return; // sucesso
+
+      } catch(e) {
+        lastErr = e;
+        var elapsed = Date.now() - t0;
+        console.warn('loadAll #' + attempt + ' (' + Math.round(elapsed/1000) + 's):', e.message);
+
+        if (elapsed >= MAX_MS) break; // desistiu
+
+        // Atualiza mensagem de progresso (só se não há cache na tela)
+        if (!hasCached) {
+          var hdrSub2Retry = document.getElementById('hdrSub2');
+          if (hdrSub2Retry) hdrSub2Retry.textContent = 'Aguardando Supabase… (' + Math.round(elapsed/1000) + 's)';
+        } else {
+          document.getElementById('hdrSub').textContent = '↺ aguardando… ' + Math.round(elapsed/1000) + 's';
+        }
+
+        await new Promise(function(r){ setTimeout(r, RETRY_INTERVAL); });
+      }
+    }
+
+    // Esgotou o tempo
+    if (hasCached) {
+      document.getElementById('hdrSub').textContent = '⚠ offline — exibindo cache';
+    } else {
+      var hdrSub2Fail = document.getElementById('hdrSub2');
+      if (hdrSub2Fail) hdrSub2Fail.innerHTML = '<span style="color:#f87171">Sem resposta do Supabase após 40s.</span> <button class="btnsm" style="margin-left:8px" onclick="loadAll()">Tentar novamente</button>';
+      if (!allProcs.length) renderEmptyState();
+    }
+  }
+
+
+// ═══════════════════════════════════════════════════
+//  Process picker
+// ═══════════════════════════════════════════════════
+function procLabel(key){
+  var p = key.lastIndexOf('-');
+  return p > 0 ? key.slice(0,p) + '/' + key.slice(p+1) : key;
+}
+
+var _pickerSelection = new Set();
+
+function renderProcBtn() {
+  var el = document.getElementById('procCount');
+  if (el) el.textContent = selectedProcs.size;
+}
+
+function openProcPicker() {
+  _pickerSelection = new Set(selectedProcs);
+  var list = document.getElementById('procPickerList');
+  if (!allProcs.length) {
+    list.innerHTML = '<span style="color:var(--mut);font-size:12px">Nenhum processo disponível.</span>';
+  } else {
+    list.innerHTML = allProcs.map(function(key) {
+      var chk = _pickerSelection.has(key) ? 'checked' : '';
+      var info = pncpInfo[key];
+      var sub = info ? '<div style="font-size:10px;color:var(--mut);margin-top:2px">' + escH(info.objeto.slice(0,80)) + '</div>' : '';
+      return '<label style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #1e293b;cursor:pointer">'
+           + '<input type="checkbox" ' + chk + ' data-proc="' + escH(key) + '" style="margin-top:2px;accent-color:var(--blu)">'
+           + '<div><div style="font-size:12px;font-weight:600">' + escH(procLabel(key)) + '</div>' + sub + '</div>'
+           + '</label>';
+    }).join('');
+  }
+  document.getElementById('procPickerModal').style.display = 'flex';
+}
+
+function closeProcPicker() {
+  document.getElementById('procPickerModal').style.display = 'none';
+}
+
+function pickerSelAll() {
+  document.querySelectorAll('#procPickerList input[type=checkbox]').forEach(function(cb) { cb.checked = true; });
+}
+function pickerSelNone() {
+  document.querySelectorAll('#procPickerList input[type=checkbox]').forEach(function(cb) { cb.checked = false; });
+}
+
+async function saveProcPicker() {
+  var newSel = new Set();
+  document.querySelectorAll('#procPickerList input[type=checkbox]:checked').forEach(function(cb) {
+    newSel.add(cb.getAttribute('data-proc'));
+  });
+  selectedProcs = newSel;
+  closeProcPicker();
+  renderProcBtn();
+  renderAll();
+  await saveUserPrefs();
+}
+
+// Legacy renderPills kept as no-op to avoid errors from any residual calls
+function renderPills(){}
+function selAll(){ selectedProcs = new Set(allProcs); renderProcBtn(); renderAll(); }
+function selNone(){ selectedProcs.clear(); renderProcBtn(); renderAll(); }
+
+// ═══════════════════════════════════════════════════
+//  Analytics — colunas fixas do bot CNET:
+//  Processo | Ano | UASG | Item | Nome Item | CNPJ
+//  Razão Social (col H) | UF (col I) | Status | ME/EPP
+//  Valor Ofertado | Valor Negociado | Situação Item
+//  Qtde Solicitada | Descrição Item | Critério Julgamento | Sit. Processo
+// ═══════════════════════════════════════════════════
+function getRows(){
+  var rows = [];
+  selectedProcs.forEach(function(proc){
+    (allData[proc]||[]).forEach(function(r){ rows.push(Object.assign({__proc:proc}, r)); });
+  });
+  return rows;
+}
+
+function isAdj(status){ return /adjudic/i.test(status||''); }
+
+// Processo homologado = TODAS as linhas têm "Homologado" em "Sit. Processo"
+function isProcessHom(proc){
+  var r = allData[proc] || [];
+  if (!r.length) return false;
+  return r.every(function(row){ return /homologad/i.test(row['Sit. Processo']||''); });
+}
+
+// Valor Estimado = uma vez por item único (não multiplicar pelas N propostas do item)
+// Para itens dentro de grupos: Valor Estimado (unitário) × Qtde Solicitada = total do grupo
+// Valor Homologado = Negociado se disponível, senão Ofertado — apenas onde Status = Adjudicada
+function sumValores(tabRows){
+  var est = 0, hom = 0, estHom = 0;
+  if (!tabRows || !tabRows.length) return { est:0, hom:0, estHom:0 };
+  // 1ª passagem: quais itemKeys têm linha adjudicada?
+  var homItems = new Set();
+  tabRows.forEach(function(r){
+    if (isAdj(r['Status'])) homItems.add((r['Grupo']||'')+'|'+(r['Item']||''));
+  });
+  // 2ª passagem: acumular valores
+  var seenItems = new Set();
+  tabRows.forEach(function(r){
+    var k = (r['Grupo']||'')+'|'+(r['Item']||'');
+    if (!seenItems.has(k)){
+      seenItems.add(k);
+      var unitEst = parseBRL(r['Valor Estimado']);
+      // Itens dentro de grupos: multiplicar pelo Qtde Solicitada para obter valor total
+      var qtde = (r['Grupo'] && r['Item'])
+        ? (parseFloat(String(r['Qtde Solicitada']||'').replace(',','.')) || 1)
+        : 1;
+      var totalEst = unitEst * qtde;
+      est += totalEst;
+      if (homItems.has(k)) estHom += totalEst;
+    }
+    if (isAdj(r['Status'])){
+      var neg = parseBRL(r['Valor Negociado']);
+      hom += neg > 0 ? neg : parseBRL(r['Valor Ofertado']);
+    }
+  });
+  return { est:est, hom:hom, estHom:estHom };
+}
+
+function computeKPIs(){
+  var rows = getRows();
+  var procsHom = 0, procsAnd = 0;
+  var totalEst = 0, totalHom = 0, totalEstHom = 0;
+  selectedProcs.forEach(function(proc){
+    var hom = isProcessHom(proc);
+    if (hom) procsHom++; else procsAnd++;
+    var v = sumValores(allData[proc]);
+    totalEst += v.est;
+    totalHom += v.hom;
+    totalEstHom += v.estHom;
+  });
+  var economia = totalEstHom - totalHom;
+  var econPct = totalEstHom > 0 ? economia / totalEstHom * 100 : 0;
+  // Contagem de itens únicos por situação normalizada
+  var sitCounts = {};
+  selectedProcs.forEach(function(proc){
+    var seen = new Set();
+    (allData[proc]||[]).forEach(function(r){
+      var k = (r['Grupo']||'')+'|'+(r['Item']||'');
+      if (!r['Item'] || seen.has(k)) return;
+      seen.add(k);
+      var sit = normalizeSit(r['Situação Item']||'');
+      if (sit === 'Não informado') return;
+      sitCounts[sit] = (sitCounts[sit]||0) + 1;
+    });
+  });
+  return {
+    nProcs: selectedProcs.size,
+    procsHom: procsHom, procsAnd: procsAnd,
+    totalEst: totalEst, totalHom: totalHom, totalEstHom: totalEstHom,
+    economia: economia, econPct: econPct,
+    sitCounts: sitCounts
+  };
+}
+
+// ═══════════════════════════════════════════════════
+//  Render KPIs
+// ═══════════════════════════════════════════════════
+function renderKPIs(){
+  var k = computeKPIs();
+  var econColor = k.economia >= 0 ? 'var(--grn)' : 'var(--red)';
+  var econSign  = k.economia >= 0 ? '−' : '+';
+  var cards = [
+    { v: fmtNum(k.nProcs),   l:'Processos',              c:'var(--tel)' },
+    { v: fmtNum(k.procsHom), l:'Processos Homologados',  c:'var(--grn)' },
+    { v: fmtNum(k.procsAnd), l:'Em Andamento / Outros',  c:'var(--amb)' },
+    { v: fmtBRL(k.totalEst,true),  l:'Valor Total Estimado',   c:'var(--blu)', sub: fmtBRL(k.totalEst) },
+    { v: fmtBRL(k.totalHom,true),  l:'Valor Atual Homologado', c:'var(--grn)', sub: fmtBRL(k.totalHom) }
+  ];
+  document.getElementById('kpiGrid').innerHTML = cards.map(function(c){
+    return '<div class="kcard" style="--kc:'+c.c+'">'
+      + '<div class="kval">'+c.v+'</div>'
+      + '<div class="klbl">'+c.l+'</div>'
+      + (c.sub ? '<div class="ksub">'+c.sub+'</div>' : '')
+      + '</div>';
+  }).join('');
+  // Situações dos itens — ordenação inteligente + drag-to-reorder
+  var SIT_COLORS = {
+    'Homologado':'var(--grn)',
+    'Homologado (Deserto)':'var(--mut)',
+    'Homologado (Fracassado)':'var(--red)',
+    'Aguardando Julgamento':'var(--amb)',
+    'Aguardando Habilitação':'var(--amb)',
+    'Aguardando Encerramento':'var(--amb)',
+    'Julgado e Habilitado':'var(--blu)',
+    'Fracassado (Aberto para Contrarrazões)':'var(--org)',
+    'Revogado':'var(--red)',
+    'Anulado':'var(--red)'
+  };
+  var sitEntries = Object.entries(k.sitCounts).sort(function(a,b){
+    return sitSortIdx(a[0]) - sitSortIdx(b[0]);
+  });
+  var sitHtml = sitEntries.map(function(e){
+    var color = SIT_COLORS[e[0]] || 'var(--tel)';
+    var sitEsc = e[0].replace(/"/g,'&quot;');
+    return '<div class="kcard kcard-sm" draggable="true" data-sit="'+sitEsc+'" style="--kc:'+color+'">'
+      + '<div class="kval">'+fmtNum(e[1])+'</div>'
+      + '<div class="klbl">'+e[0]+'</div>'
+      + '</div>';
+  }).join('');
+  var sitEl = document.getElementById('kpiSit');
+  if (!sitEl) return;
+  sitEl.innerHTML = sitHtml;
+  initSitDrag();
+}
+
+// ═══════════════════════════════════════════════════
+//  Render Charts
+// ═══════════════════════════════════════════════════
+function mkChart(id, config){
+  if (charts_inst[id]) charts_inst[id].destroy();
+  var el = document.getElementById(id);
+  if (!el) return;
+  charts_inst[id] = new Chart(el.getContext('2d'), config);
+}
+
+function renderCharts(){
+  var rows = getRows();
+
+  // ── 1. Critério Julgamento (col "Critério Julgamento") ──
+  var critMap = {};
+  rows.forEach(function(r){ var c = r['Critério Julgamento']; if (c) critMap[c]=(critMap[c]||0)+1; });
+  var critKeys = Object.keys(critMap);
+  mkChart('cCriterio', {
+    type:'doughnut',
+    data:{ labels:critKeys, datasets:[{ data:critKeys.map(function(k){return critMap[k];}), backgroundColor:COLORS.slice(0,critKeys.length), borderWidth:1, borderColor:'#1e293b' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  });
+
+  // ── 2. Situação Item — por item único, rótulos normalizados ──
+  var sitMap = {}, sitSeen = new Set();
+  rows.forEach(function(r){
+    var k = r['__proc']+'|'+r['Item'];
+    if (!r['Item'] || sitSeen.has(k)) return; sitSeen.add(k);
+    var sit = normalizeSit(r['Situação Item']);
+    sitMap[sit] = (sitMap[sit]||0) + 1;
+  });
+  var sitKeys = Object.keys(sitMap);
+  var _sitPalIdx = 0;
+  var _sitAssigned = {};
+  var sitColors = sitKeys.map(function(k){
+    if (/homologad/i.test(k) && !/fracass|deserto/i.test(k)) return '#4ade80'; // Homologado — verde
+    if (/fracass/i.test(k))           return '#f97316'; // Fracassado / Homologado (Fracasso) — laranja
+    if (/deserto/i.test(k))           return '#fbbf24'; // Deserto / Homologado (Deserto) — amarelo
+    if (/cancelad|revog|anulad/i.test(k)) return '#ef4444'; // Cancelado/Revogado/Anulado — vermelho
+    if (/aguardando/i.test(k))        return '#60a5fa'; // Aguardando — azul
+    if (/julgad|habilit/i.test(k))    return '#a78bfa'; // Julgado/Habilitado — roxo
+    if (!_sitAssigned[k]) { _sitAssigned[k] = SIT_PALETTE[_sitPalIdx++ % SIT_PALETTE.length]; }
+    return _sitAssigned[k];
+  });
+  mkChart('cSituacao', {
+    type:'doughnut',
+    data:{ labels:sitKeys, datasets:[{ data:sitKeys.map(function(k){return sitMap[k];}), backgroundColor:sitColors, borderWidth:1, borderColor:'#1e293b' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  });
+
+  // ── 3. Top 10 UFs — col "UF" — fornecedores únicos por UF ──
+  var ufMap = {};
+  rows.forEach(function(r){
+    var uf = r['UF'], cnpj = r['CNPJ'];
+    if (!uf || !cnpj) return;
+    if (!ufMap[uf]) ufMap[uf] = new Set();
+    ufMap[uf].add(cnpj);
+  });
+  var ufTop = Object.entries(ufMap)
+    .map(function(e){ return [e[0], e[1].size]; })
+    .sort(function(a,b){ return b[1]-a[1]; }).slice(0,10);
+  mkChart('cUF', {
+    type:'bar',
+    data:{ labels:ufTop.map(function(e){return e[0];}),
+           datasets:[{ data:ufTop.map(function(e){return e[1];}), backgroundColor:'rgba(45,212,191,.7)', borderColor:'#2dd4bf', borderWidth:1 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{ x:{grid:{color:'#1e293b'},ticks:{stepSize:1}}, y:{grid:{color:'#1e293b'}} } }
+  });
+
+  // ── 6. Top 10 Empresas — itens únicos participados por empresa ──
+  var empMap = {};
+  rows.forEach(function(r){
+    var e = r['Razão Social'];
+    if (!e || e.length < 3) return;
+    if (!empMap[e]) empMap[e] = new Set();
+    empMap[e].add(r['__proc']+'|'+r['Item']);
+  });
+  var empTop = Object.entries(empMap).map(function(e){ return [e[0], e[1].size]; }).sort(function(a,b){return b[1]-a[1];}).slice(0,10);
+  mkChart('cEmpresas', {
+    type:'bar',
+    data:{ labels:empTop.map(function(e){return e[0].slice(0,35)+(e[0].length>35?'…':'');}),
+           datasets:[{ data:empTop.map(function(e){return e[1];}), backgroundColor:'rgba(167,139,250,.7)', borderColor:'#a78bfa', borderWidth:1 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{ x:{grid:{color:'#1e293b'},ticks:{stepSize:1}}, y:{grid:{color:'#1e293b'}} } }
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  Render all
+// ═══════════════════════════════════════════════════
+function renderAll(){
+  if (!selectedProcs.size){
+    document.getElementById('kpiGrid').innerHTML = '<div class="state-empty"><p>Nenhum processo selecionado.</p></div>';
+    document.getElementById('kpiSit').innerHTML = '';
+    Object.values(charts_inst).forEach(function(c){ c.destroy(); });
+    charts_inst = {};
+    return;
+  }
+  renderKPIs();
+  renderCharts();
+  var total = getRows().length;
+  document.getElementById('hdrSub').textContent = selectedProcs.size + ' processo(s) · ' + fmtNum(total) + ' linhas';
+  if (dtlVisible) renderDtl();
+}
+
+function renderEmptyState(){
+  document.getElementById('kpiGrid').innerHTML =
+    '<div class="state-empty" style="grid-column:1/-1"><p>Configure a planilha em ⚙️ Config e use o Bot CNET para scrapeado processos.</p><small>O dashboard lerá automaticamente as abas criadas pelo bot.</small></div>';
+}
+
+// ═══════════════════════════════════════════════════
+//  Detail table
+// ═══════════════════════════════════════════════════
+var dtlVisible = true;
+var dtlSortIdx=null, dtlSortAsc=true;
+var dtlRenderedRows = [];
+function dtlToggleDesc(tr, ridx){
+  var desc = dtlRenderedRows[ridx] && dtlRenderedRows[ridx]['Descrição Item'];
+  if (!desc) return;
+  var next = tr.nextElementSibling;
+  if (next && next.getAttribute('data-exp')){
+    next.remove();
+    tr.style.background='';
+  } else {
+    var cols = getDtlCols().length;
+    var expTr = document.createElement('tr');
+    expTr.setAttribute('data-exp','1');
+    expTr.innerHTML='<td colspan="'+cols+'" style="background:#0c1a2e;padding:10px 16px 12px;font-size:11px;color:#7dd3fc;white-space:normal;border-left:3px solid #3b82f6;line-height:1.6">'+escH(desc)+'</td>';
+    tr.parentNode.insertBefore(expTr, tr.nextSibling);
+    tr.style.background='#172a3a';
+  }
+}
+var DTL_COLS_CNET = [
+  {k:'__proc',        h:'Processo',    fn:function(v){ return procLabel(v); }},
+  {k:'Grupo',         h:'Grupo',       fn:null},
+  {k:'Item',          h:'Item',        fn:null},
+  {k:'Nome Item',     h:'Nome Item',   fn:function(v){ return '<span title="'+escH(v)+'">'+escH(v.slice(0,35))+(v.length>35?'…':'')+'</span>'; }},
+  {k:'Situação Item', h:'Sit. Item',   fn:sitBadge, tdClass:'td-wrap'},
+  {k:'CNPJ',          h:'CNPJ',        fn:null},
+  {k:'Razão Social',  h:'Empresa',     fn:function(v){ return escH(v); }, tdClass:'td-wrap'},
+  {k:'UF',            h:'UF',          fn:null},
+  {k:'Status',        h:'Status',      fn:statusBadge},
+  {k:'ME/EPP',        h:'ME/EPP',      fn:meeppBadge},
+  {k:'Valor Ofertado',h:'Ofertado',    fn:valCell},
+  {k:'Valor Negociado',h:'Negociado',  fn:valCell},
+  {k:'Valor Estimado',h:'Valor Est.',  fn:valCell},
+  {k:'Critério Julgamento',h:'Critério',fn:function(v){ return escH(v.slice(0,30)); }},
+];
+// Constrói colunas dinamicamente a partir das chaves reais dos dados
+function getDtlCols(){
+  var rows = getRows();
+  if (!rows.length) return DTL_COLS_CNET;
+  var sample = rows[0];
+  // Se tiver colunas CNET usa o mapeamento bonito
+  if (sample['Item'] !== undefined || sample['CNPJ'] !== undefined || sample['Razão Social'] !== undefined) return DTL_COLS_CNET;
+  // Formato desconhecido: colunas dinâmicas a partir das chaves do CSV
+  var skip = new Set(['__proc']);
+  var keys = Object.keys(sample).filter(function(k){ return !skip.has(k) && k; });
+  return [{k:'__proc', h:'Processo', fn:function(v){ return procLabel(v); }}]
+    .concat(keys.map(function(k){
+      var fn = /valor|estimado|ofertado|negociado/i.test(k) ? valCell : null;
+      return { k:k, h:k, fn:fn };
+    }));
+}
+var SIT_PALETTE = ['#3b82f6','#fb923c','#a78bfa','#2dd4bf','#f43f5e','#84cc16','#f59e0b','#06b6d4','#ec4899','#10b981','#6366f1','#fbbf24'];
+function normalizeSit(s){
+  if (!s) return 'Não informado';
+  // Strip qualquer prefixo "X | " (ex: "Com margem de preferência (CICS) | ", "Exclusividade ME/EPP | ")
+  var v = s.includes('|') ? s.split('|').pop().trim() : s.trim();
+  if (/fracass.*encerramento/i.test(v)) v = 'Aguardando Encerramento';
+  return v;
+}
+function sitBadge(v){
+  var norm = normalizeSit(v);
+  var c=/homolog/i.test(norm)?'b-grn':/deserto/i.test(norm)?'b-amb':/cancelad/i.test(norm)?'b-red':'b-gry';
+  return '<span class="badge '+c+'">'+escH(norm)+'</span>';
+}
+function statusBadge(v){
+  if(!v) return '–';
+  var c=isAdj(v)?'b-grn':/desclassific/i.test(v)?'b-red':/coberto/i.test(v)?'b-blu':'b-gry';
+  return '<span class="badge '+c+'">'+escH(v)+'</span>';
+}
+function meeppBadge(v){ return v==='Sim'?'<span class="badge b-amb">ME/EPP</span>':'–'; }
+function valCell(v){
+  var n=parseBRL(v); if(!n) return '–';
+  return '<span class="val">'+fmtBRL(n)+'</span>';
+}
+
+function toggleDtl(){
+  dtlVisible = !dtlVisible;
+  document.getElementById('dtlContent').style.display = dtlVisible ? 'block' : 'none';
+  document.querySelector('.dtl-toggle-btn').textContent = dtlVisible ? '▲ Ocultar tabela' : '▼ Ver tabela detalhada';
+  if (dtlVisible) renderDtl();
+}
+
+function getDtlRows(){
+  var rows = getRows();
+  var q = (document.getElementById('dtlSrch').value||'').toLowerCase();
+  var fStatus  = document.getElementById('dtlStatus').value;
+  var fSitItem = document.getElementById('dtlSitItem').value;
+  var fItem    = document.getElementById('dtlItem').value;
+  return rows.filter(function(r){
+    if (fStatus  && r['Status']        !== fStatus)  return false;
+    if (fSitItem && normalizeSit(r['Situação Item']) !== fSitItem) return false;
+    if (fItem    && r['Nome Item']     !== fItem)    return false;
+    if (q){
+      var txt = Object.values(r).join(' ').toLowerCase();
+      if (!txt.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderDtl(){
+  var COLS = getDtlCols();
+  var rows = getDtlRows();
+
+  // Populate filter options
+  var allRows = getRows();
+  function fillSel(id, key){
+    var el = document.getElementById(id); var cur = el.value;
+    var opts = new Set(allRows.map(function(r){return r[key];}).filter(Boolean));
+    el.innerHTML = el.options[0].outerHTML + [...opts].sort().map(function(v){
+      return '<option value="'+escH(v)+'">'+escH(v)+'</option>';
+    }).join('');
+    el.value = cur;
+  }
+  fillSel('dtlStatus','Status');
+  // Sit. Item — valores normalizados
+  (function(){
+    var el = document.getElementById('dtlSitItem'); var cur = el.value;
+    var opts = new Set(allRows.map(function(r){ return normalizeSit(r['Situação Item']); }).filter(function(v){ return v && v!=='Não informado'; }));
+    el.innerHTML = el.options[0].outerHTML + [...opts].sort().map(function(v){
+      return '<option value="'+escH(v)+'">'+escH(v)+'</option>';
+    }).join('');
+    el.value = cur;
+  })();
+  // Itens — N – Nome ordenado pelo número do item
+  (function(){
+    var el = document.getElementById('dtlItem'); var cur = el.value;
+    var numMap = {};
+    allRows.forEach(function(r){
+      var n = r['Nome Item'], num = parseInt(r['Item'],10)||9999;
+      if (!n) return;
+      if (!numMap[n] || num < numMap[n]) numMap[n] = num;
+    });
+    var sorted = Object.keys(numMap).sort(function(a,b){ return numMap[a]-numMap[b]; });
+    el.innerHTML = '<option value="">Todos os itens</option>' + sorted.map(function(name){
+      return '<option value="'+escH(name)+'">'+escH(numMap[name]+' – '+name)+'</option>';
+    }).join('');
+    el.value = cur;
+  })();
+
+  // Sort
+  if (dtlSortIdx !== null && COLS[dtlSortIdx]){
+    var key = COLS[dtlSortIdx].k;
+    rows.sort(function(a,b){
+      var va=a[key]||'', vb=b[key]||'';
+      var na=parseFloat(va.replace(/[^0-9,.]/g,'')), nb=parseFloat(vb.replace(/[^0-9,.]/g,''));
+      if(!isNaN(na)&&!isNaN(nb)) return dtlSortAsc?na-nb:nb-na;
+      return dtlSortAsc?va.localeCompare(vb,'pt-BR',{numeric:true}):vb.localeCompare(va,'pt-BR',{numeric:true});
+    });
+  }
+
+  document.getElementById('dtlHead').innerHTML = '<tr>' + COLS.map(function(c,i){
+    var arr = dtlSortIdx===i?(dtlSortAsc?' ▲':' ▼'):'';
+    return '<th onclick="dtlSort('+i+')">'+c.h+arr+'</th>';
+  }).join('') + '</tr>';
+
+  dtlRenderedRows = rows.slice(0,500);
+  if (!rows.length){
+    document.getElementById('dtlBody').innerHTML = '<tr><td colspan="'+COLS.length+'" class="empty">Nenhuma linha.</td></tr>';
+  } else {
+    document.getElementById('dtlBody').innerHTML = dtlRenderedRows.map(function(r, ridx){
+      var hasDesc = !!(r['Descrição Item']);
+      var trAttr = hasDesc ? ' style="cursor:pointer" onclick="dtlToggleDesc(this,'+ridx+')" title="Clique para ver descrição"' : '';
+      return '<tr'+trAttr+'>' + COLS.map(function(c){
+        var v = r[c.k]||'';
+        var cls = c.tdClass ? ' class="'+c.tdClass+'"' : '';
+        return '<td'+cls+'>'+(c.fn ? c.fn(v) : escH(v))+'</td>';
+      }).join('') + '</tr>';
+    }).join('');
+  }
+  document.getElementById('dtlCount').textContent = rows.length + ' linha(s)' + (rows.length > 500 ? ' (mostrando 500)' : '');
+}
+
+function dtlSort(i){
+  
+  if (dtlSortIdx===i) dtlSortAsc=!dtlSortAsc; else { dtlSortIdx=i; dtlSortAsc=true; }
+  renderDtl();
+}
+</script>
+</body>
+</html>

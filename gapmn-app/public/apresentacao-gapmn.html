@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAP-MN — Apresentação do Sistema</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, Arial, sans-serif;
+      background: #060d1a;
+      color: #e2e8f0;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Background ── */
+    .bg-grid {
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(56,189,248,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,.035) 1px, transparent 1px);
+      background-size: 44px 44px;
+      pointer-events: none;
+    }
+    .bg-glow {
+      position: fixed; border-radius: 50%;
+      filter: blur(90px); pointer-events: none;
+    }
+    .bg-glow-1 { width:600px; height:600px; top:-200px; left:-100px; background:rgba(37,99,235,.10); }
+    .bg-glow-2 { width:500px; height:500px; bottom:-150px; right:250px; background:rgba(16,185,129,.07); }
+    .bg-glow-3 { width:400px; height:400px; top:50%; right:-80px; background:rgba(139,92,246,.07); transform:translateY(-50%); }
+
+    /* ── Partículas flutuantes ── */
+    .particles { position:fixed; inset:0; pointer-events:none; overflow:hidden; }
+    .particle {
+      position:absolute; border-radius:50%;
+      background:rgba(56,189,248,.25);
+      animation: floatUp linear infinite;
+    }
+    @keyframes floatUp {
+      0%   { transform:translateY(100vh) scale(0); opacity:0; }
+      10%  { opacity:1; }
+      90%  { opacity:.4; }
+      100% { transform:translateY(-20vh) scale(1); opacity:0; }
+    }
+
+    /* ── Progress bar ── */
+    .progress-bar {
+      position:fixed; top:0; left:0; height:3px;
+      background: linear-gradient(90deg, #2563eb, #38bdf8);
+      transition: width .5s ease;
+      z-index:100;
+      box-shadow: 0 0 10px rgba(56,189,248,.6);
+    }
+
+    /* ── Header ── */
+    .header {
+      position:fixed; top:14px; left:50%; transform:translateX(-50%);
+      display:flex; align-items:center; gap:10px;
+      background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:30px; padding:6px 16px;
+      z-index:50;
+    }
+    .header-dot { width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 6px #22c55e; }
+    .header-text { font-size:11px; font-weight:700; color:rgba(255,255,255,.5); letter-spacing:.12em; text-transform:uppercase; }
+
+    /* ── Layout ── */
+    .layout {
+      position:relative; z-index:1;
+      display:grid;
+      grid-template-columns: 1fr 380px;
+      height:100vh;
+    }
+
+    /* ── Slide area ── */
+    .slide-area {
+      display:flex; flex-direction:column; justify-content:center;
+      padding: 80px 64px 100px;
+      position:relative; overflow:hidden;
+    }
+
+    .slide { display:none; }
+    .slide.active { display:block; animation: slideIn .55s cubic-bezier(.22,1,.36,1) forwards; }
+    .slide.leaving { animation: slideOut .35s ease forwards; }
+
+    @keyframes slideIn {
+      from { opacity:0; transform:translateX(-40px); }
+      to   { opacity:1; transform:translateX(0); }
+    }
+    @keyframes slideOut {
+      from { opacity:1; transform:translateX(0); }
+      to   { opacity:0; transform:translateX(20px); }
+    }
+
+    .slide-tag {
+      display:inline-flex; align-items:center; gap:6px;
+      background:rgba(56,189,248,.1);
+      border:1px solid rgba(56,189,248,.2);
+      color:#38bdf8; font-size:11px; font-weight:700;
+      padding:4px 12px; border-radius:20px;
+      margin-bottom:20px; width:fit-content;
+      letter-spacing:.06em; text-transform:uppercase;
+    }
+
+    .slide-title {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      font-weight:800; line-height:1.1;
+      color:#f1f5f9; margin-bottom:18px;
+    }
+    .slide-title em { font-style:normal; color:#38bdf8; }
+
+    .slide-body {
+      font-size:1.05rem; color:#94a3b8;
+      line-height:1.75; max-width:480px; margin-bottom:32px;
+    }
+
+    /* feature list */
+    .flist { list-style:none; display:flex; flex-direction:column; gap:10px; }
+    .fitem {
+      display:flex; align-items:center; gap:14px;
+      background:rgba(255,255,255,.035);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:14px; padding:13px 18px;
+      font-size:14px; color:#cbd5e1;
+      opacity:0; animation:fadeUp .45s ease forwards;
+    }
+    .fitem:nth-child(1){animation-delay:.08s}
+    .fitem:nth-child(2){animation-delay:.18s}
+    .fitem:nth-child(3){animation-delay:.28s}
+    .fitem:nth-child(4){animation-delay:.38s}
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(12px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    .fitem-icon { font-size:20px; width:30px; text-align:center; }
+
+    /* CTA */
+    .cta-row { display:flex; gap:12px; flex-wrap:wrap; }
+    .cta {
+      display:inline-flex; align-items:center; gap:8px;
+      font-size:15px; font-weight:700; padding:14px 28px;
+      border-radius:12px; text-decoration:none;
+      cursor:pointer; border:none; transition:all .2s;
+    }
+    .cta-primary {
+      background:#2563eb; color:#fff;
+      box-shadow:0 4px 20px rgba(37,99,235,.45);
+    }
+    .cta-primary:hover { background:#1d4ed8; transform:translateY(-2px); box-shadow:0 6px 28px rgba(37,99,235,.55); }
+    .cta-secondary {
+      background:rgba(255,255,255,.07);
+      border:1px solid rgba(255,255,255,.12);
+      color:#94a3b8;
+    }
+    .cta-secondary:hover { background:rgba(255,255,255,.12); color:#e2e8f0; }
+
+    /* ── Avatar area ── */
+    .avatar-area {
+      position:relative;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:flex-end;
+      overflow:hidden;
+    }
+
+    /* Scanline effect */
+    .avatar-area::before {
+      content:'';
+      position:absolute; inset:0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0,0,0,.04) 3px,
+        rgba(0,0,0,.04) 4px
+      );
+      pointer-events:none; z-index:2;
+    }
+
+    .avatar-wrapper {
+      position:relative;
+      animation: breathe 4s ease-in-out infinite;
+      z-index:1;
+    }
+    @keyframes breathe {
+      0%,100% { transform:translateY(0); }
+      50%      { transform:translateY(-9px); }
+    }
+    .avatar-wrapper.talking { animation: talk .28s ease-in-out infinite; }
+    @keyframes talk {
+      0%,100% { transform:translateY(0) scaleY(1); }
+      50%      { transform:translateY(-3px) scaleY(.975); }
+    }
+
+    .avatar-img {
+      width:340px; height:460px;
+      object-fit:cover; object-position:top center;
+      display:block;
+      border-radius:28px 28px 0 0;
+      border-top:1px solid rgba(56,189,248,.25);
+      border-left:1px solid rgba(56,189,248,.15);
+      border-right:1px solid rgba(56,189,248,.15);
+    }
+
+    /* Glow border top */
+    .avatar-glow-top {
+      position:absolute; top:0; left:0; right:0; height:3px;
+      background: linear-gradient(90deg, transparent 0%, rgba(56,189,248,.8) 30%, rgba(56,189,248,.8) 70%, transparent 100%);
+      border-radius:28px 28px 0 0;
+      box-shadow: 0 0 20px rgba(56,189,248,.6);
+      z-index:3;
+    }
+
+    /* Base glow */
+    .avatar-base {
+      width:340px; height:24px;
+      background: radial-gradient(ellipse at center, rgba(56,189,248,.35) 0%, transparent 70%);
+      flex-shrink:0;
+    }
+
+    /* Speech bubble */
+    .bubble {
+      position:absolute;
+      top:40px; right:calc(100% + 20px);
+      width:270px;
+      background:#fff;
+      color:#0f172a;
+      border-radius:18px;
+      padding:14px 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.1);
+      z-index:10;
+    }
+    .bubble-name {
+      font-size:9.5px; font-weight:800;
+      color:#2563eb; text-transform:uppercase;
+      letter-spacing:.1em; margin-bottom:5px;
+    }
+    .bubble-text {
+      font-size:12.5px; line-height:1.55; color:#334155;
+    }
+    .bubble::after {
+      content:'';
+      position:absolute; top:22px; right:-9px;
+      width:18px; height:18px;
+      background:#fff;
+      clip-path: polygon(0 20%, 100% 50%, 0 80%);
+    }
+    .bubble.pop { animation: popBubble .4s cubic-bezier(.34,1.56,.64,1) forwards; }
+    @keyframes popBubble {
+      from { opacity:0; transform:scale(.7) translateX(10px); }
+      to   { opacity:1; transform:scale(1) translateX(0); }
+    }
+
+    /* ── Navigation ── */
+    .nav {
+      position:fixed; bottom:0; left:0; right:380px;
+      padding:18px 64px;
+      display:flex; align-items:center; gap:20px;
+      background: linear-gradient(0deg, rgba(6,13,26,.95) 0%, transparent 100%);
+    }
+    .dots { display:flex; gap:8px; flex:1; }
+    .dot {
+      width:8px; height:8px; border-radius:8px;
+      background:rgba(255,255,255,.2);
+      cursor:pointer; transition:all .3s;
+    }
+    .dot.active { background:#38bdf8; width:28px; box-shadow:0 0 8px rgba(56,189,248,.6); }
+    .dot:hover:not(.active) { background:rgba(255,255,255,.4); }
+
+    .nbtn {
+      padding:9px 22px; border-radius:9px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);
+      color:#94a3b8; font-size:13px; font-weight:600;
+      cursor:pointer; transition:all .2s;
+    }
+    .nbtn:hover { background:rgba(255,255,255,.12); color:#e2e8f0; }
+    .nbtn-next {
+      background:#2563eb; border-color:#2563eb; color:#fff;
+      box-shadow:0 2px 12px rgba(37,99,235,.4);
+    }
+    .nbtn-next:hover { background:#1d4ed8; }
+
+    /* Timer arc */
+    .timer-ring {
+      position:fixed; bottom:18px; right:398px;
+      width:32px; height:32px;
+    }
+    .timer-ring svg { transform:rotate(-90deg); }
+    .timer-arc {
+      fill:none; stroke:#38bdf8; stroke-width:2.5;
+      stroke-dasharray:88; stroke-dashoffset:88;
+      stroke-linecap:round;
+      transition:stroke-dashoffset .1s linear;
+    }
+
+    /* Responsive */
+    @media(max-width:900px){
+      .layout { grid-template-columns:1fr; }
+      .avatar-area { display:none; }
+      .nav { right:0; }
+      .timer-ring { display:none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow-1"></div>
+<div class="bg-glow bg-glow-2"></div>
+<div class="bg-glow bg-glow-3"></div>
+<div class="particles" id="particles"></div>
+
+<div class="header">
+  <div class="header-dot"></div>
+  <span class="header-text">GAP-MN · Sistema de Gestão</span>
+</div>
+
+<div class="layout">
+
+  <!-- SLIDES -->
+  <div class="slide-area">
+
+    <div class="slide active" id="s0">
+      <div class="slide-tag">✦ Bem-vindo</div>
+      <h1 class="slide-title">Sistema de Gestão<br><em>GAP-MN</em></h1>
+      <p class="slide-body">Uma plataforma completa para gestão administrativa do Grupo de Apoio de Manaus — contratos, processos, empenhos e indicadores integrados em um só lugar.</p>
+      <div class="cta-row">
+        <a href="/app" class="cta cta-primary">Entrar no sistema →</a>
+        <button class="cta cta-secondary" onclick="goTo(1)">Ver apresentação</button>
+      </div>
+    </div>
+
+    <div class="slide" id="s1">
+      <div class="slide-tag">📋 Gestão</div>
+      <h1 class="slide-title">Tudo integrado<br>em <em>um só lugar</em></h1>
+      <ul class="flist">
+        <li class="fitem"><span class="fitem-icon">📄</span> Contratos SCON — vigências, valores e modalidades</li>
+        <li class="fitem"><span class="fitem-icon">⚖️</span> Processos licitatórios — status e tramitação SLIC</li>
+        <li class="fitem"><span class="fitem-icon">💰</span> Empenhos SEO — NEs, perfis e rastreamento SILOMS</li>
+        <li class="fitem"><span class="fitem-icon">📊</span> Indicadores de lotação — dotação e saldo por conta</li>
+      </ul>
+    </div>
+
+    <div class="slide" id="s2">
+      <div class="slide-tag">🤖 Automação</div>
+      <h1 class="slide-title">Robôs que<br>trabalham <em>por você</em></h1>
+      <ul class="flist">
+        <li class="fitem"><span class="fitem-icon">🔍</span> Leitor de Subprocessos — consulta SILOMS em lote</li>
+        <li class="fitem"><span class="fitem-icon">🤖</span> CNET — extrai propostas do ComprasNet pro Sheets</li>
+        <li class="fitem"><span class="fitem-icon">📋</span> Robô de ATAs — sincroniza Atas de RP automaticamente</li>
+        <li class="fitem"><span class="fitem-icon">📝</span> Gerador de Termos — Apostilamento e Aditivo com modelos AGU</li>
+      </ul>
+    </div>
+
+    <div class="slide" id="s3">
+      <div class="slide-tag">📈 Orçamento</div>
+      <h1 class="slide-title">Execução<br><em>orçamentária</em><br>em tempo real</h1>
+      <p class="slide-body">Painéis integrados ao SIAFI via Google Sheets. Visualize créditos, empenhos, restos a pagar e indicadores de execução por OM — atualizados automaticamente.</p>
+    </div>
+
+    <div class="slide" id="s4">
+      <div class="slide-tag">✦ Acesso</div>
+      <h1 class="slide-title">Pronto para<br><em>começar?</em></h1>
+      <p class="slide-body">Acesse com seu login institucional. O sistema identifica seu setor e libera automaticamente as funcionalidades disponíveis para você.</p>
+      <div class="cta-row" style="margin-top:8px">
+        <a href="/app" class="cta cta-primary">Entrar no sistema →</a>
+        <a href="/ferramentas" class="cta cta-secondary">Ver ferramentas</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- AVATAR -->
+  <div class="avatar-area">
+    <div class="avatar-wrapper" id="avatarWrapper">
+      <div class="bubble pop" id="speechBubble">
+        <div class="bubble-name">Cel Susan Kelly</div>
+        <div class="bubble-text" id="bubbleText">Olá! Bem-vindo ao GAP-MN. Vou apresentar o sistema para você.</div>
+      </div>
+      <img src="CELIA.png" alt="Cel Susan Kelly" class="avatar-img">
+      <div class="avatar-glow-top"></div>
+    </div>
+    <div class="avatar-base"></div>
+  </div>
+
+</div>
+
+<!-- Nav -->
+<div class="nav">
+  <div class="dots" id="dotsContainer"></div>
+  <button class="nbtn" id="btnPrev" onclick="goTo(current-1)" style="opacity:0;pointer-events:none">← Anterior</button>
+  <button class="nbtn nbtn-next" id="btnNext" onclick="goTo(current+1)">Próximo →</button>
+</div>
+
+<!-- Timer ring -->
+<div class="timer-ring">
+  <svg viewBox="0 0 32 32" width="32" height="32">
+    <circle cx="16" cy="16" r="14" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="2.5"/>
+    <circle class="timer-arc" cx="16" cy="16" r="14" id="timerArc"/>
+  </svg>
+</div>
+
+<script>
+  /* ── Partículas ── */
+  (function(){
+    var p=document.getElementById('particles');
+    for(var i=0;i<18;i++){
+      var el=document.createElement('div');
+      el.className='particle';
+      var size=Math.random()*4+2;
+      el.style.cssText=[
+        'width:'+size+'px','height:'+size+'px',
+        'left:'+(Math.random()*100)+'%',
+        'animation-duration:'+(Math.random()*20+15)+'s',
+        'animation-delay:'+(Math.random()*20)+'s',
+        'opacity:'+(Math.random()*.5+.1)
+      ].join(';');
+      p.appendChild(el);
+    }
+  })();
+
+  /* ── Slides ── */
+  var SLIDES = [
+    { fala:'Olá! Seja bem-vindo ao sistema GAP-MN. Vou apresentar tudo que você pode fazer aqui.' },
+    { fala:'O sistema centraliza contratos, processos, empenhos e indicadores de lotação em um só lugar. Maio trouxe os geradores de Termos de Apostilamento e Aditivo.' },
+    { fala:'Temos robôs que automatizam tarefas repetitivas — do CNET ao gerador de Termos Aditivos com modelos oficiais da AGU, Lei 14.133/21.' },
+    { fala:'Os painéis orçamentários mostram a execução em tempo real, integrados diretamente ao SIAFI.' },
+    { fala:'Faça login com seu perfil institucional. O sistema já reconhece seu setor e libera as funcionalidades certas. Bem-vindo!' },
+  ];
+
+  var current = 0;
+  var autoTimer, timerInterval, timerProgress = 0;
+  var AUTO_DELAY = 9000;
+
+  function buildDots(){
+    var c=document.getElementById('dotsContainer');
+    c.innerHTML='';
+    SLIDES.forEach(function(_,i){
+      var d=document.createElement('div');
+      d.className='dot'+(i===current?' active':'');
+      d.onclick=function(){goTo(i)};
+      c.appendChild(d);
+    });
+  }
+
+  function updateNav(){
+    var prev=document.getElementById('btnPrev');
+    var next=document.getElementById('btnNext');
+    prev.style.opacity=current===0?'0':'1';
+    prev.style.pointerEvents=current===0?'none':'';
+    next.textContent=current===SLIDES.length-1?'↺ Recomeçar':'Próximo →';
+    document.getElementById('progressBar').style.width=((current+1)/SLIDES.length*100)+'%';
+  }
+
+  function setSpeech(text){
+    var w=document.getElementById('avatarWrapper');
+    var b=document.getElementById('speechBubble');
+    var t=document.getElementById('bubbleText');
+    w.classList.add('talking');
+    b.classList.remove('pop');
+    void b.offsetWidth;
+    b.classList.add('pop');
+    t.textContent=text;
+    setTimeout(function(){w.classList.remove('talking');},2200);
+  }
+
+  function startTimer(){
+    clearInterval(timerInterval);
+    timerProgress=0;
+    var arc=document.getElementById('timerArc');
+    var circumference=88;
+    arc.style.strokeDashoffset=circumference;
+    timerInterval=setInterval(function(){
+      timerProgress+=100/AUTO_DELAY*150;
+      if(timerProgress>100)timerProgress=100;
+      arc.style.strokeDashoffset=circumference-(circumference*(timerProgress/100));
+    },150);
+  }
+
+  function scheduleAuto(){
+    clearTimeout(autoTimer);
+    startTimer();
+    autoTimer=setTimeout(function(){
+      if(current<SLIDES.length-1) goTo(current+1);
+    },AUTO_DELAY);
+  }
+
+  function goTo(idx){
+    if(idx<0) return;
+    if(idx>=SLIDES.length) idx=0;
+    var slides=document.querySelectorAll('.slide');
+    slides[current].classList.remove('active');
+    current=idx;
+    slides[current].classList.add('active');
+    setSpeech(SLIDES[current].fala);
+    buildDots();
+    updateNav();
+    scheduleAuto();
+  }
+
+  /* ── Init ── */
+  buildDots();
+  updateNav();
+  setSpeech(SLIDES[0].fala);
+  scheduleAuto();
+
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key===' '){ e.preventDefault(); goTo(current+1<SLIDES.length?current+1:0); }
+    if(e.key==='ArrowLeft') goTo(current-1);
+  });
+</script>
+</body>
+</html>
