@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
-import { SHEET_URLS, toEmpenhosNF } from "../lib/gsheets";
+import { SHEET_URLS, toEmpenhosNF, fetchCSV } from "../lib/gsheets";
 import { EnviadorNEFornecedor } from "./EnviadorNEFornecedor";
 
 const ENVIO_AUTOMATICO_ATIVO = true;
@@ -344,12 +344,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   async function syncWithSiafi() {
     setSyncing(true);
     try {
-      const res = await fetch(SHEET_URLS.empenhosNF);
-      if (!res.ok) throw new Error("Falha ao buscar planilha NE SIAFI.");
-      const csv  = await res.text();
-      const rows = csv.split("\n").map((l) =>
-        l.split(",").map((c) => c.replace(/^"|"$/g, "").trim())
-      );
+      const rows = await fetchCSV(SHEET_URLS.empenhosNF);
       const nes = toEmpenhosNF(rows);
 
       const bySolic = new Map<string, typeof nes>();

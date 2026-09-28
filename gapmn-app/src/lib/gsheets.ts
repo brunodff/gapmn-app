@@ -457,7 +457,10 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
     // Descrição: tudo após o primeiro " - " em "Item compra: XXXXX - descrição"
     const dashIdx       = rawItemFull.indexOf(" - ");
     const cleanItemDesc = dashIdx >= 0 ? rawItemFull.slice(dashIdx + 3).trim() : rawItemFull;
-    const descricao     = cleanItemDesc; // usado para extractSolicitacao
+
+    // descricao: campo H (col 7) no novo formato — contém "SOLICITACAO DE EMPENHO 26SXXXX..."
+    // No formato antigo (sem colunas de item) estava em col C (índice 2).
+    const descricao = (row[isCompraItem ? 7 : 2] ?? "").trim();
 
     // qty = ic+2, val = ic+3 (relativo ao itemColIdx encontrado)
     // Se colunas de item não estiverem na planilha: item_valor = 0
@@ -476,18 +479,18 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
       item_qty:          cleanItemQty,
       item_valor:        cleanItemValor,
       descricao,
-      // Offset: se as 5 colunas de item foram inseridas (itemColIdx>=0), os campos
-      // originais estão deslocados +5 a partir do índice 2. Caso contrário, sem deslocamento.
-      ugcred_code:       (row[isCompraItem ? 7  : 2]  ?? "").trim(),
-      ugr:               (row[isCompraItem ? 8  : 3]  ?? "").trim(),
-      natureza:          (row[isCompraItem ? 9  : 4]  ?? "").trim(),
-      pi:                (row[isCompraItem ? 11 : 6]  ?? "").trim(),
-      pi_desc:           (row[isCompraItem ? 12 : 7]  ?? "").trim(),
-      pag:               (row[isCompraItem ? 13 : 8]  ?? "").trim(),
-      cnpj:              (row[isCompraItem ? 14 : 9]  ?? "").trim(),
-      nome_fantasia:     (row[isCompraItem ? 15 : 10] ?? "").trim(),
-      assinatura:        (row[isCompraItem ? 17 : 12] ?? "").trim(),
-      pendente_od:       (row[isCompraItem ? 18 : 13] ?? "").trim(),
+      // Offset: 5 colunas de item foram inseridas em C-G (índices 2-6), deslocando
+      // todos os campos originais em +5. Índices: [novo formato : formato antigo]
+      ugcred_code:       (row[isCompraItem ? 8  : 3]  ?? "").trim(),
+      ugr:               (row[isCompraItem ? 9  : 4]  ?? "").trim(),
+      natureza:          (row[isCompraItem ? 10 : 5]  ?? "").trim(),
+      pi:                (row[isCompraItem ? 12 : 7]  ?? "").trim(),
+      pi_desc:           (row[isCompraItem ? 13 : 8]  ?? "").trim(),
+      pag:               (row[isCompraItem ? 14 : 9]  ?? "").trim(),
+      cnpj:              (row[isCompraItem ? 15 : 10] ?? "").trim(),
+      nome_fantasia:     (row[isCompraItem ? 16 : 11] ?? "").trim(),
+      assinatura:        (row[isCompraItem ? 18 : 13] ?? "").trim(),
+      pendente_od:       (row[isCompraItem ? 19 : 14] ?? "").trim(),
       valor:             toNum((row[isCompraItem ? 20 : 15] ?? "").trim()),
       solicitacao:       extractSolicitacao(descricao),
     });
