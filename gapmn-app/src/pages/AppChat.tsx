@@ -1171,7 +1171,7 @@ function PainelGovernanca() {
 }
 
 // ── Notificação de atualização da extensão ────────────────────────────────────
-const NOTIF_EXPIRY = new Date("2026-10-15T23:59:59");
+const NOTIF_EXPIRY = new Date("2026-09-28T00:00:00");
 
 function NotificacaoAtualizacao({ onFerramentas }: { onFerramentas: () => void }) {
   const expirou = new Date() > NOTIF_EXPIRY;
