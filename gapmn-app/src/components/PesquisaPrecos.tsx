@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabase";
 import {
   CRITERIO_LABEL, UFS,
@@ -993,17 +994,47 @@ const REGIOES: { nome: string; ufs: string[] }[] = [
   { nome: "Sul", ufs: ["PR", "RS", "SC"] },
 ];
 
-/** Caixa de seleção de estados: vazio = âmbito nacional. */
+/**
+ * Caixa de seleção de estados: vazio = âmbito nacional.
+ *
+ * O painel é renderizado num portal no <body> com posição fixa: o módulo fica
+ * dentro de um container com overflow:hidden (tema escuro do /app), que cortaria
+ * um painel posicionado de forma absoluta.
+ */
 function SeletorUFs({ valor, onChange }: { valor: string[]; onChange: (ufs: string[]) => void }) {
   const [aberto, setAberto] = useState(false);
-  const raiz = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+  const botao = useRef<HTMLButtonElement>(null);
+  const painel = useRef<HTMLDivElement>(null);
+  const LARGURA = 316;
+  const ALTURA = 300;
+
   useEffect(() => {
     if (!aberto) return;
-    const fora = (e: MouseEvent) => { if (!raiz.current?.contains(e.target as Node)) setAberto(false); };
+    const medir = () => {
+      const r = botao.current?.getBoundingClientRect();
+      if (!r) return;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - LARGURA - 8));
+      // Abre para baixo; se não couber na tela, abre para cima.
+      if (window.innerHeight - r.bottom >= ALTURA + 8 || r.top < ALTURA + 8) setPos({ top: r.bottom + 4, left });
+      else setPos({ bottom: window.innerHeight - r.top + 4, left });
+    };
+    medir();
+    const fora = (e: MouseEvent) => {
+      const alvo = e.target as Node;
+      if (!botao.current?.contains(alvo) && !painel.current?.contains(alvo)) setAberto(false);
+    };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setAberto(false); };
+    window.addEventListener("resize", medir);
+    window.addEventListener("scroll", medir, true); // captura a rolagem do painel do /app
     document.addEventListener("mousedown", fora);
     document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("mousedown", fora); document.removeEventListener("keydown", esc); };
+    return () => {
+      window.removeEventListener("resize", medir);
+      window.removeEventListener("scroll", medir, true);
+      document.removeEventListener("mousedown", fora);
+      document.removeEventListener("keydown", esc);
+    };
   }, [aberto]);
 
   const ordenar = (l: string[]) => UFS.filter((u) => l.includes(u));
@@ -1016,49 +1047,56 @@ function SeletorUFs({ valor, onChange }: { valor: string[]; onChange: (ufs: stri
     : valor.length <= 4 ? valor.join(", ") : `${valor.length} estados`;
 
   return (
-    <div ref={raiz} className="relative">
-      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}
+    <>
+      <button ref={botao} type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}
         className="min-w-[210px] flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-left">
         <span>{rotulo}</span>
         <span className="text-xs text-slate-400">{aberto ? "▲" : "▼"}</span>
       </button>
-      {aberto && (
-        <div className="force-light absolute z-30 mt-1 w-[300px] rounded-xl border border-gray-200 bg-white p-3 shadow-xl"
-          style={{ color: "#0f172a" }}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-gray-500">Selecione um ou mais estados</span>
-            <button type="button" onClick={() => onChange([])} className="text-xs text-sky-700 hover:underline">
+      {aberto && pos && createPortal(
+        <div ref={painel}
+          style={{ position: "fixed", top: pos.top, bottom: pos.bottom, left: pos.left, width: LARGURA, zIndex: 1000,
+            background: "#ffffff", color: "#0f172a", border: "1px solid #cbd5e1", borderRadius: 12,
+            padding: 12, boxShadow: "0 12px 40px rgba(2,6,23,0.35)", fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Selecione um ou mais estados</span>
+            <button type="button" onClick={() => onChange([])}
+              style={{ fontSize: 12, color: "#0369a1", background: "none", border: "none", cursor: "pointer" }}>
               Limpar (nacional)
             </button>
           </div>
-          <div className="flex flex-wrap gap-1 mb-2">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
             {REGIOES.map((r) => {
               const todas = r.ufs.every((u) => valor.includes(u));
               return (
                 <button key={r.nome} type="button" onClick={() => alternarRegiao(r)}
-                  className={`text-[11px] px-2 py-0.5 rounded-full border ${todas ? "border-sky-300 bg-sky-100 text-sky-800 font-semibold" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}>
+                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, cursor: "pointer",
+                    border: `1px solid ${todas ? "#7dd3fc" : "#e2e8f0"}`,
+                    background: todas ? "#e0f2fe" : "#fff", color: todas ? "#075985" : "#475569", fontWeight: todas ? 600 : 400 }}>
                   {r.nome}
                 </button>
               );
             })}
           </div>
-          <div className="grid grid-cols-6 gap-1">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4 }}>
             {UFS.map((u) => {
               const marcado = valor.includes(u);
               return (
-                <label key={u} className={`flex items-center gap-1 rounded px-1 py-0.5 text-xs cursor-pointer ${marcado ? "bg-sky-100 text-sky-800 font-semibold" : "hover:bg-gray-100"}`}>
-                  <input type="checkbox" checked={marcado} onChange={() => alternar(u)} />
+                <label key={u} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px", borderRadius: 6, cursor: "pointer",
+                  fontSize: 12, background: marcado ? "#e0f2fe" : "transparent", color: marcado ? "#075985" : "#0f172a", fontWeight: marcado ? 600 : 400 }}>
+                  <input type="checkbox" checked={marcado} onChange={() => alternar(u)} style={{ accentColor: "#0284c7" }} />
                   {u}
                 </label>
               );
             })}
           </div>
-          <div className="mt-2 text-[11px] text-gray-500">
+          <div style={{ marginTop: 8, fontSize: 11, color: "#64748b" }}>
             {valor.length === 0 ? "Sem seleção: pesquisa em todo o Brasil." : `${valor.length} selecionado${valor.length > 1 ? "s" : ""}: uma consulta por estado, somadas no resultado.`}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
