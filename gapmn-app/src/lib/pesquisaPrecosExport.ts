@@ -188,6 +188,9 @@ export function exportarXlsx(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) 
     "CV (%)": l.estat ? +(l.estat.coeficiente_variacao * 100).toFixed(1) : null,
     "Critério": CRITERIO_LABEL[l.criterio],
     "Valor unitário estimado": l.valorUnitario,
+    "Valor unitário no TR": l.item.valorReferencia ?? null,
+    "Diferença vs TR (%)": l.item.valorReferencia && l.valorUnitario != null
+      ? +((l.valorUnitario / l.item.valorReferencia - 1) * 100).toFixed(1) : null,
     "Valor total estimado": l.valorTotal,
     "Amostra ajustada": l.ajustado ? "Sim" : "Não",
     "Justificativa": l.justificativa,

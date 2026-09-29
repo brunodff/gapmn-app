@@ -4,9 +4,9 @@ import { Card } from "./Card";
 import * as XLSX from "xlsx";
 import TermoApostilamentoContrato from "./TermoApostilamentoContrato";
 import { fetchCSV, toExecucaoLinhas, toRPNEs, toEmpenhosNF, normalizeNE, type ExecucaoLinha, type LinhaRPNE, type EmpenhoNF, SHEET_URLS } from "../lib/gsheets";
-import * as pdfjsLib from "pdfjs-dist";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
+  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
 

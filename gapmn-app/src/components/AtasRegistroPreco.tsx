@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import * as pdfjsLib from "pdfjs-dist";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import { supabase } from "../lib/supabase";
 import DocFormatBar from "./DocFormatBar";
 
@@ -7,7 +7,7 @@ const APT_TEMPLATE_TIPO = "apostilamento_ata";
 
 // Configura worker do PDF.js (Vite resolve via import.meta.url)
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
+  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
 

@@ -3,11 +3,12 @@ import { supabase } from "../lib/supabase";
 import {
   CRITERIO_LABEL, UFS,
   calcularEstatisticas, consultarCatalogo, extrairItensIA, extrairItensRegras, extrairNup,
-  extrairObjeto, extrairTextoPdf, filtrarOutliers, fmtBRL, fmtData, fmtNum, mcpTool,
+  extrairItensDaTabela, extrairObjeto, filtrarOutliers, fmtBRL, fmtData, fmtNum, lerPdf, mcpTool,
   normalizarItem, parseNumero, pesquisarPrecosETP, valorPorCriterio,
   type Criterio, type Estatisticas, type ItemCatalogo, type ItemTR, type RegistroPreco,
   type ResultadoETP, type TipoItem,
 } from "../lib/mcpCompras";
+import type { Trecho } from "../lib/trParser";
 import { exportarPdf, exportarXlsx, type CabecalhoRelatorio, type LinhaRelatorio } from "../lib/pesquisaPrecosExport";
 
 // ── Tipos de estado ──────────────────────────────────────────────────────────
@@ -122,6 +123,8 @@ export default function PesquisaPrecos() {
   const [trsCadastrados, setTrsCadastrados] = useState<TrCadastrado[]>([]);
   const [mostrarTexto, setMostrarTexto] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const trechosRef = useRef<Trecho[]>([]);
+  const [origemItens, setOrigemItens] = useState("");
 
   // Itens e pesquisa
   const [itens, setItens] = useState<ItemTR[]>([]);
@@ -199,10 +202,11 @@ export default function PesquisaPrecos() {
     setErroTR(null);
     setLendo("Lendo arquivo…");
     try {
-      const texto = file.name.toLowerCase().endsWith(".pdf")
-        ? await extrairTextoPdf(await file.arrayBuffer())
-        : await file.text();
+      const { texto, trechos } = file.name.toLowerCase().endsWith(".pdf")
+        ? await lerPdf(await file.arrayBuffer())
+        : { texto: await file.text(), trechos: [] as Trecho[] };
       if (texto.trim().length < 50) throw new Error("Não foi possível ler texto do arquivo (PDF digitalizado sem OCR?). Cole o texto manualmente.");
+      trechosRef.current = trechos;
       await carregarTexto(texto, file.name);
     } catch (e) {
       setErroTR((e as Error).message);
@@ -217,7 +221,8 @@ export default function PesquisaPrecos() {
     try {
       const res = await fetch(tr.pdf_url);
       if (!res.ok) throw new Error(`Falha ao baixar o PDF (HTTP ${res.status})`);
-      const texto = await extrairTextoPdf(await res.arrayBuffer());
+      const { texto, trechos } = await lerPdf(await res.arrayBuffer());
+      trechosRef.current = trechos;
       setCab((c) => ({ ...c, numeroCompra, nup: c.nup || tr.nup || "" }));
       await carregarTexto(texto, `TR da compra ${numeroCompra}`);
     } catch (e) {
@@ -225,32 +230,44 @@ export default function PesquisaPrecos() {
     } finally { setLendo(null); }
   }
 
-  async function extrair(modo: "ia" | "regras") {
+  /**
+   * "auto": 1º a tabela do PDF (lida pela posição do texto — exata para o modelo
+   * de TR com colunas Item/Especificação/CATMAT/Unidade/Quantidade), depois IA,
+   * por fim as regras por código.
+   */
+  async function extrair(modo: "auto" | "ia" | "regras") {
     setErroTR(null);
+    if (modo === "auto") {
+      const daTabela = extrairItensDaTabela(trechosRef.current);
+      if (daTabela.length) {
+        definirItens(daTabela, `${daTabela.length} itens lidos da tabela do TR (colunas Item, Especificação, código, Unidade, Quantidade e Valor Unitário).`);
+        return;
+      }
+    }
     if (modo === "regras") {
       const achados = extrairItensRegras(textoTR);
       if (!achados.length) { setErroTR("Nenhum código CATMAT/CATSER encontrado no texto. Tente a extração com IA ou cadastre os itens manualmente."); return; }
-      definirItens(achados);
+      definirItens(achados, `${achados.length} itens encontrados pelos códigos CATMAT/CATSER no texto — revise descrições e quantidades.`);
       return;
     }
-    setLendo("Extraindo itens com IA…");
+    setLendo(modo === "auto" ? "Tabela de itens não reconhecida — extraindo com IA…" : "Extraindo itens com IA…");
     try {
       const { objeto, itens: achados } = await extrairItensIA(textoTR);
       if (objeto && !cab.objeto) setCab((c) => ({ ...c, objeto }));
       if (!achados.length) throw new Error("A IA não encontrou itens no texto.");
-      definirItens(achados);
+      definirItens(achados, `${achados.length} itens extraídos com IA — confira código, unidade e quantidade de cada um.`);
     } catch (e) {
       const porRegras = extrairItensRegras(textoTR);
       if (porRegras.length) {
-        definirItens(porRegras);
-        setErroTR(`IA indisponível (${(e as Error).message}). Itens extraídos por regras — revise com atenção.`);
+        definirItens(porRegras, `IA indisponível (${(e as Error).message}). ${porRegras.length} itens extraídos pelos códigos no texto — revise com atenção.`);
       } else {
         setErroTR((e as Error).message);
       }
     } finally { setLendo(null); }
   }
 
-  function definirItens(novos: ItemTR[]) {
+  function definirItens(novos: ItemTR[], origem: string) {
+    setOrigemItens(origem);
     setItens(novos);
     setResultados({});
     setEtapa("itens");
@@ -265,7 +282,7 @@ export default function PesquisaPrecos() {
   }
   function adicionarItem() {
     setItens((xs) => [...xs, normalizarItem({
-      numero: (xs[xs.length - 1]?.numero ?? 0) + 1, tipo: "material", codigo: null, descricao: "", unidade: "", quantidade: null,
+      numero: (xs[xs.length - 1]?.numero ?? 0) + 1, tipo: "material", codigo: null, descricao: "", unidade: "", quantidade: null, valorReferencia: null,
     })]);
   }
   function removerItem(id: string) {
@@ -427,7 +444,7 @@ export default function PesquisaPrecos() {
             </div>
 
             {mostrarTexto && (
-              <textarea value={textoTR} onChange={(e) => { setTextoTR(e.target.value); setNomeArquivo("texto colado"); }}
+              <textarea value={textoTR} onChange={(e) => { setTextoTR(e.target.value); setNomeArquivo("texto colado"); trechosRef.current = []; }}
                 rows={10} placeholder="Cole aqui o texto do TR (ao menos a tabela de itens com os códigos CATMAT/CATSER)…"
                 className="w-full rounded-xl border border-slate-200 p-3 text-xs font-mono" />
             )}
@@ -441,17 +458,22 @@ export default function PesquisaPrecos() {
                   ✓ {nomeArquivo} — {fmtNum(textoTR.length, 0)} caracteres lidos
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => extrair("ia")}
+                  <button onClick={() => extrair("auto")}
                     className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">
-                    ✨ Extrair itens com IA
+                    📋 Extrair itens do TR
+                  </button>
+                  <button onClick={() => extrair("ia")}
+                    className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700">
+                    ✨ Usar IA
                   </button>
                   <button onClick={() => extrair("regras")}
                     className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700">
-                    Extrair por códigos CATMAT/CATSER
+                    Só pelos códigos
                   </button>
                 </div>
                 <p className="text-xs text-slate-500">
-                  A IA lê a tabela de itens (descrição, código, unidade e quantidade). Em qualquer caso você revisa tudo na próxima etapa.
+                  Lê a tabela de itens do TR (Item, Especificação, CATMAT/CATSER, Unidade, Quantidade e Valor Unitário).
+                  Se o PDF não tiver essa tabela, usa IA automaticamente. Em qualquer caso você revisa tudo na próxima etapa.
                 </p>
               </div>
             )}
@@ -489,6 +511,12 @@ export default function PesquisaPrecos() {
       {/* ═════════ Etapa 2 — Itens ═════════ */}
       {etapa === "itens" && (
         <div className="space-y-4">
+          {origemItens && (
+            <div className="text-xs rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 flex items-start gap-2">
+              <span className="flex-1">✓ {origemItens}</span>
+              <button onClick={() => setOrigemItens("")} className="font-bold">×</button>
+            </div>
+          )}
           <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -499,6 +527,7 @@ export default function PesquisaPrecos() {
                   <th className="px-3 py-2">Descrição (TR)</th>
                   <th className="px-3 py-2 w-24">Unidade</th>
                   <th className="px-3 py-2 w-28">Quantidade</th>
+                  <th className="px-3 py-2 w-28" title="Valor unitário estimado que consta no TR — usado só para comparação">Vlr. unit. TR</th>
                   <th className="px-3 py-2 w-10" />
                 </tr>
               </thead>
@@ -530,8 +559,11 @@ export default function PesquisaPrecos() {
                         className="w-full rounded border border-slate-200 px-1.5 py-1 text-sm" />
                     </td>
                     <td className="px-3 py-2">
-                      <input value={it.quantidade ?? ""} onChange={(e) => atualizarItem(it.id, { quantidade: parseNumero(e.target.value) })}
-                        className="w-full rounded border border-slate-200 px-1.5 py-1 text-sm" />
+                      <CampoNumero valor={it.quantidade} onChange={(v) => atualizarItem(it.id, { quantidade: v })} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <CampoNumero valor={it.valorReferencia ?? null} moeda
+                        onChange={(v) => atualizarItem(it.id, { valorReferencia: v })} />
                     </td>
                     <td className="px-3 py-2">
                       <button onClick={() => removerItem(it.id)} title="Remover item"
@@ -648,6 +680,7 @@ export default function PesquisaPrecos() {
                   <th className="px-3 py-2 text-right">Qtd.</th>
                   <th className="px-3 py-2 text-right">Amostra</th>
                   <th className="px-3 py-2">Critério</th>
+                  <th className="px-3 py-2 text-right">Vlr. unit. TR</th>
                   <th className="px-3 py-2 text-right">Vlr. unitário</th>
                   <th className="px-3 py-2 text-right">Vlr. total</th>
                 </tr>
@@ -661,6 +694,10 @@ export default function PesquisaPrecos() {
                     <td className="px-3 py-2 text-right whitespace-nowrap">{fmtNum(l.item.quantidade)} {l.item.unidade}</td>
                     <td className="px-3 py-2 text-right">{l.estat ? `${l.estat.n}/${l.amostraTotal}${l.ajustado ? "*" : ""}` : "–"}</td>
                     <td className="px-3 py-2 text-xs">{CRITERIO_LABEL[l.criterio]}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap text-xs text-slate-500">
+                      {fmtBRL(l.item.valorReferencia)}
+                      {l.item.valorReferencia != null && l.valorUnitario != null && <div>{variacao(l.valorUnitario, l.item.valorReferencia)}</div>}
+                    </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">{fmtBRL(l.valorUnitario)}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap font-semibold">{fmtBRL(l.valorTotal)}</td>
                   </tr>
@@ -668,7 +705,7 @@ export default function PesquisaPrecos() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={7} className="px-3 py-3 text-right font-bold text-slate-700">VALOR TOTAL ESTIMADO</td>
+                  <td colSpan={8} className="px-3 py-3 text-right font-bold text-slate-700">VALOR TOTAL ESTIMADO</td>
                   <td className="px-3 py-3 text-right font-bold text-emerald-700 whitespace-nowrap">{fmtBRL(totalEstimado)}</td>
                 </tr>
               </tfoot>
@@ -795,6 +832,11 @@ function CartaoItem({ item, res, av, uf, periodo, onPatch, onRefazer }: {
                 <div className="text-xs text-slate-500">Valor unitário estimado</div>
                 <div className="text-lg font-bold text-emerald-700">{fmtBRL(av.valorUnitario)}</div>
                 {av.valorTotal != null && <div className="text-xs text-slate-500">Total: {fmtBRL(av.valorTotal)}</div>}
+                {item.valorReferencia != null && av.valorUnitario != null && (
+                  <div className={`text-xs ${Math.abs(av.valorUnitario / item.valorReferencia - 1) > 0.25 ? "text-amber-700" : "text-slate-500"}`}>
+                    TR: {fmtBRL(item.valorReferencia)} ({variacao(av.valorUnitario, item.valorReferencia)})
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -917,6 +959,27 @@ function CartaoItem({ item, res, av, uf, periodo, onPatch, onRefazer }: {
 }
 
 // ── Pequenos componentes de UI ───────────────────────────────────────────────
+
+/** Diferença do preço pesquisado em relação ao valor do TR, ex.: "+12,4% vs TR". */
+function variacao(pesquisado: number, tr: number) {
+  const p = (pesquisado / tr - 1) * 100;
+  return `${p >= 0 ? "+" : ""}${fmtNum(p, 1)}% vs TR`;
+}
+
+/** Número no formato brasileiro: guarda o texto enquanto digita, converte ao sair do campo. */
+function CampoNumero({ valor, onChange, moeda }: { valor: number | null; onChange: (v: number | null) => void; moeda?: boolean }) {
+  const formatar = (v: number | null) =>
+    v == null ? "" : new Intl.NumberFormat("pt-BR", { maximumFractionDigits: moeda ? 4 : 3, minimumFractionDigits: moeda ? 2 : 0 }).format(v);
+  const [texto, setTexto] = useState(formatar(valor));
+  const [editando, setEditando] = useState(false);
+  return (
+    <input value={editando ? texto : formatar(valor)} inputMode="decimal" placeholder={moeda ? "R$" : ""}
+      onFocus={() => { setTexto(formatar(valor)); setEditando(true); }}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={() => { setEditando(false); onChange(parseNumero(texto.replace(/R\$\s*/i, ""))); }}
+      className="w-full rounded border border-slate-200 px-1.5 py-1 text-sm" />
+  );
+}
 
 function Campo({ label, children }: { label: string; children: React.ReactNode }) {
   return (

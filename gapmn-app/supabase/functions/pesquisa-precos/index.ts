@@ -129,7 +129,7 @@ async function chamarTool(nome: string, args: Record<string, unknown>) {
 
 const PROMPT_EXTRACAO = `Você extrai a lista de itens de um Termo de Referência (TR) de contratação pública brasileira.
 Responda APENAS com JSON no formato:
-{"objeto": "<objeto da contratação, uma frase>", "itens": [{"numero": 1, "descricao": "<especificação resumida, até 300 caracteres>", "tipo": "material" | "servico", "codigo": <código CATMAT ou CATSER como número, ou null>, "unidade": "<unidade de fornecimento/medida>", "quantidade": <número ou null>}]}
+{"objeto": "<objeto da contratação, uma frase>", "itens": [{"numero": 1, "descricao": "<especificação resumida, até 300 caracteres>", "tipo": "material" | "servico", "codigo": <código CATMAT ou CATSER como número, ou null>, "unidade": "<unidade de fornecimento/medida>", "quantidade": <número ou null>, "valor_unitario": <valor unitário estimado que consta no TR, número, ou null>}]}
 Regras:
 - Liste cada item/lote da tabela de itens do TR, na ordem em que aparecem.
 - "codigo" é o código CATMAT (materiais) ou CATSER (serviços) informado no TR. Nunca invente código: se não houver, use null.

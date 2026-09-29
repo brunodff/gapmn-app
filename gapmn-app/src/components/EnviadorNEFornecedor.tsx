@@ -1,10 +1,12 @@
 import { useCallback, useRef, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import { supabase } from "../lib/supabase";
 
-// Worker via CDN para evitar problemas de bundling
-(pdfjsLib as any).GlobalWorkerOptions.workerSrc =
-  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${(pdfjsLib as any).version}/pdf.worker.min.js`;
+// Build legacy: traz polyfills (ex.: Promise.withResolvers) para navegadores anteriores a 2024
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 // ─── Extração de texto ─────────────────────────────────────────────────────────
 

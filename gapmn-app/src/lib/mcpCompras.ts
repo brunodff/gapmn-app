@@ -1,12 +1,13 @@
 // src/lib/mcpCompras.ts
 // Cliente do MCP Compras.gov.br via Edge Function `pesquisa-precos`, mais a
 // estatística da pesquisa de preços (IN SEGES/ME 65/2021) e a leitura do TR.
-import * as pdfjsLib from "pdfjs-dist";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import { supabase } from "./supabase";
+import { extrairItensTabela, trechosDaPagina, type Trecho } from "./trParser";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
+  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
 
@@ -23,6 +24,8 @@ export interface ItemTR {
   descricao: string;
   unidade: string;
   quantidade: number | null;
+  /** Valor unitário estimado que já consta no TR (se houver). */
+  valorReferencia: number | null;
 }
 
 /** Registro de preço como vem de /modulo-pesquisa-preco (Dados Abertos). */
@@ -144,6 +147,7 @@ export async function extrairItensIA(texto: string): Promise<{ objeto: string | 
     descricao: String(it.descricao ?? "").trim(),
     unidade: String(it.unidade ?? "").trim(),
     quantidade: parseNumero(it.quantidade),
+    valorReferencia: parseNumero(it.valor_unitario),
   }));
   return { objeto: r.objeto, itens };
 }
@@ -213,13 +217,18 @@ export const CRITERIO_LABEL: Record<Criterio, string> = {
 
 // ── Leitura do TR ────────────────────────────────────────────────────────────
 
-/** Extrai texto do PDF preservando quebras de linha (importante para tabelas). */
-export async function extrairTextoPdf(dados: ArrayBuffer): Promise<string> {
+/**
+ * Lê o PDF devolvendo o texto (com quebras de linha, para IA e regras) e os
+ * trechos posicionados (para ler a tabela de itens pela geometria).
+ */
+export async function lerPdf(dados: ArrayBuffer): Promise<{ texto: string; trechos: Trecho[] }> {
   const pdf = await pdfjsLib.getDocument({ data: dados }).promise;
   const paginas: string[] = [];
+  const trechos: Trecho[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
+    trechos.push(...trechosDaPagina(content.items as TextItem[], i));
     let linha = "";
     const linhas: string[] = [];
     for (const it of content.items as TextItem[]) {
@@ -230,7 +239,12 @@ export async function extrairTextoPdf(dados: ArrayBuffer): Promise<string> {
     if (linha.trim()) linhas.push(linha.trim());
     paginas.push(linhas.filter(Boolean).join("\n"));
   }
-  return paginas.join("\n\n");
+  return { texto: paginas.join("\n\n"), trechos };
+}
+
+/** Itens lidos da tabela do TR (coluna CATMAT/CATSER). [] se não houver tabela reconhecível. */
+export function extrairItensDaTabela(trechos: Trecho[]): ItemTR[] {
+  return extrairItensTabela(trechos).map((it) => normalizarItem(it));
 }
 
 const RX_CODIGO = /\b(CATMAT|CATSER|C[ÓO]D(?:IGO)?\.?\s*(?:SIASG|CATMAT|CATSER|DO\s+ITEM)?)\s*(?:N[º°o.]*)?\s*[:\-–]?\s*(\d{3,6})\b/gi;
@@ -296,6 +310,7 @@ export function extrairItensRegras(texto: string): ItemTR[] {
         descricao: descricao.replace(/\s+/g, " ").slice(0, 300),
         unidade: (uq?.[1] ?? qu?.[2] ?? "").toUpperCase(),
         quantidade: parseNumero(uq?.[2] ?? qu?.[1] ?? null),
+        valorReferencia: null,
       }));
     }
   });
@@ -304,7 +319,9 @@ export function extrairItensRegras(texto: string): ItemTR[] {
 
 /** Tenta achar o objeto da contratação no início do TR. */
 export function extrairObjeto(texto: string): string {
-  const m = texto.match(/OBJETO[^\n]{0,40}\n?([\s\S]{20,500}?)(?:\n\s*\n|\n\s*1\.\d|\n\s*2[.\s])/i);
+  // Modelo com seção "OBJETO" ou, como no TR do GAP-MN, "1.1. Aquisição de ...".
+  const m = texto.match(/OBJETO[^\n]{0,40}\n?([\s\S]{20,500}?)(?:\n\s*\n|\n\s*1\.\d|\n\s*2[.\s])/i)
+    ?? texto.match(/\b\d\.\d\.?\s+((?:Aquisi[çc][ãa]o|Contrata[çc][ãa]o|Presta[çc][ãa]o)\b[\s\S]{10,500}?)(?:,\s*nos termos|,\s*conforme|\.\s)/i);
   return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 400) : "";
 }
 
