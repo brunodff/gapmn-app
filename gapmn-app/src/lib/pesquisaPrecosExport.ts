@@ -4,8 +4,8 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import {
-  CRITERIO_LABEL, fmtBRL, fmtData, fmtNum,
-  type Criterio, type Estatisticas, type ItemTR, type RegistroPreco,
+  API_DADOS_ABERTOS, CRITERIO_LABEL, fmtBRL, fmtData, fmtNum,
+  type Criterio, type Estatisticas, type FonteConsulta, type ItemTR, type RegistroPreco,
 } from "./mcpCompras";
 
 export interface LinhaRelatorio {
@@ -18,6 +18,8 @@ export interface LinhaRelatorio {
   ajustado: boolean;
   justificativa: string;
   registros: RegistroPreco[];
+  consultas: FonteConsulta[];   // consultas feitas à API para este item (uma por UF)
+  catalogoUrl: string;          // consulta do item no catálogo CATMAT/CATSER
 }
 
 export interface CabecalhoRelatorio {
@@ -33,10 +35,132 @@ const METODOLOGIA = (c: CabecalhoRelatorio) =>
   `Pesquisa realizada com base no art. 5º, incisos I e II, da IN SEGES/ME nº 65/2021, ` +
   `utilizando preços praticados em contratações públicas registradas no Compras.gov.br ` +
   `(API de Dados Abertos — módulo Pesquisa de Preço), consultadas por meio do MCP Compras.gov.br, ` +
-  `no período dos últimos ${c.periodoMeses} meses${c.uf ? `, restrito à UF ${c.uf}` : ", em âmbito nacional"}. ` +
+  `no período dos últimos ${c.periodoMeses} meses${c.uf ? `, restrito ${c.uf.includes(",") ? "às UFs" : "à UF"} ${c.uf}` : ", em âmbito nacional"}. ` +
   `Conforme o art. 6º da mesma IN, os valores inexequíveis, inconsistentes e excessivamente elevados foram ` +
-  `desconsiderados pelo critério estatístico de Tukey (Q1 − 1,5×IQR; Q3 + 1,5×IQR), e o preço estimado de cada ` +
+  `desconsiderados pelo critério estatístico de Tukey (Q1 - 1,5 x IQR; Q3 + 1,5 x IQR), e o preço estimado de cada ` +
   `item foi obtido pelo método indicado na tabela (média, mediana ou menor valor) sobre conjunto de três ou mais preços.`;
+
+// ── Fontes ───────────────────────────────────────────────────────────────────
+
+interface FonteApi { nome: string; uso: string; endereco: string; documentacao: string }
+
+/** APIs efetivamente usadas neste relatório (só lista serviço/material se houver item do tipo). */
+function apisUsadas(linhas: LinhaRelatorio[]): FonteApi[] {
+  const material = linhas.some((l) => l.item.tipo === "material");
+  const servico = linhas.some((l) => l.item.tipo === "servico");
+  const swagger = `${API_DADOS_ABERTOS}/swagger-ui/index.html`;
+  const apis: FonteApi[] = [];
+  if (material) apis.push({
+    nome: "Compras.gov.br — Dados Abertos: Pesquisa de Preço (material)",
+    uso: "Preços unitários homologados em compras públicas, por item CATMAT (rota 1_consultarMaterial).",
+    endereco: `${API_DADOS_ABERTOS}/modulo-pesquisa-preco/1_consultarMaterial`,
+    documentacao: swagger,
+  });
+  if (servico) apis.push({
+    nome: "Compras.gov.br — Dados Abertos: Pesquisa de Preço (serviço)",
+    uso: "Preços unitários homologados em compras públicas, por item CATSER (rota 3_consultarServico).",
+    endereco: `${API_DADOS_ABERTOS}/modulo-pesquisa-preco/3_consultarServico`,
+    documentacao: swagger,
+  });
+  if (material) apis.push({
+    nome: "Compras.gov.br — Dados Abertos: Catálogo de Materiais (CATMAT)",
+    uso: "Confirmação da descrição oficial e do PDM de cada item (rota 4_consultarItemMaterial).",
+    endereco: `${API_DADOS_ABERTOS}/modulo-material/4_consultarItemMaterial`,
+    documentacao: swagger,
+  });
+  if (servico) apis.push({
+    nome: "Compras.gov.br — Dados Abertos: Catálogo de Serviços (CATSER)",
+    uso: "Confirmação da descrição oficial de cada serviço (rota 6_consultarItemServico).",
+    endereco: `${API_DADOS_ABERTOS}/modulo-servico/6_consultarItemServico`,
+    documentacao: swagger,
+  });
+  apis.push({
+    nome: "MCP Compras.gov.br (servidor MCP)",
+    uso: "Camada que consulta as APIs acima, percorre as páginas de resultado e calcula as estatísticas (média, mediana, quartis e descarte de outliers).",
+    endereco: "https://mcp-compras.up.railway.app/mcp",
+    documentacao: "https://github.com/opedrosoares/MCP_Compras",
+  });
+  return apis;
+}
+
+interface LinhaConsulta { item: number; codigo: string; abrangencia: string; encontrados: string; quando: string; url: string }
+
+/** Uma linha por consulta feita (item × UF), mais a consulta de catálogo de cada item. */
+function consultasPorItem(linhas: LinhaRelatorio[]): LinhaConsulta[] {
+  const dt = (iso: string) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  const out: LinhaConsulta[] = [];
+  for (const l of linhas) {
+    const codigo = `${l.item.tipo === "material" ? "CATMAT" : "CATSER"} ${l.item.codigo ?? "–"}`;
+    for (const c of l.consultas) {
+      out.push({
+        item: l.item.numero, codigo, abrangencia: c.uf ?? "Nacional",
+        encontrados: fmtNum(c.encontrados, 0), quando: dt(c.consultadoEm), url: c.url,
+      });
+    }
+    if (l.item.codigo) {
+      out.push({ item: l.item.numero, codigo, abrangencia: "Catálogo", encontrados: "–", quando: "", url: l.catalogoUrl });
+    }
+  }
+  return out;
+}
+
+type CelulaAutoTable = { section: string; column: { index: number }; row: { index: number }; cell: { x: number; y: number; width: number; height: number; styles: { textColor: unknown } } };
+
+function paginaFontes(doc: jsPDF, linhas: LinhaRelatorio[]) {
+  const W = doc.internal.pageSize.getWidth();
+  doc.addPage();
+  doc.setFont("helvetica", "bold").setFontSize(13).setTextColor(0);
+  doc.text("FONTES", W / 2, 16, { align: "center" });
+  doc.setFont("helvetica", "normal").setFontSize(8);
+  doc.text("APIs e bases de dados utilizadas e endereços das consultas realizadas (clique no endereço para abrir).", W / 2, 21, { align: "center" });
+
+  const AZUL: [number, number, number] = [3, 105, 161];
+  // Colunas de endereço ficam azuis e a célula inteira vira link clicável.
+  const links = (colunas: number[], urlDe: (linha: number, coluna: number) => string) => ({
+    didParseCell: (d: CelulaAutoTable) => {
+      if (d.section === "body" && colunas.includes(d.column.index)) d.cell.styles.textColor = AZUL;
+    },
+    didDrawCell: (d: CelulaAutoTable) => {
+      if (d.section !== "body" || !colunas.includes(d.column.index)) return;
+      const url = urlDe(d.row.index, d.column.index);
+      if (url) doc.link(d.cell.x, d.cell.y, d.cell.width, d.cell.height, { url });
+    },
+  });
+
+  const apis = apisUsadas(linhas);
+  autoTable(doc, {
+    startY: 26,
+    head: [["1. APIs e bases consultadas", "Uso neste relatório", "Endereço", "Documentação"]],
+    body: apis.map((a) => [a.nome, a.uso, a.endereco, a.documentacao]),
+    styles: { fontSize: 7, cellPadding: 1.6, valign: "top", overflow: "linebreak" },
+    headStyles: { fillColor: [26, 58, 92] },
+    columnStyles: { 0: { cellWidth: 52 }, 1: { cellWidth: 70 }, 2: { cellWidth: 68 }, 3: { cellWidth: 68 } },
+    margin: { left: 14, right: 14 },
+    ...links([2, 3], (i, c) => (c === 2 ? apis[i]?.endereco : apis[i]?.documentacao) ?? ""),
+  });
+
+  const consultas = consultasPorItem(linhas);
+  const yIni = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+  autoTable(doc, {
+    startY: yIni,
+    head: [["Item", "Código", "Abrangência", "Encontrados", "Consultado em", "2. Endereço da consulta (API Dados Abertos)"]],
+    body: consultas.map((c) => [c.item, c.codigo, c.abrangencia, c.encontrados, c.quando, c.url]),
+    styles: { fontSize: 6.5, cellPadding: 1.3, valign: "top", overflow: "linebreak" },
+    headStyles: { fillColor: [26, 58, 92], fontSize: 7 },
+    columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 26 }, 2: { cellWidth: 22 }, 3: { cellWidth: 20 }, 4: { cellWidth: 27 }, 5: { cellWidth: 153 } },
+    margin: { left: 14, right: 14 },
+    ...links([5], (i) => consultas[i]?.url ?? ""),
+  });
+
+  const y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
+  doc.setFont("helvetica", "italic").setFontSize(7.5).setTextColor(60);
+  doc.text(doc.splitTextToSize(
+    "Os endereços reproduzem a consulta feita à API pública de Dados Abertos (primeira página, até 500 registros; o MCP percorre as demais páginas). " +
+    "Os dados são atualizados continuamente pelo órgão gestor, de modo que a mesma consulta pode retornar resultados adicionais em datas posteriores. " +
+    "Cada preço considerado, com UASG, fornecedor, marca e data, consta no Anexo deste relatório.",
+    W - 28), 14, y);
+  doc.setTextColor(0);
+}
 
 function totalGeral(linhas: LinhaRelatorio[]) {
   return linhas.reduce((a, l) => a + (l.valorTotal ?? 0), 0);
@@ -98,7 +222,13 @@ export function exportarPdf(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) {
     styles: { fontSize: 7, cellPadding: 1.4, valign: "middle" },
     headStyles: { fillColor: [26, 58, 92], fontSize: 7 },
     footStyles: { fillColor: [226, 232, 240], textColor: 20, fontStyle: "bold" },
-    columnStyles: { 2: { cellWidth: 62 }, 12: { halign: "right" }, 13: { halign: "right" } },
+    // Larguras fixas somando 267 mm (folha A4 paisagem com margens de 14 mm = 269 mm).
+    columnStyles: {
+      0: { cellWidth: 9 }, 1: { cellWidth: 22 }, 2: { cellWidth: 40, halign: "left" }, 3: { cellWidth: 11 },
+      4: { cellWidth: 14 }, 5: { cellWidth: 14 }, 6: { cellWidth: 22 }, 7: { cellWidth: 22 }, 8: { cellWidth: 22 },
+      9: { cellWidth: 22 }, 10: { cellWidth: 11 }, 11: { cellWidth: 13 },
+      12: { cellWidth: 22, halign: "right" }, 13: { cellWidth: 23, halign: "right" },
+    },
     margin: { left: 14, right: 14 },
   });
 
@@ -146,7 +276,10 @@ export function exportarPdf(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) {
       ]),
       styles: { fontSize: 6.8, cellPadding: 1 },
       headStyles: { fillColor: [26, 58, 92], fontSize: 7 },
-      columnStyles: { 7: { halign: "right" } },
+      columnStyles: {
+        0: { cellWidth: 18 }, 1: { cellWidth: 72 }, 2: { cellWidth: 9 }, 3: { cellWidth: 55 },
+        4: { cellWidth: 28 }, 5: { cellWidth: 26 }, 6: { cellWidth: 16 }, 7: { cellWidth: 28, halign: "right" },
+      },
       margin: { left: 14, right: 14 },
     });
     yAnexo = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
@@ -158,6 +291,8 @@ export function exportarPdf(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) {
   doc.setFont("helvetica", "normal").setFontSize(9);
   doc.line(W / 2 - 50, yAnexo + 14, W / 2 + 50, yAnexo + 14);
   doc.text(cab.responsavel || "Responsável pela pesquisa de preços", W / 2, yAnexo + 19, { align: "center" });
+
+  paginaFontes(doc, linhas);
 
   const paginas = doc.getNumberOfPages();
   for (let p = 1; p <= paginas; p++) {
@@ -226,9 +361,30 @@ export function exportarXlsx(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) 
     { Campo: "Metodologia", Valor: METODOLOGIA(cab) },
   ];
 
+  // Aba Fontes: APIs usadas + endereço de cada consulta (com hiperlink clicável)
+  const apis = apisUsadas(linhas);
+  const consultas = consultasPorItem(linhas);
+  const aoa: (string | number)[][] = [
+    ["APIs e bases consultadas", "Uso neste relatório", "Endereço", "Documentação"],
+    ...apis.map((a) => [a.nome, a.uso, a.endereco, a.documentacao]),
+    [],
+    ["Item", "Código", "Abrangência", "Registros encontrados", "Consultado em", "Endereço da consulta"],
+    ...consultas.map((c) => [c.item, c.codigo, c.abrangencia, c.encontrados, c.quando, c.url]),
+  ];
+  const wsFontes = XLSX.utils.aoa_to_sheet(aoa);
+  const link = (r: number, c: number, url: string) => {
+    const ref = XLSX.utils.encode_cell({ r, c });
+    if (wsFontes[ref]) wsFontes[ref].l = { Target: url, Tooltip: url };
+  };
+  apis.forEach((a, i) => { link(i + 1, 2, a.endereco); link(i + 1, 3, a.documentacao); });
+  const inicioConsultas = apis.length + 3;
+  consultas.forEach((c, i) => link(inicioConsultas + i, 5, c.url));
+  wsFontes["!cols"] = [{ wch: 44 }, { wch: 40 }, { wch: 60 }, { wch: 46 }, { wch: 16 }, { wch: 120 }];
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumo), "Resumo");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(amostras), "Amostras");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(info), "Informações");
+  XLSX.utils.book_append_sheet(wb, wsFontes, "Fontes");
   XLSX.writeFile(wb, `pesquisa-precos${cab.numeroCompra ? "-" + cab.numeroCompra.replace(/\W+/g, "") : ""}.xlsx`);
 }

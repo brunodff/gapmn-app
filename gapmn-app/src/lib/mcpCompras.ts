@@ -84,6 +84,16 @@ export interface ResultadoETP {
   data_fim?: string;
   _registros_truncados_em?: number | null;
   _erro_upstream?: { diagnostico?: string; alternativas?: string[] };
+  /** UFs cuja consulta falhou numa pesquisa com vários estados (as demais foram somadas). */
+  _ufs_com_erro?: string[];
+}
+
+/** Uma consulta feita à API de Dados Abertos, com o endereço para conferir no navegador. */
+export interface FonteConsulta {
+  uf: string | null;        // null = âmbito nacional
+  url: string;
+  encontrados: number;
+  consultadoEm: string;     // ISO
 }
 
 export interface ItemCatalogo {
@@ -117,16 +127,151 @@ export async function mcpTool<T = unknown>(tool: string, args: Record<string, un
   return result;
 }
 
-export function pesquisarPrecosETP(p: {
-  tipo: TipoItem; codigo: number; periodoMeses: number; uf?: string; maxPaginas: number;
-}) {
-  return mcpTool<ResultadoETP>("compras_pesquisar_precos_para_etp", {
+export const API_DADOS_ABERTOS = "https://dadosabertos.compras.gov.br";
+
+const isoDia = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Endereço da consulta de preços na API de Dados Abertos — mesma chamada que o
+ * MCP faz (1ª página), para o analista conferir o resultado no navegador.
+ */
+export function urlConsultaPreco(p: {
+  tipo: TipoItem; codigo: number; dataInicio: string; dataFim: string; uf?: string | null;
+}): string {
+  const rota = p.tipo === "material" ? "1_consultarMaterial" : "3_consultarServico";
+  const q = new URLSearchParams({ pagina: "1", tamanhoPagina: "500" });
+  if (p.tipo === "material") { q.set("tipo", "codigoItemCatalogo"); q.set("codigo", String(p.codigo)); }
+  else q.set("codigoItemCatalogo", String(p.codigo));
+  q.set("dataCompraInicio", p.dataInicio);
+  q.set("dataCompraFim", p.dataFim);
+  if (p.uf) q.set("estado", p.uf);
+  return `${API_DADOS_ABERTOS}/modulo-pesquisa-preco/${rota}?${q.toString()}`;
+}
+
+export function urlCatalogo(tipo: TipoItem, codigo: number): string {
+  return tipo === "material"
+    ? `${API_DADOS_ABERTOS}/modulo-material/4_consultarItemMaterial?pagina=1&tamanhoPagina=10&codigoItem=${codigo}`
+    : `${API_DADOS_ABERTOS}/modulo-servico/6_consultarItemServico?pagina=1&tamanhoPagina=10&codigoServico=${codigo}`;
+}
+
+/** Agrupa valores em até 3 faixas pelos maiores saltos relativos (≥30%) — mesmo critério do MCP. */
+function clusterizarPorGap(valores: number[]): Cluster[] {
+  const s = [...valores].sort((a, b) => a - b);
+  const resumir = (v: number[]): Cluster => ({
+    n: v.length, minimo: v[0], maximo: v[v.length - 1], mediana: mediana(v), media: v.reduce((a, b) => a + b, 0) / v.length,
+  });
+  if (s.length < 4) return [resumir(s)];
+  const saltos: [number, number][] = [];
+  for (let i = 1; i < s.length; i++) {
+    if (s[i - 1] > 0 && (s[i] - s[i - 1]) / s[i - 1] >= 0.3) saltos.push([(s[i] - s[i - 1]) / s[i - 1], i]);
+  }
+  if (!saltos.length) return [resumir(s)];
+  const cortes = saltos.sort((a, b) => b[0] - a[0]).slice(0, 2).map(([, i]) => i).sort((a, b) => a - b);
+  const faixas: Cluster[] = [];
+  let ini = 0;
+  for (const c of cortes) { faixas.push(resumir(s.slice(ini, c))); ini = c; }
+  faixas.push(resumir(s.slice(ini)));
+  return faixas;
+}
+
+/** Soma as pesquisas de vários estados e recalcula as estatísticas sobre o conjunto. */
+function mesclarETP(parciais: { uf: string; etp: ResultadoETP }[], falhas: string[]): ResultadoETP {
+  const vistos = new Set<string>();
+  const registros: RegistroPreco[] = [];
+  for (const { etp } of parciais) {
+    for (const r of etp.registros ?? []) {
+      const k = r.idCompraItem;
+      if (k && vistos.has(k)) continue;
+      if (k) vistos.add(k);
+      registros.push(r);
+    }
+  }
+  const amostraTotal = parciais.reduce((s, p) => s + (p.etp.amostra_total ?? 0), 0);
+  const valores = registros.map((r) => r.precoUnitario).filter((v): v is number => typeof v === "number");
+  const base: ResultadoETP = {
+    amostra_total: amostraTotal,
+    registros,
+    estatisticas: null,
+    data_inicio: parciais[0]?.etp.data_inicio,
+    data_fim: parciais[0]?.etp.data_fim,
+    ...(falhas.length ? { _ufs_com_erro: falhas } : {}),
+  };
+  const est = calcularEstatisticas(valores);
+  if (!est) return { ...base, aviso: "Nenhum preço unitário encontrado nos estados selecionados." };
+
+  const { n, outliers, ...resto } = est;
+  const { filtrados } = filtrarOutliers(valores);
+  const razao = est.minimo > 0 ? est.maximo / est.minimo : 1;
+  const heterogenea = (est.coeficiente_variacao > 0.5 || razao > 3) && filtrados.length >= 4;
+  return {
+    ...base,
+    estatisticas: resto,
+    amostra_efetiva: n,
+    outliers_descartados: outliers,
+    ...(heterogenea ? {
+      clusters: clusterizarPorGap(filtrados),
+      aviso_heterogeneidade: `Amostra heterogênea (CV=${(est.coeficiente_variacao * 100).toFixed(0)}%).`,
+    } : {}),
+  };
+}
+
+/**
+ * Pesquisa de preços de um item. Com 0 ou 1 UF é uma chamada só (estatística do
+ * MCP); com várias UFs faz uma consulta por estado e junta os resultados.
+ */
+export async function pesquisarPrecosETP(p: {
+  tipo: TipoItem; codigo: number; periodoMeses: number; ufs: string[]; maxPaginas: number;
+}): Promise<{ etp: ResultadoETP; consultas: FonteConsulta[] }> {
+  const hoje = new Date();
+  const ini = new Date(hoje.getTime() - p.periodoMeses * 30 * 86400000);
+  const alvos: (string | null)[] = p.ufs.length ? p.ufs : [null];
+
+  const chamar = (uf: string | null) => mcpTool<ResultadoETP>("compras_pesquisar_precos_para_etp", {
     tipo: p.tipo,
     codigo_item_catalogo: p.codigo,
     periodo_meses: p.periodoMeses,
     max_paginas: p.maxPaginas,
-    ...(p.uf ? { uf: p.uf } : {}),
+    ...(uf ? { uf } : {}),
   });
+
+  // No máximo 4 estados ao mesmo tempo, para não sobrecarregar o MCP.
+  const saidas: PromiseSettledResult<ResultadoETP>[] = new Array(alvos.length);
+  let prox = 0;
+  await Promise.all(Array.from({ length: Math.min(4, alvos.length) }, async () => {
+    while (prox < alvos.length) {
+      const i = prox++;
+      try { saidas[i] = { status: "fulfilled", value: await chamar(alvos[i]) }; }
+      catch (reason) { saidas[i] = { status: "rejected", reason }; }
+    }
+  }));
+
+  const consultadoEm = new Date().toISOString();
+  const consultas: FonteConsulta[] = [];
+  const ok: { uf: string; etp: ResultadoETP }[] = [];
+  const falhas: string[] = [];
+  saidas.forEach((s, i) => {
+    const uf = alvos[i];
+    if (s.status === "fulfilled" && !s.value._erro_upstream) {
+      ok.push({ uf: uf ?? "", etp: s.value });
+      consultas.push({
+        uf,
+        url: urlConsultaPreco({
+          tipo: p.tipo, codigo: p.codigo, uf,
+          dataInicio: s.value.data_inicio ?? isoDia(ini), dataFim: s.value.data_fim ?? isoDia(hoje),
+        }),
+        encontrados: s.value.amostra_total ?? 0,
+        consultadoEm,
+      });
+    } else falhas.push(uf ?? "Nacional");
+  });
+
+  if (!ok.length) {
+    const primeira = saidas[0];
+    if (primeira.status === "fulfilled") return { etp: primeira.value, consultas: [] };
+    throw primeira.reason;
+  }
+  if (alvos.length === 1) return { etp: ok[0].etp, consultas };
+  return { etp: mesclarETP(ok, falhas), consultas };
 }
 
 export async function consultarCatalogo(tipo: TipoItem, codigo: number): Promise<ItemCatalogo | null> {

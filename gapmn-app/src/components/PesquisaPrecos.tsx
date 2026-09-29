@@ -4,8 +4,8 @@ import {
   CRITERIO_LABEL, UFS,
   calcularEstatisticas, consultarCatalogo, extrairItensIA, extrairItensRegras, extrairNup,
   extrairItensDaTabela, extrairObjeto, filtrarOutliers, fmtBRL, fmtData, fmtNum, lerPdf, mcpTool,
-  normalizarItem, parseNumero, pesquisarPrecosETP, valorPorCriterio,
-  type Criterio, type Estatisticas, type ItemCatalogo, type ItemTR, type RegistroPreco,
+  normalizarItem, parseNumero, pesquisarPrecosETP, urlCatalogo, valorPorCriterio,
+  type Criterio, type Estatisticas, type FonteConsulta, type ItemCatalogo, type ItemTR, type RegistroPreco,
   type ResultadoETP, type TipoItem,
 } from "../lib/mcpCompras";
 import type { Trecho } from "../lib/trParser";
@@ -27,9 +27,10 @@ interface ResultadoItem {
   faixa: [number, number] | null;
   justificativa: string;
   aberto: boolean;
+  consultas?: FonteConsulta[];
 }
 
-interface Parametros { periodoMeses: number; uf: string; maxPaginas: number }
+interface Parametros { periodoMeses: number; ufs: string[]; maxPaginas: number }
 
 interface TrCadastrado { numero_compra: string; pdf_url: string | null; nup: string | null }
 
@@ -128,7 +129,7 @@ export default function PesquisaPrecos() {
 
   // Itens e pesquisa
   const [itens, setItens] = useState<ItemTR[]>([]);
-  const [params, setParams] = useState<Parametros>({ periodoMeses: 12, uf: "", maxPaginas: 5 });
+  const [params, setParams] = useState<Parametros>({ periodoMeses: 12, ufs: [], maxPaginas: 5 });
   const [resultados, setResultados] = useState<Record<string, ResultadoItem>>({});
   const [executando, setExecutando] = useState(false);
   const [mcpStatus, setMcpStatus] = useState<"verificando" | "online" | "offline">("verificando");
@@ -141,7 +142,9 @@ export default function PesquisaPrecos() {
       if (raw) {
         const r = JSON.parse(raw);
         if (r.itens?.length) {
-          setCab(r.cab); setItens(r.itens); setParams(r.params);
+          setCab(r.cab); setItens(r.itens);
+          // rascunhos antigos guardavam uma única UF (params.uf)
+          setParams({ periodoMeses: r.params.periodoMeses, maxPaginas: r.params.maxPaginas, ufs: r.params.ufs ?? (r.params.uf ? [r.params.uf] : []) });
           const res: Record<string, ResultadoItem> = r.resultados ?? {};
           for (const k of Object.keys(res)) if (res[k].status === "carregando") res[k].status = "pendente";
           setResultados(res);
@@ -303,7 +306,7 @@ export default function PesquisaPrecos() {
     }
     patchResultado(item.id, { status: "carregando", erro: undefined });
     const [precos, catalogo] = await Promise.allSettled([
-      pesquisarPrecosETP({ tipo: item.tipo, codigo: item.codigo, periodoMeses: p.periodoMeses, uf: p.uf || undefined, maxPaginas: p.maxPaginas }),
+      pesquisarPrecosETP({ tipo: item.tipo, codigo: item.codigo, periodoMeses: p.periodoMeses, ufs: p.ufs, maxPaginas: p.maxPaginas }),
       consultarCatalogo(item.tipo, item.codigo),
     ]);
     const cat = catalogo.status === "fulfilled" ? catalogo.value : undefined;
@@ -311,10 +314,10 @@ export default function PesquisaPrecos() {
       patchResultado(item.id, { status: "erro", erro: (precos.reason as Error).message, catalogo: cat });
       return;
     }
-    const etp = precos.value;
+    const { etp, consultas } = precos.value;
     const status: Status = etp._erro_upstream ? "erro" : etp.amostra_total > 0 ? "ok" : "vazio";
     patchResultado(item.id, {
-      status, etp, catalogo: cat,
+      status, etp, consultas, catalogo: cat,
       erro: etp._erro_upstream?.diagnostico,
       excluidos: [], unidadeFiltro: "", faixa: null,
     });
@@ -323,7 +326,7 @@ export default function PesquisaPrecos() {
   async function pesquisarTodos(somentePendentes = false) {
     const fila = itens.filter((it) => !somentePendentes || !["ok", "vazio"].includes(resultados[it.id]?.status ?? ""));
     if (!fila.length) return;
-    setCab((c) => ({ ...c, periodoMeses: params.periodoMeses, uf: params.uf }));
+    setCab((c) => ({ ...c, periodoMeses: params.periodoMeses, uf: params.ufs.join(", ") }));
     setEtapa("pesquisa");
     setExecutando(true);
     let idx = 0;
@@ -346,6 +349,8 @@ export default function PesquisaPrecos() {
       item: it, estat: a.estat, amostraTotal: r.etp?.amostra_total ?? 0, criterio: r.criterio,
       valorUnitario: a.valorUnitario, valorTotal: a.valorTotal, ajustado: a.ajustado,
       justificativa: r.justificativa, registros: [...a.considerados].sort((x, y) => x.precoUnitario! - y.precoUnitario!),
+      consultas: r.consultas ?? [],
+      catalogoUrl: it.codigo ? urlCatalogo(it.tipo, it.codigo) : "",
     };
   });
   const totalEstimado = linhasRelatorio.reduce((s, l) => s + (l.valorTotal ?? 0), 0);
@@ -593,11 +598,7 @@ export default function PesquisaPrecos() {
               </select>
             </Campo>
             <Campo label="Abrangência">
-              <select value={params.uf} onChange={(e) => setParams({ ...params, uf: e.target.value })}
-                className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
-                <option value="">Nacional</option>
-                {UFS.map((u) => <option key={u} value={u}>Somente {u}</option>)}
-              </select>
+              <SeletorUFs valor={params.ufs} onChange={(ufs) => setParams({ ...params, ufs })} />
             </Campo>
             <Campo label="Profundidade">
               <select value={params.maxPaginas} onChange={(e) => setParams({ ...params, maxPaginas: Number(e.target.value) })}
@@ -640,7 +641,7 @@ export default function PesquisaPrecos() {
 
           {itens.map((it) => (
             <CartaoItem key={it.id} item={it} res={resultados[it.id] ?? resultadoVazio()} av={avaliacoes[it.id]}
-              uf={params.uf} periodo={params.periodoMeses}
+              ufs={params.ufs} periodo={params.periodoMeses}
               onPatch={(p) => patchResultado(it.id, p)}
               onRefazer={(o) => pesquisarItem(it, o)} />
           ))}
@@ -724,7 +725,8 @@ export default function PesquisaPrecos() {
           </div>
           <p className="text-xs text-slate-500">
             O relatório traz metodologia (arts. 5º e 6º da IN SEGES/ME 65/2021), resumo estatístico por item, justificativas
-            de ajustes e o anexo com cada preço considerado (UASG, fornecedor, marca, data). Confira os dados do cabeçalho na etapa 1.
+            de ajustes, o anexo com cada preço considerado (UASG, fornecedor, marca, data) e, na última página, as FONTES:
+            APIs utilizadas e o link de cada consulta feita. Confira os dados do cabeçalho na etapa 1.
           </p>
         </div>
       )}
@@ -734,11 +736,11 @@ export default function PesquisaPrecos() {
 
 // ── Cartão de resultado por item ─────────────────────────────────────────────
 
-function CartaoItem({ item, res, av, uf, periodo, onPatch, onRefazer }: {
+function CartaoItem({ item, res, av, ufs, periodo, onPatch, onRefazer }: {
   item: ItemTR;
   res: ResultadoItem;
   av: Avaliacao;
-  uf: string;
+  ufs: string[];
   periodo: number;
   onPatch: (p: Partial<ResultadoItem>) => void;
   onRefazer: (o?: Partial<Parametros>) => void;
@@ -792,8 +794,8 @@ function CartaoItem({ item, res, av, uf, periodo, onPatch, onRefazer }: {
 
         {res.status === "vazio" && (
           <div className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2 flex flex-wrap items-center gap-2">
-            <span>Nenhum preço para este código no período{uf ? ` em ${uf}` : ""}.</span>
-            {uf && <button onClick={() => onRefazer({ uf: "" })} className="underline font-semibold">Pesquisar em âmbito nacional</button>}
+            <span>Nenhum preço para este código no período{ufs.length ? ` em ${ufs.join(", ")}` : ""}.</span>
+            {ufs.length > 0 && <button onClick={() => onRefazer({ ufs: [] })} className="underline font-semibold">Pesquisar em âmbito nacional</button>}
             {periodo < 24 && <button onClick={() => onRefazer({ periodoMeses: 24 })} className="underline font-semibold">Ampliar para 24 meses</button>}
             <span>Confira também se o código está correto.</span>
           </div>
@@ -881,6 +883,29 @@ function CartaoItem({ item, res, av, uf, periodo, onPatch, onRefazer }: {
           </div>
         )}
 
+        {res.etp?._ufs_com_erro && (
+          <div className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2">
+            Não foi possível consultar: {res.etp._ufs_com_erro.join(", ")}. Os demais estados foram somados —
+            use "Refazer pesquisa" para tentar de novo.
+          </div>
+        )}
+
+        {res.consultas && res.consultas.length > 0 && (
+          <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-semibold">Fonte (API Dados Abertos):</span>
+            {res.consultas.map((c) => (
+              <a key={c.uf ?? "BR"} href={c.url} target="_blank" rel="noopener noreferrer"
+                className="text-sky-700 hover:underline" title={c.url}>
+                {c.uf ?? "Nacional"} · {fmtNum(c.encontrados, 0)} ↗
+              </a>
+            ))}
+            {item.codigo && (
+              <a href={urlCatalogo(item.tipo, item.codigo)} target="_blank" rel="noopener noreferrer"
+                className="text-sky-700 hover:underline">Catálogo ↗</a>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           {registrosValidos.length > 0 && (
             <button onClick={() => onPatch({ aberto: !res.aberto })}
@@ -959,6 +984,83 @@ function CartaoItem({ item, res, av, uf, periodo, onPatch, onRefazer }: {
 }
 
 // ── Pequenos componentes de UI ───────────────────────────────────────────────
+
+const REGIOES: { nome: string; ufs: string[] }[] = [
+  { nome: "Norte", ufs: ["AC", "AM", "AP", "PA", "RO", "RR", "TO"] },
+  { nome: "Nordeste", ufs: ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"] },
+  { nome: "Centro-Oeste", ufs: ["DF", "GO", "MS", "MT"] },
+  { nome: "Sudeste", ufs: ["ES", "MG", "RJ", "SP"] },
+  { nome: "Sul", ufs: ["PR", "RS", "SC"] },
+];
+
+/** Caixa de seleção de estados: vazio = âmbito nacional. */
+function SeletorUFs({ valor, onChange }: { valor: string[]; onChange: (ufs: string[]) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const raiz = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => { if (!raiz.current?.contains(e.target as Node)) setAberto(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setAberto(false); };
+    document.addEventListener("mousedown", fora);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", fora); document.removeEventListener("keydown", esc); };
+  }, [aberto]);
+
+  const ordenar = (l: string[]) => UFS.filter((u) => l.includes(u));
+  const alternar = (u: string) => onChange(ordenar(valor.includes(u) ? valor.filter((x) => x !== u) : [...valor, u]));
+  const alternarRegiao = (r: { ufs: string[] }) => {
+    const todas = r.ufs.every((u) => valor.includes(u));
+    onChange(ordenar(todas ? valor.filter((u) => !r.ufs.includes(u)) : [...new Set([...valor, ...r.ufs])]));
+  };
+  const rotulo = valor.length === 0 ? "Nacional (todos os estados)"
+    : valor.length <= 4 ? valor.join(", ") : `${valor.length} estados`;
+
+  return (
+    <div ref={raiz} className="relative">
+      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}
+        className="min-w-[210px] flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-left">
+        <span>{rotulo}</span>
+        <span className="text-xs text-slate-400">{aberto ? "▲" : "▼"}</span>
+      </button>
+      {aberto && (
+        <div className="force-light absolute z-30 mt-1 w-[300px] rounded-xl border border-gray-200 bg-white p-3 shadow-xl"
+          style={{ color: "#0f172a" }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-500">Selecione um ou mais estados</span>
+            <button type="button" onClick={() => onChange([])} className="text-xs text-sky-700 hover:underline">
+              Limpar (nacional)
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1 mb-2">
+            {REGIOES.map((r) => {
+              const todas = r.ufs.every((u) => valor.includes(u));
+              return (
+                <button key={r.nome} type="button" onClick={() => alternarRegiao(r)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border ${todas ? "border-sky-300 bg-sky-100 text-sky-800 font-semibold" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}>
+                  {r.nome}
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-6 gap-1">
+            {UFS.map((u) => {
+              const marcado = valor.includes(u);
+              return (
+                <label key={u} className={`flex items-center gap-1 rounded px-1 py-0.5 text-xs cursor-pointer ${marcado ? "bg-sky-100 text-sky-800 font-semibold" : "hover:bg-gray-100"}`}>
+                  <input type="checkbox" checked={marcado} onChange={() => alternar(u)} />
+                  {u}
+                </label>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[11px] text-gray-500">
+            {valor.length === 0 ? "Sem seleção: pesquisa em todo o Brasil." : `${valor.length} selecionado${valor.length > 1 ? "s" : ""}: uma consulta por estado, somadas no resultado.`}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Diferença do preço pesquisado em relação ao valor do TR, ex.: "+12,4% vs TR". */
 function variacao(pesquisado: number, tr: number) {
