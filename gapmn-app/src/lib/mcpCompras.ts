@@ -138,7 +138,7 @@ export async function consultarCatalogo(tipo: TipoItem, codigo: number): Promise
 export async function extrairItensIA(texto: string): Promise<{ objeto: string | null; itens: ItemTR[] }> {
   const r = await invocar<{ objeto: string | null; itens: Array<Record<string, unknown>> }>({
     action: "extrair_itens",
-    texto: selecionarTrechosRelevantes(texto, 36000),
+    texto: selecionarTrechosRelevantes(texto, 12000),
   });
   const itens = r.itens.map((it, i) => normalizarItem({
     numero: Number(it.numero) || i + 1,

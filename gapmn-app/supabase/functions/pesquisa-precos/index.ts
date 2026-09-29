@@ -165,7 +165,8 @@ async function chamarGroq(texto: string) {
     body: JSON.stringify({
       model: modeloAtual,
       temperature: 0,
-      max_tokens: 4096,
+      // Groq (plano gratuito) conta o max_tokens pedido dentro do limite de tokens/min.
+      max_tokens: 3000,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: PROMPT_EXTRACAO },
@@ -185,6 +186,15 @@ async function extrairItens(texto: string) {
     }
     modeloAtual = await escolherModeloDisponivel();
     console.log(`pesquisa-precos: modelo Groq trocado para ${modeloAtual}`);
+    res = await chamarGroq(texto);
+  }
+  // Limite de tokens/min do plano (HTTP 413) ou rajada (429): reenvia com menos
+  // texto — a parte que sobra é a mais densa em itens (o app já a prioriza).
+  for (let i = 0; i < 3 && (res.status === 413 || res.status === 429); i++) {
+    const corpo = await res.text();
+    const espera = Number(corpo.match(/try again in ([\d.]+)s/i)?.[1] ?? 0);
+    if (res.status === 429 && espera > 0 && espera <= 20) await new Promise((r) => setTimeout(r, espera * 1000 + 300));
+    else texto = texto.slice(0, Math.floor(texto.length * 0.6));
     res = await chamarGroq(texto);
   }
   if (!res.ok) throw new Error(`Groq respondeu HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -210,7 +220,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "extrair_itens") {
-      const texto = String(body.texto ?? "").slice(0, 40000);
+      const texto = String(body.texto ?? "").slice(0, 14000);
       if (texto.trim().length < 50) return json({ error: "Texto do TR vazio ou curto demais" }, 400);
       return json(await extrairItens(texto));
     }
