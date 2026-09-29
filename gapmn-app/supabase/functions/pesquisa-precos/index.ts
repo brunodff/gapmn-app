@@ -137,13 +137,33 @@ Regras:
 - Quantidade: use a quantidade total do item. Números no formato brasileiro (1.000,50) devem virar 1000.5.
 - Não inclua itens repetidos nem linhas de total.`;
 
-async function extrairItens(texto: string) {
-  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY não configurada no Supabase");
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+// O Groq aposenta modelos sem aviso. Se o configurado sumir, escolhe o melhor
+// disponível na conta pela ordem de preferência abaixo.
+const PREFERENCIA_MODELOS = [/gpt-oss-120b/, /llama.*70b/, /llama-4.*maverick/, /qwen.*32b/, /llama-4.*scout/, /gpt-oss-20b/, /llama/];
+let modeloAtual = GROQ_MODEL;
+
+async function escolherModeloDisponivel(): Promise<string> {
+  const res = await fetch("https://api.groq.com/openai/v1/models", {
+    headers: { "Authorization": `Bearer ${GROQ_API_KEY}` },
+  });
+  if (!res.ok) throw new Error(`Groq: falha ao listar modelos (HTTP ${res.status})`);
+  const ids: string[] = ((await res.json()).data ?? [])
+    .map((m: any) => String(m.id))
+    .filter((id: string) => !/whisper|tts|guard|embed|vision|compound/i.test(id));
+  for (const rx of PREFERENCIA_MODELOS) {
+    const achado = ids.find((id) => rx.test(id));
+    if (achado) return achado;
+  }
+  if (ids.length) return ids[0];
+  throw new Error("Nenhum modelo de texto disponível na conta Groq");
+}
+
+async function chamarGroq(texto: string) {
+  return await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model: modeloAtual,
       temperature: 0,
       max_tokens: 4096,
       response_format: { type: "json_object" },
@@ -153,6 +173,20 @@ async function extrairItens(texto: string) {
       ],
     }),
   });
+}
+
+async function extrairItens(texto: string) {
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY não configurada no Supabase");
+  let res = await chamarGroq(texto);
+  if (res.status === 404 || res.status === 400) {
+    const corpo = await res.text();
+    if (!/model_not_found|decommissioned|does not exist/i.test(corpo)) {
+      throw new Error(`Groq respondeu HTTP ${res.status}: ${corpo.slice(0, 300)}`);
+    }
+    modeloAtual = await escolherModeloDisponivel();
+    console.log(`pesquisa-precos: modelo Groq trocado para ${modeloAtual}`);
+    res = await chamarGroq(texto);
+  }
   if (!res.ok) throw new Error(`Groq respondeu HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
   const conteudo = data.choices?.[0]?.message?.content ?? "{}";
