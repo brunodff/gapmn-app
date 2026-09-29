@@ -17,6 +17,7 @@ import FerramentasGestao from "./FerramentasGestao";
 // OrdensBancarias removido
 import PainelAnalytics from "../components/PainelAnalytics";
 import CalendarioLicitacoes from "../components/CalendarioLicitacoes";
+import PesquisaPrecos from "../components/PesquisaPrecos";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const T = {
@@ -46,7 +47,7 @@ const GOV_URL = "https://app.powerbi.com/view?r=eyJrIjoiMGI0ZDUxZDAtOTQzOC00YmNi
 // ── Types ──────────────────────────────────────────────────────────────────────
 type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
-  | "calendario"
+  | "calendario" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
   | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics";
 
@@ -68,6 +69,7 @@ const VIEW_LABELS: Record<View, string> = {
   "painel-contratos":   "Painel de Contratos",
   "painel-governanca":  "Painel de Governança",
   calendario:           "Planejamento",
+  "pesquisa-precos":    "Pesquisa de Preços",
   ferramentas:          "Ferramentas de Gestão",
   admin:                "Administração",
   analytics:            "Analytics DEV",
@@ -325,6 +327,7 @@ const NAV: NavNode[] = [
     { label: "Processos",   path: "view:processos",  icon: "📋" },
     { label: "Atas de RP",  path: "view:atas",       icon: "📄" },
     { label: "Planejamento", path: "view:calendario", icon: "📅", slicOnly: true },
+    { label: "Pesquisa de Preços", path: "view:pesquisa-precos", icon: "💲" },
   ]},
   { id: "ctr",     label: "Contratos",            icon: "📑", path: "view:contratos" },
   { id: "eo",      label: "Exec. Orçamentária",   icon: "💰", children: [
@@ -1786,6 +1789,7 @@ export default function AppChat() {
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}
             {view === "calendario"    && <div className="svdark"><CalendarioLicitacoes canEdit={canImportPrc} userNome={user.nome} /></div>}
+            {view === "pesquisa-precos" && <div className="svdark"><PesquisaPrecos /></div>}
 
             {/* ── Panel views ── */}
             {view === "painel-orcamento"  && <PainelOrcamentario />}
