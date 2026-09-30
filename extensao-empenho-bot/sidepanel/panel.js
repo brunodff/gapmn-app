@@ -375,6 +375,7 @@ async function processarArquivos(files) {
             valor: (it.valorTotal ?? '').replace(/\./g, '').replace(',', '.'),
             valorFmt: it.valorTotal ?? '',
             subelemento: it.subelemento ?? '',
+            quantidade: it.quant ?? '',  // coluna QUANT — é o que o robô digita numa compra
           }));
         }
       }
@@ -569,7 +570,7 @@ function renderCamposEditable(sol, idx) {
     <div class="itens-empenho-wrap" style="margin-top:8px;">
       <div style="font-size:10px;font-weight:600;color:#94a3b8;margin-bottom:4px;letter-spacing:.5px;">
         ITENS P/ EMPENHO
-        <span style="font-weight:400;color:#64748b;">(N.Item do CNET → Valor R$)</span>
+        <span style="font-weight:400;color:#64748b;">(N.Item do CNET · Qtd · Valor R$)</span>
       </div>
       <div id="itens-emp-${idx}">
         ${itensEmp.map((it, i) => renderItemEmpRow(it, idx, i)).join('')}
@@ -591,6 +592,11 @@ function renderItemEmpRow(it, idx, iidx) {
            value="${escHtml(it.numeroItem ?? '')}"
            data-idx="${idx}" data-iidx="${iidx}" data-ikey="numeroItem"
            style="width:90px;flex:none;" />
+    <input class="rf-input item-emp-qtd" placeholder="Qtd"
+           title="Quantidade (numa compra, é o que o robô digita no CNET)"
+           value="${escHtml(it.quantidade ?? '')}"
+           data-idx="${idx}" data-iidx="${iidx}" data-ikey="quantidade"
+           style="width:64px;flex:none;" />
     <input class="rf-input item-emp-val" placeholder="Valor (ex: 4891.66)"
            value="${escHtml(it.valor ?? '')}"
            data-idx="${idx}" data-iidx="${iidx}" data-ikey="valor"
@@ -646,7 +652,7 @@ function bindReviewInputs() {
   });
 
   // Itens empenho — campos número e valor
-  document.querySelectorAll('.item-emp-num, .item-emp-val').forEach(inp => {
+  document.querySelectorAll('.item-emp-num, .item-emp-qtd, .item-emp-val').forEach(inp => {
     inp.addEventListener('change', () => {
       const idx  = Number(inp.dataset.idx);
       const iidx = Number(inp.dataset.iidx);

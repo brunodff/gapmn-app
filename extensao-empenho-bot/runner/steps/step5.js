@@ -62,6 +62,16 @@ export async function step5Runner(p) {
       return { ok: false, error: `O ${rotulo} está na tela mas não na solicitação (N.Item na revisão: ${itensEmp.map(i => i.numeroItem).join(', ')}).` };
     }
 
+    // 0. Expande a linha (DataTables Responsive): o Valor Total calculado fica na
+    // linha-filha. O controle é a 1ª célula ("Material", tabindex="0").
+    const controle = tr.cells[0];
+    const ehControle = controle && (controle.getAttribute('tabindex') === '0' || controle.classList.contains('dtr-control'));
+    const expandida = tr.classList.contains('parent') || tr.nextElementSibling?.classList.contains('child');
+    if (ehControle && !expandida) {
+      controle.click();
+      await dorme(400);
+    }
+
     // 1. Subelemento (select2) — o do item, senão o da solicitação; "00" = manter o padrão
     const subCod = String(empItem?.subelemento || p.subelemento || '').replace(/\D/g, '').padStart(2, '0');
     const sel = porId('subitem-') ?? naLinha('select');
@@ -77,17 +87,58 @@ export async function step5Runner(p) {
       if (sel.value !== op.value) return { ok: false, error: `Não consegui selecionar o subelemento ${subCod} no ${rotulo}` };
     }
 
-    // 2. Valor a empenhar: o do item na revisão; no contrato, sem ele, o valor total do item
-    const vrInput  = porId('vrtotal') ?? naLinha('input[id^="vrtotal"]');
-    const qtdInput = porId('qtditem') ?? naLinha('input[id^="qtditem"], input[name*="qtd" i], input[name*="quant" i]')
-      ?? Array.from(tr.querySelectorAll('input[type="text"], input:not([type])')).filter(i => i !== vrInput).pop();
-    let valor = num(empItem?.valor);
-    if (Number.isNaN(valor) && !compra) valor = num((porId('valor_total_item') ?? naLinha('input[id^="valor_total_item"]'))?.value);
-    if (!(valor > 0)) return { ok: false, error: `Sem valor a empenhar para o ${rotulo} — preencha o valor na revisão.` };
-
     // Preço unitário pela coluna "Valor Unit." (não pelo último número da linha,
     // que é o Valor Total do Item)
     const unit = num(colunaPorCabecalho(tr, /^Valor\s*Unit/i)?.textContent);
+    let valor = num(empItem?.valor);
+
+    // 2a. COMPRA: trabalha com a QUANTIDADE do item (coluna QUANT do PDF); o
+    // CNET calcula o valor. Digitada como no uso manual ("100"), sem chamar
+    // funções da página — "100,00000" + calculaVrTotal() deixava o campo vazio.
+    if (compra) {
+      const qtdCampo = naLinha('input[name="qtd[]"]') ?? naLinha('input[name*="qtd" i]');
+      if (!qtdCampo) {
+        const campos = Array.from(tr.querySelectorAll('input,select')).map(e => e.name || e.id || e.type).join(', ');
+        return { ok: false, error: `Campo Qtd não encontrado no ${rotulo} (campos da linha: ${campos})` };
+      }
+      let qtd = num(empItem?.quantidade);
+      if (!(qtd > 0) && valor > 0 && unit > 0) qtd = Math.round((valor / unit) * 100000) / 100000;
+      if (!(qtd > 0)) return { ok: false, error: `Sem quantidade para o ${rotulo} — preencha a Qtd na revisão.` };
+
+      const qtdTexto = Number.isInteger(qtd) ? String(qtd) : String(qtd).replace('.', ',');
+      qtdCampo.focus();
+      if ($) $(qtdCampo).val(qtdTexto).trigger('input').trigger('keyup').trigger('change');
+      else {
+        qtdCampo.value = qtdTexto;
+        for (const ev of ['input', 'keyup', 'change']) qtdCampo.dispatchEvent(new Event(ev, { bubbles: true }));
+      }
+      qtdCampo.blur();
+      await dorme(600);
+
+      if (!(num(qtdCampo.value) > 0)) {
+        return { ok: false, error: `O CNET não aceitou a quantidade ${qtdTexto} no ${rotulo} (o campo ficou "${qtdCampo.value}")` };
+      }
+      // Confere o Valor Total que o CNET calculou (na linha ou na linha-filha expandida)
+      const filha = tr.nextElementSibling?.classList.contains('child') ? tr.nextElementSibling : null;
+      const totalTela = [tr, filha].filter(Boolean)
+        .flatMap(el => Array.from(el.querySelectorAll('input[name="valor_total[]"]')))
+        .map(i => num(i.value)).find(v => v > 0);
+      if (valor > 0 && totalTela > 0 && Math.abs(totalTela - valor) > 0.01) {
+        return {
+          ok: false,
+          error: `Qtd ${qtdTexto} × ${unit} deu R$ ${totalTela.toFixed(2)} no CNET, mas a solicitação é R$ ${valor.toFixed(2)} — confira Qtd e valor na revisão.`,
+        };
+      }
+      feitos.push(`${rotulo}: sub ${subCod}, qtd ${qtdCampo.value}${totalTela > 0 ? `, total R$ ${totalTela.toFixed(2)}` : ''}`);
+      continue;
+    }
+
+    // 2b. CONTRATO: valor a empenhar — o do item na revisão ou o valor total do item
+    const vrInput  = porId('vrtotal') ?? naLinha('input[id^="vrtotal"]');
+    const qtdInput = porId('qtditem') ?? naLinha('input[id^="qtditem"], input[name*="qtd" i], input[name*="quant" i]')
+      ?? Array.from(tr.querySelectorAll('input[type="text"], input:not([type])')).filter(i => i !== vrInput).pop();
+    if (Number.isNaN(valor)) valor = num((porId('valor_total_item') ?? naLinha('input[id^="valor_total_item"]'))?.value);
+    if (!(valor > 0)) return { ok: false, error: `Sem valor a empenhar para o ${rotulo} — preencha o valor na revisão.` };
 
     if (vrInput) {
       preencher(vrInput, valor.toFixed(2).replace('.', ','));
