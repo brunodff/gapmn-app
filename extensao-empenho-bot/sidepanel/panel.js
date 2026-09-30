@@ -86,6 +86,22 @@ let port          = null;
 let uploadDest    = null;   // destino escolhido no menu: 'siloms' | 'contratosgov'
 let solicitacoesParsed = []; // [ { ok, solicitacao, fornecedorNome, ... } ] — review queue
 
+// Unidade da compra (UASG) usada no fluxo "Compra" do Contratos.gov.br.
+// Começa em 120630 e passa a ser a última informada pelo usuário na revisão.
+const UNIDADE_COMPRA_KEY = 'empenho_unidade_compra';
+let unidadeCompraPadrao = '120630';
+
+// Modalidades de compra do Contratos.gov.br (o robô casa pelo código inicial)
+const MODALIDADES = [
+  '01 - Convite',
+  '02 - Tomada de Preços',
+  '03 - Concorrência',
+  '04 - Concorrência Internacional',
+  '05 - Pregão',
+  '06 - Dispensa',
+  '07 - Inexigibilidade',
+];
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const el = id => document.getElementById(id);
 
@@ -100,8 +116,9 @@ async function init() {
   setupDevPanel();
   setupFeedbackWidget();
 
-  const data = await chrome.storage.local.get(['empenho_profile']);
+  const data = await chrome.storage.local.get(['empenho_profile', UNIDADE_COMPRA_KEY]);
   userProfile = data.empenho_profile ?? null;
+  unidadeCompraPadrao = data[UNIDADE_COMPRA_KEY] || unidadeCompraPadrao;
 
   if (!userProfile) {
     showScreen('profile');
@@ -319,6 +336,12 @@ async function processarArquivos(files) {
         const textoObs = parsed.obs ? ' ' + parsed.obs : '';
         parsed.obs = (prefixo + textoObs).replace(/;/g, '').trim();
 
+        // Contrato tem prioridade; sem contrato e com "Licit:", é empenho de compra
+        parsed.tipoOrigem    = parsed.contrato ? 'contrato' : (parsed.licit ? 'compra' : 'contrato');
+        parsed.numeroCompra  = parsed.licit ?? '';
+        parsed.modalidade    = parsed.modalidadeSugerida ?? '';
+        parsed.unidadeCompra = unidadeCompraPadrao;
+
         // Extrai itens empenho da OBS ("ITEM 1: 4891,66 - ITEM 2: 7333,06")
         // Prioridade: itens do PDF (tabela); fallback: OBS
         if (!parsed.itens?.length && parsed.obs) {
@@ -456,7 +479,11 @@ function renderCamposEditable(sol, idx) {
     ['Fornecedor',     'fornecedorNome'],
     ['CNPJ',           'fornecedorCnpj'],
     ['PAG',            'pag'],
+    ['Tipo',           'tipoOrigem'],
     ['Contrato',       'contrato'],
+    ['Nº Compra',      'numeroCompra'],
+    ['Modalidade',     'modalidade'],
+    ['Unidade Compra', 'unidadeCompra'],
     ['Subelemento',    'subelemento'],
     ['UG Cred',        'ugCred'],
     ['PTRES',          'ptres'],
@@ -467,10 +494,37 @@ function renderCamposEditable(sol, idx) {
     ['OBS',            'obs'],
   ];
 
+  const CAMPOS_COMPRA   = ['numeroCompra', 'modalidade', 'unidadeCompra'];
+  const CAMPOS_CONTRATO = ['contrato'];
+  const ehCompra = sol.tipoOrigem === 'compra';
+
   const rows = campos.map(([label, key]) => {
     const val = escHtml(sol[key] ?? '');
+    // Campos que só valem para um dos tipos ficam ocultos no outro
+    const grupo = CAMPOS_COMPRA.includes(key) ? 'compra' : CAMPOS_CONTRATO.includes(key) ? 'contrato' : '';
+    const oculto = (grupo === 'compra' && !ehCompra) || (grupo === 'contrato' && ehCompra);
+    const attrGrupo = grupo ? ` data-grupo="${grupo}" data-gidx="${idx}"${oculto ? ' style="display:none"' : ''}` : '';
+
+    if (key === 'tipoOrigem') {
+      return `
+    <div class="rf-label">${label}</div>
+    <select class="rf-input rf-tipo" data-idx="${idx}" data-key="tipoOrigem">
+      <option value="contrato"${!ehCompra ? ' selected' : ''}>Contrato</option>
+      <option value="compra"${ehCompra ? ' selected' : ''}>Compra</option>
+    </select>`;
+    }
+    if (key === 'modalidade') {
+      const aviso = sol.modalidadeSugerida && sol.modalidade === sol.modalidadeSugerida
+        ? '<span style="color:#fbbf24" title="Deduzida pelo número da compra — confira"> ⚠</span>' : '';
+      return `
+    <div class="rf-label"${attrGrupo}>${label}${aviso}</div>
+    <select class="rf-input" data-idx="${idx}" data-key="modalidade"${attrGrupo}>
+      <option value="">Selecione…</option>
+      ${MODALIDADES.map(m => `<option value="${escHtml(m)}"${m === sol.modalidade ? ' selected' : ''}>${escHtml(m)}</option>`).join('')}
+    </select>`;
+    }
     // Após o campo Contrato, injeta uma linha de inspeção com o texto bruto do PDF
-    const afterRow = key === 'contrato' && sol.contratoRaw
+    const afterRow = key === 'contrato' && sol.contratoRaw && !ehCompra
       ? `</div><div style="font-size:9px;color:#64748b;margin:1px 0 6px;padding-left:2px;">
            📄 PDF (original): <span style="color:#94a3b8;font-family:monospace;">${escHtml(sol.contratoRaw)}</span>
          </div><div class="rf-grid">`
@@ -481,9 +535,10 @@ function renderCamposEditable(sol, idx) {
                    rows="3" style="resize:vertical;line-height:1.3;">${val}</textarea>`
       : `<input class="rf-input" data-idx="${idx}" data-key="${key}"
                value="${val}" title="${val}" />`;
+    const inputGrupo = attrGrupo ? input.replace(/^(\s*<(?:input|textarea))/, `$1${attrGrupo}`) : input;
     return `
-    <div class="rf-label">${label}</div>
-    ${input}
+    <div class="rf-label"${attrGrupo}>${label}</div>
+    ${inputGrupo}
     ${afterRow}`;
   }).join('');
 
@@ -545,7 +600,20 @@ function bindReviewInputs() {
     inp.addEventListener('change', () => {
       const idx = Number(inp.dataset.idx);
       const key = inp.dataset.key;
-      if (solicitacoesParsed[idx]) solicitacoesParsed[idx][key] = inp.value;
+      const valor = inp.value.trim();
+      if (solicitacoesParsed[idx]) solicitacoesParsed[idx][key] = valor;
+
+      if (key === 'tipoOrigem') {
+        const compra = valor === 'compra';
+        document.querySelectorAll(`[data-gidx="${idx}"]`).forEach(n => {
+          n.style.display = (n.dataset.grupo === 'compra') === compra ? '' : 'none';
+        });
+      }
+      // A unidade informada vira o padrão das próximas solicitações
+      if (key === 'unidadeCompra' && valor) {
+        unidadeCompraPadrao = valor;
+        chrome.storage.local.set({ [UNIDADE_COMPRA_KEY]: valor });
+      }
     });
   });
 
@@ -596,9 +664,31 @@ function bindReviewInputs() {
 
 // ── Iniciar fila de empenho ───────────────────────────────────────────────────
 
+// Retorna a lista de pendências que impedem o robô de passar da Etapa 1
+function pendenciasEtapa1(sol) {
+  const p = [];
+  if (sol.tipoOrigem === 'compra') {
+    if (!/^\d{4,6}\/\d{4}$/.test(sol.numeroCompra ?? '')) p.push('nº da compra (ex: 90063/2025)');
+    if (!sol.modalidade)     p.push('modalidade');
+    if (!sol.unidadeCompra)  p.push('unidade da compra');
+  } else if (!sol.contrato) {
+    p.push('contrato (ou mude o Tipo para Compra)');
+  }
+  return p;
+}
+
 function iniciarFila() {
   const validas = solicitacoesParsed.filter(s => s.ok);
   if (!validas.length) return;
+
+  const incompletas = validas
+    .map(s => [s.solicitacao || s._fileName, pendenciasEtapa1(s)])
+    .filter(([, p]) => p.length);
+  if (incompletas.length) {
+    alert('Revise antes de iniciar:\n\n' +
+      incompletas.map(([n, p]) => `• ${n}: falta ${p.join(', ')}`).join('\n'));
+    return;
+  }
 
   if (uploadDest === 'siloms') {
     // SILOMS ainda não implementado — mostra tela de automação com aviso
@@ -629,7 +719,9 @@ function iniciarFila() {
   el('inf-numero').textContent = primeira.solicitacao || '—';
   el('inf-forn').textContent   = primeira.fornecedorNome || '—';
   el('inf-cnpj').textContent   = primeira.fornecedorCnpj || '—';
-  el('inf-compra').textContent = primeira.contrato || '—';
+  el('inf-compra').textContent = primeira.tipoOrigem === 'compra'
+    ? `Compra ${primeira.numeroCompra} · ${primeira.modalidade}`
+    : (primeira.contrato || '—');
   el('inf-total').textContent  = primeira.total || '—';
   el('payload-card').style.display = '';
 
@@ -646,7 +738,10 @@ function solToPayload(sol) {
     localEntrega:      sol.localEntrega,
     compradora:        sol.compradora,
     contrato:          sol.contrato,
-    tipoOrigem:        sol.contrato ? 'contrato' : 'compra',
+    tipoOrigem:        sol.tipoOrigem ?? (sol.contrato ? 'contrato' : 'compra'),
+    numeroCompra:      sol.numeroCompra ?? '',
+    modalidade:        sol.modalidade ?? '',
+    unidadeCompra:     sol.unidadeCompra || unidadeCompraPadrao,
     il:                sol.il,
     ugCred:            sol.ugCred,
     codemp:            sol.codemp,

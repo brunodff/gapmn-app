@@ -11,6 +11,7 @@
  *   itens[]        — Array de itens (requisicao, subelemento, descricao, quant, unid, valorUnit, valorTotal)
  *   pag            — Processo administrativo/licitação (ex: 67615.021461/2025-25)
  *   contrato       — Contrato de referência (ex: DESPESA 010/GAPMN-DA)
+ *   licit          — Número da compra quando não há contrato (ex: 90063/2025)
  *   il             — I/L (ex: C26071)
  *   ugCred         — UG Credora (ex: 120094)
  *   codemp         — CODEMP (ex: E974$)
@@ -122,12 +123,16 @@ export function parseSolicitacaoEmpenho(text) {
       return '';
     })();
 
-    // Texto bruto para inspeção (exatamente o que o PDF tem)
-    const contratoRaw = _contratoMatch;
+    // Texto do campo Contrato. Com "Contrato:" vazio (solicitação de compra) o
+    // regex encosta no rótulo seguinte e captura "I/L: C26009 ..." ou "PAG: ...".
+    // Contrato de verdade sempre tem número seguido de barra (ex: 009/GAPMN/2026).
+    const contratoRaw = /^[A-Za-zÀ-ú\/ ]{1,12}:/.test(_contratoMatch) || !/\d+\s*\//.test(_contratoMatch)
+      ? ''
+      : _contratoMatch;
 
     const contrato = (() => {
       // Remove prefixo "DESPESA " que o SILOMS adiciona
-      let raw = _contratoMatch.replace(/^DESPESA\s+/i, '').trim();
+      let raw = contratoRaw.replace(/^DESPESA\s+/i, '').trim();
       // Formata como NNN/ANO para o CONTRATOSGOV (ex: "065/2024")
       const numMatch = /^(\d+)\//.exec(raw);
       if (!numMatch) return raw;
@@ -144,6 +149,23 @@ export function parseSolicitacaoEmpenho(text) {
       if (dataYear) return `${numero}/${dataYear[1]}`;
       return raw;
     })();
+
+    // ── Compra (Licit) ──────────────────────────────────────────────────────────
+    // Solicitações de compra trazem "Licit: 90063/2025" em vez de contrato.
+    // O rótulo e o número podem cair em linhas diferentes na extração do PDF.
+    const licit = (() => {
+      const m = /Licit:\s*(\d{4,6}\s*\/\s*\d{4})\b/i.exec(t);
+      if (m) return m[1].replace(/\s+/g, '');
+      if (!/Licit:/i.test(t)) return '';
+      // Número de compra do SIASG: 5 dígitos/ano. Não colide com PAG
+      // (67298.002407/2025-11), contrato (009/2026) nem datas (dd/mm/aaaa).
+      const f = /(?<![\d.\/])(\d{5}\/\d{4})(?![\d\/-])/.exec(t);
+      return f?.[1] ?? '';
+    })();
+
+    // Sugestão de modalidade (código do Contratos.gov.br); o usuário confirma na revisão.
+    // Compras do SIASG com número iniciado em 90 são pregões.
+    const modalidadeSugerida = /^90/.test(licit) ? '05 - Pregão' : '';
 
     const il = (() => {
       const m = /I\/L:\s*(\S+)/.exec(t);
@@ -244,6 +266,8 @@ export function parseSolicitacaoEmpenho(text) {
       pag,
       contrato,
       contratoRaw,
+      licit,
+      modalidadeSugerida,
       il,
       ugCred,
       codemp,

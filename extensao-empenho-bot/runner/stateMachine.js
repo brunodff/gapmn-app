@@ -491,13 +491,16 @@ async function runStep0(tabId, payload) {
 
 async function runStep1(tabId, payload) {
   await appendLog('[Etapa 1] Preenchendo Contrato/Compra…', 'info');
-  notifySidePanel({ type: 'LOG', msg: `[Etapa 1] Buscando contrato ${payload.contrato ?? '—'} via select2…`, level: 'info' });
+  const alvo = payload.tipoOrigem === 'compra'
+    ? `compra ${payload.numeroCompra} (${payload.modalidade}, unidade ${payload.unidadeCompra})`
+    : `contrato ${payload.contrato ?? '—'}`;
+  notifySidePanel({ type: 'LOG', msg: `[Etapa 1] Preenchendo ${alvo}…`, level: 'info' });
 
   const result = await execInPage(tabId, step1Runner, [payload]);
   if (!result) return { ok: false, error: 'Script não retornou — aba pode ter recarregado ou sessão expirou' };
   if (result.ok) {
     await appendLog('[Etapa 1] Preenchido ✓', 'info');
-    notifySidePanel({ type: 'LOG', msg: '[Etapa 1] Contrato selecionado ✓', level: 'success' });
+    notifySidePanel({ type: 'LOG', msg: `[Etapa 1] ${payload.tipoOrigem === 'compra' ? 'Compra' : 'Contrato'} selecionado ✓`, level: 'success' });
   }
   return result;
 }
@@ -511,7 +514,9 @@ async function runStep2(tabId, payload) {
   if (!(pageUrl ?? '').includes('/empenho/fornecedor')) {
     return {
       ok: false,
-      error: `Etapa 1 não concluída — CNET está em "${pageUrl ?? '?'}". Verifique: (1) contrato "${payload.contrato}" existe no CNET com saldo, (2) sessão não expirou, (3) há minutas anteriores abertas para o mesmo contrato.`,
+      error: payload.tipoOrigem === 'compra'
+        ? `Etapa 1 não concluída — CNET está em "${pageUrl ?? '?'}". Verifique: (1) a compra ${payload.numeroCompra} existe na modalidade "${payload.modalidade}" para a unidade ${payload.unidadeCompra}, (2) sessão não expirou.`
+        : `Etapa 1 não concluída — CNET está em "${pageUrl ?? '?'}". Verifique: (1) contrato "${payload.contrato}" existe no CNET com saldo, (2) sessão não expirou, (3) há minutas anteriores abertas para o mesmo contrato.`,
     };
   }
 
