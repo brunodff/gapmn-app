@@ -279,7 +279,7 @@ function iniciarColeta(mode) {
   el('sol-acoes').style.display       = 'none';
   showScreen('solicitacoes');
 
-  if (port) port.postMessage({ type: 'START_COLETA', mode });
+  enviar({ type: 'START_COLETA', mode });
 }
 
 // ── Tela de Upload de PDFs ────────────────────────────────────────────────────
@@ -735,9 +735,7 @@ function iniciarFila() {
   const payload = solToPayload(primeira);
 
   // Enfileira as restantes
-  if (port) {
-    port.postMessage({ type: 'START_EMPENHO', payload, queue: resto.map(solToPayload) });
-  }
+  if (!enviar({ type: 'START_EMPENHO', payload, queue: resto.map(solToPayload) })) return;
 
   el('inf-numero').textContent = primeira.solicitacao || '—';
   el('inf-forn').textContent   = primeira.fornecedorNome || '—';
@@ -783,18 +781,34 @@ function solToPayload(sol) {
 
 // ── Controles de automação ────────────────────────────────────────────────────
 function setupAutomationControls() {
-  el('btn-pause') .addEventListener('click', () => port?.postMessage({ type: 'PAUSE' }));
-  el('btn-resume').addEventListener('click', () => port?.postMessage({ type: 'RESUME' }));
+  el('btn-pause') .addEventListener('click', () => enviar({ type: 'PAUSE' }));
+  el('btn-resume').addEventListener('click', () => enviar({ type: 'RESUME' }));
   el('btn-abort') .addEventListener('click', () => {
     if (confirm('Abortar a execução atual? O estado será resetado.')) {
-      port?.postMessage({ type: 'ABORT' });
+      enviar({ type: 'ABORT' });
     }
   });
-  el('btn-confirm').addEventListener('click', () => port?.postMessage({ type: 'CONFIRM_EMISSAO' }));
+  el('btn-confirm').addEventListener('click', () => enviar({ type: 'CONFIRM_EMISSAO' }));
 }
 
 // ── Conexão com background ────────────────────────────────────────────────────
-function connectPort() {
+// O Chrome encerra o service worker após ~30s ocioso, o que derruba a porta
+// (e o Firefox faz o mesmo com a event page). Enviar sempre por aqui: se a porta
+// caiu, reconecta — isso reinicia o background — em vez de descartar o comando.
+function enviar(msg) {
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    if (!port) connectPort(false);
+    try { port.postMessage(msg); return true; }
+    catch { port = null; }
+  }
+  const aviso = 'Sem comunicação com a extensão. Feche e reabra este painel.';
+  appendLog('❌ ' + aviso, 'error');
+  setBadge('error');
+  alert(aviso);
+  return false;
+}
+
+function connectPort(pedirEstado = true) {
   try {
     port = chrome.runtime.connect({ name: 'empenho-sidepanel' });
 
@@ -852,8 +866,10 @@ function connectPort() {
     });
 
     port.onDisconnect.addListener(() => { port = null; });
-    port.postMessage({ type: 'GET_STATE' });
-  } catch {}
+    // Ao reconectar para enviar um comando não pede o estado: a resposta chegaria
+    // depois e repintaria a execução anterior por cima da nova.
+    if (pedirEstado) port.postMessage({ type: 'GET_STATE' });
+  } catch { port = null; }
 }
 
 // ── Tratamento de STATE vindo do background ───────────────────────────────────
@@ -1248,7 +1264,7 @@ function empenharSolicitacao(sol, mode) {
     el('log').innerHTML = '';
     showScreen('automation');
     appendLog(`📋 Iniciando empenho CONTRATOSGOV para ${sol.numero}…`, 'info');
-    if (port) port.postMessage({ type: 'START_EMPENHO', payload });
+    enviar({ type: 'START_EMPENHO', payload });
   }
 }
 

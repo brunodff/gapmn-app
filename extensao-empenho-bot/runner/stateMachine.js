@@ -133,6 +133,7 @@ export async function startColeta(mode, silomsTabId) {
  * Inicia empenho no CONTRATOSGOV com payload específico (fluxo legado / via gapmn.app).
  */
 export async function startEmpenho(payload, tabId, dryRun = false, initialQueue = []) {
+  const orfa = await recuperarExecucaoOrfa();
   const s = await getState();
 
   if (s.state === 'running' || s.state === 'checkpoint') {
@@ -144,6 +145,9 @@ export async function startEmpenho(payload, tabId, dryRun = false, initialQueue 
     state: 'running', flow: 'empenho-cnet',
     step: 0, payload, queue: initialQueue, cnetTabId: tabId, dryRun, log: [],
   });
+  if (orfa) {
+    await appendLog(`⚠ A execução anterior (${orfa}) tinha sido interrompida e foi descartada.`, 'warn');
+  }
 
   runStateMachine().catch(async err => {
     await appendLog(`❌ Erro fatal: ${err.message}`, 'error');
@@ -190,7 +194,40 @@ export async function confirmEmissao() {
 
 // ── Máquina de estados principal ──────────────────────────────────────────────
 
+// O estado fica no storage e sobrevive a recarregar a extensão ou ao navegador
+// encerrar o service worker; o laço que o executava, não. Por isso "running"
+// no storage não prova que há algo rodando — este flag, em memória, prova.
+let maquinaAtiva = false;
+
+/**
+ * Se o storage diz "running" mas nenhum laço está ativo, a execução ficou órfã:
+ * marca como pausada (o usuário pode Retomar da mesma etapa ou Abortar).
+ * Retorna a identificação da execução órfã, ou null.
+ */
+export async function recuperarExecucaoOrfa() {
+  const s = await getState();
+  if (s.state !== 'running' || maquinaAtiva) return null;
+  const id = s.flow === 'coleta'
+    ? 'coleta do SILOMS'
+    : `${s.payload?.numeroSolicitacao ?? 'solicitação'}, Etapa ${s.step}`;
+  await setState({ state: 'paused' });
+  await appendLog(`⚠ Execução interrompida (${id}) — a extensão foi recarregada ou o navegador a encerrou. Use Retomar ou Abortar.`, 'warn');
+  return id;
+}
+
 async function runStateMachine() {
+  // Um laço por vez: um laço pausado continua vivo aguardando, e Retomar não
+  // pode abrir um segundo que executaria as mesmas etapas em paralelo.
+  if (maquinaAtiva) return;
+  maquinaAtiva = true;
+  try {
+    await laçoDaMaquina();
+  } finally {
+    maquinaAtiva = false;
+  }
+}
+
+async function laçoDaMaquina() {
   while (true) {
     const s = await getState();
     if (s.state === 'paused') { await delay(1000); continue; }

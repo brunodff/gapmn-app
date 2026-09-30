@@ -12,7 +12,7 @@ import {
   getState, setState, appendLog,
   startColeta, startEmpenho,
   pauseEmpenho, resumeEmpenho, abortEmpenho,
-  confirmEmissao, setSidePanelPort,
+  confirmEmissao, setSidePanelPort, recuperarExecucaoOrfa,
 } from './runner/stateMachine.js';
 
 const COMPRASNET_ORIGIN = 'https://contratos.comprasnet.gov.br';
@@ -61,6 +61,7 @@ chrome.runtime.onConnect.addListener(port => {
     switch (msg.type) {
 
       case 'GET_STATE': {
+        await recuperarExecucaoOrfa();
         const s = await getState();
         port.postMessage({ type: 'STATE', state: s });
         break;
