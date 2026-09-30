@@ -27,6 +27,7 @@
 import { step1Runner } from './steps/step1.js';
 import { step3Runner } from './steps/step3.js';
 import { maximizarTabelasRunner } from './steps/tabelas.js';
+import { step5Runner } from './steps/step5.js';
 import {
   step0ClickAdicionarMinuta,
   step0PesquisarContrato,
@@ -419,10 +420,28 @@ async function runColetaStep(s) {
 
 // ── Fluxo EMPENHO-CNET (8 etapas — existente) ─────────────────────────────────
 
+// Identifica a tela atual (caminho + título). Com tempo limite: um alert() do
+// CNET bloqueia a página e o executeScript ficaria esperando para sempre.
+async function impressaoDaPagina(tabId) {
+  const ler = execInPage(tabId, () => {
+    const visivel = e => e && e.offsetParent !== null && (e.textContent ?? '').trim();
+    const erros = Array.from(document.querySelectorAll(
+      '.alert-danger, .has-error .help-block, .invalid-feedback, .swal2-html-container, .toast-message, .error'
+    )).filter(visivel).map(e => e.textContent.replace(/\s+/g, ' ').trim()).slice(0, 3);
+    const titulo = (document.querySelector('.content-header h1, section.content-header, h1')?.textContent ?? '')
+      .replace(/\s+/g, ' ').trim().slice(0, 80);
+    return { caminho: location.pathname, titulo, erros };
+  }).catch(() => null);
+  const limite = new Promise(r => setTimeout(() => r({ bloqueada: true }), 6000));
+  return (await Promise.race([ler, limite])) ?? { bloqueada: true };
+}
+
 async function runEmpenhoStep(s) {
   const { step, payload, cnetTabId: tabId, dryRun } = s;
   await appendLog(`━ Iniciando Etapa ${step}`, 'info');
   notifySidePanel({ type: 'STEP', step });
+  // Etapas 1–7 terminam clicando "Próxima"; guardo a tela para conferir o avanço
+  const antes = step >= 1 && step <= 7 ? await impressaoDaPagina(tabId) : null;
 
   try {
     let result;
@@ -434,7 +453,7 @@ async function runEmpenhoStep(s) {
       case 4: result = await runStep4(tabId, payload); break;
       case 5: result = await runStep5(tabId, payload); break;
       case 6: result = await runStep6(tabId, payload); break;
-      case 7: result = await runStepStub(tabId, step); break;
+      case 7: result = await runStep7(tabId); break;
       case 8: result = await runStep8Checkpoint(tabId, payload, dryRun); break;
       default:
         await setState({ state: 'done' });
@@ -491,6 +510,24 @@ async function runEmpenhoStep(s) {
         notifySidePanel({ type: 'LOG', msg: `⚠ Arredondamento → "para menos" selecionado. Reforço irrisório será necessário.`, level: 'warn' });
         await setState({ valorEmpenhado: rounding.totalEmpenhado || null });
         try { await waitForNavigation(tabId, 20000); await delay(800); } catch {}
+      }
+
+      // "Próxima" clicado não prova avanço: com um campo inválido o CNET fica na
+      // mesma tela e a etapa seguinte rodaria na tela errada, também "com sucesso".
+      if (antes && !antes.bloqueada) {
+        const depois = await impressaoDaPagina(tabId);
+        const parada = depois.bloqueada
+          ? 'a página está bloqueada por um aviso (alert) do CNET'
+          : (depois.caminho === antes.caminho && depois.titulo === antes.titulo)
+            ? `a página não avançou${depois.erros?.length ? ` — CNET: ${depois.erros.join(' | ').replace(/[.\s]+$/, '')}` : ''}`
+            : null;
+        if (parada) {
+          const msg = `Etapa ${step}: cliquei em "Próxima", mas ${parada}. Corrija o que o CNET apontar (sem clicar em Próxima) e use Retomar — o robô refaz esta etapa.`;
+          await appendLog(`❌ ${msg}`, 'error');
+          await setState({ state: 'paused', step });
+          notifySidePanel({ type: 'PAUSED', error: msg, step });
+          return false;
+        }
       }
     }
 
@@ -742,111 +779,10 @@ async function runStep5(tabId, payload) {
   notifySidePanel({ type: 'LOG', msg: '[Etapa 5] Preenchendo subelemento e valores…', level: 'info' });
   await maximizarTabelas(tabId, 5);
 
-  const result = await execInPage(tabId, async (p) => {
-    // Aguarda DataTable carregar (AJAX — até 15s)
-    const rows = await new Promise(res => {
-      let elapsed = 0;
-      const tick = setInterval(() => {
-        elapsed += 500;
-        const r = Array.from(document.querySelectorAll('table tbody tr[role="row"]'));
-        if (r.length > 0 || elapsed >= 15000) { clearInterval(tick); res(r); }
-      }, 500);
-    });
-
-    if (!rows.length) return { ok: false, error: 'Nenhum item carregado na Etapa 5' };
-
-    const $ = window.jQuery || window.$;
-    const itensEmp = p.itensEmpenho ?? [];
-    // Subelemento: garante 2 dígitos ("91" → "91", "7" → "07")
-    const subCod = String(p.subelemento ?? '').padStart(2, '0');
-
-    for (const row of rows) {
-      const numInput = row.querySelector('input[name="numero_item[]"]');
-      const numStr   = String(parseInt(numInput?.value ?? '0', 10)); // "1", "2"
-      const cid      = row.querySelector('input[name="contrato_item_id[]"]')?.value ?? '';
-      if (!cid) continue;
-
-      // 1. Subelemento — só altera se não for o default "00"
-      if (subCod && subCod !== '00' && $) {
-        const sel = document.getElementById(`subitem-${cid}`);
-        if (sel) {
-          for (const opt of sel.options) {
-            if (opt.text.trimStart().startsWith(subCod + ' -')) {
-              $(sel).val(opt.value).trigger('change');
-              break;
-            }
-          }
-        }
-      }
-
-      // 2. Valor total a empenhar
-      const vrInput = document.getElementById(`vrtotal${cid}`);
-      if (vrInput) {
-        // Busca itensEmpenho pelo N.Item
-        const empItem = itensEmp.find(it => String(parseInt(it.numeroItem ?? '', 10)) === numStr);
-        let valor = empItem?.valor ?? '';
-        if (!valor) {
-          valor = document.getElementById(`valor_total_item${cid}`)?.value ?? '';
-        }
-        if (valor) {
-          // toBRDecimal: converte para formato CNET (vírgula decimal, sem ponto de milhar)
-          // "177.676,20" → "177676,20"  |  "177676.20" → "177676,20"
-          const valorBR = String(valor).includes(',')
-            ? String(valor).replace(/\./g, '')       // já tem vírgula decimal: remove pontos de milhar
-            : String(valor).replace('.', ',');        // só tem ponto decimal: converte para vírgula
-
-          vrInput.focus();
-          vrInput.value = valorBR;
-          vrInput.dispatchEvent(new Event('input',  { bubbles: true }));
-          vrInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-          vrInput.dispatchEvent(new Event('change', { bubbles: true }));
-          vrInput.blur();
-          // Chama calculaQuantidade diretamente (evento sintético é ignorado pelo CNET)
-          if (typeof window.calculaQuantidade === 'function') window.calculaQuantidade(vrInput);
-          await new Promise(r => setTimeout(r, 400));
-
-          // Fallback: se calculaQuantidade não preencheu o campo de quantidade, preenche manualmente
-          const qtdInput = document.getElementById(`qtditem${cid}`);
-          if (qtdInput && !qtdInput.value) {
-            // Lê valor_unitario das células da row (ex: "0.9000")
-            let unitPrice = 0;
-            for (const c of Array.from(row.querySelectorAll('td'))) {
-              const t = c.textContent.trim().replace(/\s/g, '');
-              if (/^\d+[,.]?\d+$/.test(t)) {
-                const n = parseFloat(t.replace(',', '.'));
-                if (n > 0 && n < 100000) unitPrice = n;
-              }
-            }
-            const valorNum = parseFloat(valorBR.replace(',', '.'));
-            if (unitPrice > 0 && valorNum > 0) {
-              const qtdBR = (valorNum / unitPrice).toFixed(4).replace('.', ',');
-              qtdInput.focus();
-              qtdInput.value = qtdBR;
-              qtdInput.dispatchEvent(new Event('input',  { bubbles: true }));
-              qtdInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-              qtdInput.dispatchEvent(new Event('change', { bubbles: true }));
-              qtdInput.blur();
-              if (typeof window.calculaVrTotal === 'function') window.calculaVrTotal(qtdInput);
-              await new Promise(r => setTimeout(r, 300));
-            }
-          }
-        }
-      }
-
-      await new Promise(r => setTimeout(r, 300));
-    }
-
-    await new Promise(r => setTimeout(r, 600));
-
-    const btn =
-      document.querySelector('button.submeter') ||
-      Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
-    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 5' };
-    btn.click();
-    return { ok: true };
-  }, [payload]);
+  const result = await execInPage(tabId, step5Runner, [payload]);
 
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 5' };
+  for (const f of result.feitos ?? []) await appendLog(`[Etapa 5] ${f}`, 'info');
   await appendLog('[Etapa 5] Subelemento e valores preenchidos ✓', 'info');
   return { ok: true };
 }
@@ -939,6 +875,22 @@ async function handleRoundingModal(tabId) {
 
     return { handled: true, totalEmpenhado, count: selectedValues.length };
   });
+}
+
+// Passivo Anterior: normalmente só avançar. Se a tela exigir alguma escolha, a
+// conferência de avanço em runEmpenhoStep para e mostra a mensagem do CNET.
+async function runStep7(tabId) {
+  await appendLog('[Etapa 7] Passivo Anterior — avançando…', 'info');
+  notifySidePanel({ type: 'LOG', msg: '[Etapa 7] Passivo Anterior — avançando…', level: 'info' });
+  const r = await execInPage(tabId, () => {
+    const btn =
+      document.querySelector('button.submeter') ||
+      Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
+    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 7' };
+    btn.click();
+    return { ok: true };
+  });
+  return r ?? { ok: false, error: 'Script não retornou na Etapa 7' };
 }
 
 async function runStepStub(tabId, step) {

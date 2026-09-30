@@ -359,7 +359,7 @@ async function processarArquivos(files) {
           while ((m = reItem.exec(parsed.obs)) !== null) {
             fromObs.push({
               numeroItem: m[1].padStart(5, '0'), // "00001", "00002"
-              valor: m[2].replace('.', '').replace(',', '.'), // "4891.66"
+              valor: m[2].replace(/\./g, '').replace(',', '.'), // "4891.66"
               valorFmt: m[2],                    // "4891,66" (exibição)
             });
           }
@@ -372,8 +372,9 @@ async function processarArquivos(files) {
             numeroItem: it.item
               ? String(it.item).padStart(5, '0')
               : (parsed.tipoOrigem === 'compra' ? '' : String(i + 1).padStart(5, '0')),
-            valor: (it.valorTotal ?? '').replace('.', '').replace(',', '.'),
+            valor: (it.valorTotal ?? '').replace(/\./g, '').replace(',', '.'),
             valorFmt: it.valorTotal ?? '',
+            subelemento: it.subelemento ?? '',
           }));
         }
       }
