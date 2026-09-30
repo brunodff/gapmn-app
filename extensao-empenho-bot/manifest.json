@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "GAPMN Empenho Bot",
+  "version": "2.0.0",
+  "description": "Coleta solicitações de empenho no SILOMS e automatiza emissão no SILOMS ou Contratos.gov.br.",
+
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+
+  "host_permissions": [
+    "https://fychrtyyqbzlfbzbvzqp.supabase.co/*",
+    "https://contratos.comprasnet.gov.br/*",
+    "https://mac1.siloms.intraer/*",
+    "https://*.siloms.intraer/*",
+    "https://*.intraer/*",
+    "*://*.fab.mil.br/*",
+    "*://*.defesa.gov.br/*"
+  ],
+
+  "externally_connectable": {
+    "matches": [
+      "https://gapmn.app/*",
+      "https://*.gapmn.app/*",
+      "http://localhost:5173/*",
+      "http://localhost:4173/*"
+    ]
+  },
+
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+
+  "side_panel": {
+    "default_path": "sidepanel/panel.html"
+  },
+
+  "sidebar_action": {
+    "default_title": "GAPMN Empenho Bot",
+    "default_panel": "sidepanel/panel.html",
+    "open_at_install": false
+  },
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "empenho-bot@gapmn.app",
+      "strict_min_version": "128.0"
+    }
+  },
+
+  "action": {
+    "default_title": "GAPMN Empenho Bot",
+    "default_popup": ""
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/pdf.min.mjs", "lib/pdf.worker.min.mjs"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

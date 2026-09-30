@@ -1,0 +1,1003 @@
+/**
+ * Máquina de estados — GAPMN Empenho Bot v2.0
+ *
+ * Dois fluxos:
+ *   1. COLETA: Navega no SILOMS, coleta todas as solicitações assinadas (comum a ambos os modos)
+ *   2. EMPENHO-CNET: Preenche minuta no Contratos.gov.br (8 etapas existentes)
+ *   2b. EMPENHO-SILOMS: (Phase 3 — a implementar)
+ *
+ * Estado persistido em chrome.storage.local (chave: STORAGE_KEY):
+ *   state          = 'idle' | 'running' | 'paused' | 'checkpoint' | 'done' | 'error'
+ *   flow           = null | 'coleta' | 'empenho-cnet' | 'empenho-siloms'
+ *   mode           = null | 'siloms' | 'contratosgov'   (escolha do usuário)
+ *   coletaPhase    = 'navegar' | 'filtrar' | 'lista' | 'detalhe' | 'done'
+ *   coletaIndex    = number   (solicitação atual sendo processada)
+ *   coletaTotal    = number
+ *   solicitacoes   = []       (lista básica da tabela)
+ *   solDetalhes    = []       (dados completos de cada uma)
+ *   step           = 0-8      (0=pré-navegação minuta→etapa1; 1-8=etapas CNET)
+ *   payload        = object   (solicitação atual em empenho)
+ *   queue          = []
+ *   log            = []
+ *   silomsTabId    = number
+ *   cnetTabId      = number
+ *   dryRun         = boolean
+ */
+
+import { step1Runner } from './steps/step1.js';
+import {
+  step0ClickAdicionarMinuta,
+  step0PesquisarContrato,
+  step0SelecionarContrato,
+} from './steps/step0.js';
+import {
+  silomsCheckListPage,
+  silomsClickMenuEmpenho,
+  silomsClickSubmenu,
+  silomsSetFiltroEBuscar,
+  silomsParseListaSolicitacoes,
+  silomsAbrirSolicitacao,
+  silomsExtrairDocumento,
+  silomsVoltar,
+} from './steps/step-siloms-coleta.js';
+
+const STORAGE_KEY = 'empenhoBot';
+const COMPRASNET_URL = 'https://contratos.comprasnet.gov.br/empenho/buscacompra';
+
+// ── Persistência ──────────────────────────────────────────────────────────────
+
+export async function getState() {
+  const data = await chrome.storage.local.get(STORAGE_KEY);
+  return data[STORAGE_KEY] ?? {
+    state: 'idle', flow: null, mode: null,
+    coletaPhase: null, coletaIndex: 0, coletaTotal: 0,
+    solicitacoes: [], solDetalhes: [],
+    step: 0, payload: null, queue: [], log: [],
+    silomsTabId: null, cnetTabId: null, dryRun: false,
+  };
+}
+
+export async function setState(patch) {
+  const current = await getState();
+  await chrome.storage.local.set({ [STORAGE_KEY]: { ...current, ...patch } });
+}
+
+export async function appendLog(msg, level = 'info') {
+  const s = await getState();
+  const log = [...(s.log ?? []), { ts: Date.now(), msg, level }];
+  await setState({ log: log.slice(-200) });
+}
+
+// ── Execução na página ────────────────────────────────────────────────────────
+
+async function execInPage(tabId, func, args = []) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: false },
+    world: 'MAIN',
+    func,
+    args,
+  });
+  return results?.[0]?.result ?? null;
+}
+
+async function waitForNavigation(tabId, timeout = 25000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('waitForNavigation timeout'));
+    }, timeout);
+
+    function listener(tId, changeInfo) {
+      if (tId === tabId && changeInfo.status === 'complete') {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function delay(ms) { await new Promise(r => setTimeout(r, ms)); }
+
+// ── API pública ───────────────────────────────────────────────────────────────
+
+/**
+ * Inicia o fluxo de COLETA no SILOMS.
+ * mode: 'siloms' | 'contratosgov' — determina o que fazer após a coleta.
+ */
+export async function startColeta(mode, silomsTabId) {
+  await setState({
+    state: 'running',
+    flow: 'coleta',
+    mode,
+    coletaPhase: 'navegar',
+    coletaIndex: 0,
+    coletaTotal: 0,
+    solicitacoes: [],
+    solDetalhes: [],
+    silomsTabId,
+    log: [],
+  });
+
+  runStateMachine().catch(async err => {
+    await appendLog(`❌ Erro fatal: ${err.message}`, 'error');
+    await setState({ state: 'error' });
+    notifySidePanel({ type: 'ERROR', message: err.message });
+  });
+
+  return { ok: true, started: true };
+}
+
+/**
+ * Inicia empenho no CONTRATOSGOV com payload específico (fluxo legado / via gapmn.app).
+ */
+export async function startEmpenho(payload, tabId, dryRun = false, initialQueue = []) {
+  const s = await getState();
+
+  if (s.state === 'running' || s.state === 'checkpoint') {
+    await setState({ queue: [...(s.queue ?? []), payload, ...initialQueue] });
+    return { ok: true, queued: true };
+  }
+
+  await setState({
+    state: 'running', flow: 'empenho-cnet',
+    step: 0, payload, queue: initialQueue, cnetTabId: tabId, dryRun, log: [],
+  });
+
+  runStateMachine().catch(async err => {
+    await appendLog(`❌ Erro fatal: ${err.message}`, 'error');
+    await setState({ state: 'error' });
+    notifySidePanel({ type: 'ERROR', message: err.message });
+  });
+
+  return { ok: true, started: true };
+}
+
+export async function pauseEmpenho() {
+  await setState({ state: 'paused' });
+  await appendLog('⏸ Pausado pelo usuário', 'warn');
+  notifySidePanel({ type: 'PAUSED' });
+}
+
+export async function resumeEmpenho() {
+  const s = await getState();
+  if (s.state !== 'paused') return { ok: false, error: 'Não está pausado' };
+  await setState({ state: 'running' });
+  await appendLog('▶ Retomado', 'info');
+  runStateMachine().catch(async err => {
+    await appendLog(`❌ Erro ao retomar: ${err.message}`, 'error');
+    await setState({ state: 'error' });
+  });
+  return { ok: true };
+}
+
+export async function abortEmpenho() {
+  await setState({ state: 'idle', step: 0, coletaPhase: null });
+  await appendLog('🛑 Abortado pelo usuário', 'warn');
+  notifySidePanel({ type: 'ABORTED' });
+}
+
+export async function confirmEmissao() {
+  const s = await getState();
+  if (s.state !== 'checkpoint' || s.step !== 8) {
+    return { ok: false, error: 'Não está no checkpoint da Etapa 8' };
+  }
+  await setState({ state: 'running' });
+  await runStep8Confirm(s.cnetTabId, s.payload);
+  return { ok: true };
+}
+
+// ── Máquina de estados principal ──────────────────────────────────────────────
+
+async function runStateMachine() {
+  while (true) {
+    const s = await getState();
+    if (s.state === 'paused') { await delay(1000); continue; }
+    if (s.state !== 'running') break;
+
+    if (s.flow === 'coleta') {
+      const shouldContinue = await runColetaStep(s);
+      if (!shouldContinue) break;
+    } else if (s.flow === 'empenho-cnet') {
+      const shouldContinue = await runEmpenhoStep(s);
+      if (!shouldContinue) break;
+    } else {
+      break;
+    }
+  }
+}
+
+// ── Fluxo COLETA ──────────────────────────────────────────────────────────────
+
+async function runColetaStep(s) {
+  const { coletaPhase, silomsTabId: tabId } = s;
+
+  switch (coletaPhase) {
+
+    case 'navegar': {
+      await appendLog('🔍 Verificando página do SILOMS…', 'info');
+      notifySidePanel({ type: 'LOG', msg: '🔍 Verificando página do SILOMS…', level: 'info' });
+
+      let check = null;
+      try { check = await execInPage(tabId, silomsCheckListPage); } catch {}
+
+      if (!check) {
+        await appendLog('❌ Não foi possível acessar o SILOMS. Abra o SILOMS na aba ativa.', 'error');
+        await setState({ state: 'paused' });
+        notifySidePanel({ type: 'PAUSED', error: 'Aba do SILOMS não acessível. Confirme que está logado.' });
+        return false;
+      }
+
+      if (!check.onListPage) {
+        await appendLog('📂 Navegando para Empenho → Solicitação de Empenho (Recebidas)…', 'info');
+        notifySidePanel({ type: 'LOG', msg: '📂 Abrindo menu Empenho…', level: 'info' });
+
+        const r1 = await execInPage(tabId, silomsClickMenuEmpenho);
+        if (!r1?.ok) {
+          await appendLog(`❌ ${r1?.error ?? 'Menu Empenho não encontrado'}`, 'error');
+          await setState({ state: 'paused' });
+          notifySidePanel({ type: 'PAUSED', error: r1?.error ?? 'Menu Empenho não encontrado' });
+          return false;
+        }
+
+        await delay(700);
+        const r2 = await execInPage(tabId, silomsClickSubmenu);
+        if (!r2?.ok) {
+          await appendLog(`❌ ${r2?.error ?? 'Submenu não encontrado'}`, 'error');
+          await setState({ state: 'paused' });
+          notifySidePanel({ type: 'PAUSED', error: r2?.error ?? 'Submenu não encontrado' });
+          return false;
+        }
+
+        await appendLog('⏳ Aguardando página de solicitações…', 'info');
+        try { await waitForNavigation(tabId, 30000); } catch { await delay(3000); }
+        await delay(800);
+      } else {
+        await appendLog('✅ Já está na página de solicitações.', 'info');
+      }
+
+      await setState({ coletaPhase: 'filtrar' });
+      return true;
+    }
+
+    case 'filtrar': {
+      await appendLog('🔎 Filtrando por "Assinada OD UGCred" e buscando…', 'info');
+      notifySidePanel({ type: 'LOG', msg: '🔎 Aplicando filtro e buscando…', level: 'info' });
+
+      const r = await execInPage(tabId, silomsSetFiltroEBuscar);
+      if (!r?.ok) {
+        await appendLog(`❌ ${r?.error ?? 'Erro ao filtrar'}`, 'error');
+        await setState({ state: 'paused' });
+        notifySidePanel({ type: 'PAUSED', error: r?.error ?? 'Erro ao filtrar' });
+        return false;
+      }
+
+      await appendLog('⏳ Aguardando resultados…', 'info');
+      try { await waitForNavigation(tabId, 30000); } catch { await delay(3000); }
+      await delay(800);
+      await setState({ coletaPhase: 'lista' });
+      return true;
+    }
+
+    case 'lista': {
+      await appendLog('📋 Lendo lista de solicitações…', 'info');
+      notifySidePanel({ type: 'LOG', msg: '📋 Lendo lista de solicitações…', level: 'info' });
+
+      const r = await execInPage(tabId, silomsParseListaSolicitacoes);
+      if (!r?.ok) {
+        await appendLog('❌ Erro ao ler lista', 'error');
+        await setState({ state: 'paused' });
+        notifySidePanel({ type: 'PAUSED', error: 'Erro ao ler lista de solicitações' });
+        return false;
+      }
+
+      if (r.count === 0) {
+        await appendLog('ℹ Nenhuma solicitação "Assinada OD UGCred" encontrada.', 'warn');
+        await setState({ state: 'done', coletaPhase: 'done', solDetalhes: [] });
+        notifySidePanel({ type: 'COLETA_DONE', solicitacoes: [], mode: s.mode });
+        return false;
+      }
+
+      await appendLog(`✅ ${r.count} solicitações encontradas. Iniciando coleta de detalhes…`, 'info');
+      notifySidePanel({ type: 'LOG', msg: `✅ ${r.count} solicitação(ões) encontrada(s)`, level: 'success' });
+      notifySidePanel({ type: 'COLETA_TOTAL', total: r.count });
+
+      await setState({
+        coletaPhase: 'detalhe',
+        coletaIndex: 0,
+        coletaTotal: r.count,
+        solicitacoes: r.solicitacoes,
+        solDetalhes: [],
+      });
+      return true;
+    }
+
+    case 'detalhe': {
+      const { solicitacoes: sols, coletaIndex: idx, solDetalhes: detalhes } = s;
+
+      if (idx >= sols.length) {
+        // Todas coletadas
+        await appendLog(`🎉 Coleta concluída! ${detalhes.length} solicitação(ões) prontas para empenho.`, 'success');
+        await setState({ state: 'checkpoint', coletaPhase: 'done' });
+        notifySidePanel({
+          type: 'COLETA_DONE',
+          solicitacoes: detalhes,
+          mode: s.mode,
+        });
+        return false;
+      }
+
+      const current = sols[idx];
+      await appendLog(`📄 [${idx + 1}/${sols.length}] Abrindo solicitação ${current.numero}…`, 'info');
+      notifySidePanel({
+        type: 'COLETA_PROGRESS',
+        current: idx + 1,
+        total:   sols.length,
+        numero:  current.numero,
+      });
+
+      // Abre a solicitação
+      const r1 = await execInPage(tabId, silomsAbrirSolicitacao, [current.numero]);
+      if (!r1?.ok) {
+        await appendLog(`⚠ ${r1?.error ?? 'Não encontrou link'} — pulando.`, 'warn');
+        await setState({ coletaIndex: idx + 1 });
+        return true;
+      }
+
+      try { await waitForNavigation(tabId, 20000); } catch { await delay(2000); }
+      await delay(600);
+
+      // Extrai dados do documento
+      const doc = await execInPage(tabId, silomsExtrairDocumento);
+      const detalhe = doc?.ok
+        ? { ...current, ...doc }
+        : { ...current, ok: false, error: doc?.error ?? 'Falha ao extrair' };
+
+      await appendLog(
+        doc?.ok
+          ? `  ✓ ${current.numero} — ${doc.fornecedorNome} — R$ ${doc.total}`
+          : `  ⚠ ${current.numero} — erro ao extrair: ${doc?.error}`,
+        doc?.ok ? 'success' : 'warn'
+      );
+
+      // Volta para a lista
+      await execInPage(tabId, silomsVoltar);
+      try { await waitForNavigation(tabId, 20000); } catch { await delay(2000); }
+      await delay(600);
+
+      await setState({
+        coletaIndex: idx + 1,
+        solDetalhes: [...detalhes, detalhe],
+      });
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
+// ── Fluxo EMPENHO-CNET (8 etapas — existente) ─────────────────────────────────
+
+async function runEmpenhoStep(s) {
+  const { step, payload, cnetTabId: tabId, dryRun } = s;
+  await appendLog(`━ Iniciando Etapa ${step}`, 'info');
+  notifySidePanel({ type: 'STEP', step });
+
+  try {
+    let result;
+    switch (step) {
+      case 0: result = await runStep0(tabId, payload); break;
+      case 1: result = await runStep1(tabId, payload); break;
+      case 2: result = await runStep2(tabId, payload); break;
+      case 3: result = await runStep3(tabId, payload); break;
+      case 4: result = await runStep4(tabId, payload); break;
+      case 5: result = await runStep5(tabId, payload); break;
+      case 6: result = await runStep6(tabId, payload); break;
+      case 7: result = await runStepStub(tabId, step); break;
+      case 8: result = await runStep8Checkpoint(tabId, payload, dryRun); break;
+      default:
+        await setState({ state: 'done' });
+        notifySidePanel({ type: 'DONE' });
+        return false;
+    }
+
+    if (!result.ok) {
+      await appendLog(`❌ Etapa ${step}: ${result.error}`, 'error');
+      await setState({ state: 'paused' });
+      notifySidePanel({ type: 'PAUSED', error: result.error, step });
+      return false;
+    }
+
+    if (result.checkpoint) {
+      await setState({ state: 'checkpoint', step: 8 });
+      notifySidePanel({ type: 'CHECKPOINT', step: 8, summary: result.summary });
+      return false;
+    }
+
+    await appendLog(`✅ Etapa ${step} concluída`, 'info');
+
+    if (step === 8) {
+      notifySidePanel({ type: 'DONE', ne: result.ne });
+      const fresh = await getState();
+      if (fresh.queue?.length > 0) {
+        const [next, ...rest] = fresh.queue;
+        await appendLog(`▶ Iniciando próximo da fila: ${next.numeroSolicitacao}…`, 'info');
+        await setState({
+          state: 'running', flow: 'empenho-cnet',
+          step: 1, payload: next, queue: rest,
+        });
+        notifySidePanel({ type: 'NEXT_AVAILABLE', numero: next.numeroSolicitacao });
+        return true; // continua o loop da máquina de estados com o próximo item
+      } else {
+        await setState({ state: 'done' });
+        return false;
+      }
+    }
+
+    await setState({ step: step + 1 });
+
+    if (step === 0) {
+      // Após step 0 (navegação para buscacompra), aguarda select2 e jQuery inicializarem
+      await delay(1500);
+    } else if (step > 0 && step < 8) {
+      await appendLog('⏳ Aguardando carregamento da próxima etapa…', 'info');
+      try { await waitForNavigation(tabId, 25000); await delay(800); } catch {}
+
+      // Verifica modal de arredondamento (aparece após Etapa 5 em alguns casos)
+      const rounding = await handleRoundingModal(tabId);
+      if (rounding?.handled) {
+        await appendLog(`⚠ Arredondamento detectado — selecionado "para menos" (${rounding.count} item(ns))`, 'warn');
+        notifySidePanel({ type: 'LOG', msg: `⚠ Arredondamento → "para menos" selecionado. Reforço irrisório será necessário.`, level: 'warn' });
+        await setState({ valorEmpenhado: rounding.totalEmpenhado || null });
+        try { await waitForNavigation(tabId, 20000); await delay(800); } catch {}
+      }
+    }
+
+    return true;
+
+  } catch (err) {
+    await appendLog(`❌ Exceção na Etapa ${step}: ${err.message}`, 'error');
+    await setState({ state: 'paused' });
+    notifySidePanel({ type: 'PAUSED', error: err.message, step });
+    return false;
+  }
+}
+
+// ── Implementações de etapas CNET ─────────────────────────────────────────────
+
+async function runStep0(tabId, payload) {
+  // buscacompra É a Etapa 1 — step 0 só precisa navegar até ela
+  const pageUrl = await execInPage(tabId, () => window.location.href);
+  const onBusca = (pageUrl ?? '').includes('buscacompra');
+
+  if (onBusca) {
+    await appendLog('[Pré] Já está no formulário de empenho (buscacompra).', 'info');
+    return { ok: true };
+  }
+
+  await appendLog('[Pré] Clicando "Adicionar Minuta de Empenho"…', 'info');
+  notifySidePanel({ type: 'LOG', msg: '[Pré] Abrindo formulário de empenho…', level: 'info' });
+  const r = await execInPage(tabId, step0ClickAdicionarMinuta);
+  if (!r?.ok) return { ok: false, error: r?.error ?? 'Botão "Adicionar Minuta" não encontrado' };
+
+  await appendLog('[Pré] Aguardando formulário (Etapa 1)…', 'info');
+  try { await waitForNavigation(tabId, 25000); } catch { await delay(3000); }
+  await delay(800);
+
+  return { ok: true };
+}
+
+async function runStep1(tabId, payload) {
+  await appendLog('[Etapa 1] Preenchendo Contrato/Compra…', 'info');
+  notifySidePanel({ type: 'LOG', msg: `[Etapa 1] Buscando contrato ${payload.contrato ?? '—'} via select2…`, level: 'info' });
+
+  const result = await execInPage(tabId, step1Runner, [payload]);
+  if (!result) return { ok: false, error: 'Script não retornou — aba pode ter recarregado ou sessão expirou' };
+  if (result.ok) {
+    await appendLog('[Etapa 1] Preenchido ✓', 'info');
+    notifySidePanel({ type: 'LOG', msg: '[Etapa 1] Contrato selecionado ✓', level: 'success' });
+  }
+  return result;
+}
+
+async function runStep2(tabId, payload) {
+  await appendLog('[Etapa 2] Selecionando fornecedor…', 'info');
+  notifySidePanel({ type: 'LOG', msg: '[Etapa 2] Selecionando fornecedor…', level: 'info' });
+
+  // Verifica se a navegação chegou na página correta
+  const pageUrl = await execInPage(tabId, () => window.location.href);
+  if (!(pageUrl ?? '').includes('/empenho/fornecedor')) {
+    return {
+      ok: false,
+      error: `Etapa 1 não concluída — CNET está em "${pageUrl ?? '?'}". Verifique: (1) contrato "${payload.contrato}" existe no CNET com saldo, (2) sessão não expirou, (3) há minutas anteriores abertas para o mesmo contrato.`,
+    };
+  }
+
+  const cnpjRaw = (payload.fornecedorCnpj ?? '').replace(/\D/g, '');
+
+  const result = await execInPage(tabId, (cnpj) => {
+    // Todos os botões "Selecionar este fornecedor" (attr selecionar ou title)
+    const btns = Array.from(document.querySelectorAll(
+      'a[selecionar], a[title*="Selecionar"], a[href*="/empenho/item/"]'
+    ));
+    if (!btns.length) {
+      const debug = Array.from(document.querySelectorAll('a.btn')).map(a => `"${a.title}"[${a.href}]`).join(' | ');
+      return { ok: false, error: `Nenhum botão de seleção encontrado. Links: ${debug}` };
+    }
+
+    // Localiza a linha do CNPJ correto
+    let target = null;
+    if (cnpj) {
+      for (const btn of btns) {
+        const row = btn.closest('tr');
+        const rowText = (row?.textContent ?? '').replace(/\D/g, '');
+        if (rowText.includes(cnpj)) { target = btn; break; }
+      }
+    }
+    if (!target) target = btns[0]; // fallback: primeiro
+
+    // Navega diretamente pelo href (evita problema com event handlers do CNET)
+    if (target.href) {
+      window.location.href = target.href;
+      return { ok: true, href: target.href };
+    }
+    target.click();
+    return { ok: true };
+  }, [cnpjRaw]);
+
+  if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 2' };
+  await appendLog(`[Etapa 2] Navegando para ${result.href ?? 'item'}…`, 'info');
+  return { ok: true };
+}
+
+async function runStep3(tabId, payload) {
+  const itensEmpenho = payload.itensEmpenho ?? [];
+  await appendLog('[Etapa 3] Aguardando carregamento dos itens (AJAX)…', 'info');
+  notifySidePanel({ type: 'LOG', msg: '[Etapa 3] Aguardando itens carregarem…', level: 'info' });
+
+  const result = await execInPage(tabId, async (itens) => {
+    // Itens carregam via AJAX (DataTable) — aguarda até 20s
+    const checkboxes = await new Promise(res => {
+      let elapsed = 0;
+      const tick = setInterval(() => {
+        elapsed += 500;
+        const cbs = Array.from(document.querySelectorAll('input[name*="contrato_item_id"]'));
+        if (cbs.length > 0 || elapsed >= 20000) { clearInterval(tick); res(cbs); }
+      }, 500);
+    });
+
+    if (!checkboxes.length) {
+      const empty = document.querySelector('.dataTables_empty, td.dataTables_empty');
+      if (empty) return { ok: false, error: 'Nenhum item disponível (sem saldo ou vigência expirada)' };
+      return { ok: false, error: 'Itens não carregaram em 20s — verifique a página manualmente' };
+    }
+
+    if (itens.length > 0) {
+      let selecionados = 0;
+      for (const it of itens) {
+        const numStr = String(it.numeroItem ?? '').replace(/^0+/, '') || '';
+        for (const cb of checkboxes) {
+          const row = cb.closest('tr');
+          const rowText = row?.textContent ?? '';
+          if (rowText.match(new RegExp(`\\b0*${numStr}\\b`))) {
+            if (!cb.checked) cb.click();
+            selecionados++;
+            break;
+          }
+        }
+      }
+      if (!selecionados) {
+        // Numeração não bateu → seleciona todos
+        const all = document.getElementById('selectAll');
+        if (all && !all.checked) all.click();
+        else checkboxes.forEach(cb => { if (!cb.checked) cb.click(); });
+      }
+    } else {
+      const all = document.getElementById('selectAll');
+      if (all && !all.checked) all.click();
+      else checkboxes.forEach(cb => { if (!cb.checked) cb.click(); });
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+
+    const btn =
+      document.querySelector('button.submeter') ||
+      document.querySelector('button.btn-success') ||
+      Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
+    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 3' };
+    btn.click();
+    return { ok: true };
+  }, [itensEmpenho]);
+
+  if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 3' };
+  await appendLog('[Etapa 3] Itens selecionados ✓', 'info');
+  return { ok: true };
+}
+
+async function runStep4(tabId, payload) {
+  await appendLog('[Etapa 4] Buscando linha de crédito orçamentário…', 'info');
+  notifySidePanel({ type: 'LOG', msg: '[Etapa 4] Selecionando crédito…', level: 'info' });
+
+  const result = await execInPage(tabId, async (p) => {
+    // Aguarda DataTable carregar (AJAX — até 15s)
+    const rows = await new Promise(res => {
+      let elapsed = 0;
+      const tick = setInterval(() => {
+        elapsed += 500;
+        const r = Array.from(document.querySelectorAll('table tbody tr[role="row"]'));
+        if (r.length > 0 || elapsed >= 15000) { clearInterval(tick); res(r); }
+      }, 500);
+    });
+
+    const pi    = (p.pi    ?? '').trim().toUpperCase();
+    const ptres = (p.ptres ?? '').trim();
+    const fonte = (p.fonte ?? '').trim().replace(/\D/g, '');
+
+    // Busca linha compatível: PI (mais específico) ou PTRES+Fonte
+    let targetRadio = null;
+    for (const row of rows) {
+      const cells = Array.from(row.querySelectorAll('td'));
+      if (cells.length < 7) continue;
+      // col 0=Selecione, 1=Esfera, 2=PTRS, 3=Fonte, 4=ND, 5=UGR, 6=Plano Interno
+      const rowPtres = cells[2]?.textContent?.trim() ?? '';
+      const rowFonte = (cells[3]?.textContent?.trim() ?? '').replace(/\D/g, '');
+      const rowPi    = cells[6]?.textContent?.trim().toUpperCase() ?? '';
+
+      if ((pi && rowPi.includes(pi)) || (ptres && rowPtres.includes(ptres) && fonte && rowFonte.includes(fonte))) {
+        targetRadio = cells[0]?.querySelector('input[type="radio"]');
+        break;
+      }
+    }
+
+    if (targetRadio) {
+      targetRadio.click();
+      await new Promise(r => setTimeout(r, 300));
+    } else {
+      // Não encontrou → abre modal "Inserir Célula Orçamentária"
+      const btnModal = document.querySelector('button[data-target="#inserir_celular_orcamentaria"]');
+      if (!btnModal) return { ok: false, error: 'Botão "Inserir Célula Orçamentária" não encontrado' };
+      btnModal.click();
+      await new Promise(r => setTimeout(r, 700));
+
+      function fillF(id, val) {
+        const el = document.getElementById(id);
+        if (!el || val == null || val === '') return;
+        el.focus();
+        el.value = String(val);
+        el.dispatchEvent(new Event('input',  { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+
+      // Esfera: lê da primeira linha existente, fallback '1' (Esfera Fiscal)
+      const esfera = rows[0]?.querySelectorAll('td')[1]?.textContent?.trim() ?? '1';
+      fillF('esfera',           esfera);
+      fillF('ptrs',             p.ptres);
+      fillF('fonte',            p.fonte);
+      fillF('natureza_despesa', p.nd);
+      fillF('urg',              p.ugCred); // id no CNET é "urg" (typo; name="ugr")
+      fillF('plano_interno',    p.pi);
+
+      await new Promise(r => setTimeout(r, 400));
+
+      const btnSalvar = document.getElementById('btn_inserir');
+      if (!btnSalvar) return { ok: false, error: 'Botão "Salvar" do modal não encontrado' };
+      btnSalvar.click();
+
+      // Aguarda modal fechar e nova linha aparecer (AJAX)
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Seleciona nova linha por PI ou última linha da tabela
+      const newRows = Array.from(document.querySelectorAll('table tbody tr[role="row"]'));
+      let newRadio = null;
+      if (pi) {
+        for (const row of newRows) {
+          const cells = Array.from(row.querySelectorAll('td'));
+          if ((cells[6]?.textContent?.trim().toUpperCase() ?? '').includes(pi)) {
+            newRadio = cells[0]?.querySelector('input[type="radio"]');
+            break;
+          }
+        }
+      }
+      if (!newRadio && newRows.length > 0) {
+        const lastCells = Array.from(newRows[newRows.length - 1].querySelectorAll('td'));
+        newRadio = lastCells[0]?.querySelector('input[type="radio"]');
+      }
+      if (newRadio) { newRadio.click(); await new Promise(r => setTimeout(r, 300)); }
+    }
+
+    // Clica "Próxima Etapa" (ignora botões dentro do modal)
+    const btn =
+      document.querySelector('button.submeter') ||
+      Array.from(document.querySelectorAll('button')).find(b =>
+        !b.closest('#inserir_celular_orcamentaria') && b.textContent?.trim().includes('Próxima')
+      );
+    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 4' };
+    btn.click();
+    return { ok: true };
+  }, [payload]);
+
+  if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 4' };
+  await appendLog('[Etapa 4] Crédito selecionado ✓', 'info');
+  return { ok: true };
+}
+
+async function runStep5(tabId, payload) {
+  await appendLog('[Etapa 5] Preenchendo subelemento e valores…', 'info');
+  notifySidePanel({ type: 'LOG', msg: '[Etapa 5] Preenchendo subelemento e valores…', level: 'info' });
+
+  const result = await execInPage(tabId, async (p) => {
+    // Aguarda DataTable carregar (AJAX — até 15s)
+    const rows = await new Promise(res => {
+      let elapsed = 0;
+      const tick = setInterval(() => {
+        elapsed += 500;
+        const r = Array.from(document.querySelectorAll('table tbody tr[role="row"]'));
+        if (r.length > 0 || elapsed >= 15000) { clearInterval(tick); res(r); }
+      }, 500);
+    });
+
+    if (!rows.length) return { ok: false, error: 'Nenhum item carregado na Etapa 5' };
+
+    const $ = window.jQuery || window.$;
+    const itensEmp = p.itensEmpenho ?? [];
+    // Subelemento: garante 2 dígitos ("91" → "91", "7" → "07")
+    const subCod = String(p.subelemento ?? '').padStart(2, '0');
+
+    for (const row of rows) {
+      const numInput = row.querySelector('input[name="numero_item[]"]');
+      const numStr   = String(parseInt(numInput?.value ?? '0', 10)); // "1", "2"
+      const cid      = row.querySelector('input[name="contrato_item_id[]"]')?.value ?? '';
+      if (!cid) continue;
+
+      // 1. Subelemento — só altera se não for o default "00"
+      if (subCod && subCod !== '00' && $) {
+        const sel = document.getElementById(`subitem-${cid}`);
+        if (sel) {
+          for (const opt of sel.options) {
+            if (opt.text.trimStart().startsWith(subCod + ' -')) {
+              $(sel).val(opt.value).trigger('change');
+              break;
+            }
+          }
+        }
+      }
+
+      // 2. Valor total a empenhar
+      const vrInput = document.getElementById(`vrtotal${cid}`);
+      if (vrInput) {
+        // Busca itensEmpenho pelo N.Item
+        const empItem = itensEmp.find(it => String(parseInt(it.numeroItem ?? '', 10)) === numStr);
+        let valor = empItem?.valor ?? '';
+        if (!valor) {
+          valor = document.getElementById(`valor_total_item${cid}`)?.value ?? '';
+        }
+        if (valor) {
+          // toBRDecimal: converte para formato CNET (vírgula decimal, sem ponto de milhar)
+          // "177.676,20" → "177676,20"  |  "177676.20" → "177676,20"
+          const valorBR = String(valor).includes(',')
+            ? String(valor).replace(/\./g, '')       // já tem vírgula decimal: remove pontos de milhar
+            : String(valor).replace('.', ',');        // só tem ponto decimal: converte para vírgula
+
+          vrInput.focus();
+          vrInput.value = valorBR;
+          vrInput.dispatchEvent(new Event('input',  { bubbles: true }));
+          vrInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+          vrInput.dispatchEvent(new Event('change', { bubbles: true }));
+          vrInput.blur();
+          // Chama calculaQuantidade diretamente (evento sintético é ignorado pelo CNET)
+          if (typeof window.calculaQuantidade === 'function') window.calculaQuantidade(vrInput);
+          await new Promise(r => setTimeout(r, 400));
+
+          // Fallback: se calculaQuantidade não preencheu o campo de quantidade, preenche manualmente
+          const qtdInput = document.getElementById(`qtditem${cid}`);
+          if (qtdInput && !qtdInput.value) {
+            // Lê valor_unitario das células da row (ex: "0.9000")
+            let unitPrice = 0;
+            for (const c of Array.from(row.querySelectorAll('td'))) {
+              const t = c.textContent.trim().replace(/\s/g, '');
+              if (/^\d+[,.]?\d+$/.test(t)) {
+                const n = parseFloat(t.replace(',', '.'));
+                if (n > 0 && n < 100000) unitPrice = n;
+              }
+            }
+            const valorNum = parseFloat(valorBR.replace(',', '.'));
+            if (unitPrice > 0 && valorNum > 0) {
+              const qtdBR = (valorNum / unitPrice).toFixed(4).replace('.', ',');
+              qtdInput.focus();
+              qtdInput.value = qtdBR;
+              qtdInput.dispatchEvent(new Event('input',  { bubbles: true }));
+              qtdInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+              qtdInput.dispatchEvent(new Event('change', { bubbles: true }));
+              qtdInput.blur();
+              if (typeof window.calculaVrTotal === 'function') window.calculaVrTotal(qtdInput);
+              await new Promise(r => setTimeout(r, 300));
+            }
+          }
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    await new Promise(r => setTimeout(r, 600));
+
+    const btn =
+      document.querySelector('button.submeter') ||
+      Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
+    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 5' };
+    btn.click();
+    return { ok: true };
+  }, [payload]);
+
+  if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 5' };
+  await appendLog('[Etapa 5] Subelemento e valores preenchidos ✓', 'info');
+  return { ok: true };
+}
+
+async function runStep6(tabId, payload) {
+  await appendLog('[Etapa 6] Preenchendo dados do empenho…', 'info');
+  notifySidePanel({ type: 'LOG', msg: '[Etapa 6] Preenchendo dados…', level: 'info' });
+
+  const result = await execInPage(tabId, async (p) => {
+    function fillInput(name, value) {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (!el || value == null || value === '') return;
+      el.focus();
+      el.value = String(value);
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur',   { bubbles: true })); // onblur="maiuscula(this)"
+    }
+
+    function setSelect2Array(id, value) {
+      const $ = window.jQuery || window.$;
+      const sel = document.getElementById(id);
+      if (!sel || !$) return;
+      $(sel).val(String(value)).trigger('change');
+    }
+
+    // Data de emissão: hoje no formato YYYY-MM-DD
+    const hoje = new Date().toISOString().split('T')[0];
+    fillInput('data_emissao', hoje);
+
+    // Tipo Empenho: Ordinário (234) — padrão para contratos
+    setSelect2Array('tipo_empenho_id', '234');
+    await new Promise(r => setTimeout(r, 200));
+
+    // Número Processo (PAG da solicitação, maxlength=20)
+    if (p.pag) fillInput('processo', p.pag.slice(0, 20));
+
+    // Local de Entrega
+    if (p.localEntrega) fillInput('local_entrega', p.localEntrega);
+
+    // Descrição / Observação (textarea)
+    if (p.obs) fillInput('descricao', p.obs);
+
+    await new Promise(r => setTimeout(r, 400));
+
+    const btn =
+      document.querySelector('button.submeter') ||
+      Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
+    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 6' };
+    btn.click();
+    return { ok: true };
+  }, [payload]);
+
+  if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 6' };
+  await appendLog('[Etapa 6] Dados preenchidos ✓', 'info');
+  return { ok: true };
+}
+
+// Detecta e trata o modal "Diferença de arredondamento identificada"
+// Seleciona sempre a opção "para menos" (primeiro radio de cada item) e clica "Avançar e ajustar depois"
+async function handleRoundingModal(tabId) {
+  return execInPage(tabId, () => {
+    const bodyText = document.body?.textContent ?? '';
+    if (!bodyText.toLowerCase().includes('arredondamento')) return { handled: false };
+
+    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+    if (!radios.length) return { handled: false };
+
+    // Agrupa radios por name; seleciona o PRIMEIRO de cada grupo (valor menor = "para menos")
+    const seenGroups = new Set();
+    const selectedValues = [];
+
+    for (const r of radios) {
+      const key = r.name || ('g_' + r.closest('div, li, p')?.dataset?.item ?? r.id);
+      if (seenGroups.has(key)) continue;
+      seenGroups.add(key);
+      r.checked = true;
+      r.click();
+      // Extrai o valor R$ do label desta opção
+      const label = r.closest('label') ?? r.parentElement;
+      const m = /R\$\s*([\d.,]+)/.exec(label?.textContent ?? '');
+      if (m) selectedValues.push(parseFloat(m[1].replace(/\./g, '').replace(',', '.')) || 0);
+    }
+
+    const totalEmpenhado = selectedValues.reduce((s, v) => s + v, 0);
+
+    const btnAvancar = Array.from(document.querySelectorAll('button, a.btn'))
+      .find(b => /avan[cç]ar/i.test(b.textContent ?? ''));
+    if (btnAvancar) btnAvancar.click();
+
+    return { handled: true, totalEmpenhado, count: selectedValues.length };
+  });
+}
+
+async function runStepStub(tabId, step) {
+  await appendLog(`[Etapa ${step}] ⚠ HTML pendente — pausando`, 'warn');
+  return {
+    ok: false,
+    error: `Etapa ${step} ainda não implementada. Compartilhe o HTML desta etapa para adicionar os seletores.`,
+  };
+}
+
+async function runStep8Checkpoint(tabId, payload, dryRun) {
+  await appendLog('[Etapa 8] ⚠ CHECKPOINT — aguardando confirmação humana', 'warn');
+  if (dryRun) {
+    await appendLog('[DRY-RUN] Simulação completa. Emissão NÃO foi efetuada.', 'warn');
+    return { ok: true, ne: 'DRY-RUN', summary: { dryRun: true } };
+  }
+  const summary = await execInPage(tabId, () => ({ url: window.location.href }), []);
+  return { ok: true, checkpoint: true, summary: { ...summary, payload } };
+}
+
+async function runStep8Confirm(tabId, payload) {
+  await appendLog('[Etapa 8] Usuário confirmou — emitindo empenho…', 'info');
+  const result = await execInPage(tabId, () => {
+    const btn = document.querySelector('button[id*="emitir"], button.btn-success:not(.submeter)');
+    if (!btn) return { ok: false, error: 'Botão Emitir não encontrado — selecione manualmente' };
+    btn.click();
+    return { ok: true };
+  }, []);
+
+  if (!result?.ok) {
+    await appendLog(`❌ Falha ao emitir: ${result?.error}`, 'error');
+    await setState({ state: 'error' });
+    notifySidePanel({ type: 'ERROR', message: result?.error });
+    return;
+  }
+
+  await appendLog('🎉 Empenho emitido! Aguardando número…', 'info');
+  await delay(3000);
+
+  const ne = await execInPage(tabId, () => {
+    const el = document.querySelector('[class*="numero-ne"], [id*="ne"], .alert-success, .numero_empenho');
+    // Tenta extrair padrão NE (ex: 2026NE000123)
+    const text = document.body?.textContent ?? '';
+    const m = /\b(\d{4}NE\d{6,})\b/.exec(text);
+    return m?.[1] ?? el?.textContent?.trim() ?? null;
+  }, []);
+
+  // Valor solicitado: soma dos itensEmpenho ou total do payload
+  const itensEmp = payload.itensEmpenho ?? [];
+  const valorSolicitado = itensEmp.length > 0
+    ? itensEmp.reduce((s, it) => s + (parseFloat(String(it.valor).replace(',', '.')) || 0), 0)
+    : parseFloat((payload.total ?? '0').replace(/\./g, '').replace(',', '.')) || 0;
+
+  // Valor empenhado: pode ter sido ajustado pelo modal de arredondamento
+  const s = await getState();
+  const valorEmpenhado = s.valorEmpenhado ?? valorSolicitado;
+  const diff = Math.abs(valorSolicitado - valorEmpenhado);
+
+  await appendLog(
+    `✅ NE: ${ne ?? '(verificar manualmente)'} | Empenhado: R$ ${valorEmpenhado.toFixed(2)} | Solicitado: R$ ${valorSolicitado.toFixed(2)}${diff > 0.005 ? ` | ⚠ Diferença: R$ ${diff.toFixed(2)}` : ''}`,
+    'info'
+  );
+  await setState({ state: 'done' });
+  notifySidePanel({ type: 'DONE', ne, payload, valorEmpenhado, valorSolicitado });
+}
+
+// ── Comunicação com Side Panel ────────────────────────────────────────────────
+
+let sidePanelPort = null;
+
+export function setSidePanelPort(port) { sidePanelPort = port; }
+
+function notifySidePanel(msg) {
+  if (sidePanelPort) {
+    try { sidePanelPort.postMessage(msg); } catch { sidePanelPort = null; }
+  }
+}
