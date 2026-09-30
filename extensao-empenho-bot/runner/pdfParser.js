@@ -173,9 +173,26 @@ export function parseSolicitacaoEmpenho(text) {
     })();
 
     // ── Crédito ─────────────────────────────────────────────────────────────────
+    // Campos preenchidos por dedução (não lidos direto do rótulo) — a revisão
+    // marca esses com ⚠ para o usuário conferir.
+    const deduzidos = {};
+
     const ugCred = (() => {
-      const m = /UG\s+Cred\s+(\d+)/.exec(t);
-      return m?.[1] ?? '';
+      const m = /UG\s*Cred\.?\s*:?\s*(\d{6})\b/i.exec(t);
+      if (m) return m[1];
+      const rotulo = /UG\s*Cred/i.exec(t);
+      if (!rotulo) return '';
+      // A extração do PDF pode separar rótulo e número em linhas distintas (e em
+      // qualquer ordem). UGs do Comando da Aeronáutica são 12xxxx: pega a isolada
+      // mais próxima do rótulo, ignorando pedaços de CNPJ, PAG, códigos e valores.
+      const re = /(?<![\w.\/])(12\d{4})(?![\w\/.,-])/g;
+      let melhor = '', dist = Infinity, c;
+      while ((c = re.exec(t))) {
+        const d = Math.abs(c.index - rotulo.index);
+        if (d < dist) { dist = d; melhor = c[1]; }
+      }
+      if (melhor) deduzidos.ugCred = true;
+      return melhor;
     })();
 
     const codemp = (() => {
@@ -210,8 +227,10 @@ export function parseSolicitacaoEmpenho(text) {
     })();
 
     // ── Total ───────────────────────────────────────────────────────────────────
-    const total = (() => {
-      const m = /TOTAL:\s*([\d.,]+)/.exec(t);
+    // Exige formato monetário (11.020,0000): se o valor cair em outra linha, o
+    // rótulo sozinho pegaria o primeiro número da linha seguinte (ex: a UG).
+    const totalLido = (() => {
+      const m = /TOTAL:\s*(\d{1,3}(?:\.\d{3})*,\d{2,4})\b/.exec(t);
       return m?.[1] ?? '';
     })();
 
@@ -253,8 +272,19 @@ export function parseSolicitacaoEmpenho(text) {
       }
     }
 
+    // Sem TOTAL legível, soma os itens da tabela
+    const total = (() => {
+      if (totalLido) return totalLido;
+      const soma = itens.reduce((acc, it) =>
+        acc + (parseFloat(String(it.valorTotal ?? '').replace(/\./g, '').replace(',', '.')) || 0), 0);
+      if (!soma) return '';
+      deduzidos.total = true;
+      return soma.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    })();
+
     return {
       ok: true,
+      _deduzidos: deduzidos,
       localEntrega,
       solicitacao,
       data,

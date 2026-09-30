@@ -87,9 +87,19 @@ let uploadDest    = null;   // destino escolhido no menu: 'siloms' | 'contratosg
 let solicitacoesParsed = []; // [ { ok, solicitacao, fornecedorNome, ... } ] — review queue
 
 // Unidade da compra (UASG) usada no fluxo "Compra" do Contratos.gov.br.
-// Começa em 120630 e passa a ser a última informada pelo usuário na revisão.
-const UNIDADE_COMPRA_KEY = 'empenho_unidade_compra';
-let unidadeCompraPadrao = '120630';
+// Vem da OM do perfil; só estão aqui códigos confirmados — para as demais o
+// usuário informa na revisão e o valor fica salvo para aquela OM.
+const UASG_POR_UNIDADE = {
+  'GAP-MN': '120630',
+  'GAP-BR': '120006',
+};
+const UNIDADE_COMPRA_KEY = 'empenho_unidade_compra_por_om';
+let unidadesCompraSalvas = {}; // { 'GAP-XX': '1200NN' } informadas pelo usuário
+
+function unidadeCompraDoPerfil() {
+  const om = userProfile?.unidade ?? '';
+  return unidadesCompraSalvas[om] || UASG_POR_UNIDADE[om] || '';
+}
 
 // Modalidades de compra do Contratos.gov.br (o robô casa pelo código inicial)
 const MODALIDADES = [
@@ -118,7 +128,7 @@ async function init() {
 
   const data = await chrome.storage.local.get(['empenho_profile', UNIDADE_COMPRA_KEY]);
   userProfile = data.empenho_profile ?? null;
-  unidadeCompraPadrao = data[UNIDADE_COMPRA_KEY] || unidadeCompraPadrao;
+  unidadesCompraSalvas = data[UNIDADE_COMPRA_KEY] ?? {};
 
   if (!userProfile) {
     showScreen('profile');
@@ -340,7 +350,8 @@ async function processarArquivos(files) {
         parsed.tipoOrigem    = parsed.contrato ? 'contrato' : (parsed.licit ? 'compra' : 'contrato');
         parsed.numeroCompra  = parsed.licit ?? '';
         parsed.modalidade    = parsed.modalidadeSugerida ?? '';
-        parsed.unidadeCompra = unidadeCompraPadrao;
+        parsed.unidadeCompra = unidadeCompraDoPerfil();
+        if (parsed.modalidadeSugerida) (parsed._deduzidos ??= {}).modalidade = true;
 
         // Extrai itens empenho da OBS ("ITEM 1: 4891,66 - ITEM 2: 7333,06")
         // Prioridade: itens do PDF (tabela); fallback: OBS
@@ -471,6 +482,16 @@ function toggleReviewCard(idx) {
   if (toggle) toggle.textContent = open ? '▲ Ocultar campos' : '▼ Ver / editar campos';
 }
 
+const AVISOS_DEDUZIDOS = {
+  modalidade: 'Deduzida pelo número da compra — confira',
+  ugCred:     'Número não estava junto do rótulo "UG Cred" no PDF — confira',
+  total:      'TOTAL não legível no PDF; soma dos itens — confira',
+};
+function avisoDeduzido(sol, key) {
+  if (!sol._deduzidos?.[key]) return '';
+  return ` <span class="rf-aviso" style="color:#fbbf24" title="${escHtml(AVISOS_DEDUZIDOS[key] ?? 'Valor deduzido — confira')}">⚠</span>`;
+}
+
 function renderCamposEditable(sol, idx) {
   const campos = [
     ['Solicitação',    'solicitacao'],
@@ -514,10 +535,8 @@ function renderCamposEditable(sol, idx) {
     </select>`;
     }
     if (key === 'modalidade') {
-      const aviso = sol.modalidadeSugerida && sol.modalidade === sol.modalidadeSugerida
-        ? '<span style="color:#fbbf24" title="Deduzida pelo número da compra — confira"> ⚠</span>' : '';
       return `
-    <div class="rf-label"${attrGrupo}>${label}${aviso}</div>
+    <div class="rf-label"${attrGrupo}>${label}${avisoDeduzido(sol, key)}</div>
     <select class="rf-input" data-idx="${idx}" data-key="modalidade"${attrGrupo}>
       <option value="">Selecione…</option>
       ${MODALIDADES.map(m => `<option value="${escHtml(m)}"${m === sol.modalidade ? ' selected' : ''}>${escHtml(m)}</option>`).join('')}
@@ -534,10 +553,10 @@ function renderCamposEditable(sol, idx) {
       ? `<textarea class="rf-input" data-idx="${idx}" data-key="${key}"
                    rows="3" style="resize:vertical;line-height:1.3;">${val}</textarea>`
       : `<input class="rf-input" data-idx="${idx}" data-key="${key}"
-               value="${val}" title="${val}" />`;
+               value="${val}" title="${val}"${key === 'unidadeCompra' ? ' placeholder="UASG da compra (ex: 120630)"' : ''} />`;
     const inputGrupo = attrGrupo ? input.replace(/^(\s*<(?:input|textarea))/, `$1${attrGrupo}`) : input;
     return `
-    <div class="rf-label"${attrGrupo}>${label}</div>
+    <div class="rf-label"${attrGrupo}>${label}${avisoDeduzido(sol, key)}</div>
     ${inputGrupo}
     ${afterRow}`;
   }).join('');
@@ -609,10 +628,17 @@ function bindReviewInputs() {
           n.style.display = (n.dataset.grupo === 'compra') === compra ? '' : 'none';
         });
       }
-      // A unidade informada vira o padrão das próximas solicitações
-      if (key === 'unidadeCompra' && valor) {
-        unidadeCompraPadrao = valor;
-        chrome.storage.local.set({ [UNIDADE_COMPRA_KEY]: valor });
+      // Campo conferido pelo usuário deixa de ser "deduzido"
+      if (solicitacoesParsed[idx]?._deduzidos?.[key]) {
+        delete solicitacoesParsed[idx]._deduzidos[key];
+        inp.closest('.rf-grid')?.querySelectorAll('.rf-label').forEach(l => {
+          if (l.nextElementSibling === inp) l.querySelector('.rf-aviso')?.remove();
+        });
+      }
+      // A unidade informada vira o padrão da OM do perfil
+      if (key === 'unidadeCompra' && valor && userProfile?.unidade) {
+        unidadesCompraSalvas[userProfile.unidade] = valor;
+        chrome.storage.local.set({ [UNIDADE_COMPRA_KEY]: unidadesCompraSalvas });
       }
     });
   });
@@ -741,7 +767,7 @@ function solToPayload(sol) {
     tipoOrigem:        sol.tipoOrigem ?? (sol.contrato ? 'contrato' : 'compra'),
     numeroCompra:      sol.numeroCompra ?? '',
     modalidade:        sol.modalidade ?? '',
-    unidadeCompra:     sol.unidadeCompra || unidadeCompraPadrao,
+    unidadeCompra:     sol.unidadeCompra || unidadeCompraDoPerfil(),
     il:                sol.il,
     ugCred:            sol.ugCred,
     codemp:            sol.codemp,
