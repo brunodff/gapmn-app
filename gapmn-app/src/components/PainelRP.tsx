@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { fetchCSV, toRPNEs, SHEET_URLS, LinhaRPNE } from "../lib/gsheets";
 import { supabase } from "../lib/supabase";
+import MultiSelectPI from "./MultiSelectPI";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as ChartTooltip, ResponsiveContainer, Cell, Legend,
@@ -108,6 +109,7 @@ export default function PainelRP({ externalSheetsUrl }: { externalSheetsUrl?: st
   const [apenasComContrato, setApenasComContrato] = useState(false);
   const [apenasComSaldoALiquidar, setApenasComSaldoALiquidar] = useState(false);
   const [secaoFiltro,       setSecaoFiltro]       = useState("");
+  const [filtrosPi,         setFiltrosPi]         = useState<Set<string>>(new Set());
   const [pagMap,    setPagMap]    = useState<Map<string, string>>(new Map());
   const [objetoMap, setObjetoMap] = useState<Map<string, string>>(new Map());
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -160,7 +162,9 @@ export default function PainelRP({ externalSheetsUrl }: { externalSheetsUrl?: st
     [...new Set(dados.map(r => r.ugr_nome).filter(Boolean))].sort(),
   [dados]);
 
-  const filtrado = useMemo(() => {
+  // Linhas antes do filtro de PI. Serve de base para as opções do seletor, de
+  // modo que ele só ofereça PIs existentes na unidade/busca corrente.
+  const baseSemPi = useMemo(() => {
     let list = ugFiltro ? dados.filter(r => r.ugr_nome === ugFiltro) : dados;
     if (buscaNE.trim()) {
       const q = buscaNE.trim().toLowerCase();
@@ -172,6 +176,29 @@ export default function PainelRP({ externalSheetsUrl }: { externalSheetsUrl?: st
     }
     return list;
   }, [dados, ugFiltro, buscaNE]);
+
+  // Chaveado pelo código (coluna A); a descrição (coluna B) é só apoio visual.
+  const pisDisponiveis = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of baseSemPi) if (r.pi) m.set(r.pi, r.pi_desc || "");
+    return Array.from(m, ([codigo, desc]) => ({ codigo, desc }))
+      .sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true }));
+  }, [baseSemPi]);
+
+  // Ao trocar unidade/busca, descarta PIs escolhidos que deixaram de existir
+  useEffect(() => {
+    setFiltrosPi(prev => {
+      if (!prev.size) return prev;
+      const validos = new Set(pisDisponiveis.map(p => p.codigo));
+      const next = new Set(Array.from(prev).filter(c => validos.has(c)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [pisDisponiveis]);
+
+  const filtrado = useMemo(() => {
+    if (!filtrosPi.size) return baseSemPi;
+    return baseSemPi.filter(r => filtrosPi.has(r.pi));
+  }, [baseSemPi, filtrosPi]);
 
   const totalALiq      = useMemo(() => filtrado.reduce((s, r) => s + r.rp_nao_proc_a_liq,   0), [filtrado]);
   const totalNPLiqPag  = useMemo(() => filtrado.reduce((s, r) => s + r.rp_nao_proc_liq_pag, 0), [filtrado]);
@@ -297,6 +324,7 @@ export default function PainelRP({ externalSheetsUrl }: { externalSheetsUrl?: st
     if (ugFiltro)              filtros.push(`Unidade: ${ugFiltro}`);
     if (buscaNE.trim())        filtros.push(`Busca: "${buscaNE.trim()}"`);
     if (secaoFiltro)           filtros.push(`Seção: ${secaoFiltro}`);
+    if (filtrosPi.size)        filtros.push(`PI: ${Array.from(filtrosPi).sort().join(", ")}`);
     if (apenasComContrato)     filtros.push("Apenas com contrato");
     if (apenasComSaldoALiquidar) filtros.push("Apenas com saldo a liquidar");
 
@@ -478,9 +506,16 @@ export default function PainelRP({ externalSheetsUrl }: { externalSheetsUrl?: st
           ))}
         </select>
 
-        {(ugFiltro || buscaNE || secaoFiltro) && (
+        <MultiSelectPI
+          opcoes={pisDisponiveis}
+          selecionados={filtrosPi}
+          onChange={setFiltrosPi}
+          rotuloVazio={`Todos os PI (${pisDisponiveis.length})`}
+        />
+
+        {(ugFiltro || buscaNE || secaoFiltro || filtrosPi.size > 0) && (
           <button
-            onClick={() => { setUgFiltro(""); setBuscaNE(""); setSecaoFiltro(""); }}
+            onClick={() => { setUgFiltro(""); setBuscaNE(""); setSecaoFiltro(""); setFiltrosPi(new Set()); }}
             style={{ background: "transparent", border: `1px solid ${DK.dim}`, borderRadius: 10,
               color: DK.muted, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}
           >

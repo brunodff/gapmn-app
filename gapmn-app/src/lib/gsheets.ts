@@ -505,7 +505,8 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
 
 /** Linha de RP por Nota de Empenho (planilha gid=792698456) */
 export interface LinhaRPNE {
-  pi:          string;
+  pi:          string;   // col A — código do PI
+  pi_desc:     string;   // col B — descrição do PI
   ugr_code:    string;
   ugr_nome:    string;
   ne:          string;
@@ -538,6 +539,7 @@ export interface LinhaRPNE {
 export function toRPNEs(rows: string[][]): LinhaRPNE[] {
   const result: LinhaRPNE[] = [];
   let lastPi = "";
+  let lastPiDesc = "";
   let lastUgrCode = "";
   let lastUgrNome = "";
 
@@ -546,9 +548,11 @@ export function toRPNEs(rows: string[][]): LinhaRPNE[] {
     if (row.length < 5) continue;
 
     const pi      = (row[0] ?? "").trim();
+    const piDesc  = (row[1] ?? "").trim();
     const ugrCode = (row[2] ?? "").trim();
     const ugrNome = (row[3] ?? "").trim();
     if (pi)      lastPi      = pi;
+    if (piDesc)  lastPiDesc  = piDesc;
     if (ugrCode) lastUgrCode = ugrCode;
     if (ugrNome) lastUgrNome = ugrNome;
 
@@ -570,6 +574,7 @@ export function toRPNEs(rows: string[][]): LinhaRPNE[] {
 
     result.push({
       pi:          lastPi,
+      pi_desc:     lastPiDesc,
       ugr_code:    lastUgrCode,
       ugr_nome:    lastUgrNome,
       ne,
