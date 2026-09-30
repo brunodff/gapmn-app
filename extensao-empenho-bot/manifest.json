@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GAPMN Empenho Bot",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Coleta solicitações de empenho no SILOMS e automatiza emissão no SILOMS ou Contratos.gov.br.",
 
   "permissions": [
@@ -55,8 +55,7 @@
   },
 
   "action": {
-    "default_title": "GAPMN Empenho Bot",
-    "default_popup": ""
+    "default_title": "GAPMN Empenho Bot"
   },
 
   "web_accessible_resources": [
