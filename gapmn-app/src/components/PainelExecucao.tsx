@@ -821,6 +821,38 @@ export default function PainelExecucao() {
                         );
                       })}
                     </tbody>
+                    <tfoot>
+                      <tr style={{
+                        background: `${DK.cyan}10`,
+                        borderTop: `2px solid ${DK.cyan}44`,
+                      }}>
+                        <td style={{
+                          padding: "10px 12px", fontSize: 11, fontWeight: 800, color: DK.muted,
+                          textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap",
+                        }}>
+                          Total · {nes.length} {nes.length === 1 ? "NE" : "NEs"}
+                        </td>
+                        <td style={{
+                          padding: "10px", textAlign: "right", fontFamily: "monospace",
+                          fontWeight: 800, color: DK.amber, whiteSpace: "nowrap",
+                        }}>
+                          {subALiq ? fmtMoney(subALiq) : "–"}
+                        </td>
+                        <td style={{
+                          padding: "10px", textAlign: "right", fontFamily: "monospace",
+                          fontWeight: 800, color: DK.teal, whiteSpace: "nowrap",
+                        }}>
+                          {subLiqPag ? fmtMoney(subLiqPag) : "–"}
+                        </td>
+                        <td style={{
+                          padding: "10px", textAlign: "right", fontFamily: "monospace",
+                          fontWeight: 800, color: DK.green, whiteSpace: "nowrap",
+                        }}>
+                          {subPago ? fmtMoney(subPago) : "–"}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               );
