@@ -4,6 +4,7 @@
  */
 
 import { extractPdfText, parseSolicitacaoEmpenho } from '../runner/pdfParser.js';
+import { UG_POR_UNIDADE } from './ugPorUnidade.js';
 
 // ── Lista de unidades da FAB ──────────────────────────────────────────────────
 const FAB_UNITS = [
@@ -44,7 +45,7 @@ const FAB_UNITS = [
   "EACEA-HT","EACEA-BRL","EACEA-CA","EACEA-JI","EACEA-JD","EACEA-MB",
   "EACEA-TB","EACEA-TK","EACEA-VS",
   "2° GDAAE","DSM-MN","DACO-UA","DESTAE-UA","DESTAE-EI","DACO-MN","DACO-TT",
-  "DECO-El","DACO-OW","DECO-EE","DECO-YA","SEREP MN","SERINFRA-MN","DECO-KO",
+  "DECO-El","DACO-OW","DECO-EE","DECO-YA","SEREP MN","SERINFRA-MN","DECO-KO","DECO-UA",
   "1°/9° GAV","7°/8° GAV","7° ETA",
   "DTCEA-EG","DTCEA-MN","DTCEA-OI","DTCEA-TT","DTCEA-TS","DTCEA-EK",
   "DTCEA-MY","DTCEA-UA","DTCEA-FX","DTCEA-TF","DTCEA-EI","PAMN",
@@ -86,19 +87,15 @@ let port          = null;
 let uploadDest    = null;   // destino escolhido no menu: 'siloms' | 'contratosgov'
 let solicitacoesParsed = []; // [ { ok, solicitacao, fornecedorNome, ... } ] — review queue
 
-// Unidade da compra (UASG) usada no fluxo "Compra" do Contratos.gov.br.
-// Vem da OM do perfil; só estão aqui códigos confirmados — para as demais o
-// usuário informa na revisão e o valor fica salvo para aquela OM.
-const UASG_POR_UNIDADE = {
-  'GAP-MN': '120630',
-  'GAP-BR': '120006',
-};
+// Unidade da compra usada no fluxo "Compra" do Contratos.gov.br: vem da UG da
+// OM do perfil (ugPorUnidade.js). Se o usuário corrigir na revisão, a correção
+// fica salva para aquela OM e passa a ter prioridade.
 const UNIDADE_COMPRA_KEY = 'empenho_unidade_compra_por_om';
 let unidadesCompraSalvas = {}; // { 'GAP-XX': '1200NN' } informadas pelo usuário
 
 function unidadeCompraDoPerfil() {
   const om = userProfile?.unidade ?? '';
-  return unidadesCompraSalvas[om] || UASG_POR_UNIDADE[om] || '';
+  return unidadesCompraSalvas[om] || UG_POR_UNIDADE[om] || '';
 }
 
 // Modalidades de compra do Contratos.gov.br (o robô casa pelo código inicial)
