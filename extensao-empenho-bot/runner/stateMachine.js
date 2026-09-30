@@ -25,6 +25,7 @@
  */
 
 import { step1Runner } from './steps/step1.js';
+import { step3Runner } from './steps/step3.js';
 import {
   step0ClickAdicionarMinuta,
   step0PesquisarContrato,
@@ -599,59 +600,7 @@ async function runStep3(tabId, payload) {
   await appendLog('[Etapa 3] Aguardando carregamento dos itens (AJAX)…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 3] Aguardando itens carregarem…', level: 'info' });
 
-  const result = await execInPage(tabId, async (itens) => {
-    // Itens carregam via AJAX (DataTable) — aguarda até 20s
-    const checkboxes = await new Promise(res => {
-      let elapsed = 0;
-      const tick = setInterval(() => {
-        elapsed += 500;
-        const cbs = Array.from(document.querySelectorAll('input[name*="contrato_item_id"]'));
-        if (cbs.length > 0 || elapsed >= 20000) { clearInterval(tick); res(cbs); }
-      }, 500);
-    });
-
-    if (!checkboxes.length) {
-      const empty = document.querySelector('.dataTables_empty, td.dataTables_empty');
-      if (empty) return { ok: false, error: 'Nenhum item disponível (sem saldo ou vigência expirada)' };
-      return { ok: false, error: 'Itens não carregaram em 20s — verifique a página manualmente' };
-    }
-
-    if (itens.length > 0) {
-      let selecionados = 0;
-      for (const it of itens) {
-        const numStr = String(it.numeroItem ?? '').replace(/^0+/, '') || '';
-        for (const cb of checkboxes) {
-          const row = cb.closest('tr');
-          const rowText = row?.textContent ?? '';
-          if (rowText.match(new RegExp(`\\b0*${numStr}\\b`))) {
-            if (!cb.checked) cb.click();
-            selecionados++;
-            break;
-          }
-        }
-      }
-      if (!selecionados) {
-        // Numeração não bateu → seleciona todos
-        const all = document.getElementById('selectAll');
-        if (all && !all.checked) all.click();
-        else checkboxes.forEach(cb => { if (!cb.checked) cb.click(); });
-      }
-    } else {
-      const all = document.getElementById('selectAll');
-      if (all && !all.checked) all.click();
-      else checkboxes.forEach(cb => { if (!cb.checked) cb.click(); });
-    }
-
-    await new Promise(r => setTimeout(r, 400));
-
-    const btn =
-      document.querySelector('button.submeter') ||
-      document.querySelector('button.btn-success') ||
-      Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
-    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 3' };
-    btn.click();
-    return { ok: true };
-  }, [itensEmpenho]);
+  const result = await execInPage(tabId, step3Runner, [itensEmpenho, payload.tipoOrigem]);
 
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 3' };
   await appendLog('[Etapa 3] Itens selecionados ✓', 'info');
