@@ -8,7 +8,7 @@
  *   compradora     — OM compradora (ex: GAP-MN)
  *   fornecedorNome — Razão social do fornecedor
  *   fornecedorCnpj — CNPJ do fornecedor
- *   itens[]        — Array de itens (requisicao, subelemento, descricao, quant, unid, valorUnit, valorTotal)
+ *   itens[]        — Array de itens (item, requisicao, subelemento, descricao, quant, unid, valorUnit, valorTotal)
  *   pag            — Processo administrativo/licitação (ex: 67615.021461/2025-25)
  *   contrato       — Contrato de referência (ex: DESPESA 010/GAPMN-DA)
  *   licit          — Número da compra quando não há contrato (ex: 90063/2025)
@@ -247,17 +247,26 @@ export function parseSolicitacaoEmpenho(text) {
     // Estrutura: REQUISIÇÃO  SUB  DESCRIÇÃO  REF  QUANT  UNID  PRC UNITARIO  PRC TOTAL
     // Linha de item começa com código alfanumérico tipo "SNT177001AU"
     const itens = [];
-    const itemRe = /\b([A-Z]{2,}\d+[A-Z]*)\s+(\d+)\s+(.+?)\s+([\d,]+)\s+(UN|UN\.|M|M2|M3|KG|L|CX|PC|SV|SC|JG|PT|FD|GL|MO|HR|DI|SE|ME|AN)\s+([\d.,]+)\s+([\d.,]+)/gi;
+    // A linha de item começa com a coluna ITEM (nº do item na compra/contrato,
+    // ex: 21) seguida da requisição. Ancorar no início da linha evita tomar por
+    // requisição o código REF que fecha a linha de continuação da descrição.
+    const UNIDADES = String.raw`UN|UN\.|M|M2|M3|KG|L|CX|PC|SV|SC|JG|PT|FD|GL|MO|HR|DI|SE|ME|AN`;
+    const CAUDA = String.raw`\s+(\d+)\s+(.+?)\s+([\d,]+)\s+(` + UNIDADES + String.raw`)\s+([\d.,]+)\s+([\d.,]+)`;
+    const itemAncorado = new RegExp(String.raw`^[ \t]*(\d{1,5})[ \t]+([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gim');
+    const itemLivre    = new RegExp(String.raw`()\b([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gi');
+    const itemRe = itemAncorado.test(t) ? itemAncorado : itemLivre;
+    itemRe.lastIndex = 0;
     let m;
     while ((m = itemRe.exec(t)) !== null) {
       itens.push({
-        requisicao:   m[1],
-        subelemento:  m[2],
-        descricao:    m[3].trim(),
-        quant:        m[4],
-        unid:         m[5],
-        valorUnit:    m[6],
-        valorTotal:   m[7],
+        item:         m[1] || '',
+        requisicao:   m[2],
+        subelemento:  m[3],
+        descricao:    m[4].trim(),
+        quant:        m[5],
+        unid:         m[6],
+        valorUnit:    m[7],
+        valorTotal:   m[8],
       });
     }
 

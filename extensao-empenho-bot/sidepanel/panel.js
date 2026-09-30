@@ -366,8 +366,12 @@ async function processarArquivos(files) {
           parsed.itensEmpenho = fromObs;
         } else {
           // Monta itensEmpenho a partir dos itens do PDF
+          // N.Item = coluna ITEM do PDF (é o nº do item na compra/contrato no CNET).
+          // Sem ele, numa compra não há como adivinhar: fica vazio e a revisão cobra.
           parsed.itensEmpenho = (parsed.itens ?? []).map((it, i) => ({
-            numeroItem: String(i + 1).padStart(5, '0'),
+            numeroItem: it.item
+              ? String(it.item).padStart(5, '0')
+              : (parsed.tipoOrigem === 'compra' ? '' : String(i + 1).padStart(5, '0')),
             valor: (it.valorTotal ?? '').replace('.', '').replace(',', '.'),
             valorFmt: it.valorTotal ?? '',
           }));
@@ -694,6 +698,12 @@ function pendenciasEtapa1(sol) {
     if (!/^\d{4,6}\/\d{4}$/.test(sol.numeroCompra ?? '')) p.push('nº da compra (ex: 90063/2025)');
     if (!sol.modalidade)     p.push('modalidade');
     if (!sol.unidadeCompra)  p.push('unidade da compra');
+    // Na compra a lista do CNET traz itens de outros empenhos: sem N.Item o
+    // robô não tem como saber qual marcar.
+    const itens = sol.itensEmpenho ?? [];
+    if (!itens.length || itens.some(it => !String(it.numeroItem ?? '').trim())) {
+      p.push('N.Item de cada item (nº da coluna ITEM do PDF)');
+    }
   } else if (!sol.contrato) {
     p.push('contrato (ou mude o Tipo para Compra)');
   }

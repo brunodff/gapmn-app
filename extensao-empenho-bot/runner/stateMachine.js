@@ -26,6 +26,7 @@
 
 import { step1Runner } from './steps/step1.js';
 import { step3Runner } from './steps/step3.js';
+import { maximizarTabelasRunner } from './steps/tabelas.js';
 import {
   step0ClickAdicionarMinuta,
   step0PesquisarContrato,
@@ -505,6 +506,13 @@ async function runEmpenhoStep(s) {
 
 // ── Implementações de etapas CNET ─────────────────────────────────────────────
 
+// As listas do CNET mostram 10 linhas por padrão; o que estiver na página 2 não
+// existe para o robô. Toda etapa que procura linha numa tabela chama isto antes.
+async function maximizarTabelas(tabId, etapa) {
+  const r = await execInPage(tabId, maximizarTabelasRunner);
+  if (r?.ajustes?.length) await appendLog(`[Etapa ${etapa}] Tabela ampliada (${r.ajustes.join(', ')})`, 'info');
+}
+
 async function runStep0(tabId, payload) {
   // buscacompra É a Etapa 1 — step 0 só precisa navegar até ela
   const pageUrl = await execInPage(tabId, () => window.location.href);
@@ -558,6 +566,7 @@ async function runStep2(tabId, payload) {
     };
   }
 
+  await maximizarTabelas(tabId, 2);
   const cnpjRaw = (payload.fornecedorCnpj ?? '').replace(/\D/g, '');
 
   const result = await execInPage(tabId, (cnpj) => {
@@ -579,7 +588,18 @@ async function runStep2(tabId, payload) {
         if (rowText.includes(cnpj)) { target = btn; break; }
       }
     }
-    if (!target) target = btns[0]; // fallback: primeiro
+    if (!target) {
+      // Só aceita "o único da lista"; com vários, escolher um ao acaso
+      // empenharia no fornecedor errado.
+      const linhas = new Set(btns.map(b => b.closest('tr')));
+      if (linhas.size === 1) target = btns[0];
+      else return {
+        ok: false,
+        error: cnpj
+          ? `Fornecedor CNPJ ${cnpj} não está entre os ${linhas.size} fornecedores listados — confira o CNPJ na revisão.`
+          : `Solicitação sem CNPJ e há ${linhas.size} fornecedores na lista — informe o CNPJ na revisão.`,
+      };
+    }
 
     // Navega diretamente pelo href (evita problema com event handlers do CNET)
     if (target.href) {
@@ -600,6 +620,7 @@ async function runStep3(tabId, payload) {
   await appendLog('[Etapa 3] Aguardando carregamento dos itens (AJAX)…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 3] Aguardando itens carregarem…', level: 'info' });
 
+  await maximizarTabelas(tabId, 3);
   const result = await execInPage(tabId, step3Runner, [itensEmpenho, payload.tipoOrigem]);
 
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 3' };
@@ -610,6 +631,8 @@ async function runStep3(tabId, payload) {
 async function runStep4(tabId, payload) {
   await appendLog('[Etapa 4] Buscando linha de crédito orçamentário…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 4] Selecionando crédito…', level: 'info' });
+  // Sem isto, crédito na página 2 levava a cadastrar uma célula orçamentária duplicada
+  await maximizarTabelas(tabId, 4);
 
   const result = await execInPage(tabId, async (p) => {
     // Aguarda DataTable carregar (AJAX — até 15s)
@@ -717,6 +740,7 @@ async function runStep4(tabId, payload) {
 async function runStep5(tabId, payload) {
   await appendLog('[Etapa 5] Preenchendo subelemento e valores…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 5] Preenchendo subelemento e valores…', level: 'info' });
+  await maximizarTabelas(tabId, 5);
 
   const result = await execInPage(tabId, async (p) => {
     // Aguarda DataTable carregar (AJAX — até 15s)
