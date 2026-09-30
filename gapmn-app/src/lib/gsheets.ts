@@ -8,6 +8,8 @@
  *  EMPENHOS   — Controle de Empenhos             - planilha 4
  */
 
+import { SIGLA_POR_UG } from "./ugSiglas";
+
 // ─── URLs ─────────────────────────────────────────────────────────────────────
 export const SHEET_URLS = {
   credito1:   "https://docs.google.com/spreadsheets/d/1kB9CUbvSKzZj_ue6Ppi4u_q7ubKSULh2ctp3KP5ntoI/export?format=csv&gid=946298877",
@@ -101,17 +103,8 @@ export interface LinhaRP {
 
 // ─── Mapeamento UG → Sigla OM ─────────────────────────────────────────────────
 const UG_MAP: Record<string, string> = {
-  // Por código UG
-  "120630": "GAP-MN",
-  "120631": "BAMN",
-  "120632": "HAMN",
-  "120633": "DACTA IV",
-  "120634": "PAMN",
-  "120635": "SERIPA-MN",
-  "120636": "COMAR VII",
-  "120637": "COMARA",
-  "120638": "SEREP-MN",
-  "120639": "SERINFRA-MN",
+  // Por código UG (todas as OMs)
+  ...SIGLA_POR_UG,
   // Por nome (normalizado)
   "GRUPAMENTO DE APOIO DE MANAUS": "GAP-MN",
   "GAP-MN": "GAP-MN",
@@ -147,9 +140,14 @@ const UG_MAP: Record<string, string> = {
 
 function resolveOM(codOrNome: string): string {
   const upper = (codOrNome || "").trim().toUpperCase();
+  // Vazio precisa continuar vazio: na busca parcial abaixo, "x".includes("") é
+  // sempre true, e toda célula de OM em branco virava a primeira OM do mapa.
+  if (!upper) return "";
   if (UG_MAP[upper]) return UG_MAP[upper];
-  // Busca parcial por nome (primeiras palavras)
+  // Busca parcial só por nome. Códigos casam apenas por igualdade: com a busca
+  // parcial, um número solto como "2000" (ação) casaria com a UG 120001.
   for (const [key, val] of Object.entries(UG_MAP)) {
+    if (/^\d+$/.test(key)) continue;
     if (upper.includes(key) || key.includes(upper)) return val;
   }
   return upper; // fallback: usa o próprio nome
@@ -285,6 +283,7 @@ export function toCreditoLinhas(rows: string[][]): LinhaCredito[] {
     const ugCod  = getCol(iUgCod,  fallbackUgCod,  row);
     const ugNome = getCol(iUgNome, fallbackUgNome, row);
     const om = resolveOM(ugNome || ugCod);
+    if (!om) continue;  // linha sem UG identificável
 
     const credito   = Math.abs(toNum(getCol(iCredito,   fallbackCredito,   row)));
     const aLiquidar = Math.abs(toNum(getCol(iALiquidar, fallbackALiquidar, row)));

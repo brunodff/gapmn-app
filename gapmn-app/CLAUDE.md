@@ -78,7 +78,7 @@ The same general pattern (scan for header row, flexible column detection, positi
 
 `gsheets.ts` exports typed transformers: `toCreditoLinhas`, `toControleEmpenhos`, `toEmpenhosNF`, `toLinhasRP`, `toRPNEs`. All parsers detect header rows dynamically and fall back to hardcoded column positions. ND codes starting with 31, 36, 46, 47 are filtered out (personnel / transfers). `normalizeNE()` normalizes NE numbers for cross-sheet joins by stripping leading zeros.
 
-The `UG_MAP` in `gsheets.ts` maps UG codes (e.g., `"120630"`) and full OM names to short siglas (e.g., `"GAP-MN"`). Add new OMs here when the command structure changes.
+The `UG_MAP` in `gsheets.ts` maps UG codes and full OM names to short siglas (e.g., `"GAP-MN"`). Codes come from `src/lib/ugSiglas.ts` (all FAB OMs); update that file when the command structure changes. `resolveOM` matches codes only exactly (partial matching is for names), and returns `""` for blank cells.
 
 ### Chatbot (`/app` → inline, or via `AppChat`)
 
