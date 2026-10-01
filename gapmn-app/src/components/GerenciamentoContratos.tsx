@@ -4,6 +4,9 @@ import { Card } from "./Card";
 import * as XLSX from "xlsx";
 import TermoApostilamentoContrato from "./TermoApostilamentoContrato";
 import { fetchCSV, toExecucaoLinhas, toRPNEs, toEmpenhosNF, normalizeNE, type ExecucaoLinha, type LinhaRPNE, type EmpenhoNF, SHEET_URLS } from "../lib/gsheets";
+import { montarHistorico, projetarContratos, calcularNecessidade, mesHoje, mesIdx, anoDe, type CfgPrevisao, type Regime } from "../lib/previsaoContratos";
+import { carregarCfgs, salvarCfg } from "../lib/previsaoConfig";
+import { PrevisaoOrcamentaria, PrevisaoResumoContrato, RegimeEditor, PrevisaoNoCard, type EstadoSiafi } from "./PrevisaoContratos";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
@@ -41,6 +44,10 @@ type Contrato = {
   vl_atual: number | null;
   fonte: string;
   created_at: string;
+  // Campos do export do Contratos.gov.br (preenchidos só em parte dos contratos)
+  receita_despesa?: string | null;
+  num_parcelas?: number | null;
+  valor_parcela?: number | null;
 };
 
 type ContratoDoc = {
@@ -412,17 +419,16 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
   // Previsão orçamentária
   const [mainView, setMainView]     = useState<"lista" | "previsao">("lista");
-  const [gordura, setGordura]       = useState(5.1); // IPCA referência 2025
-  const [prevGroupBy, setPrevGroupBy] = useState<"ugr" | "acao">("ugr");
-  const [prevAno, setPrevAno]       = useState(new Date().getFullYear());
-  const [prevMesFim, setPrevMesFim] = useState(12); // 1-12
-  const [prevUgr, setPrevUgr]       = useState("todos");
-  const [prevAcao, setPrevAcao]     = useState("todos");
-  const [prevPi, setPrevPi]         = useState("todos");
-  // Mapa PAG → estatísticas SIAFI — carregado da planilha quando abre Previsão
-  type PagStats = { pagoByYear: Map<number, number>; aLiquidar: number };
-  const [execPagMap, setExecPagMap] = useState<Map<string, PagStats>>(new Map());
-  const [execPagLoaded, setExecPagLoaded] = useState(false);
+  const [reajustePct, setReajustePct]           = useState(5.1); // IPCA referência
+  const [suporProrrogacao, setSuporProrrogacao] = useState(false);
+  // Execução SIAFI (todas as NEs) e restos a pagar — base do histórico por PAG
+  const [execSiafi, setExecSiafi]   = useState<ExecucaoLinha[]>([]);
+  const [rpSiafi, setRpSiafi]       = useState<LinhaRPNE[]>([]);
+  const [siafiCarregando, setSiafiCarregando] = useState(true);
+  const [siafiErro, setSiafiErro]   = useState<string | null>(null);
+  // Ajustes manuais da previsão (regime / valor mensal por contrato)
+  const [cfgsPrev, setCfgsPrev]     = useState<Map<string, CfgPrevisao>>(new Map());
+  const [cfgPrevDisponivel, setCfgPrevDisponivel] = useState(false);
 
   // Import
   const [preview, setPreview] = useState<{
@@ -484,6 +490,8 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   // Modo de detalhe: dados (padrão) | execucao | reajustes
   type DetailMode = "dados" | "execucao" | "reajustes";
   const [detailMode, setDetailMode] = useState<DetailMode>("dados");
+  // Aba de detalhe a abrir na próxima seleção (ex.: vindo da Previsão → Execução)
+  const detalheInicialRef = useRef<DetailMode | null>(null);
 
   // Execução — NEs do contrato carregadas do Google Sheets
   const [execLinhas, setExecLinhas]   = useState<ExecucaoLinha[]>([]);
@@ -504,7 +512,8 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     setEditandoVlContratual(false);
     setVlContratualInput(selected?.vl_contratual != null ? String(selected.vl_contratual) : "");
     setReajusteForm(null);
-    setDetailMode("dados");
+    setDetailMode(detalheInicialRef.current ?? "dados");
+    detalheInicialRef.current = null;
     setExecLinhas([]);
     setRpMap(new Map());
     setExecNFMap(new Map());
@@ -613,89 +622,51 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [filtroUgr, setFiltroUgr]         = useState("todos");
   const [filtroFiscal, setFiltroFiscal]   = useState("todos");
   const [filtroPi, setFiltroPi]           = useState("todos");
-  const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "liquidar_asc" | "liquidar_desc" | "vencimento_asc" | "reajuste_asc">("none");
-
-  // Mapa PAG → PIs (pode ser vários por contrato) derivado da planilha de empenhos
-  const [piByPag, setPiByPag]             = useState<Map<string, string[]>>(new Map());
-  const [piDescMap, setPiDescMap]         = useState<Map<string, string>>(new Map());
+  const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "liquidar_asc" | "liquidar_desc" | "vencimento_asc" | "reajuste_asc" | "credito_desc">("none");
 
   // ── Carga ────────────────────────────────────────────────────────────────
   useEffect(() => { load(); }, []);
 
-  // Mapa PAG→PIs: carrega planilha de execução (col A=PI, col H=PAG) — coleta TODOS os PIs por PAG
+  // Execução SIAFI (NEs de todos os anos) + restos a pagar: alimentam o mapa de PIs,
+  // os cards da lista e a previsão. Uma carga só, ao abrir a tela.
   useEffect(() => {
-    fetchCSV(SHEET_URLS.execucao).then((rows) => {
-      const { linhas } = toExecucaoLinhas(rows);
-      const setMap  = new Map<string, Set<string>>();
-      const descMap = new Map<string, string>();
-      linhas.forEach((l) => {
-        if (l.pi && l.info_g) {
-          const key = l.info_g.trim().replace(/\s/g, "").toUpperCase();
-          const piSet = setMap.get(key) ?? new Set<string>();
-          piSet.add(l.pi);
-          setMap.set(key, piSet);
-          if (l.pi_desc) descMap.set(l.pi, l.pi_desc);
-        }
-      });
-      const arrMap = new Map<string, string[]>();
-      setMap.forEach((s, key) => arrMap.set(key, [...s].sort()));
-      setPiByPag(arrMap);
-      setPiDescMap(descMap);
-    }).catch(() => {});
+    let vivo = true;
+    Promise.all([
+      fetchCSV(SHEET_URLS.execucao).then((rows) => toExecucaoLinhas(rows).linhas),
+      fetchCSV(SHEET_URLS.rpNE).then(toRPNEs).catch(() => [] as LinhaRPNE[]),
+    ]).then(([linhas, rps]) => {
+      if (!vivo) return;
+      setExecSiafi(linhas);
+      setRpSiafi(rps);
+      setSiafiErro(linhas.length ? null : "planilha vazia");
+    }).catch((e: unknown) => {
+      if (vivo) setSiafiErro(e instanceof Error ? e.message : "falha ao carregar");
+    }).finally(() => { if (vivo) setSiafiCarregando(false); });
+    return () => { vivo = false; };
   }, []);
 
-  // Carrega execução SIAFI quando o usuário abre a aba Previsão
+  // Ajustes manuais da previsão (tabela contratos_previsao; ausente = só automático)
   useEffect(() => {
-    if (mainView !== "previsao" || execPagLoaded) return;
-    setExecPagLoaded(true);
-    Promise.all([
-      fetchCSV(SHEET_URLS.execucao),
-      fetchCSV(SHEET_URLS.rpNE),
-    ]).then(([execRows, rpRows]) => {
-      const { linhas } = toExecucaoLinhas(execRows);
-      const rpList = toRPNEs(rpRows);
-      const pagMap = new Map<string, PagStats>();
+    carregarCfgs().then(({ cfgs, disponivel }) => {
+      setCfgsPrev(cfgs);
+      setCfgPrevDisponivel(disponivel);
+    });
+  }, []);
 
-      const getS = (rawPag: string): PagStats => {
-        const key = rawPag.trim().replace(/\s/g, "").toUpperCase();
-        if (!pagMap.has(key)) pagMap.set(key, { pagoByYear: new Map(), aLiquidar: 0 });
-        return pagMap.get(key)!;
-      };
-
-      // Execução: acumula pago+liquidado_pagar por ano da NE, e soma a_liquidar atual
-      for (const l of linhas) {
-        if (!l.info_g) continue;
-        const s = getS(l.info_g);
-        if (l.a_liquidar > 0) s.aLiquidar += l.a_liquidar;
-        const match = l.nota_empenho.match(/^(\d{4})NE/i);
-        if (!match) continue;
-        const v = l.pago + l.liquidado_pagar;
-        if (v > 0) {
-          const yr = parseInt(match[1]);
-          s.pagoByYear.set(yr, (s.pagoByYear.get(yr) ?? 0) + v);
-        }
-      }
-
-      // RP: pago de NEs de anos anteriores → atribuído ao ano de origem da NE
-      //     rp_nao_proc_a_liq → ainda disponível para pagar faturas futuras (soma ao aLiquidar)
-      for (const rp of rpList) {
-        if (!rp.processo) continue;
-        const s = getS(rp.processo);
-        // Saldo de RP disponível para liquidar faturas futuras
-        if ((rp.rp_nao_proc_a_liq ?? 0) > 0) s.aLiquidar += rp.rp_nao_proc_a_liq;
-        // Pagamentos de RP → histórico do ano de origem da NE
-        const match = rp.ne.match(/^(\d{4})NE/i);
-        if (!match) continue;
-        const rpPago = (rp.rp_nao_proc_pago ?? 0) + (rp.rp_proc_pagos ?? 0);
-        if (rpPago > 0) {
-          const yr = parseInt(match[1]);
-          s.pagoByYear.set(yr, (s.pagoByYear.get(yr) ?? 0) + rpPago);
-        }
-      }
-
-      setExecPagMap(pagMap);
-    }).catch(() => {});
-  }, [mainView, execPagLoaded]);
+  // Mapa PAG → PIs (pode ser vários por contrato) e descrição de cada PI
+  const { piByPag, piDescMap } = useMemo(() => {
+    const porPag  = new Map<string, Set<string>>();
+    const descMap = new Map<string, string>();
+    for (const l of execSiafi) {
+      if (!l.pi || !l.info_g) continue;
+      const key = l.info_g.trim().replace(/\s/g, "").toUpperCase();
+      (porPag.get(key) ?? porPag.set(key, new Set()).get(key)!).add(l.pi);
+      if (l.pi_desc) descMap.set(l.pi, l.pi_desc);
+    }
+    const arrMap = new Map<string, string[]>();
+    porPag.forEach((s, key) => arrMap.set(key, [...s].sort()));
+    return { piByPag: arrMap, piDescMap: descMap };
+  }, [execSiafi]);
 
   async function load() {
     setLoading(true);
@@ -1104,6 +1075,40 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     });
   }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal, filtroPi, piByPag]);
 
+  // ── Previsão orçamentária ────────────────────────────────────────────────
+  // Data de referência fixa na sessão: a previsão não troca de mês com a tela aberta
+  const hoje = useMemo(() => new Date(), []);
+  const historicoSiafi = useMemo(() => montarHistorico(execSiafi, rpSiafi), [execSiafi, rpSiafi]);
+  // Sem a planilha (carregando ou com falha) não se sabe o que foi empenhado
+  const estadoSiafi: EstadoSiafi = siafiCarregando ? "carregando" : siafiErro ? "erro" : "ok";
+  const execucaoIndisponivel = estadoSiafi !== "ok";
+  const previsoes = useMemo(
+    () => projetarContratos(contratos, historicoSiafi, cfgsPrev, { hoje, reajustePct, suporProrrogacao, execucaoIndisponivel }),
+    [contratos, historicoSiafi, cfgsPrev, hoje, reajustePct, suporProrrogacao, execucaoIndisponivel],
+  );
+  // Crédito necessário até dezembro, por contrato (cards e ordenação da lista)
+  const necessidadeDez = useMemo(() => {
+    const hojeMi = mesHoje(hoje), dez = mesIdx(anoDe(hojeMi), 12);
+    const m = new Map<string, number>();
+    previsoes.forEach((p, id) => m.set(id, p.vencido ? 0 : calcularNecessidade(p, hojeMi, dez).total));
+    return m;
+  }, [previsoes, hoje]);
+
+  async function salvarAjustePrevisao(numero: string, regime: Regime | null, valor: number | null, obs: string | null): Promise<string | null> {
+    const r = await salvarCfg(numero, regime, valor, obs);
+    if (!r.ok) return r.erro;
+    setCfgsPrev((prev) => { const m = new Map(prev); if (r.cfg) m.set(numero, r.cfg); else m.delete(numero); return m; });
+    return null;
+  }
+
+  function abrirContratoDaPrevisao(id: string) {
+    const c = contratos.find((x) => x.id === id);
+    if (!c) return;
+    setMainView("lista");
+    if (selected?.id === id) setDetailMode("execucao");
+    else { detalheInicialRef.current = "execucao"; setSelected(c); }
+  }
+
   const sorted = useMemo(() => {
     const arr = [...filtered];
     if (sortBy === "saldo_asc")       arr.sort((a, b) => (a.vl_a_empenhar ?? 0) - (b.vl_a_empenhar ?? 0));
@@ -1127,8 +1132,11 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
         return proxR(a) - proxR(b);
       });
     }
+    else if (sortBy === "credito_desc") {
+      arr.sort((a, b) => (necessidadeDez.get(b.id) ?? 0) - (necessidadeDez.get(a.id) ?? 0));
+    }
     return arr;
-  }, [filtered, sortBy]);
+  }, [filtered, sortBy, necessidadeDez]);
 
   const fld = (key: keyof typeof form) => ({
     value: form[key],
@@ -1136,232 +1144,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       setForm((f) => ({ ...f, [key]: e.target.value })),
     className: "mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200",
   });
-
-  // ── Previsão orçamentária ────────────────────────────────────────────────
-  const ANO_CORRENTE = new Date().getFullYear();
-
-  /**
-   * Média mensal estimada do contrato no `ano` alvo:
-   *   1. Se houver histórico SIAFI (execPagMap.pagoByYear): usa o último ano COMPLETO
-   *      como base e aplica IPCA composto.
-   *   2. Se não houver histórico: divide valor total do contrato pela duração total
-   *      em meses → custo mensal constante.
-   */
-  function monthlyAvgContrato(c: Contrato, ano: number): number {
-    const today      = new Date();
-    const todayYear  = today.getFullYear();
-    const todayMonth = today.getMonth() + 1;
-    const ipca       = gordura / 100;
-
-    const pag   = normPag(c.pag_nup);
-    const stats = pag ? execPagMap.get(pag) : undefined;
-    const ini   = c.data_inicio ? new Date(c.data_inicio + "T12:00:00") : null;
-
-    // ── Caminho 1: histórico real SIAFI ──────────────────────────────────
-    // Soma TODOS os pagamentos do PAG independente do ano do NE:
-    // um NE de 2025 pode ser RP liquidado durante um contrato que só começou em 2026.
-    if (stats && stats.pagoByYear.size > 0) {
-      const totalPago = [...stats.pagoByYear.values()].reduce((a, b) => a + b, 0);
-
-      // Denominador: meses corridos desde o início do contrato até o mês anterior
-      // (mês atual pode estar incompleto → excluído)
-      const cStartYear  = ini ? ini.getFullYear() : todayYear;
-      const cStartMonth = ini ? ini.getMonth() + 1 : 1;
-      const monthsElapsed = Math.max(1,
-        (todayYear * 12 + todayMonth - 1) - (cStartYear * 12 + cStartMonth - 1)
-      );
-
-      // Média mensal no ritmo atual → projeta com IPCA acumulado até o ano-alvo
-      const baseMonthly = totalPago / monthsElapsed;
-      return baseMonthly * Math.pow(1 + ipca, ano - todayYear);
-    }
-
-    // ── Caminho 2: sem histórico — valor/duração total do contrato ───────
-    const base = c.vl_atual ?? c.vl_contratual;
-    if (!base || !ini) return 0;
-    const fim = c.data_final  ? new Date(c.data_final  + "T12:00:00") : null;
-    if (!fim) return 0;
-    const MS_MES   = 30.44 * 24 * 3600 * 1000;
-    const durTotal = Math.max(1, (fim.getTime() - ini.getTime()) / MS_MES);
-    return (base / durTotal) * Math.pow(1 + ipca, Math.max(0, ano - todayYear));
-  }
-
-  /** Quantos meses do período [fromMonth, toMonth] o contrato está ativo no `ano`. */
-  function contratoMesesAtivos(c: Contrato, ano: number, fromMonth: number, toMonth: number): number {
-    if (!c.data_inicio || !c.data_final) return Math.max(0, toMonth - fromMonth + 1);
-    const ini = new Date(c.data_inicio + "T12:00:00");
-    const fim = new Date(c.data_final  + "T12:00:00");
-    const cStart = ini.getFullYear() < ano ? 1  : ini.getFullYear() > ano ? 13 : ini.getMonth() + 1;
-    const cEnd   = fim.getFullYear() > ano ? 12 : fim.getFullYear() < ano ? 0  : fim.getMonth() + 1;
-    return Math.max(0, Math.min(toMonth, cEnd) - Math.max(fromMonth, cStart) + 1);
-  }
-
-  function ativoNoAno(c: Contrato, ano: number): boolean {
-    const ini = c.data_inicio ? new Date(c.data_inicio + "T12:00:00") : null;
-    const fim = c.data_final  ? new Date(c.data_final  + "T12:00:00") : null;
-    if (!ini || !fim) return true;
-    return ini <= new Date(ano, 11, 31) && fim >= new Date(ano, 0, 1);
-  }
-
-  // Anos disponíveis: corrente + futuros cobertos por algum contrato (máx +5)
-  const prevAnosOpts = useMemo(() => {
-    const set = new Set<number>([ANO_CORRENTE]);
-    contratos.forEach((c) => {
-      if (c.data_final) {
-        const fimAno = new Date(c.data_final + "T12:00:00").getFullYear();
-        for (let y = ANO_CORRENTE + 1; y <= Math.min(fimAno, ANO_CORRENTE + 5); y++) set.add(y);
-      }
-    });
-    return [...set].sort();
-  }, [contratos]);
-
-  // Filtros cascateados da previsão
-  const prevUgrsOpts = useMemo(
-    () => [...new Set(contratos.map((c) => c.ugr).filter(Boolean) as string[])].sort(),
-    [contratos]
-  );
-
-  // Base filtrada só por UGR — usada para calcular as opções de Ação e PI
-  const prevBaseUgr = useMemo(
-    () => prevUgr === "todos" ? contratos : contratos.filter((c) => c.ugr === prevUgr),
-    [contratos, prevUgr]
-  );
-
-  // Ações disponíveis dado UGR + PI selecionados
-  const prevAcaoOpts = useMemo(() => {
-    const base = prevPi === "todos"
-      ? prevBaseUgr
-      : prevBaseUgr.filter((c) => (piByPag.get(normPag(c.pag_nup)) ?? []).includes(prevPi));
-    return [...new Set(base.map((c) => c.acao).filter(Boolean) as string[])].sort();
-  }, [prevBaseUgr, prevPi, piByPag]);
-
-  // PIs disponíveis dado UGR + Ação selecionados
-  const prevPiOpts = useMemo(() => {
-    const base = prevAcao === "todos"
-      ? prevBaseUgr
-      : prevBaseUgr.filter((c) => c.acao === prevAcao);
-    const set = new Set<string>();
-    base.forEach((c) => (piByPag.get(normPag(c.pag_nup)) ?? []).forEach((pi) => set.add(pi)));
-    return [...set].sort();
-  }, [prevBaseUgr, prevAcao, piByPag]);
-
-  // Contratos ativos no ano selecionado + filtros cascateados
-  const prevContratos = useMemo(() =>
-    contratos.filter((c) => {
-      if (!ativoNoAno(c, prevAno)) return false;
-      if (prevUgr  !== "todos" && c.ugr  !== prevUgr)  return false;
-      if (prevAcao !== "todos" && c.acao !== prevAcao) return false;
-      if (prevPi   !== "todos" && !(piByPag.get(normPag(c.pag_nup)) ?? []).includes(prevPi)) return false;
-      return true;
-    }),
-    [contratos, prevAno, prevUgr, prevAcao, prevPi, piByPag]
-  );
-
-  const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-                    "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-
-  type PrevisaoRow = {
-    grupo: string;
-    contratos: Contrato[];
-    previsao: number;            // valor proporcional até prevMesFim (IPCA já embutido)
-    empenhadoALiquidar: number;  // NEs emitidas não pagas (só ano corrente)
-    creditoNecessario: number;   // crédito novo que precisa ser aberto
-  };
-
-  const isAnoCorrente = prevAno === ANO_CORRENTE;
-
-  // Quantos contratos ATIVOS compartilham o mesmo PAG — para dividir o total SIAFI da média mensal
-  const pagCountMap = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const c of prevContratos) {
-      const pag = normPag(c.pag_nup);
-      if (pag) m.set(pag, (m.get(pag) ?? 0) + 1);
-    }
-    return m;
-  }, [prevContratos]);
-
-  // Contrato "primário" de cada PAG — único que exibe o saldo a_liquidar do SIAFI.
-  // Escolha: contrato com data_inicio mais recente (o que está sendo executado agora).
-  // Se empate, o menor número de contrato (ordem alfabética).
-  const primaryForPag = useMemo(() => {
-    const byPag = new Map<string, Contrato[]>();
-    for (const c of prevContratos) {
-      const pag = normPag(c.pag_nup);
-      if (!pag) continue;
-      if (!byPag.has(pag)) byPag.set(pag, []);
-      byPag.get(pag)!.push(c);
-    }
-    const result = new Map<string, string>(); // PAG → id do contrato primário
-    for (const [pag, cs] of byPag) {
-      const sorted = [...cs].sort((a, b) => {
-        const da = a.data_inicio ?? "";
-        const db = b.data_inicio ?? "";
-        if (da !== db) return db.localeCompare(da); // mais recente primeiro
-        return a.numero_contrato.localeCompare(b.numero_contrato);
-      });
-      result.set(pag, sorted[0].id);
-    }
-    return result;
-  }, [prevContratos]);
-
-  // Mês de início da janela de previsão:
-  //   - ano corrente → começa no mês atual (faturas futuras)
-  //   - ano futuro   → começa em janeiro (ano todo)
-  const prevStartMonth = isAnoCorrente ? new Date().getMonth() + 1 : 1;
-
-  const previsaoRows: PrevisaoRow[] = useMemo(() => {
-    const startM = isAnoCorrente ? new Date().getMonth() + 1 : 1;
-
-    const grupos = new Map<string, Contrato[]>();
-    for (const c of prevContratos) {
-      const chave = (prevGroupBy === "ugr" ? c.ugr : c.acao) ?? "Sem " + (prevGroupBy === "ugr" ? "UGR" : "PI");
-      if (!grupos.has(chave)) grupos.set(chave, []);
-      grupos.get(chave)!.push(c);
-    }
-    return [...grupos.entries()]
-      .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
-      .map(([grupo, cs]) => {
-        // Previsão = soma dos PAGs únicos (cada PAG conta UMA VEZ, mesmo que múltiplos contratos compartilhem)
-        const seenPagsPrev = new Set<string>();
-        const previsao = cs.reduce((s, c) => {
-          const pag   = normPag(c.pag_nup);
-          const meses = contratoMesesAtivos(c, prevAno, startM, prevMesFim);
-          if (pag) {
-            if (seenPagsPrev.has(pag)) return s; // PAG já contabilizado por outro contrato
-            seenPagsPrev.add(pag);
-          }
-          return s + monthlyAvgContrato(c, prevAno) * meses;
-        }, 0);
-
-        // Empenhado a liquidar = saldo real de NEs abertas (SIAFI).
-        // Cada PAG é contado UMA ÚNICA VEZ (pelo contrato primário do PAG),
-        // evitando duplicação quando dois contratos compartilham o mesmo processo.
-        const empenhadoALiquidar = isAnoCorrente ? (() => {
-          const seenPags = new Set<string>();
-          return cs.reduce((s, c) => {
-            const pag   = normPag(c.pag_nup);
-            const stats = pag ? execPagMap.get(pag) : undefined;
-            if (!pag || seenPags.has(pag)) return s;
-            seenPags.add(pag);
-            return s + (stats?.aLiquidar ?? 0);
-          }, 0);
-        })() : 0;
-
-        // Crédito necessário = quanto ainda falta empenhar para cobrir o período
-        const creditoNecessario = Math.max(0, previsao - empenhadoALiquidar);
-
-        return { grupo, contratos: cs, previsao, empenhadoALiquidar, creditoNecessario };
-      });
-  }, [prevContratos, gordura, prevGroupBy, prevAno, prevMesFim, isAnoCorrente, execPagMap]);
-
-  const previsaoTotais = useMemo(() => previsaoRows.reduce(
-    (acc, r) => ({
-      previsao:           acc.previsao           + r.previsao,
-      empenhadoALiquidar: acc.empenhadoALiquidar + r.empenhadoALiquidar,
-      creditoNecessario:  acc.creditoNecessario  + r.creditoNecessario,
-    }),
-    { previsao: 0, empenhadoALiquidar: 0, creditoNecessario: 0 }
-  ), [previsaoRows]);
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -1445,229 +1227,20 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
       {/* ── Previsão Orçamentária ── */}
       {mainView === "previsao" && (
-        <div className="space-y-4">
-          {/* Controles */}
-          <Card>
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Agrupar por */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-600 shrink-0">Agrupar por:</span>
-                {([
-                  { v: "ugr",  l: "UGR" },
-                  { v: "acao", l: "PI / Ação" },
-                ] as const).map(({ v, l }) => (
-                  <button
-                    key={v}
-                    onClick={() => setPrevGroupBy(v)}
-                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
-                      prevGroupBy === v
-                        ? "bg-indigo-600 text-white border-indigo-600"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-
-              {/* Filtro Período */}
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-slate-500 shrink-0">Até</span>
-                <select
-                  value={prevMesFim}
-                  onChange={(e) => setPrevMesFim(Number(e.target.value))}
-                  className="rounded-xl border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
-                >
-                  {MESES_PT.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-                </select>
-                <select
-                  value={prevAno}
-                  onChange={(e) => { setPrevAno(Number(e.target.value)); }}
-                  className="rounded-xl border px-2 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-200"
-                >
-                  {prevAnosOpts.map((a) => <option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-
-              {/* Filtro UGR */}
-              <select
-                value={prevUgr}
-                onChange={(e) => { setPrevUgr(e.target.value); setPrevAcao("todos"); setPrevPi("todos"); }}
-                className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
-              >
-                <option value="todos">Todas as UGR</option>
-                {prevUgrsOpts.map((u) => <option key={u} value={u}>{u}</option>)}
-              </select>
-
-              {/* Filtro Ação */}
-              <select
-                value={prevAcao}
-                onChange={(e) => { setPrevAcao(e.target.value); setPrevPi("todos"); }}
-                className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200"
-              >
-                <option value="todos">Todas as Ações</option>
-                {prevAcaoOpts.map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
-
-              {/* Filtro PI */}
-              <select
-                value={prevPi}
-                onChange={(e) => setPrevPi(e.target.value)}
-                className="rounded-xl border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-sky-200 max-w-xs"
-              >
-                <option value="todos">Todos os PI</option>
-                {prevPiOpts.map((p) => {
-                  const desc = piDescMap.get(p);
-                  return <option key={p} value={p}>{desc ? `${p} — ${desc}` : p}</option>;
-                })}
-              </select>
-
-              {/* IPCA */}
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-slate-600 shrink-0" title="Índice de reajuste aplicado sobre contratos de anos futuros (IPCA referência 2025: 5,1%)">
-                  IPCA/Reajuste (%):
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={50}
-                  step={0.1}
-                  value={gordura}
-                  onChange={(e) => setGordura(Number(e.target.value))}
-                  className="w-16 rounded-xl border px-2 py-1 text-sm text-center outline-none focus:ring-2 focus:ring-sky-200"
-                />
-              </div>
-
-              <span className="text-xs text-slate-400 ml-auto">
-                {prevContratos.length}/{contratos.length} contratos ativos · Jan–{MESES_PT[prevMesFim - 1]} {prevAno}
-              </span>
-            </div>
-          </Card>
-
-          {/* Tabela resumo */}
-          <Card>
-            {execPagLoaded && execPagMap.size === 0 && (
-              <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-                Planilha SIAFI não carregada. Usando valor/duração do contrato como estimativa.
-              </div>
-            )}
-            {!execPagLoaded && (
-              <div className="mb-3 text-xs text-slate-400">Carregando histórico SIAFI…</div>
-            )}
-            {!isAnoCorrente && (
-              <div className="mb-3 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
-                <strong>Exercício futuro ({prevAno}):</strong> Previsão Jan–{MESES_PT[prevMesFim - 1]} = média mensal histórica × IPCA {gordura}%{prevAno > ANO_CORRENTE + 1 ? `^${prevAno - ANO_CORRENTE}` : ""} × meses ativos. Crédito Necessário = previsão integral (nenhuma NE emitida ainda).
-              </div>
-            )}
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-wide">
-                    <th className="text-left px-3 py-2 font-semibold">{prevGroupBy === "ugr" ? "UGR" : "PI / Ação"}</th>
-                    <th className="text-right px-3 py-2 font-semibold">
-                      Previsão {MESES_PT[prevStartMonth - 1].slice(0, 3)}–{MESES_PT[prevMesFim - 1].slice(0, 3)} {prevAno}
-                      {prevAno > ANO_CORRENTE ? <span className="ml-1 font-normal text-slate-400">(+IPCA {gordura}%)</span> : null}
-                    </th>
-                    {isAnoCorrente && <th className="text-right px-3 py-2 font-semibold text-indigo-600">Empenh. a Liquidar</th>}
-                    <th className="text-right px-3 py-2 font-semibold text-red-700">Crédito Necessário</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {previsaoRows.map((row) => {
-                    const ok      = row.creditoNecessario === 0;
-                    const parcial = row.creditoNecessario > 0 && row.creditoNecessario <= row.previsao * 0.5;
-                    return (
-                      <tr key={row.grupo} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-3 py-2 font-medium text-slate-800">{row.grupo}</td>
-                        <td className="px-3 py-2 text-right text-slate-700">{fmtMoney(row.previsao)}</td>
-                        {isAnoCorrente && <td className="px-3 py-2 text-right text-indigo-600">{fmtMoney(row.empenhadoALiquidar)}</td>}
-                        <td className={`px-3 py-2 text-right font-bold ${ok ? "text-green-600" : parcial ? "text-amber-600" : "text-red-600"}`}>
-                          {fmtMoney(row.creditoNecessario)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-800 text-white text-xs font-bold">
-                    <td className="px-3 py-2">TOTAL GERAL</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(previsaoTotais.previsao)}</td>
-                    {isAnoCorrente && <td className="px-3 py-2 text-right text-indigo-300">{fmtMoney(previsaoTotais.empenhadoALiquidar)}</td>}
-                    <td className="px-3 py-2 text-right text-amber-300 text-sm">{fmtMoney(previsaoTotais.creditoNecessario)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-400 border-t pt-2">
-              <span><span className="font-semibold text-green-600">Verde</span> = totalmente coberto pelo empenhado</span>
-              <span><span className="font-semibold text-amber-600">Laranja</span> = falta até 50% da previsão</span>
-              <span><span className="font-semibold text-red-600">Vermelho</span> = falta mais de 50%</span>
-              <span className="ml-auto text-slate-300">
-                {isAnoCorrente
-                  ? "Crédito Nec. = Previsão (média mensal × meses restantes) − Empenh. a Liquidar (SIAFI)"
-                  : `Previsão = média mensal histórica × IPCA ${gordura}% × meses ativos`}
-              </span>
-            </div>
-          </Card>
-
-          {/* Detalhamento por grupo */}
-          {previsaoRows.map((row) => (
-            <Card key={row.grupo}>
-              <div className="text-xs font-semibold text-slate-700 mb-2">
-                {prevGroupBy === "ugr" ? "UGR" : "PI"}: {row.grupo}
-                <span className="ml-2 font-normal text-slate-400">({row.contratos.length} contrato{row.contratos.length !== 1 ? "s" : ""})</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-400 uppercase text-[10px]">
-                      <th className="text-left px-2 py-1.5 font-semibold">Contrato</th>
-                      <th className="text-left px-2 py-1.5 font-semibold">Fornecedor</th>
-                      <th className="text-right px-2 py-1.5 font-semibold">{MESES_PT[prevStartMonth - 1].slice(0, 3)}–{MESES_PT[prevMesFim - 1].slice(0, 3)} {prevAno}</th>
-                      {isAnoCorrente && <th className="text-right px-2 py-1.5 font-semibold text-indigo-600">Empenh. a Liq. (SIAFI)</th>}
-                      <th className="text-right px-2 py-1.5 font-semibold text-red-700">Crédito Nec.</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {row.contratos.map((c) => {
-                      const pag      = normPag(c.pag_nup);
-                      const stats    = pag ? execPagMap.get(pag) : undefined;
-                      const pagCount = pag ? (pagCountMap.get(pag) ?? 1) : 1;
-                      const mAvg    = monthlyAvgContrato(c, prevAno);
-                      const meses   = contratoMesesAtivos(c, prevAno, prevStartMonth, prevMesFim);
-                      const prev    = mAvg * meses;
-                      // a_liquidar aparece SOMENTE no contrato primário do PAG (não duplica)
-                      const isPrimary = !pag || primaryForPag.get(pag) === c.id;
-                      const empLiq  = isAnoCorrente && isPrimary ? (stats?.aLiquidar ?? 0) : 0;
-                      const credNec = Math.max(0, prev - empLiq);
-                      const ok      = credNec === 0;
-                      const parcial = credNec > 0 && credNec <= prev * 0.5;
-                      const temHistorico = !!stats?.pagoByYear.size;
-                      const semPag  = !c.pag_nup;
-                      return (
-                        <tr key={c.id} className="hover:bg-slate-50">
-                          <td className="px-2 py-1.5 text-slate-700 font-medium">
-                            {c.numero_contrato}
-                            {semPag  && <span className="ml-1 text-[9px] text-amber-500" title="PAG/NUP não preenchido — preencha em Dados Gerais para usar histórico SIAFI">sem PAG</span>}
-                            {!semPag && !temHistorico && <span className="ml-1 text-[9px] text-slate-400" title="Sem histórico SIAFI — usando valor/duração do contrato">est.</span>}
-                            {pagCount > 1 && <span className="ml-1 text-[9px] text-sky-500" title={`PAG compartilhado por ${pagCount} contratos — total SIAFI dividido igualmente`}>÷{pagCount}</span>}
-                          </td>
-                          <td className="px-2 py-1.5 text-slate-500 max-w-[180px] truncate">{c.fornecedor ?? "–"}</td>
-                          <td className="px-2 py-1.5 text-right text-slate-700" title={`Média mensal: ${fmtMoney(mAvg)} × ${meses} meses`}>{fmtMoney(prev)}</td>
-                          {isAnoCorrente && <td className="px-2 py-1.5 text-right text-indigo-600">{fmtMoney(empLiq)}</td>}
-                          <td className={`px-2 py-1.5 text-right font-semibold ${ok ? "text-green-600" : parcial ? "text-amber-600" : "text-red-600"}`}>
-                            {fmtMoney(credNec)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <PrevisaoOrcamentaria
+          contratos={contratos}
+          previsoes={previsoes}
+          hoje={hoje}
+          piByPag={piByPag}
+          piDescMap={piDescMap}
+          reajustePct={reajustePct}
+          onReajustePct={setReajustePct}
+          suporProrrogacao={suporProrrogacao}
+          onSuporProrrogacao={setSuporProrrogacao}
+          siafiCarregando={siafiCarregando}
+          siafiErro={siafiErro}
+          onAbrirContrato={abrirContratoDaPrevisao}
+        />
       )}
 
       {mainView === "lista" && (<>
@@ -1891,6 +1464,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
               { key: "liquidar_desc",  label: "A liquidar ↓" },
               { key: "vencimento_asc", label: "Vencimento" },
               { key: "reajuste_asc",   label: "📅 Próx. reajuste" },
+              { key: "credito_desc",   label: "💰 Falta até dez" },
             ] as const).map(({ key, label }) => (
               <button
                 key={key}
@@ -1981,6 +1555,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                             </div>
                           );
                         })()}
+                        <PrevisaoNoCard prev={previsoes.get(c.id)} necessidadeAno={necessidadeDez.get(c.id)} anoAtual={hoje.getFullYear()} siafi={estadoSiafi} />
                       </div>
                       <div className="text-right text-xs shrink-0 space-y-0.5">
                         {c.vl_contratual != null && (
@@ -2223,11 +1798,11 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                 </div>
                 <div className="rounded-lg bg-amber-50 border border-amber-100 p-2">
                   <div className="text-amber-700">Valor a Liquidar</div>
-                  <div className="font-semibold text-amber-900 mt-0.5">{fmtMoney(selected.saldo)}</div>
+                  <div className="font-semibold text-amber-800 mt-0.5">{fmtMoney(selected.saldo)}</div>
                 </div>
                 <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-2">
                   <div className="text-indigo-700">Liquidado</div>
-                  <div className="font-semibold text-indigo-900 mt-0.5">{fmtMoney(selected.vl_liquidado)}</div>
+                  <div className="font-semibold text-indigo-700 mt-0.5">{fmtMoney(selected.vl_liquidado)}</div>
                 </div>
                 {/* 4º card — Saldo Atual (mostra vl_atual quando definido, senão vl_a_empenhar) */}
                 <div className={`rounded-lg border p-2 ${
@@ -2309,6 +1884,18 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                 </div>
               </div>
             </div>
+
+            {/* Previsão mensal (regime + ajuste manual) */}
+            <RegimeEditor
+              key={selected.id}
+              contrato={selected}
+              prev={previsoes.get(selected.id)}
+              siafi={estadoSiafi}
+              cfg={cfgsPrev.get(selected.numero_contrato)}
+              podeEditar={canEditBudget}
+              disponivel={cfgPrevDisponivel}
+              onSalvar={(regime, valor, obs) => salvarAjustePrevisao(selected.numero_contrato, regime, valor, obs)}
+            />
 
             {/* Documentos */}
             <div className="mt-3 border-t pt-3">
@@ -2590,94 +2177,55 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                         </table>
                       </div>
 
-                      {/* ── Itens empenhados: NE + Nº Item + Valor ── */}
+                      {/* ── Itens empenhados: valor de cada item e os lançamentos da NE ── */}
                       {(() => {
-                        const flatItens: Array<{ ne: string; num: string; valor: number }> = [];
+                        // A planilha traz uma linha por lançamento da NE (empenho original, reforços),
+                        // cada uma repetindo o valor acumulado do item. Agrupa por NE: item com o valor
+                        // do lançamento mais recente e a lista de lançamentos com data e valor.
+                        const porNE = new Map<string, { itens: Map<string, { data: string; valor: number }>; lanc: Array<{ data: string; valor: number }> }>();
                         for (const r of rows) {
-                          const key = normalizeNE(r.l.nota_empenho);
-                          const nfItens = execNFMap.get(key);
+                          if (r.isRP) continue;
+                          const nfItens = execNFMap.get(normalizeNE(r.l.nota_empenho));
                           if (!nfItens) continue;
+                          const g = porNE.get(r.l.nota_empenho)
+                            ?? { itens: new Map<string, { data: string; valor: number }>(), lanc: [] as Array<{ data: string; valor: number }> };
                           for (const it of nfItens) {
-                            if (it.item_valor > 0)
-                              flatItens.push({ ne: r.l.nota_empenho, num: it.item_num || "–", valor: it.item_valor });
+                            const iso = it.data.split("/").reverse().join("-");
+                            if (it.item_valor > 0) {
+                              const k = it.item_num || "–";
+                              const atual = g.itens.get(k);
+                              if (!atual || iso >= atual.data) g.itens.set(k, { data: iso, valor: it.item_valor });
+                            }
+                            if (it.valor > 0 && !g.lanc.some((l) => l.data === iso && l.valor === it.valor)) g.lanc.push({ data: iso, valor: it.valor });
                           }
+                          porNE.set(r.l.nota_empenho, g);
                         }
-                        if (!flatItens.length) return null;
+                        if (!porNE.size) return null;
+                        const dataBR = (iso: string) => iso.split("-").reverse().join("/");
                         return (
                           <div>
                             <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide mb-1.5 px-0.5">
                               Itens Empenhados
                             </div>
                             <div className="rounded-xl border border-slate-700/40 overflow-hidden divide-y divide-slate-700/20">
-                              {flatItens.map(({ ne, num, valor }, i) => (
-                                <div key={i} className="flex items-center gap-3 px-3 py-1.5 text-[11px]">
-                                  <span className="font-mono text-sky-400/70 text-[10px] whitespace-nowrap shrink-0 w-28">{ne}</span>
-                                  {num !== "–" && (
-                                    <span className="text-slate-500 text-[10px] whitespace-nowrap shrink-0">Item {num}</span>
+                              {[...porNE].map(([ne, g]) => (
+                                <div key={ne} className="px-3 py-1.5 text-[11px] space-y-0.5">
+                                  {[...g.itens].map(([num, it]) => (
+                                    <div key={num} className="flex items-center gap-3">
+                                      <span className="font-mono text-sky-400/70 text-[10px] whitespace-nowrap shrink-0 w-28">{ne}</span>
+                                      {num !== "–" && <span className="text-slate-500 text-[10px] whitespace-nowrap shrink-0">Item {num}</span>}
+                                      <span className="text-indigo-400 font-mono text-[10px] whitespace-nowrap ml-auto">{fmtMoney(it.valor)}</span>
+                                    </div>
+                                  ))}
+                                  {g.lanc.length > 1 && (
+                                    <div className="text-[10px] text-slate-500">
+                                      Lançamentos: {[...g.lanc].sort((a, b) => a.data.localeCompare(b.data)).map((l, i) => (
+                                        <span key={i}>{i > 0 && " · "}{dataBR(l.data)} {i === 0 ? "original" : "reforço"} {fmtMoney(l.valor)}</span>
+                                      ))}
+                                    </div>
                                   )}
-                                  <span className="text-indigo-400 font-mono text-[10px] whitespace-nowrap ml-auto">{fmtMoney(valor)}</span>
                                 </div>
                               ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Estimativa para o próximo ano */}
-                      {(() => {
-                        const todayYear  = new Date().getFullYear();
-                        const todayMonth = new Date().getMonth() + 1;
-                        const IPCA       = 0.051;
-
-                        const totalPagoCalc = rows.reduce((s, r) =>
-                          s + r.pago + (r.isRP ? 0 : r.liquidado), 0
-                        );
-                        if (totalPagoCalc === 0) return null;
-
-                        const ini         = selected.data_inicio ? new Date(selected.data_inicio + "T12:00:00") : null;
-                        const cStartYear  = ini ? ini.getFullYear() : todayYear;
-                        const cStartMonth = ini ? ini.getMonth() + 1 : 1;
-                        const monthsElapsed = Math.max(1,
-                          (todayYear * 12 + todayMonth - 1) - (cStartYear * 12 + cStartMonth - 1)
-                        );
-
-                        const predMensal = (totalPagoCalc / monthsElapsed) * (1 + IPCA);
-                        const predAnual  = predMensal * 12;
-                        const nextYear   = todayYear + 1;
-
-                        const byYear = new Map<number, number>();
-                        for (const r of rows) {
-                          const m = r.l.nota_empenho.match(/^(\d{4})NE/i);
-                          if (!m) continue;
-                          const yr  = parseInt(m[1]);
-                          const val = r.pago + (r.isRP ? 0 : r.liquidado);
-                          if (val > 0) byYear.set(yr, (byYear.get(yr) ?? 0) + val);
-                        }
-                        const pts = [...byYear.entries()].sort((a, b) => a[0] - b[0]);
-
-                        return (
-                          <div className="rounded-xl border border-sky-700/40 bg-sky-900/20 px-4 py-3 text-xs space-y-2">
-                            <div className="font-semibold text-sky-300">Estimativa de empenho para {nextYear}</div>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1">
-                              {pts.map(([yr, v]) => (
-                                <span key={yr} className="text-slate-500">
-                                  <span className="font-semibold text-slate-400">{yr}:</span> {fmtMoney(v)}
-                                </span>
-                              ))}
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 pt-1">
-                              <div>
-                                <div className="text-slate-500">Previsão anual</div>
-                                <div className="font-bold text-sky-400 text-sm">{fmtMoney(predAnual)}</div>
-                                <div className="text-[10px] text-slate-600">base {fmtMoney(predAnual / (1 + IPCA))} + IPCA {(IPCA * 100).toFixed(1)}%</div>
-                              </div>
-                              <div>
-                                <div className="text-slate-500">Estimativa mensal</div>
-                                <div className="font-bold text-sky-400 text-sm">{fmtMoney(predMensal)}</div>
-                              </div>
-                            </div>
-                            <div className="text-slate-600 text-[10px]">
-                              Base: {fmtMoney(totalPagoCalc)} em {monthsElapsed} mes{monthsElapsed !== 1 ? "es" : ""} (desde {String(cStartMonth).padStart(2, "0")}/{cStartYear}) + IPCA {(IPCA * 100).toFixed(1)}%
                             </div>
                           </div>
                         );
@@ -2685,6 +2233,10 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                     </>
                   );
                 })()}
+                {/* Previsão do contrato — aparece também sem NEs (contrato novo) */}
+                {!execLoading && (
+                  <PrevisaoResumoContrato prev={previsoes.get(selected.id)} hoje={hoje} dataFinal={selected.data_final} siafi={estadoSiafi} />
+                )}
               </div>
             )}
 
