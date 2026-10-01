@@ -1227,8 +1227,9 @@ export default function GerenciamentoEmpenhos({ canSync = false, userRole }: Pro
         ...reforcos.map(r => r.solicitacao),
       ].filter((s, i, a) => a.indexOf(s) === i);
 
-      // Valor líquido = soma de todos os movimentos (original + reforços + anulações)
-      const valorLiquido = group.reduce((sum, r) => sum + (r.valor ?? 0), 0);
+      // Valor atual da NE (soma dos itens). A soma dos movimentos infla NEs muito
+      // movimentadas, como as de diárias, e não bate com o SIAFI.
+      const valorLiquido = group[0].valor_ne;
 
       let dias: number | null = null;
       if (se?.dt_solicitacao) {

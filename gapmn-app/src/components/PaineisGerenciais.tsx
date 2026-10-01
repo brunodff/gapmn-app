@@ -368,12 +368,19 @@ export default function PaineisGerenciais({ canEdit = false, externalSheetsUrl }
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
 
+  // Valor atual de cada NE, uma vez por NE ("valor" de cada linha é só a movimentação
+  // do lançamento, e somá-lo infla NEs muito movimentadas, como as de diárias)
+  const valorPorNE = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const ne of empenhos) m.set(ne.nota_empenho.toUpperCase(), ne.valor_ne);
+    return m;
+  }, [empenhos]);
+
   const totalValor = useMemo(() => {
-    if (!ugFiltro) return empenhos.reduce((s, ne) => s + (ne.valor ?? 0), 0);
-    return empenhos
-      .filter(ne => uniqueNEsSet.has(ne.nota_empenho.toUpperCase()))
-      .reduce((s, ne) => s + (ne.valor ?? 0), 0);
-  }, [empenhos, ugFiltro, uniqueNEsSet]);
+    let soma = 0;
+    for (const [k, v] of valorPorNE) if (!ugFiltro || uniqueNEsSet.has(k)) soma += v;
+    return soma;
+  }, [valorPorNE, ugFiltro, uniqueNEsSet]);
 
   // Apenas NEs com estrutura "2026NEXXXXXX" (empenhos do exercício corrente)
   const nesSiafi2026 = useMemo(
@@ -443,19 +450,18 @@ export default function PaineisGerenciais({ canEdit = false, externalSheetsUrl }
       byMonth.set(key, ex);
     }
 
-    for (const ne of empenhos) {
-      const k = ne.nota_empenho.toUpperCase();
+    for (const [k, v] of valorPorNE) {
       if (!uniqueNEsSet.has(k)) continue;
       const monthKey = neToMonth.get(k);
       if (!monthKey) continue;
       const ex = byMonth.get(monthKey);
-      if (ex) ex.valor += (ne.valor ?? 0);
+      if (ex) ex.valor += v;
     }
 
     return Array.from(byMonth.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, v]) => ({ mes: v.label, qty: v.qty, valor: v.valor }));
-  }, [uniqueNEs, firstEmissaoMap, empenhos, uniqueNEsSet]);
+  }, [uniqueNEs, firstEmissaoMap, valorPorNE, uniqueNEsSet]);
 
   // Média de NEs por mês: total real (planilha raw) ÷ meses com dados
   const nesPorMes = useMemo(() => {
@@ -483,18 +489,17 @@ export default function PaineisGerenciais({ canEdit = false, externalSheetsUrl }
       ex.qty++;
       byUG.set(ug, ex);
     }
-    for (const ne of empenhos) {
-      const k = ne.nota_empenho.toUpperCase();
+    for (const [k, v] of valorPorNE) {
       if (!uniqueNEsSet.has(k)) continue;
       const ug = neUgMap.get(k) ?? "Não identificada";
       const ex = byUG.get(ug);
-      if (ex) ex.valor += (ne.valor ?? 0);
+      if (ex) ex.valor += v;
     }
     return Array.from(byUG.entries())
       .filter(([ug]) => ug !== "Não identificada")
       .map(([ug, v]) => ({ ug, ...v }))
       .sort((a, b) => b.qty - a.qty);
-  }, [uniqueNEs, neUgMap, empenhos, uniqueNEsSet]);
+  }, [uniqueNEs, neUgMap, valorPorNE, uniqueNEsSet]);
 
 
   // ── SEs atrasadas (> 7 dias) ──────────────────────────────────────────────

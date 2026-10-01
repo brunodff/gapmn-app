@@ -2179,9 +2179,9 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
                       {/* ── Itens empenhados: valor de cada item e os lançamentos da NE ── */}
                       {(() => {
-                        // A planilha traz uma linha por lançamento da NE (empenho original, reforços),
-                        // cada uma repetindo o valor acumulado do item. Agrupa por NE: item com o valor
-                        // do lançamento mais recente e a lista de lançamentos com data e valor.
+                        // A planilha traz uma linha por lançamento da NE (empenho original, reforços e
+                        // anulações, negativas), cada uma repetindo o valor atual do item. Agrupa por NE:
+                        // item com o valor do lançamento mais recente e a lista de lançamentos.
                         const porNE = new Map<string, { itens: Map<string, { data: string; valor: number }>; lanc: Array<{ data: string; valor: number }> }>();
                         for (const r of rows) {
                           if (r.isRP) continue;
@@ -2196,7 +2196,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                               const atual = g.itens.get(k);
                               if (!atual || iso >= atual.data) g.itens.set(k, { data: iso, valor: it.item_valor });
                             }
-                            if (it.valor > 0 && !g.lanc.some((l) => l.data === iso && l.valor === it.valor)) g.lanc.push({ data: iso, valor: it.valor });
+                            if (Math.abs(it.valor) > 0.005 && !g.lanc.some((l) => l.data === iso && l.valor === it.valor)) g.lanc.push({ data: iso, valor: it.valor });
                           }
                           porNE.set(r.l.nota_empenho, g);
                         }
@@ -2220,7 +2220,12 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                                   {g.lanc.length > 1 && (
                                     <div className="text-[10px] text-slate-500">
                                       Lançamentos: {[...g.lanc].sort((a, b) => a.data.localeCompare(b.data)).map((l, i) => (
-                                        <span key={i}>{i > 0 && " · "}{dataBR(l.data)} {i === 0 ? "original" : "reforço"} {fmtMoney(l.valor)}</span>
+                                        <span key={i}>
+                                          {i > 0 && " · "}
+                                          <span className={l.valor < 0 ? "text-red-400" : undefined}>
+                                            {dataBR(l.data)} {l.valor < 0 ? "anulação" : i === 0 ? "original" : "reforço"} {fmtMoney(l.valor)}
+                                          </span>
+                                        </span>
                                       ))}
                                     </div>
                                   )}

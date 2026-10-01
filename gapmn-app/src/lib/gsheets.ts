@@ -80,7 +80,9 @@ export interface EmpenhoNF {
   nome_fantasia:     string;  // col 16 (Q) — Nome Fantasia do favorecido
   assinatura:        string;  // col 18 (S) — assinante OD ou "SEM INFORMACAO"
   pendente_od:       string;  // col 19 (T) — "Pendente" se aguardando ratificação OD
-  valor:             number;  // col 20 (U) — valor total do empenho (R$)
+  valor:             number;  // col 20 (U) — movimentação do lançamento (original, reforço ou anulação)
+  valor_ne:          number;  // valor atual da NE: soma da col G dos itens dela. Bate com o SIAFI;
+                              // somar "valor" infla NEs muito movimentadas, como as de diárias
   solicitacao?:      string;  // extraído de descricao via regex /26S\d+/i
 }
 
@@ -427,6 +429,13 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
  */
 export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   const result: EmpenhoNF[] = [];
+  const notaCurta = (raw: string) => raw.match(/(\d{4}NE\d+)$/i)?.[1] ?? raw.slice(-12);
+
+  // Valor atual de cada item por NE (col G, layout de 21 colunas). As linhas seguintes sem
+  // NE na col B são itens da NE de cima, mas só no mesmo dia do lançamento: a planilha
+  // intercala linhas de NEs diferentes.
+  const itensPorNE = new Map<string, Map<string, number>>();
+  let neAtual = "", diaAtual = "", itemAtual = "";
 
   let skippedDate = 0, skippedNota = 0;
 
@@ -438,6 +447,15 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
     if (!rawData.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) { skippedDate++; continue; }
 
     const rawNota = (row[1] ?? "").trim();
+    if (row.length >= 21) {
+      if (rawNota.length >= 12) { neAtual = notaCurta(rawNota); diaAtual = rawData; itemAtual = ""; }
+      if (neAtual && rawData === diaAtual) {
+        const seq = (row[2] ?? "").trim();
+        if (seq) itemAtual = seq;
+        const itens = itensPorNE.get(neAtual) ?? itensPorNE.set(neAtual, new Map()).get(neAtual)!;
+        itens.set(itemAtual || "1", toNum((row[6] ?? "").trim()));
+      }
+    }
     if (rawNota.length < 12) { skippedNota++; continue; }
 
     // Varre a linha buscando a coluna "Item compra: XXXXX - ..." (normalmente col D=3,
@@ -476,10 +494,9 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
     const cleanItemQty   = rawF;
     const cleanItemValor = rawG > 0 ? rawG : (isCompraItem ? rawF : 0);
 
-    const neMatch = rawNota.match(/(\d{4}NE\d+)$/i);
     result.push({
       data:              rawData,
-      nota_empenho:      neMatch ? neMatch[1] : rawNota.slice(-12),
+      nota_empenho:      notaCurta(rawNota),
       nota_empenho_full: rawNota,
       item_num:          cleanItemNum,
       item_desc:         cleanItemDesc,
@@ -499,10 +516,18 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
       assinatura:        (row[layoutNovo ? 18 : 13] ?? "").trim(),
       pendente_od:       (row[layoutNovo ? 19 : 14] ?? "").trim(),
       valor:             toNum((row[layoutNovo ? 20 : 15] ?? "").trim()),
+      valor_ne:          0,  // preenchido abaixo
       solicitacao:       extractSolicitacao(descricao),
     });
   }
 
+  // Valor atual da NE: soma dos itens. Sem as colunas de item (layout antigo), soma dos lançamentos.
+  const somaLanc = new Map<string, number>();
+  for (const r of result) somaLanc.set(r.nota_empenho, (somaLanc.get(r.nota_empenho) ?? 0) + r.valor);
+  for (const r of result) {
+    const itens = itensPorNE.get(r.nota_empenho);
+    r.valor_ne = itens ? [...itens.values()].reduce((s, v) => s + v, 0) : (somaLanc.get(r.nota_empenho) ?? 0);
+  }
 
   // Ordena pelo número da NE (parte numérica após "NE")
   const neNum = (ne: string) => parseInt(ne.replace(/.*NE0*/i, "") || "0", 10);
