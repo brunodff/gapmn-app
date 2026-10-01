@@ -10,15 +10,6 @@
  */
 export async function step1Runner(payload) {
 
-  function fillInput(sel, val) {
-    const el = document.querySelector(sel);
-    if (!el) return false;
-    el.focus(); el.value = val;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
-  }
-
   function setSelect2Array(sel, val) {
     const $ = window.jQuery || window.$;
     if (!$ || !$(sel).length) return false;
@@ -91,6 +82,44 @@ export async function step1Runner(payload) {
 
   async function hd(a = 300, b = 700) { await new Promise(r => setTimeout(r, a + Math.random() * (b - a))); }
 
+  // Campo com máscara ("_____/____"): valor direto; se a máscara descartar, API da
+  // máscara; por fim, tecla a tecla. A página pode redesenhar o campo: tenta 3 vezes.
+  async function preencherMascara(sel, val) {
+    const $ = window.jQuery || window.$;
+    const alvo = String(val).replace(/\D/g, '');
+    const dorme = ms => new Promise(r => setTimeout(r, ms));
+    const ok = () => (document.querySelector(sel)?.value ?? '').replace(/\D/g, '') === alvo;
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      el.focus();
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      await dorme(300);
+      if (ok()) return true;
+
+      if (el.inputmask?.setValue) el.inputmask.setValue(val);
+      else if ($) $(el).val(val).trigger('input').trigger('change');
+      await dorme(300);
+      if (ok()) return true;
+
+      if ($) {
+        $(el).val('').trigger('focus');
+        for (const ch of alvo) {
+          const code = ch.charCodeAt(0);
+          $(el).trigger($.Event('keydown', { which: code, keyCode: code }));
+          $(el).trigger($.Event('keypress', { which: code, keyCode: code, charCode: code }));
+          $(el).trigger($.Event('keyup', { which: code, keyCode: code }));
+        }
+        await dorme(300);
+        if (ok()) return true;
+      }
+      await dorme(800);
+    }
+    return ok();
+  }
+
   const { tipoOrigem, modalidade, numeroCompra, contrato, unidadeCompra = '120630', fornecedorCnpj = '' } = payload;
 
   const radioEl = tipoOrigem === 'contrato'
@@ -98,14 +127,27 @@ export async function step1Runner(payload) {
     : document.getElementById('opc_compra');
   if (!radioEl) return { ok: false, step: 1, error: 'Radio tipo não encontrado — confirme que está na Etapa 1' };
 
-  radioEl.click(); await hd();
+  const numeroLivre = () => { const n = document.querySelector('#numero_ano'); return !!n && !n.disabled && !n.readOnly; };
+  async function esperaNumeroLivre(ms) {
+    for (let w = 0; w < ms; w += 150) {
+      if (numeroLivre()) return true;
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return numeroLivre();
+  }
+
+  // Já marcado (o CNET pode lembrar a última escolha): clicar de novo pode alternar os campos
+  if (!(radioEl.checked && (tipoOrigem === 'contrato' || numeroLivre()))) {
+    radioEl.click(); await hd();
+  }
 
   if (tipoOrigem !== 'contrato') {
     // Os campos da compra só habilitam depois do clique no radio
-    for (let w = 0; w < 3000; w += 150) {
-      const n = document.querySelector('#numero_ano');
-      if (n && !n.disabled && !n.readOnly) break;
-      await new Promise(r => setTimeout(r, 150));
+    if (!await esperaNumeroLivre(3000)) {
+      radioEl.click();
+      if (!await esperaNumeroLivre(3000)) {
+        return { ok: false, step: 1, error: 'O campo Número/Ano da compra está bloqueado — a minuta anterior pode ter ficado aberta. No CNET, finalize a minuta anterior ou clique em "Adicionar Minuta de Empenho", e use Retomar.' };
+      }
     }
 
     // Modalidade: localiza a opção pelo código visível ("05 - Pregão"), não pelo
@@ -129,9 +171,10 @@ export async function step1Runner(payload) {
     }
 
     if (!numeroCompra) return { ok: false, step: 1, error: 'Número compra ausente', needsInput: 'numeroCompra' };
-    if (!fillInput('#numero_ano', numeroCompra)) {
+    if (!document.querySelector('#numero_ano')) {
       return { ok: false, step: 1, error: 'Campo Número/Ano (#numero_ano) não encontrado' };
     }
+    await preencherMascara('#numero_ano', numeroCompra);
     await hd();
     // Máscaras do campo podem reformatar; compara só os dígitos
     const numDigitos = (document.querySelector('#numero_ano')?.value ?? '').replace(/\D/g, '');

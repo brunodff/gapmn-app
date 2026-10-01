@@ -582,24 +582,30 @@ async function maximizarTabelas(tabId, etapa) {
 }
 
 async function runStep0(tabId, payload) {
-  // buscacompra É a Etapa 1 — step 0 só precisa navegar até ela
-  const pageUrl = await execInPage(tabId, () => window.location.href);
-  const onBusca = (pageUrl ?? '').includes('buscacompra');
+  // Nova minuta pelo botão "Adicionar Minuta de Empenho", como o usuário faz. Aberto
+  // pelo endereço logo depois de um empenho, o formulário pode vir preso à minuta
+  // anterior, com o Número/Ano bloqueado.
+  const r = await execInPage(tabId, step0ClickAdicionarMinuta).catch(() => null);
+  if (r?.ok) {
+    await appendLog('[Pré] Abrindo nova minuta ("Adicionar Minuta de Empenho")…', 'info');
+    notifySidePanel({ type: 'LOG', msg: '[Pré] Abrindo nova minuta…', level: 'info' });
+    try { await waitForNavigation(tabId, 25000); } catch { await delay(3000); }
+    await delay(800);
+    return { ok: true };
+  }
 
-  if (onBusca) {
+  const pageUrl = await execInPage(tabId, () => window.location.href).catch(() => '');
+  if ((pageUrl ?? '').includes('buscacompra')) {
     await appendLog('[Pré] Já está no formulário de empenho (buscacompra).', 'info');
     return { ok: true };
   }
 
-  await appendLog('[Pré] Clicando "Adicionar Minuta de Empenho"…', 'info');
-  notifySidePanel({ type: 'LOG', msg: '[Pré] Abrindo formulário de empenho…', level: 'info' });
-  const r = await execInPage(tabId, step0ClickAdicionarMinuta);
-  if (!r?.ok) return { ok: false, error: r?.error ?? 'Botão "Adicionar Minuta" não encontrado' };
-
-  await appendLog('[Pré] Aguardando formulário (Etapa 1)…', 'info');
-  try { await waitForNavigation(tabId, 25000); } catch { await delay(3000); }
+  // Sem o botão nesta tela: abre o formulário pelo endereço
+  await appendLog('[Pré] Botão "Adicionar Minuta" não está nesta tela — abrindo o formulário pelo endereço…', 'warn');
+  const navegou = waitForNavigation(tabId, 30000).catch(() => {});
+  try { await chrome.tabs.update(tabId, { url: COMPRASNET_URL }); } catch {}
+  await navegou;
   await delay(800);
-
   return { ok: true };
 }
 
@@ -1091,10 +1097,8 @@ async function prepararProximoDaFila(tabId) {
   if (!s.queue?.length) return false;
   const [next, ...rest] = s.queue;
   await appendLog(`▶ Próxima da fila: ${next.numeroSolicitacao}${rest.length ? ` (depois dela, mais ${rest.length})` : ''}`, 'info');
-  const navegou = waitForNavigation(tabId, 30000).catch(() => {});
-  try { await chrome.tabs.update(tabId, { url: COMPRASNET_URL }); } catch {}
-  await navegou;
-  await delay(1500);
+  // A Etapa 0 abre a nova minuta (botão "Adicionar Minuta de Empenho" na tela atual)
+  await delay(1000);
   await setState({ state: 'running', flow: 'empenho-cnet', step: 0, payload: next, queue: rest, valorEmpenhado: null });
   notifySidePanel({ type: 'NEXT_AVAILABLE', numero: next.numeroSolicitacao, payload: next, restantes: rest.length });
   return true;
