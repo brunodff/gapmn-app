@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { fetchCSV, toEmpenhosNF, SHEET_URLS, EmpenhoNF } from "../lib/gsheets";
+import { SIGLA_POR_UG } from "../lib/ugSiglas";
 import {
   ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as ChartTooltip, ResponsiveContainer,
@@ -264,7 +265,8 @@ export default function PaineisGerenciais({ canEdit = false, externalSheetsUrl }
         m.set(ni.ne_siafi.toUpperCase(), se.ug_cred);
       } else {
         const code = neUgCodeMap.get(ni.ne_siafi.toUpperCase());
-        m.set(ni.ne_siafi.toUpperCase(), code ? (UG_CODE_MAP[code] ?? code) : "Não identificada");
+        // Mapa local primeiro (siglas de Manaus usadas no painel), depois a lista completa de OMs
+        m.set(ni.ne_siafi.toUpperCase(), code ? (UG_CODE_MAP[code] ?? SIGLA_POR_UG[code] ?? code) : "Não identificada");
       }
     }
     return m;

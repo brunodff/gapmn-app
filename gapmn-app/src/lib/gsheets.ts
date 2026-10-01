@@ -419,7 +419,11 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
  *   col 17 (R) = CPF (ignorado) — era col 12 (M)
  *   col 18 (S) = Assinatura OD — era col 13 (N)
  *   col 19 (T) = Pendente OD — era col 14 (O)
- *   col 20 (U) = Valor total do empenho — era col 15 (P)
+ *   col 20 (U) = Valor do lançamento — era col 15 (P). Cada linha é um documento
+ *                (original, reforço ou anulação, negativa); a soma das linhas da NE dá o valor dela.
+ *
+ * NEs que não são de compra (contratos, diárias, taxas) não têm "Item compra:" em D,
+ * mas seguem o mesmo layout de 21 colunas, com texto livre em D.
  */
 export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   const result: EmpenhoNF[] = [];
@@ -449,6 +453,10 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
     }
 
     const isCompraItem  = itemColIdx >= 0;
+    // Layout com as colunas de item: decidido pela largura da linha, não pelo "Item compra:".
+    // Antes, NE sem item caía nas posições antigas e lia UG, PI e valor das colunas erradas
+    // (o valor saía do CNPJ).
+    const layoutNovo    = isCompraItem || row.length >= 21;
     const rawItemFull   = isCompraItem ? (row[itemColIdx] ?? "").trim() : "";
     const itemNumMatch  = isCompraItem ? rawItemFull.match(/item\s*compra\s*:\s*(\d+)/i) : null;
     const cleanItemNum  = itemNumMatch ? String(parseInt(itemNumMatch[1], 10)) : "";
@@ -459,7 +467,7 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
 
     // descricao: campo H (col 7) no novo formato — contém "SOLICITACAO DE EMPENHO 26SXXXX..."
     // No formato antigo (sem colunas de item) estava em col C (índice 2).
-    const descricao = (row[isCompraItem ? 7 : 2] ?? "").trim();
+    const descricao = (row[layoutNovo ? 7 : 2] ?? "").trim();
 
     // qty = ic+2, val = ic+3 (relativo ao itemColIdx encontrado)
     // Se colunas de item não estiverem na planilha: item_valor = 0
@@ -480,17 +488,17 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
       descricao,
       // Offset: 5 colunas de item foram inseridas em C-G (índices 2-6), deslocando
       // todos os campos originais em +5. Índices: [novo formato : formato antigo]
-      ugcred_code:       (row[isCompraItem ? 8  : 3]  ?? "").trim(),
-      ugr:               (row[isCompraItem ? 9  : 4]  ?? "").trim(),
-      natureza:          (row[isCompraItem ? 10 : 5]  ?? "").trim(),
-      pi:                (row[isCompraItem ? 12 : 7]  ?? "").trim(),
-      pi_desc:           (row[isCompraItem ? 13 : 8]  ?? "").trim(),
-      pag:               (row[isCompraItem ? 14 : 9]  ?? "").trim(),
-      cnpj:              (row[isCompraItem ? 15 : 10] ?? "").trim(),
-      nome_fantasia:     (row[isCompraItem ? 16 : 11] ?? "").trim(),
-      assinatura:        (row[isCompraItem ? 18 : 13] ?? "").trim(),
-      pendente_od:       (row[isCompraItem ? 19 : 14] ?? "").trim(),
-      valor:             toNum((row[isCompraItem ? 20 : 15] ?? "").trim()),
+      ugcred_code:       (row[layoutNovo ? 8  : 3]  ?? "").trim(),
+      ugr:               (row[layoutNovo ? 9  : 4]  ?? "").trim(),
+      natureza:          (row[layoutNovo ? 10 : 5]  ?? "").trim(),
+      pi:                (row[layoutNovo ? 12 : 7]  ?? "").trim(),
+      pi_desc:           (row[layoutNovo ? 13 : 8]  ?? "").trim(),
+      pag:               (row[layoutNovo ? 14 : 9]  ?? "").trim(),
+      cnpj:              (row[layoutNovo ? 15 : 10] ?? "").trim(),
+      nome_fantasia:     (row[layoutNovo ? 16 : 11] ?? "").trim(),
+      assinatura:        (row[layoutNovo ? 18 : 13] ?? "").trim(),
+      pendente_od:       (row[layoutNovo ? 19 : 14] ?? "").trim(),
+      valor:             toNum((row[layoutNovo ? 20 : 15] ?? "").trim()),
       solicitacao:       extractSolicitacao(descricao),
     });
   }

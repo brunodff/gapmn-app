@@ -1,4 +1,8 @@
-/** Sigla da OM por código de UG. Fonte: lista UG × OM fornecida em 30/09/2026. */
+/**
+ * Sigla da OM por código de UG. Fonte: lista UG × OM fornecida em 30/09/2026.
+ * 120512 = PAMN informado à parte em 01/10/2026 (veio corrompido na lista); nas
+ * planilhas SIAFI a Prefeitura de Aeronáutica de Manaus aparece como 120519.
+ */
 export const SIGLA_POR_UG: Record<string, string> = {
   "120001": "GABAER", "120002": "DIREF", "120003": "VI COMAR", "120004": "BABR", "120005": "PABR",
   "120006": "GAP-BR", "120007": "PARF", "120008": "CINDACTA I", "120013": "CLA", "120014": "BAFZ",
@@ -77,7 +81,7 @@ export const SIGLA_POR_UG: Record<string, string> = {
   "120489": "DTCEA-SI", "120490": "DTCEA-EP", "120491": "DTCEA-TF", "120492": "DTCEA-VH",
   "120493": "DTCEA-EI", "120494": "DTCEA-CZ", "120495": "1° EIA", "120496": "2° EIA",
   "120497": "3°/3° GAV", "120498": "GITE", "120500": "PAAN", "120502": "PAYS", "120504": "PALS",
-  "120507": "PAGW", "120513": "PACO", "120516": "PACT", "120519": "PAMN", "120550": "ADIAER-GBR",
+  "120507": "PAGW", "120512": "PAMN", "120513": "PACO", "120516": "PACT", "120519": "PAMN", "120550": "ADIAER-GBR",
   "120551": "ADIAER-ARG", "120552": "ADIAER-BOL", "120553": "ADIAER-COL", "120554": "ADIAER-FRA",
   "120555": "ADIAER-ITA", "120556": "ADIAER-VEN", "120557": "ADIAER-CHI", "120558": "ADIAER-EQU",
   "120559": "ADIAER-PAR", "120560": "ADIAER-PER", "120561": "ADIAER-URU", "120562": "ADIAER-EUA",
