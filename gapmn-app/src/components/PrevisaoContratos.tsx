@@ -223,9 +223,14 @@ export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi }: { prev?
   const nAno = calcularNecessidade(prev, hojeMi, dez);
   const nProx = calcularNecessidade(prev, mesIdx(ano0 + 1, 1), mesIdx(ano0 + 1, 12));
   const n12 = calcularNecessidade(prev, hojeMi, hojeMi + 11);
-  let previstoAno = 0;
-  for (let mi = prev.inicioExercicio(ano0); mi <= dez; mi++) previstoAno += prev.valorMes(mi);
+  // Previsto no ano = realizado + o que falta até dezembro; assim previsto − empenhado
+  // é o crédito necessário (competências liquidadas valem o que foi pago)
   const e = prev.execAno(ano0);
+  const aberta = prev.primeiraAberta(ano0);
+  let aFaturar = 0;
+  for (let mi = aberta; mi <= dez; mi++) aFaturar += prev.valorMes(mi);
+  const realizado = prev.regime === "saldo" ? e.empenhado : e.liquidado;
+  const previstoAno = realizado + aFaturar;
   const fimVig = dataFinal ? new Date(dataFinal + "T12:00:00").toLocaleDateString("pt-BR") : null;
 
   return (
@@ -254,7 +259,13 @@ export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi }: { prev?
               <div className="rounded-lg border bg-white p-2">
                 <div className="text-slate-500">Previsto em {ano0}</div>
                 <div className="font-semibold text-slate-800">{fmtMoney(previstoAno)}</div>
-                <div className="text-[10px] text-slate-400">desde {rotuloMes(prev.inicioExercicio(ano0))}</div>
+                <div className="text-[10px] text-slate-400">
+                  {prev.regime === "saldo"
+                    ? "empenhado + saldo a empenhar até dez"
+                    : realizado > 0.5
+                      ? `${fmtMoney(realizado)} liquidado + faturas de ${rotuloMes(aberta)} a dez`
+                      : `desde ${rotuloMes(aberta)}`}
+                </div>
               </div>
               <div className="rounded-lg border bg-white p-2">
                 <div className="text-slate-500">Empenhado em {ano0}</div>
@@ -576,7 +587,7 @@ export function PrevisaoOrcamentaria({
               <p><strong>📅 Parcela fixa</strong> (limpeza, manutenção preventiva, outsourcing…): valor do contrato ÷ meses de vigência, uma parcela por mês a partir do início.</p>
               <p><strong>⚡ Estimativo</strong> (energia, água, telefonia, credenciamentos, manutenção por OS…): ritmo de liquidação do ano (liquidado ÷ meses já faturados, considerando ~1 mês de defasagem da fatura) combinado com os empenhos anuais dos últimos 3 anos, com peso maior para o mais recente. Sem empenho no ano há 3 meses ou mais, a previsão é zerada (provável substituição). Sem histórico, usa valor ÷ vigência, só daqui para frente.</p>
               <p><strong>🏗️ Saldo</strong> (obras, aquisições): saldo a empenhar distribuído até o fim da vigência.</p>
-              <p><strong>Crédito necessário</strong> em cada exercício = previsto acumulado − empenhado no exercício (NEs do ano). O <em>pendente</em> é a parte de competências que já passaram sem empenho suficiente. Restos a pagar não entram: pagam competências de anos anteriores.</p>
+              <p><strong>Crédito necessário</strong> em cada exercício = faturas ainda não liquidadas até o fim do período − saldo a liquidar dos empenhos do ano (NEs do ano). As competências já liquidadas entram pelo valor pago, não pela previsão. O <em>pendente</em> é a parte de competências que já passaram sem empenho suficiente, como a fatura do mês passado que ainda vai ser liquidada. Restos a pagar não entram: pagam competências de anos anteriores.</p>
               <p>O regime é deduzido do objeto; uma parcela fixa que executa menos de 60% do valor vira estimativo. Contratos do mesmo PAG dividem o histórico pelo valor mensal de cada um. Tudo pode ser ajustado em <em>Dados Gerais → Previsão mensal</em>.</p>
             </div>
           )}
@@ -630,7 +641,7 @@ export function PrevisaoOrcamentaria({
                     <th className="px-2 py-2 text-left font-semibold min-w-[200px]">{agrupar === "nenhum" ? "Contrato" : `${AGRUPAR_ROTULO[agrupar]} / contrato`}</th>
                     <th className="px-2 py-2 text-left font-semibold">Regime</th>
                     <th className="px-2 py-2 text-right font-semibold">Mensal</th>
-                    <th className="px-2 py-2 text-center font-semibold" title="Último mês coberto pelo empenhado no exercício">Cobre até</th>
+                    <th className="px-2 py-2 text-center font-semibold" title="Último mês já liquidado ou coberto pelo saldo empenhado no exercício">Cobre até</th>
                     <th className="px-2 py-2 text-right font-semibold text-amber-700" title={rotuloPendente}>Pendente</th>
                     {meses.map((mi) => <th key={mi} className="px-2 py-2 text-right font-semibold whitespace-nowrap">{rotuloMes(mi)}</th>)}
                     <th className="px-2 py-2 text-right font-semibold text-red-700">Total</th>

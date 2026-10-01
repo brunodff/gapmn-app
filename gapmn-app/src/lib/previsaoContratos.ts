@@ -225,6 +225,8 @@ export interface PrevisaoContrato {
   execAno(ano: number): ExecAno;
   /** primeiro mês considerado no acumulado do exercício */
   inicioExercicio(ano: number): number;
+  /** primeira competência do exercício cuja fatura ainda não foi liquidada */
+  primeiraAberta(ano: number): number;
 }
 
 /** Projeta todos os contratos. Contratos do mesmo PAG dividem o histórico pelo peso nominal. */
@@ -475,6 +477,20 @@ export function projetarContratos(
       return val;
     };
 
+    // ── Competências já liquidadas no exercício ──────────────────────────────
+    // O liquidado do ano paga as faturas em ordem. Fatura com ao menos metade do previsto
+    // conta como paga (a primeira costuma ser proporcional, há glosas); essas competências
+    // valem o que foi liquidado. O mês corrente ainda não foi faturado.
+    let abertaAno0 = inicioExercicio(ano0);
+    let restoLiq = execAno(ano0).liquidado;
+    while (abertaAno0 < hojeMi) {
+      const fatura = valorMes(abertaAno0);
+      if (fatura > 0 && restoLiq < fatura * 0.5) break;
+      restoLiq -= fatura;
+      abertaAno0++;
+    }
+    const primeiraAberta = (ano: number) => (ano === ano0 ? abertaAno0 : inicioExercicio(ano));
+
     if (vencido && !op.suporProrrogacao && regime !== "nao_prever") alertas.push("Vigência encerrada — sem previsão para os próximos meses");
     // Parcela fixa em vigor sem nenhum empenho no exercício: a previsão continua
     // (o valor é firme), mas pode ser contrato substituído ou empenho em outro PAG.
@@ -486,7 +502,7 @@ export function projetarContratos(
     out.set(c.id, {
       id: c.id, numero: c.numero_contrato, regime, origem, motivo, mensal, base, alertas,
       inicioMi: v?.iniMi ?? null, fimMi, vencido, pagContratos,
-      valorMes, execAno, inicioExercicio,
+      valorMes, execAno, inicioExercicio, primeiraAberta,
     });
   }
   return out;
@@ -503,16 +519,17 @@ export interface Necessidade {
   /** pendente + necessidade dos meses do período */
   total: number;
   previstoPeriodo: number;
-  /** último mês do exercício corrente coberto pelo empenhado (null = nenhum) */
+  /** último mês do exercício corrente já liquidado ou coberto pelo saldo empenhado (null = nenhum) */
   cobertoAte: number | null;
-  /** empenhado no exercício corrente além do previsto até dezembro */
+  /** saldo a liquidar do exercício corrente além das faturas previstas até dezembro */
   excedente: number;
 }
 
 /**
  * Necessidade de crédito de `deMi` (normalmente o mês atual) a `ateMi`.
- * Em cada exercício: max(0, previsto acumulado − empenhado no exercício);
- * a necessidade do mês é o quanto esse valor cresce de um mês para o outro.
+ * Em cada exercício: max(0, faturas ainda não liquidadas − saldo a liquidar dos empenhos
+ * do ano). As competências já liquidadas valem o que foi pago, não a previsão. A
+ * necessidade do mês é o quanto esse valor cresce de um mês para o outro.
  */
 export function calcularNecessidade(p: PrevisaoContrato, deMi: number, ateMi: number): Necessidade {
   const meses: MesPrevisto[] = [];
@@ -525,20 +542,22 @@ export function calcularNecessidade(p: PrevisaoContrato, deMi: number, ateMi: nu
     for (const m of meses) m.necessidade = m.previsto;
   } else {
     for (let ano = ano0; ano <= anoDe(ateMi); ano++) {
-      const emp = p.execAno(ano).empenhado;
-      const ini = p.inicioExercicio(ano);
+      // saldo dos empenhos do ano ainda não liquidado: paga as próximas faturas
+      const saldo = p.execAno(ano).aLiquidar;
+      const ini = p.primeiraAberta(ano);
       const fimAno = mesIdx(ano, 12);
+      if (ano === ano0 && ini > p.inicioExercicio(ano)) cobertoAte = ini - 1;  // já liquidadas
       let acum = 0, necAnt = 0;
       for (let mi = ini; mi <= fimAno; mi++) {
         const valor = p.valorMes(mi);
         acum += valor;
-        const nec = Math.max(0, acum - emp);
-        if (ano === ano0 && valor > 0 && acum <= emp + 0.005) cobertoAte = mi;
+        const nec = Math.max(0, acum - saldo);
+        if (ano === ano0 && valor > 0 && acum <= saldo + 0.005) cobertoAte = mi;
         if (mi < deMi) pendente = nec;
         else if (mi <= ateMi) { const m = porMi.get(mi); if (m) m.necessidade = nec - necAnt; }
         necAnt = nec;
       }
-      if (ano === ano0) excedente = Math.max(0, emp - acum);
+      if (ano === ano0) excedente = Math.max(0, saldo - acum);
     }
   }
   const previstoPeriodo = meses.reduce((s, m) => s + m.previsto, 0);
