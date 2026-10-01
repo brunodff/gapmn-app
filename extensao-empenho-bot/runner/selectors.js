@@ -86,7 +86,7 @@ export const STEP5 = {
 export const STEP6 = {
   // TODO: Etapa 6 — Dados Empenho
   inputDataEmissao:  null, // date input
-  selectTipoEmpenho: null, // select (Global/Ordinário/Estimativo)
+  selectTipoEmpenho: '#tipo_empenho_id', // select2 (Ordinário/Estimativo/Global) — escolhido pelo texto em steps/step6.js
   inputNumProcesso:  null,
   selectAmparoLegal: null, // select2 (busca por "14.133")
   inputLocalEntrega: null,

@@ -28,6 +28,7 @@ import { step1Runner } from './steps/step1.js';
 import { step3Runner } from './steps/step3.js';
 import { maximizarTabelasRunner } from './steps/tabelas.js';
 import { step5Runner } from './steps/step5.js';
+import { step6Runner } from './steps/step6.js';
 import {
   step0ClickAdicionarMinuta,
   step0PesquisarContrato,
@@ -791,51 +792,9 @@ async function runStep6(tabId, payload) {
   await appendLog('[Etapa 6] Preenchendo dados do empenho…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 6] Preenchendo dados…', level: 'info' });
 
-  const result = await execInPage(tabId, async (p) => {
-    function fillInput(name, value) {
-      const el = document.querySelector(`[name="${name}"]`);
-      if (!el || value == null || value === '') return;
-      el.focus();
-      el.value = String(value);
-      el.dispatchEvent(new Event('input',  { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      el.dispatchEvent(new Event('blur',   { bubbles: true })); // onblur="maiuscula(this)"
-    }
+  const result = await execInPage(tabId, step6Runner, [payload]);
 
-    function setSelect2Array(id, value) {
-      const $ = window.jQuery || window.$;
-      const sel = document.getElementById(id);
-      if (!sel || !$) return;
-      $(sel).val(String(value)).trigger('change');
-    }
-
-    // Data de emissão: hoje no formato YYYY-MM-DD
-    const hoje = new Date().toISOString().split('T')[0];
-    fillInput('data_emissao', hoje);
-
-    // Tipo Empenho: Ordinário (234) — padrão para contratos
-    setSelect2Array('tipo_empenho_id', '234');
-    await new Promise(r => setTimeout(r, 200));
-
-    // Número Processo (PAG da solicitação, maxlength=20)
-    if (p.pag) fillInput('processo', p.pag.slice(0, 20));
-
-    // Local de Entrega
-    if (p.localEntrega) fillInput('local_entrega', p.localEntrega);
-
-    // Descrição / Observação (textarea)
-    if (p.obs) fillInput('descricao', p.obs);
-
-    await new Promise(r => setTimeout(r, 400));
-
-    const btn =
-      document.querySelector('button.submeter') ||
-      Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
-    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 6' };
-    btn.click();
-    return { ok: true };
-  }, [payload]);
-
+  for (const f of result?.feitos ?? []) await appendLog(`[Etapa 6] ${f}`, 'info');
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 6' };
   await appendLog('[Etapa 6] Dados preenchidos ✓', 'info');
   return { ok: true };

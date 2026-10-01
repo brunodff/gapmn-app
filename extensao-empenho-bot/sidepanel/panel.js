@@ -109,6 +109,18 @@ const MODALIDADES = [
   '07 - Inexigibilidade',
 ];
 
+// Tipos de empenho do Contratos.gov.br (o robô escolhe a opção pelo texto)
+const TIPOS_EMPENHO = ['Ordinário', 'Estimativo', 'Global'];
+// Contrato de serviço público medido por consumo
+const RX_SERVICO_PUBLICO = /ENERGIA\s+EL[ÉE]TRICA|ESGOTO|SANEAMENTO|FORNECIMENTO\s+DE\s+[ÁA]GUA(?!\s+MINERAL)|TELEFONIA|\bSTFC\b|G[ÁA]S\s+CANALIZADO/i;
+
+// Padrão: compra = Global; contrato de serviço público = Estimativo; demais = Ordinário
+function tipoEmpenhoPadrao(sol) {
+  if (sol.tipoOrigem === 'compra') return 'Global';
+  const texto = [sol.obs, sol.contratoRaw, ...(sol.itens ?? []).map(it => it.descricao ?? it.desc ?? '')].join(' ');
+  return RX_SERVICO_PUBLICO.test(texto) ? 'Estimativo' : 'Ordinário';
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const el = id => document.getElementById(id);
 
@@ -348,6 +360,7 @@ async function processarArquivos(files) {
         parsed.numeroCompra  = parsed.licit ?? '';
         parsed.modalidade    = parsed.modalidadeSugerida ?? '';
         parsed.unidadeCompra = unidadeCompraDoPerfil();
+        parsed.tipoEmpenho   = tipoEmpenhoPadrao(parsed);
         if (parsed.modalidadeSugerida) (parsed._deduzidos ??= {}).modalidade = true;
 
         // Extrai itens empenho da OBS ("ITEM 1: 4891,66 - ITEM 2: 7333,06")
@@ -504,6 +517,7 @@ function renderCamposEditable(sol, idx) {
     ['CNPJ',           'fornecedorCnpj'],
     ['PAG',            'pag'],
     ['Tipo',           'tipoOrigem'],
+    ['Tipo Empenho',   'tipoEmpenho'],
     ['Contrato',       'contrato'],
     ['Nº Compra',      'numeroCompra'],
     ['Modalidade',     'modalidade'],
@@ -535,6 +549,14 @@ function renderCamposEditable(sol, idx) {
     <select class="rf-input rf-tipo" data-idx="${idx}" data-key="tipoOrigem">
       <option value="contrato"${!ehCompra ? ' selected' : ''}>Contrato</option>
       <option value="compra"${ehCompra ? ' selected' : ''}>Compra</option>
+    </select>`;
+    }
+    if (key === 'tipoEmpenho') {
+      const atual = sol.tipoEmpenho || tipoEmpenhoPadrao(sol);
+      return `
+    <div class="rf-label" title="Padrão: compra = Global; contrato de serviço público (energia, água, esgoto, telefonia) = Estimativo; demais contratos = Ordinário">${label}</div>
+    <select class="rf-input" data-idx="${idx}" data-key="tipoEmpenho">
+      ${TIPOS_EMPENHO.map(t => `<option value="${escHtml(t)}"${t === atual ? ' selected' : ''}>${escHtml(t)}</option>`).join('')}
     </select>`;
     }
     if (key === 'modalidade') {
@@ -635,7 +657,15 @@ function bindReviewInputs() {
         document.querySelectorAll(`[data-gidx="${idx}"]`).forEach(n => {
           n.style.display = (n.dataset.grupo === 'compra') === compra ? '' : 'none';
         });
+        // Tipo de empenho acompanha a troca, a menos que o usuário já o tenha escolhido
+        const sol = solicitacoesParsed[idx];
+        if (sol && !sol._tipoEmpenhoManual) {
+          sol.tipoEmpenho = tipoEmpenhoPadrao(sol);
+          const selTipo = document.querySelector(`select[data-idx="${idx}"][data-key="tipoEmpenho"]`);
+          if (selTipo) selTipo.value = sol.tipoEmpenho;
+        }
       }
+      if (key === 'tipoEmpenho' && solicitacoesParsed[idx]) solicitacoesParsed[idx]._tipoEmpenhoManual = true;
       // Campo conferido pelo usuário deixa de ser "deduzido"
       if (solicitacoesParsed[idx]?._deduzidos?.[key]) {
         delete solicitacoesParsed[idx]._deduzidos[key];
@@ -780,6 +810,7 @@ function solToPayload(sol) {
     numeroCompra:      sol.numeroCompra ?? '',
     modalidade:        sol.modalidade ?? '',
     unidadeCompra:     sol.unidadeCompra || unidadeCompraDoPerfil(),
+    tipoEmpenho:       sol.tipoEmpenho || tipoEmpenhoPadrao(sol),
     il:                sol.il,
     ugCred:            sol.ugCred,
     codemp:            sol.codemp,
@@ -1295,6 +1326,7 @@ function buildCnetPayload(sol) {
     contrato:          sol.contrato ?? '',
     tipoOrigem:        sol.contrato ? 'contrato' : 'compra',
     unidadeCompra:     sol.ugCred ?? '120630',
+    tipoEmpenho:       tipoEmpenhoPadrao({ tipoOrigem: sol.contrato ? 'contrato' : 'compra', obs: sol.obs, itens: sol.items }),
     nd:                sol.nd ?? '',
     ptres:             sol.ptres ?? '',
     pi:                sol.pi ?? '',
