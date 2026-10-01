@@ -27,6 +27,7 @@
 import { step1Runner } from './steps/step1.js';
 import { step3Runner } from './steps/step3.js';
 import { maximizarTabelasRunner } from './steps/tabelas.js';
+import { step4Runner } from './steps/step4.js';
 import { step5Runner } from './steps/step5.js';
 import { step6Runner } from './steps/step6.js';
 import {
@@ -47,6 +48,8 @@ import {
 
 const STORAGE_KEY = 'empenhoBot';
 const COMPRASNET_URL = 'https://contratos.comprasnet.gov.br/empenho/buscacompra';
+// Empenhos emitidos (solicitação → NE), guardados entre execuções
+export const REGISTRO_KEY = 'empenhosGerados';
 
 // ── Persistência ──────────────────────────────────────────────────────────────
 
@@ -191,8 +194,24 @@ export async function confirmEmissao() {
   if (s.state !== 'checkpoint' || s.step !== 8) {
     return { ok: false, error: 'Não está no checkpoint da Etapa 8' };
   }
+  if (maquinaAtiva) return { ok: false, error: 'O robô ainda está executando' };
   await setState({ state: 'running' });
-  await runStep8Confirm(s.cnetTabId, s.payload);
+  // Marca a máquina como ativa: durante a emissão o estado é "running" sem laço, e
+  // um GET_STATE do painel nesse meio a trataria como execução órfã.
+  maquinaAtiva = true;
+  let proximo = false;
+  try {
+    proximo = await runStep8Confirm(s.cnetTabId, s.payload);
+  } finally {
+    maquinaAtiva = false;
+  }
+  if (proximo) {
+    runStateMachine().catch(async err => {
+      await appendLog(`❌ Erro fatal: ${err.message}`, 'error');
+      await setState({ state: 'error' });
+      notifySidePanel({ type: 'ERROR', message: err.message });
+    });
+  }
   return { ok: true };
 }
 
@@ -478,21 +497,11 @@ async function runEmpenhoStep(s) {
     await appendLog(`✅ Etapa ${step} concluída`, 'info');
 
     if (step === 8) {
+      // Só no modo simulação (sem checkpoint): segue para o próximo da fila
       notifySidePanel({ type: 'DONE', ne: result.ne });
-      const fresh = await getState();
-      if (fresh.queue?.length > 0) {
-        const [next, ...rest] = fresh.queue;
-        await appendLog(`▶ Iniciando próximo da fila: ${next.numeroSolicitacao}…`, 'info');
-        await setState({
-          state: 'running', flow: 'empenho-cnet',
-          step: 1, payload: next, queue: rest,
-        });
-        notifySidePanel({ type: 'NEXT_AVAILABLE', numero: next.numeroSolicitacao });
-        return true; // continua o loop da máquina de estados com o próximo item
-      } else {
-        await setState({ state: 'done' });
-        return false;
-      }
+      if (await prepararProximoDaFila(tabId)) return true;
+      await setState({ state: 'done' });
+      return false;
     }
 
     await setState({ step: step + 1 });
@@ -672,104 +681,9 @@ async function runStep4(tabId, payload) {
   // Sem isto, crédito na página 2 levava a cadastrar uma célula orçamentária duplicada
   await maximizarTabelas(tabId, 4);
 
-  const result = await execInPage(tabId, async (p) => {
-    // Aguarda DataTable carregar (AJAX — até 15s)
-    const rows = await new Promise(res => {
-      let elapsed = 0;
-      const tick = setInterval(() => {
-        elapsed += 500;
-        const r = Array.from(document.querySelectorAll('table tbody tr[role="row"]'));
-        if (r.length > 0 || elapsed >= 15000) { clearInterval(tick); res(r); }
-      }, 500);
-    });
+  const result = await execInPage(tabId, step4Runner, [payload]);
 
-    const pi    = (p.pi    ?? '').trim().toUpperCase();
-    const ptres = (p.ptres ?? '').trim();
-    const fonte = (p.fonte ?? '').trim().replace(/\D/g, '');
-
-    // Busca linha compatível: PI (mais específico) ou PTRES+Fonte
-    let targetRadio = null;
-    for (const row of rows) {
-      const cells = Array.from(row.querySelectorAll('td'));
-      if (cells.length < 7) continue;
-      // col 0=Selecione, 1=Esfera, 2=PTRS, 3=Fonte, 4=ND, 5=UGR, 6=Plano Interno
-      const rowPtres = cells[2]?.textContent?.trim() ?? '';
-      const rowFonte = (cells[3]?.textContent?.trim() ?? '').replace(/\D/g, '');
-      const rowPi    = cells[6]?.textContent?.trim().toUpperCase() ?? '';
-
-      if ((pi && rowPi.includes(pi)) || (ptres && rowPtres.includes(ptres) && fonte && rowFonte.includes(fonte))) {
-        targetRadio = cells[0]?.querySelector('input[type="radio"]');
-        break;
-      }
-    }
-
-    if (targetRadio) {
-      targetRadio.click();
-      await new Promise(r => setTimeout(r, 300));
-    } else {
-      // Não encontrou → abre modal "Inserir Célula Orçamentária"
-      const btnModal = document.querySelector('button[data-target="#inserir_celular_orcamentaria"]');
-      if (!btnModal) return { ok: false, error: 'Botão "Inserir Célula Orçamentária" não encontrado' };
-      btnModal.click();
-      await new Promise(r => setTimeout(r, 700));
-
-      function fillF(id, val) {
-        const el = document.getElementById(id);
-        if (!el || val == null || val === '') return;
-        el.focus();
-        el.value = String(val);
-        el.dispatchEvent(new Event('input',  { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-
-      // Esfera: lê da primeira linha existente, fallback '1' (Esfera Fiscal)
-      const esfera = rows[0]?.querySelectorAll('td')[1]?.textContent?.trim() ?? '1';
-      fillF('esfera',           esfera);
-      fillF('ptrs',             p.ptres);
-      fillF('fonte',            p.fonte);
-      fillF('natureza_despesa', p.nd);
-      fillF('urg',              p.ugCred); // id no CNET é "urg" (typo; name="ugr")
-      fillF('plano_interno',    p.pi);
-
-      await new Promise(r => setTimeout(r, 400));
-
-      const btnSalvar = document.getElementById('btn_inserir');
-      if (!btnSalvar) return { ok: false, error: 'Botão "Salvar" do modal não encontrado' };
-      btnSalvar.click();
-
-      // Aguarda modal fechar e nova linha aparecer (AJAX)
-      await new Promise(r => setTimeout(r, 2000));
-
-      // Seleciona nova linha por PI ou última linha da tabela
-      const newRows = Array.from(document.querySelectorAll('table tbody tr[role="row"]'));
-      let newRadio = null;
-      if (pi) {
-        for (const row of newRows) {
-          const cells = Array.from(row.querySelectorAll('td'));
-          if ((cells[6]?.textContent?.trim().toUpperCase() ?? '').includes(pi)) {
-            newRadio = cells[0]?.querySelector('input[type="radio"]');
-            break;
-          }
-        }
-      }
-      if (!newRadio && newRows.length > 0) {
-        const lastCells = Array.from(newRows[newRows.length - 1].querySelectorAll('td'));
-        newRadio = lastCells[0]?.querySelector('input[type="radio"]');
-      }
-      if (newRadio) { newRadio.click(); await new Promise(r => setTimeout(r, 300)); }
-    }
-
-    // Clica "Próxima Etapa" (ignora botões dentro do modal)
-    const btn =
-      document.querySelector('button.submeter') ||
-      Array.from(document.querySelectorAll('button')).find(b =>
-        !b.closest('#inserir_celular_orcamentaria') && b.textContent?.trim().includes('Próxima')
-      );
-    if (!btn) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 4' };
-    btn.click();
-    return { ok: true };
-  }, [payload]);
-
+  for (const f of result?.feitos ?? []) await appendLog(`[Etapa 4] ${f}`, 'info');
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 4' };
   await appendLog('[Etapa 4] Crédito selecionado ✓', 'info');
   return { ok: true };
@@ -870,8 +784,57 @@ async function runStep8Checkpoint(tabId, payload, dryRun) {
   return { ok: true, checkpoint: true, summary: { ...summary, payload } };
 }
 
+// Número da NE emitida, lido na página (função serializada — autocontida).
+// Vale só um número que não estava na tela antes de emitir; se aparecerem vários
+// (ex.: lista de minutas), o da linha que cita a solicitação ou o CNPJ.
+function lerNumeroNE(antes, ref) {
+  const novos = txt => [...new Set(String(txt ?? '').match(/\d{4}NE\d{6}(?!\d)/g) ?? [])]
+    .filter(n => !antes.includes(n));
+  const mensagens = document.querySelectorAll('.alert-success, .callout-success, .swal2-popup, .toast-success, .toast-message, .alert-info');
+  for (const m of mensagens) {
+    const n = novos(m.textContent);
+    if (n.length) return { ne: n[0] };
+  }
+  const n = novos(document.body?.textContent);
+  if (n.length <= 1) return n.length ? { ne: n[0] } : null;
+  const chaves = [ref.solicitacao, ref.cnpj].filter(k => k && k.length >= 5);
+  for (const ne of n) {
+    const linha = Array.from(document.querySelectorAll('tr')).find(tr => tr.textContent.includes(ne));
+    const txt = linha?.textContent ?? '';
+    if (chaves.some(k => txt.includes(k) || txt.replace(/\D/g, '').includes(k))) return { ne };
+  }
+  return { ne: n[0], duvida: true };
+}
+
+/** Guarda o empenho emitido (solicitação → NE) na lista permanente da extensão */
+async function registrarEmpenho(registro) {
+  const data = await chrome.storage.local.get(REGISTRO_KEY);
+  const lista = [...(data[REGISTRO_KEY] ?? []), registro];
+  await chrome.storage.local.set({ [REGISTRO_KEY]: lista.slice(-1000) });
+}
+
+/** Se há solicitação na fila: abre o formulário de nova minuta e a põe para rodar */
+async function prepararProximoDaFila(tabId) {
+  const s = await getState();
+  if (!s.queue?.length) return false;
+  const [next, ...rest] = s.queue;
+  await appendLog(`▶ Próxima da fila: ${next.numeroSolicitacao}${rest.length ? ` (depois dela, mais ${rest.length})` : ''}`, 'info');
+  const navegou = waitForNavigation(tabId, 30000).catch(() => {});
+  try { await chrome.tabs.update(tabId, { url: COMPRASNET_URL }); } catch {}
+  await navegou;
+  await delay(1500);
+  await setState({ state: 'running', flow: 'empenho-cnet', step: 0, payload: next, queue: rest, valorEmpenhado: null });
+  notifySidePanel({ type: 'NEXT_AVAILABLE', numero: next.numeroSolicitacao, payload: next, restantes: rest.length });
+  return true;
+}
+
+/** Emite após a confirmação humana; retorna true se deixou o próximo da fila pronto */
 async function runStep8Confirm(tabId, payload) {
   await appendLog('[Etapa 8] Usuário confirmou — emitindo empenho…', 'info');
+  // NEs já presentes na tela não podem ser confundidas com a nova
+  const antes = await execInPage(tabId,
+    () => [...new Set((document.body?.textContent ?? '').match(/\d{4}NE\d{6}(?!\d)/g) ?? [])], []).catch(() => []) ?? [];
+
   const result = await execInPage(tabId, () => {
     const btn = document.querySelector('button[id*="emitir"], button.btn-success:not(.submeter)');
     if (!btn) return { ok: false, error: 'Botão Emitir não encontrado — selecione manualmente' };
@@ -883,19 +846,23 @@ async function runStep8Confirm(tabId, payload) {
     await appendLog(`❌ Falha ao emitir: ${result?.error}`, 'error');
     await setState({ state: 'error' });
     notifySidePanel({ type: 'ERROR', message: result?.error });
-    return;
+    return false;
   }
 
-  await appendLog('🎉 Empenho emitido! Aguardando número…', 'info');
-  await delay(3000);
-
-  const ne = await execInPage(tabId, () => {
-    const el = document.querySelector('[class*="numero-ne"], [id*="ne"], .alert-success, .numero_empenho');
-    // Tenta extrair padrão NE (ex: 2026NE000123)
-    const text = document.body?.textContent ?? '';
-    const m = /\b(\d{4}NE\d{6,})\b/.exec(text);
-    return m?.[1] ?? el?.textContent?.trim() ?? null;
-  }, []);
+  await appendLog('🎉 Emissão enviada — aguardando o número da NE…', 'info');
+  // O SIAFI pode demorar: procura por até ~45 s (a página pode estar navegando)
+  const ref = {
+    solicitacao: String(payload.numeroSolicitacao ?? '').toUpperCase(),
+    cnpj: String(payload.fornecedorCnpj ?? payload.fornecedorCNPJ ?? '').replace(/\D/g, ''),
+  };
+  let achado = null;
+  for (let t = 0; t < 15; t++) {
+    await delay(3000);
+    const r = await execInPage(tabId, lerNumeroNE, [antes, ref]).catch(() => null);
+    if (r?.ne) achado = r;
+    if (achado && !achado.duvida) break;
+  }
+  const ne = achado?.ne ?? null;
 
   // Valor solicitado: soma dos itensEmpenho ou total do payload
   const itensEmp = payload.itensEmpenho ?? [];
@@ -908,12 +875,26 @@ async function runStep8Confirm(tabId, payload) {
   const valorEmpenhado = s.valorEmpenhado ?? valorSolicitado;
   const diff = Math.abs(valorSolicitado - valorEmpenhado);
 
+  await registrarEmpenho({
+    data:        new Date().toISOString(),
+    solicitacao: payload.numeroSolicitacao ?? '',
+    ne,
+    conferir:    !ne || !!achado?.duvida,
+    fornecedor:  payload.fornecedorNome ?? '',
+    cnpj:        ref.cnpj,
+    origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
+    valorSolicitado,
+    valorEmpenhado,
+  });
   await appendLog(
-    `✅ NE: ${ne ?? '(verificar manualmente)'} | Empenhado: R$ ${valorEmpenhado.toFixed(2)} | Solicitado: R$ ${valorSolicitado.toFixed(2)}${diff > 0.005 ? ` | ⚠ Diferença: R$ ${diff.toFixed(2)}` : ''}`,
-    'info'
+    `✅ ${payload.numeroSolicitacao ?? 'Solicitação'} → NE ${ne ?? '(não lida — conferir no CNET)'}${achado?.duvida ? ' (conferir)' : ''} | Empenhado: R$ ${valorEmpenhado.toFixed(2)} | Solicitado: R$ ${valorSolicitado.toFixed(2)}${diff > 0.005 ? ` | ⚠ Diferença: R$ ${diff.toFixed(2)}` : ''}`,
+    ne && !achado?.duvida ? 'success' : 'warn'
   );
-  await setState({ state: 'done' });
   notifySidePanel({ type: 'DONE', ne, payload, valorEmpenhado, valorSolicitado });
+
+  if (await prepararProximoDaFila(tabId)) return true;
+  await setState({ state: 'done' });
+  return false;
 }
 
 // ── Comunicação com Side Panel ────────────────────────────────────────────────

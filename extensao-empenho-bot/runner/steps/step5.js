@@ -35,6 +35,17 @@ export async function step5Runner(p) {
     return i >= 0 ? tr.cells[i] : null;
   }
 
+  // Trava: a Natureza da Despesa dos itens vem da linha de crédito da Etapa 4
+  const ndAlvo = String(p.nd ?? '').replace(/\D/g, '');
+  if (ndAlvo) {
+    for (const tr of linhas) {
+      const nd = (colunaPorCabecalho(tr, /^Natureza/i)?.textContent ?? '').replace(/\D/g, '');
+      if (nd && !nd.startsWith(ndAlvo)) {
+        return { ok: false, error: `A linha de crédito escolhida tem ND ${nd}, mas a solicitação pede ${ndAlvo}. Volte à Etapa 4 no CNET, marque a linha com ND ${ndAlvo}, clique em Próxima Etapa e use Retomar.` };
+      }
+    }
+  }
+
   function preencher(input, valor) {
     input.focus();
     input.value = valor;

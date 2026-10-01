@@ -134,6 +134,7 @@ async function init() {
   setupAutomationControls();
   setupDevPanel();
   setupFeedbackWidget();
+  setupEmpenhosGerados();
 
   const data = await chrome.storage.local.get(['empenho_profile', UNIDADE_COMPRA_KEY]);
   userProfile = data.empenho_profile ?? null;
@@ -784,14 +785,7 @@ function iniciarFila() {
   // Enfileira as restantes
   if (!enviar({ type: 'START_EMPENHO', payload, queue: resto.map(solToPayload) })) return;
 
-  el('inf-numero').textContent = primeira.solicitacao || '—';
-  el('inf-forn').textContent   = primeira.fornecedorNome || '—';
-  el('inf-cnpj').textContent   = primeira.fornecedorCnpj || '—';
-  el('inf-compra').textContent = primeira.tipoOrigem === 'compra'
-    ? `Compra ${primeira.numeroCompra} · ${primeira.modalidade}`
-    : (primeira.contrato || '—');
-  el('inf-total').textContent  = primeira.total || '—';
-  el('payload-card').style.display = '';
+  renderPayloadCard(payload);
 
   el('log').innerHTML = '';
   setBadge('running');
@@ -896,6 +890,7 @@ function connectPort(pedirEstado = true) {
                               appendLog(`🎉 Concluído${msg.ne ? ' — NE: ' + msg.ne : ''}`, 'success');
                               showCheckpoint(false);
                               showResultadoEmpenho(msg);
+                              renderEmpenhosGerados();
                               logActivity('DONE', { ne: msg.ne ?? null });   break;
         case 'ERROR':         setBadge('error');
                               appendLog(`❌ ${msg.message}`, 'error');
@@ -906,9 +901,12 @@ function connectPort(pedirEstado = true) {
         case 'CHECKPOINT':    showCheckpoint(true, msg.summary);             break;
         case 'NEXT_AVAILABLE':
           setBadge('running');
-          appendLog(`▶ Iniciando próximo da fila: ${msg.numero}`, 'info');
-          el('inf-numero').textContent = msg.numero || '—';
+          showCheckpoint(false);
+          document.getElementById('resultado-empenho')?.remove();
           el('log').innerHTML = '';
+          if (msg.payload) renderPayloadCard(msg.payload);
+          else el('inf-numero').textContent = msg.numero || '—';
+          appendLog(`▶ Próxima da fila: ${msg.numero}${msg.restantes ? ` (depois dela, mais ${msg.restantes})` : ''}`, 'info');
           break;
       }
     });
@@ -980,13 +978,16 @@ function handleStateMsg(state) {
 }
 
 // ── Funções de UI — automação ─────────────────────────────────────────────────
+// Payload do PDF (fornecedorCnpj, total em texto) ou da coleta SILOMS (fornecedorCNPJ, _total)
 function renderPayloadCard(p) {
   el('payload-card').style.display = '';
-  el('inf-numero').textContent = p.numeroSolicitacao ?? '–';
-  el('inf-forn').textContent   = p.fornecedorNome   ?? '–';
-  el('inf-cnpj').textContent   = formatCNPJ(p.fornecedorCNPJ ?? '');
-  el('inf-compra').textContent = p.numeroCompra      ?? '–';
-  el('inf-total').textContent  = fmtBRL(p._total     ?? 0);
+  el('inf-numero').textContent = p.numeroSolicitacao || '–';
+  el('inf-forn').textContent   = p.fornecedorNome || '–';
+  el('inf-cnpj').textContent   = formatCNPJ(String(p.fornecedorCNPJ ?? p.fornecedorCnpj ?? '').replace(/\D/g, '')) || '–';
+  el('inf-compra').textContent = p.tipoOrigem === 'compra'
+    ? `Compra ${p.numeroCompra ?? ''}${p.modalidade ? ` · ${p.modalidade}` : ''}`
+    : (p.contrato || p.numeroCompra || '–');
+  el('inf-total').textContent  = p._total != null ? fmtBRL(p._total) : (p.total ? `R$ ${p.total}` : '–');
 }
 
 function formatCNPJ(d) {
@@ -1143,6 +1144,80 @@ function renderDiff(p) {
     tr.innerHTML = `<td class="diff-ok">${label}</td><td class="diff-ok">${val}</td><td class="diff-warn">(ler da tela)</td>`;
     el('diff-body').appendChild(tr);
   }
+}
+
+// ── Empenhos gerados (solicitação → NE) ───────────────────────────────────────
+// Mesma chave de runner/stateMachine.js (REGISTRO_KEY), que grava a cada emissão
+const REGISTRO_EMPENHOS_KEY = 'empenhosGerados';
+
+function setupEmpenhosGerados() {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[REGISTRO_EMPENHOS_KEY]) renderEmpenhosGerados();
+  });
+  renderEmpenhosGerados();
+}
+
+async function renderEmpenhosGerados() {
+  const box = el('empenhos-gerados');
+  if (!box) return;
+  let lista = [];
+  try { lista = (await chrome.storage.local.get(REGISTRO_EMPENHOS_KEY))[REGISTRO_EMPENHOS_KEY] ?? []; } catch {}
+  if (!lista.length) { box.innerHTML = ''; return; }
+
+  const fmtV = v => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const quando = iso => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  };
+  box.innerHTML = `
+    <div class="eg-head">
+      <span>EMPENHOS GERADOS (${lista.length})</span>
+      <span>
+        <button id="eg-csv" class="eg-btn" title="Todos os empenhos registrados, com fornecedor e valores">📥 CSV</button>
+        <button id="eg-copiar" class="eg-btn" title="Copia solicitação e NE (cola em planilha)">📋 Copiar</button>
+        <button id="eg-limpar" class="eg-btn eg-btn-danger">Limpar</button>
+      </span>
+    </div>
+    <table class="eg-table">
+      <thead><tr><th>Solicitação</th><th>NE</th><th>Valor R$</th><th>Data</th></tr></thead>
+      <tbody>${[...lista].reverse().slice(0, 50).map(r => `<tr>
+        <td>${escHtml(r.solicitacao || '–')}</td>
+        <td class="${r.conferir ? 'eg-conferir' : ''}"${r.conferir ? ' title="Número não confirmado — confira no CNET"' : ''}>${escHtml(r.ne || 'conferir no CNET')}${r.conferir && r.ne ? ' ⚠' : ''}</td>
+        <td>${fmtV(r.valorEmpenhado)}</td>
+        <td>${escHtml(quando(r.data))}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+
+  el('eg-csv').onclick = () => baixarCsvEmpenhos(lista);
+  el('eg-copiar').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(lista.map(r => `${r.solicitacao}\t${r.ne ?? ''}`).join('\n'));
+      el('eg-copiar').textContent = '✓ Copiado';
+    } catch { el('eg-copiar').textContent = 'Falhou'; }
+    setTimeout(() => { const b = el('eg-copiar'); if (b) b.textContent = '📋 Copiar'; }, 1500);
+  };
+  el('eg-limpar').onclick = async () => {
+    if (!confirm('Apagar a lista de empenhos gerados? Baixe o CSV antes, se precisar.')) return;
+    await chrome.storage.local.remove(REGISTRO_EMPENHOS_KEY);
+  };
+}
+
+function baixarCsvEmpenhos(lista) {
+  const fmtV = v => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const linhas = [
+    ['Data', 'Nº Solicitação', 'Nº Empenho', 'Conferir', 'Fornecedor', 'CNPJ', 'Contrato/Compra', 'Valor Solicitado', 'Valor Empenhado'],
+    ...lista.map(r => [
+      new Date(r.data).toLocaleString('pt-BR'), r.solicitacao, r.ne ?? '', r.conferir ? 'sim' : '',
+      r.fornecedor, r.cnpj, r.origem, fmtV(r.valorSolicitado), fmtV(r.valorEmpenhado),
+    ]),
+  ];
+  const csv = linhas.map(l => l.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `empenhos_gerados_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── Telemetria local ──────────────────────────────────────────────────────────
