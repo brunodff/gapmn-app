@@ -1034,6 +1034,7 @@ async function emitirEFinalizar(tabId, payload) {
     origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
     valorSolicitado,
     valorEmpenhado,
+    verificacaoFornecedor: payload.verificacaoFornecedor?.resumo ?? "",
   };
   await registrarEmpenho(registro);
 

@@ -5,6 +5,7 @@
 
 import { extractPdfText, parseSolicitacaoEmpenho } from '../runner/pdfParser.js';
 import { UG_POR_UNIDADE } from './ugPorUnidade.js';
+import { verificarFornecedor } from './fornecedor.js';
 
 // ── Lista de unidades da FAB ──────────────────────────────────────────────────
 const FAB_UNITS = [
@@ -431,6 +432,42 @@ function abrirRevisao() {
   el('review-dest-label').textContent = uploadDest === 'siloms' ? 'SILOMS' : 'CONTRATOSGOV';
   renderReviewLista();
   showScreen('review');
+  verificarFornecedoresDaRevisao();
+}
+
+// ── Verificação do fornecedor (sanções, impedimentos SICAF, Receita) ─────────
+
+let proximoIdSol = 1;
+const idSol = sol => (sol._id ??= proximoIdSol++);
+
+function badgeFornecedor(sol) {
+  const v = sol._fornecedor;
+  if (!sol.ok) return '';
+  if (!v) return '<span class="rcf rcf-verificando">Fornecedor: aguardando verificação</span>';
+  if (v.nivel === 'verificando') return '<span class="rcf rcf-verificando">⏳ Verificando fornecedor (sanções, SICAF, Receita)…</span>';
+  const icone = { ok: '✓', atencao: '⚠', bloqueio: '⛔', erro: '⚠' }[v.nivel] ?? '';
+  const titulo = v.nivel === 'ok' ? 'Fornecedor sem restrições' : v.nivel === 'bloqueio' ? 'Fornecedor impedido' : 'Fornecedor — atenção';
+  const lista = (v.itens ?? []).filter(i => i.nivel !== 'ok');
+  return `<span class="rcf rcf-${v.nivel}" title="${escHtml(v.resumo)}">${icone} ${titulo}${v.nivel === 'ok' || !lista.length ? `: ${escHtml(v.resumo)}` : ''}</span>
+    ${lista.length ? `<ul class="rcf-lista">${lista.map(i => `<li class="rcf-${i.nivel}">${escHtml(i.texto)}</li>`).join('')}</ul>` : ''}`;
+}
+
+function atualizarBadgeFornecedor(sol) {
+  const alvo = document.getElementById(`rcf-${idSol(sol)}`);
+  if (alvo) alvo.innerHTML = badgeFornecedor(sol);
+}
+
+// Consulta o MCP para cada fornecedor da revisão (no máximo 3 ao mesmo tempo)
+async function verificarFornecedoresDaRevisao() {
+  const fila = solicitacoesParsed.filter(s => s.ok && !s._fornecedor);
+  for (const sol of fila) { sol._fornecedor = { nivel: 'verificando' }; atualizarBadgeFornecedor(sol); }
+  const trabalhador = async () => {
+    for (let sol = fila.shift(); sol; sol = fila.shift()) {
+      sol._fornecedor = await verificarFornecedor(sol.fornecedorCnpj);
+      atualizarBadgeFornecedor(sol);
+    }
+  };
+  await Promise.all([trabalhador(), trabalhador(), trabalhador()]);
 }
 
 function renderReviewLista() {
@@ -468,6 +505,7 @@ function criarReviewCard(sol, idx) {
           <span class="rc-total">R$ ${sol.total || '—'}</span>
         </div>
         <div class="rc-forn">${sol.fornecedorNome || '—'}</div>
+        <div class="rc-fornecedor" id="rcf-${idSol(sol)}">${badgeFornecedor(sol)}</div>
         <div class="rc-om">${omAbrev}</div>
         ${!sol.ok ? `<div class="rc-err">⚠ ${sol.error ?? 'Erro ao ler PDF'}</div>` : ''}
         <div class="rc-toggle" data-idx="${idx}">▼ Ver / editar campos</div>
@@ -667,6 +705,11 @@ function bindReviewInputs() {
         }
       }
       if (key === 'tipoEmpenho' && solicitacoesParsed[idx]) solicitacoesParsed[idx]._tipoEmpenhoManual = true;
+      // CNPJ corrigido: verifica o fornecedor de novo
+      if (key === 'fornecedorCnpj' && solicitacoesParsed[idx]) {
+        solicitacoesParsed[idx]._fornecedor = null;
+        verificarFornecedoresDaRevisao();
+      }
       // Campo conferido pelo usuário deixa de ser "deduzido"
       if (solicitacoesParsed[idx]?._deduzidos?.[key]) {
         delete solicitacoesParsed[idx]._deduzidos[key];
@@ -749,8 +792,19 @@ function pendenciasEtapa1(sol) {
 }
 
 function iniciarFila() {
-  const validas = solicitacoesParsed.filter(s => s.ok);
+  let validas = solicitacoesParsed.filter(s => s.ok);
   if (!validas.length) return;
+
+  // Fornecedor impedido não entra na fila; verificação em curso pede confirmação
+  const verificando = validas.filter(s => !s._fornecedor || s._fornecedor.nivel === 'verificando');
+  if (verificando.length && !confirm(`Ainda verificando ${verificando.length} fornecedor(es) (sanções, SICAF, Receita). Iniciar sem esperar o resultado?`)) return;
+  const impedidas = validas.filter(s => s._fornecedor?.nivel === 'bloqueio');
+  if (impedidas.length) {
+    const lista = impedidas.map(s => `• ${s.solicitacao || s._fileName} — ${s.fornecedorNome || ''}: ${s._fornecedor.resumo}`).join('\n');
+    if (!confirm(`Fornecedor impedido — estas solicitações NÃO serão empenhadas:\n\n${lista}\n\nOK: empenhar só as demais · Cancelar: voltar à revisão`)) return;
+    validas = validas.filter(s => !impedidas.includes(s));
+    if (!validas.length) return;
+  }
 
   const incompletas = validas
     .map(s => [s.solicitacao || s._fileName, pendenciasEtapa1(s)])
@@ -805,6 +859,9 @@ function solToPayload(sol) {
     modalidade:        sol.modalidade ?? '',
     unidadeCompra:     sol.unidadeCompra || unidadeCompraDoPerfil(),
     tipoEmpenho:       sol.tipoEmpenho || tipoEmpenhoPadrao(sol),
+    verificacaoFornecedor: sol._fornecedor?.nivel && sol._fornecedor.nivel !== 'verificando'
+      ? { nivel: sol._fornecedor.nivel, resumo: sol._fornecedor.resumo, consultadoEm: sol._fornecedor.consultadoEm ?? null }
+      : null,
     il:                sol.il,
     ugCred:            sol.ugCred,
     codemp:            sol.codemp,
@@ -1256,7 +1313,7 @@ async function renderEmpenhosGerados() {
 function baixarCsvEmpenhos(lista) {
   const fmtV = v => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const linhas = [
-    ['Data', 'Nº Solicitação', 'Nº Empenho', 'Situação', 'Mensagem SIAFI', 'Fornecedor', 'CNPJ', 'Contrato/Compra', 'Valor Solicitado', 'Valor Empenhado'],
+    ['Data', 'Nº Solicitação', 'Nº Empenho', 'Situação', 'Mensagem SIAFI', 'Fornecedor', 'CNPJ', 'Contrato/Compra', 'Valor Solicitado', 'Valor Empenhado', 'Verificação do fornecedor'],
     ...lista.map(r => {
       const st = statusRegistro(r);
       return [
@@ -1264,6 +1321,7 @@ function baixarCsvEmpenhos(lista) {
         st === 'emitido' ? 'Emitido' : st === 'erro' ? 'Erro no SIAFI'
           : st === 'conferir' ? `Conferir no CNET${r.ne ? ` (anotada: ${r.ne})` : ''}` : 'Em processamento',
         r.mensagem ?? '', r.fornecedor, r.cnpj, r.origem, fmtV(r.valorSolicitado), fmtV(r.valorEmpenhado),
+        r.verificacaoFornecedor ?? '',
       ];
     }),
   ];
@@ -1423,7 +1481,7 @@ function renderSolicitacoes(sols, mode) {
   acoes.style.display = 'flex';
 }
 
-function empenharSolicitacao(sol, mode) {
+async function empenharSolicitacao(sol, mode) {
   if (mode === 'siloms') {
     // Phase 3: implementar fluxo SILOMS
     appendLog(`⚡ SILOMS: ${sol.numero} — implementação em breve`, 'warn');
@@ -1434,8 +1492,14 @@ function empenharSolicitacao(sol, mode) {
     el('status-badge-auto').style.display = 'none';
     showScreen('automation');
   } else {
+    // Fornecedor impedido: não inicia (o usuário decide no CNET)
+    const v = await verificarFornecedor(sol.fornecedorCNPJ);
+    if (v.nivel === 'bloqueio') {
+      alert(`Fornecedor impedido — empenho de ${sol.numero} não iniciado:\n\n${v.resumo}`);
+      return;
+    }
     // Envia payload para empenho CONTRATOSGOV
-    const payload = buildCnetPayload(sol);
+    const payload = { ...buildCnetPayload(sol), verificacaoFornecedor: { nivel: v.nivel, resumo: v.resumo, consultadoEm: v.consultadoEm ?? null } };
     el('auto-mode-label').textContent = 'CONTRATOSGOV';
     el('siloms-soon').style.display   = 'none';
     el('cnet-auto').style.display     = 'flex';

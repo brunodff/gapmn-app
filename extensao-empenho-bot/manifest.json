@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GAPMN Empenho Bot",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Coleta solicitações de empenho no SILOMS e automatiza emissão no SILOMS ou Contratos.gov.br.",
 
   "permissions": [
@@ -14,6 +14,7 @@
 
   "host_permissions": [
     "https://fychrtyyqbzlfbzbvzqp.supabase.co/*",
+    "https://mcp-compras.up.railway.app/*",
     "https://contratos.comprasnet.gov.br/*",
     "https://mac1.siloms.intraer/*",
     "https://*.siloms.intraer/*",
