@@ -244,6 +244,8 @@
     .eg-table th { text-align: left; color: #64748b; font-weight: 600; padding: 3px 4px; border-bottom: 1px solid #334155; }
     .eg-table td { color: #e2e8f0; padding: 3px 4px; border-bottom: 1px solid #1e293b; }
     .eg-table td.eg-conferir { color: #fcd34d; }
+    .eg-table td.eg-erro { color: #f87171; }
+    .opt-confirmar { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #94a3b8; margin: 0 0 8px; cursor: pointer; }
 
     /* Controls */
     .controls { padding: 10px 14px; border-top: 1px solid #1e293b; display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
@@ -668,6 +670,9 @@
         </table>
       </div>
 
+      <label class="opt-confirmar" title="Desligado: o robô confere valor e solicitação na Etapa 8, emite, finaliza e segue para a próxima">
+        <input type="checkbox" id="opt-confirmar-antes"> Parar para eu confirmar antes de emitir
+      </label>
       <div class="log" id="log"></div>
       <div id="empenhos-gerados"></div>
     </div>

@@ -12,7 +12,7 @@ import {
   getState, setState, appendLog,
   startColeta, startEmpenho,
   pauseEmpenho, resumeEmpenho, abortEmpenho,
-  confirmEmissao, setSidePanelPort, recuperarExecucaoOrfa,
+  confirmEmissao, setSidePanelPort, recuperarExecucaoOrfa, resolverPendentesAgora,
 } from './runner/stateMachine.js';
 
 const COMPRASNET_ORIGIN = 'https://contratos.comprasnet.gov.br';
@@ -74,6 +74,24 @@ chrome.runtime.onConnect.addListener(port => {
       case 'CONFIRM_EMISSAO': {
         const r = await confirmEmissao();
         if (!r.ok) port.postMessage({ type: 'ERROR', message: r.error });
+        break;
+      }
+
+      // Revisita as minutas "em processamento" para anotar o número da NE
+      case 'RESOLVER_PENDENTES': {
+        const tab = await getActiveComprasnetTab();
+        if (!tab) {
+          port.postMessage({ type: 'ERROR', message: 'Abra o Contratos.gov.br (logado) para buscar as NEs pendentes.' });
+          break;
+        }
+        const r = await resolverPendentesAgora(tab.id);
+        port.postMessage({
+          type: 'LOG',
+          level: r.ocupado ? 'warn' : 'info',
+          msg: r.ocupado
+            ? '⚠ O robô está executando — busque as pendentes quando ele parar.'
+            : `🔎 NEs pendentes: ${r.achadas} encontrada(s)${r.restantes ? `, ${r.restantes} ainda em processamento` : ''}`,
+        });
         break;
       }
 

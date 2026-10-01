@@ -50,6 +50,8 @@ const STORAGE_KEY = 'empenhoBot';
 const COMPRASNET_URL = 'https://contratos.comprasnet.gov.br/empenho/buscacompra';
 // Empenhos emitidos (solicitação → NE), guardados entre execuções
 export const REGISTRO_KEY = 'empenhosGerados';
+// Painel: "parar para confirmar antes de emitir" (desligado = emite sozinho)
+const CONFIRMAR_ANTES_KEY = 'empenhoConfirmarAntes';
 
 // ── Persistência ──────────────────────────────────────────────────────────────
 
@@ -73,6 +75,12 @@ export async function appendLog(msg, level = 'info') {
   const s = await getState();
   const log = [...(s.log ?? []), { ts: Date.now(), msg, level }];
   await setState({ log: log.slice(-200) });
+}
+
+// Grava no histórico e mostra na hora no painel
+async function logVisivel(msg, level = 'info') {
+  await appendLog(msg, level);
+  notifySidePanel({ type: 'LOG', msg, level });
 }
 
 // ── Execução na página ────────────────────────────────────────────────────────
@@ -151,6 +159,7 @@ export async function startEmpenho(payload, tabId, dryRun = false, initialQueue 
   await setState({
     state: 'running', flow: 'empenho-cnet',
     step: 0, payload, queue: initialQueue, cnetTabId: tabId, dryRun, log: [],
+    inicioFila: new Date().toISOString(), valorEmpenhado: null,
   });
   if (orfa) {
     await appendLog(`⚠ A execução anterior (${orfa}) tinha sido interrompida e foi descartada.`, 'warn');
@@ -474,7 +483,7 @@ async function runEmpenhoStep(s) {
       case 5: result = await runStep5(tabId, payload); break;
       case 6: result = await runStep6(tabId, payload); break;
       case 7: result = await runStep7(tabId); break;
-      case 8: result = await runStep8Checkpoint(tabId, payload, dryRun); break;
+      case 8: result = await runStep8(tabId, payload, dryRun); break;
       default:
         await setState({ state: 'done' });
         notifySidePanel({ type: 'DONE' });
@@ -492,6 +501,18 @@ async function runEmpenhoStep(s) {
       await setState({ state: 'checkpoint', step: 8 });
       notifySidePanel({ type: 'CHECKPOINT', step: 8, summary: result.summary });
       return false;
+    }
+
+    // Etapa 8 conferida: emite, finaliza, registra a NE e segue a fila
+    if (result.emitir) {
+      const r = await emitirEFinalizar(tabId, payload);
+      if (!r.ok) {
+        await appendLog(`❌ Etapa 8: ${r.error}`, 'error');
+        await setState({ state: 'paused' });
+        notifySidePanel({ type: 'PAUSED', error: r.error, step });
+        return false;
+      }
+      return seguirFila(tabId);
     }
 
     await appendLog(`✅ Etapa ${step} concluída`, 'info');
@@ -683,7 +704,7 @@ async function runStep4(tabId, payload) {
 
   const result = await execInPage(tabId, step4Runner, [payload]);
 
-  for (const f of result?.feitos ?? []) await appendLog(`[Etapa 4] ${f}`, 'info');
+  for (const f of result?.feitos ?? []) await logVisivel(`[Etapa 4] ${f}`, 'info');
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 4' };
   await appendLog('[Etapa 4] Crédito selecionado ✓', 'info');
   return { ok: true };
@@ -697,7 +718,7 @@ async function runStep5(tabId, payload) {
   const result = await execInPage(tabId, step5Runner, [payload]);
 
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 5' };
-  for (const f of result.feitos ?? []) await appendLog(`[Etapa 5] ${f}`, 'info');
+  for (const f of result.feitos ?? []) await logVisivel(`[Etapa 5] ${f}`, 'info');
   await appendLog('[Etapa 5] Subelemento e valores preenchidos ✓', 'info');
   return { ok: true };
 }
@@ -708,7 +729,7 @@ async function runStep6(tabId, payload) {
 
   const result = await execInPage(tabId, step6Runner, [payload]);
 
-  for (const f of result?.feitos ?? []) await appendLog(`[Etapa 6] ${f}`, 'info');
+  for (const f of result?.feitos ?? []) await logVisivel(`[Etapa 6] ${f}`, 'info');
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 6' };
   await appendLog('[Etapa 6] Dados preenchidos ✓', 'info');
   return { ok: true };
@@ -774,43 +795,294 @@ async function runStepStub(tabId, step) {
   };
 }
 
-async function runStep8Checkpoint(tabId, payload, dryRun) {
-  await appendLog('[Etapa 8] ⚠ CHECKPOINT — aguardando confirmação humana', 'warn');
+// ── Etapa 8: conferência, emissão no SIAFI e finalização ─────────────────────
+
+const RX_JA_ENVIADO = /PROCESSAMENTO|EMITID|EMPENHAD|ENVIAD|SUCESSO/i;
+const RX_ERRO_SIAFI = /ERRO|REJEIT|RECUSAD|FALH|CANCELAD|INVALID/i;
+const extrairNE = s => (String(s ?? '').match(/\d{4}NE\d{6}(?!\d)/) ?? [null])[0];
+const numBR = s => {
+  const t = String(s ?? '').replace(/[^\d,.-]/g, '');
+  if (!t) return null;
+  const n = parseFloat(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
+  return Number.isFinite(n) ? n : null;
+};
+const fmtR$ = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Valor pedido na solicitação: soma dos itens, senão o total
+function valorSolicitadoDe(payload) {
+  const itens = payload.itensEmpenho ?? [];
+  if (itens.length) return itens.reduce((s, it) => s + (parseFloat(String(it.valor).replace(',', '.')) || 0), 0);
+  return numBR(payload.total) ?? 0;
+}
+
+// Resumo da tela da Etapa 8 (função serializada — autocontida)
+function lerEtapa8() {
+  const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+  const limpa = s => String(s ?? '').replace(/\s+/g, ' ').trim();
+  const valorDe = (...rotulos) => {
+    const alvos = rotulos.map(norm);
+    for (const tr of document.querySelectorAll('tr')) {
+      const c = tr.querySelectorAll('th, td');
+      if (c.length >= 2 && alvos.includes(norm(c[0].textContent))) return limpa(c[1].textContent);
+    }
+    for (const r of document.querySelectorAll('dt, label, strong, b')) {
+      if (!alvos.includes(norm(r.textContent))) continue;
+      const v = r.nextElementSibling?.textContent ?? r.parentElement?.nextElementSibling?.textContent;
+      if (v != null) return limpa(v);
+    }
+    return null;
+  };
+  const botao = re => Array.from(document.querySelectorAll('button, a.btn, input[type="submit"]'))
+    .find(b => re.test(limpa(b.textContent || b.value)));
+  const emitir = botao(/Emitir\s+Empenho/i);
+  return {
+    url: location.href.split('#')[0],
+    situacao:  valorDe('Situação'),
+    mensagem:  valorDe('Mensagem SIAFI'),
+    numero:    valorDe('Número Empenho', 'Número do Empenho', 'Nº Empenho', 'N° Empenho', 'Número da NE', 'Nota de Empenho', 'Número NE'),
+    valor:     valorDe('Valor Total'),
+    descricao: valorDe('Descrição', 'Descricao'),
+    temEmitir: !!emitir,
+    emitirHabilitado: !!emitir && !emitir.disabled && !emitir.classList.contains('disabled'),
+  };
+}
+
+// Clica o botão cujo texto casa com `fonte` (regex) e retorna logo: se a página
+// navegar em seguida, o script já terminou (função serializada — autocontida)
+function clicarBotaoEtapa8(fonte) {
+  const re = new RegExp(fonte, 'i');
+  const btn = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"]'))
+    .find(b => re.test(String(b.textContent || b.value || '').replace(/\s+/g, ' ')));
+  if (!btn) return { ok: false, error: `botão não encontrado (${fonte})` };
+  if (btn.disabled || btn.classList.contains('disabled')) return { ok: false, desabilitado: true, error: 'botão desabilitado' };
+  // confirm()/alert() nativos travariam a página até alguém responder: aceitam sozinhos
+  const conf = window.confirm, al = window.alert;
+  window.confirm = () => true;
+  window.alert = () => {};
+  setTimeout(() => { window.confirm = conf; window.alert = al; }, 5000);
+  btn.click();
+  return { ok: true };
+}
+
+// Aceita a confirmação em modal (SweetAlert / Bootstrap), se aparecer
+async function confirmarModalEtapa8() {
+  for (let t = 0; t < 8; t++) {
+    await new Promise(r => setTimeout(r, 250));
+    const ok = Array.from(document.querySelectorAll('.swal2-confirm, .modal.show .btn-primary, .modal.show .btn-success, .modal.in .btn-primary, .bootbox .btn-primary'))
+      .find(b => b.offsetParent !== null);
+    if (ok) { ok.click(); return { confirmou: String(ok.textContent).trim() }; }
+  }
+  return { confirmou: null };
+}
+
+// Clica e aceita a confirmação. A página recarregar logo após o clique não é falha.
+async function clicarEConfirmar(tabId, fonte) {
+  const navegou = e => /destroyed|navigat|unload|removed|no frame|closed/i.test(String(e?.message ?? e));
+  let r;
+  try {
+    r = await execInPage(tabId, clicarBotaoEtapa8, [fonte]);
+  } catch (e) {
+    return navegou(e) ? { ok: true, navegou: true } : { ok: false, error: e.message };
+  }
+  if (!r?.ok) return r ?? { ok: false, error: 'sem resposta da página' };
+  await delay(300);
+  await execInPage(tabId, confirmarModalEtapa8).catch(() => null);
+  return r;
+}
+
+/** Confere a tela; sem divergência (e sem confirmação manual ligada), segue para emitir */
+async function runStep8(tabId, payload, dryRun) {
   if (dryRun) {
     await appendLog('[DRY-RUN] Simulação completa. Emissão NÃO foi efetuada.', 'warn');
     return { ok: true, ne: 'DRY-RUN', summary: { dryRun: true } };
   }
-  const summary = await execInPage(tabId, () => ({ url: window.location.href }), []);
-  return { ok: true, checkpoint: true, summary: { ...summary, payload } };
+  const tela = await execInPage(tabId, lerEtapa8).catch(() => null);
+  if (!tela) return { ok: false, error: 'Não consegui ler a tela da Etapa 8' };
+
+  const motivos = [];
+  if (!tela.temEmitir && !RX_JA_ENVIADO.test(tela.situacao ?? '')) motivos.push('botão "Emitir Empenho SIAFI" não encontrado');
+  const s = await getState();
+  const esperado = s.valorEmpenhado ?? valorSolicitadoDe(payload);
+  const naTela = numBR(tela.valor);
+  if (naTela !== null && esperado > 0 && Math.abs(naTela - esperado) > Math.max(1, esperado * 0.005)) {
+    motivos.push(`valor na tela R$ ${fmtR$(naTela)} ≠ solicitado R$ ${fmtR$(esperado)}`);
+  }
+  const sol = String(payload.numeroSolicitacao ?? '').toUpperCase();
+  if (sol && tela.descricao && !tela.descricao.toUpperCase().includes(sol)) motivos.push(`a descrição não cita a solicitação ${sol}`);
+
+  const { [CONFIRMAR_ANTES_KEY]: confirmarAntes } = await chrome.storage.local.get(CONFIRMAR_ANTES_KEY);
+  if (motivos.length || confirmarAntes) {
+    const motivo = motivos.length ? `Conferência automática: ${motivos.join('; ')} — confira e confirme` : 'Confirmação manual ligada no painel';
+    await appendLog(`[Etapa 8] ⚠ CHECKPOINT — ${motivo}`, 'warn');
+    return { ok: true, checkpoint: true, summary: { ...tela, payload, motivo } };
+  }
+  await logVisivel(`[Etapa 8] Conferido: valor R$ ${fmtR$(naTela ?? esperado)}${sol ? `, solicitação ${sol}` : ''}`, 'info');
+  return { ok: true, emitir: true };
 }
 
-// Número da NE emitida, lido na página (função serializada — autocontida).
-// Vale só um número que não estava na tela antes de emitir; se aparecerem vários
-// (ex.: lista de minutas), o da linha que cita a solicitação ou o CNPJ.
-function lerNumeroNE(antes, ref) {
-  const novos = txt => [...new Set(String(txt ?? '').match(/\d{4}NE\d{6}(?!\d)/g) ?? [])]
-    .filter(n => !antes.includes(n));
-  const mensagens = document.querySelectorAll('.alert-success, .callout-success, .swal2-popup, .toast-success, .toast-message, .alert-info');
-  for (const m of mensagens) {
-    const n = novos(m.textContent);
-    if (n.length) return { ne: n[0] };
-  }
-  const n = novos(document.body?.textContent);
-  if (n.length <= 1) return n.length ? { ne: n[0] } : null;
-  const chaves = [ref.solicitacao, ref.cnpj].filter(k => k && k.length >= 5);
-  for (const ne of n) {
-    const linha = Array.from(document.querySelectorAll('tr')).find(tr => tr.textContent.includes(ne));
-    const txt = linha?.textContent ?? '';
-    if (chaves.some(k => txt.includes(k) || txt.replace(/\D/g, '').includes(k))) return { ne };
-  }
-  return { ne: n[0], duvida: true };
-}
-
-/** Guarda o empenho emitido (solicitação → NE) na lista permanente da extensão */
+/** Guarda o empenho (solicitação → NE) na lista permanente da extensão */
 async function registrarEmpenho(registro) {
   const data = await chrome.storage.local.get(REGISTRO_KEY);
   const lista = [...(data[REGISTRO_KEY] ?? []), registro];
   await chrome.storage.local.set({ [REGISTRO_KEY]: lista.slice(-1000) });
+}
+
+// Solicitação que já tem esta NE registrada (outra que não `solicitacao`), ou null.
+// Uma NE nunca vale para duas solicitações: se a tela mostrar uma assim, não é desta.
+async function donoDaNE(ne, solicitacao) {
+  const data = await chrome.storage.local.get(REGISTRO_KEY);
+  const r = (data[REGISTRO_KEY] ?? []).find(x => x.ne === ne && x.solicitacao !== solicitacao && (x.status ?? 'emitido') === 'emitido');
+  return r ? (r.solicitacao || '?') : null;
+}
+
+async function atualizarRegistro(id, patch) {
+  const data = await chrome.storage.local.get(REGISTRO_KEY);
+  const lista = (data[REGISTRO_KEY] ?? []).map(r => (r.id === id ? { ...r, ...patch } : r));
+  await chrome.storage.local.set({ [REGISTRO_KEY]: lista });
+}
+
+// Recarrega a minuta por GET (nunca reenvia formulário) e lê a tela
+async function recarregarMinuta(tabId, url) {
+  const navegou = waitForNavigation(tabId, 30000).catch(() => {});
+  try { await chrome.tabs.update(tabId, { url }); } catch { return null; }
+  await navegou;
+  await delay(800);
+  return execInPage(tabId, lerEtapa8).catch(() => null);
+}
+
+/**
+ * Emite no SIAFI (se ainda não foi), espera o número da NE, finaliza e registra.
+ * Retorna { ok, status } — status: 'emitido' | 'pendente' | 'erro'.
+ */
+async function emitirEFinalizar(tabId, payload) {
+  const antes = await execInPage(tabId, lerEtapa8).catch(() => null);
+  if (!antes) return { ok: false, error: 'Não consegui ler a tela da Etapa 8' };
+  const url = antes.url;
+
+  if (RX_JA_ENVIADO.test(antes.situacao ?? '')) {
+    // Retomar depois da emissão: nunca emite duas vezes
+    await logVisivel(`[Etapa 8] Já enviado ao SIAFI (situação: ${antes.situacao}) — não emito de novo`, 'warn');
+  } else if (!antes.emitirHabilitado) {
+    return { ok: false, error: `"Emitir Empenho SIAFI" ${antes.temEmitir ? 'está desabilitado' : 'não foi encontrado'} (situação: ${antes.situacao || '—'}) — confira no CNET` };
+  } else {
+    await logVisivel('[Etapa 8] Emitindo empenho no SIAFI…', 'info');
+    const r = await clicarEConfirmar(tabId, 'Emitir\\s+Empenho');
+    if (!r?.ok) return { ok: false, error: `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}` };
+  }
+
+  // O SIAFI devolve o número depois ("EM PROCESSAMENTO"): relê a minuta por ~1,5 min
+  let ne = null, situacao = antes.situacao, mensagem = null, erro = false;
+  const ignoradas = new Set();
+  for (let i = 1; i <= 12 && !ne && !erro; i++) {
+    await delay(4000);
+    const r = i % 2 === 0
+      ? await recarregarMinuta(tabId, url)
+      : await execInPage(tabId, lerEtapa8).catch(() => null);
+    if (!r) continue;
+    situacao = r.situacao ?? situacao;
+    mensagem = r.mensagem || mensagem;
+    // Só o número do campo da própria minuta ou da mensagem do SIAFI: a página mostra
+    // NEs de outros empenhos, e "qualquer NE nova na tela" já anotou a de outra solicitação
+    ne = extrairNE(r.numero) ?? extrairNE(r.mensagem);
+    if (ne) {
+      const dono = await donoDaNE(ne, payload.numeroSolicitacao ?? '');
+      if (dono) {
+        if (!ignoradas.has(ne)) await logVisivel(`⚠ A tela mostrou a NE ${ne}, já registrada para ${dono} — ignorada`, 'warn');
+        ignoradas.add(ne);
+        ne = null;
+      }
+    }
+    // erro só depois de reler a minuta (uma situação "ERRO" antiga ainda pode estar na tela)
+    erro = !ne && i >= 3 && RX_ERRO_SIAFI.test(situacao ?? '');
+  }
+  const status = ne ? 'emitido' : erro ? 'erro' : 'pendente';
+  // Sem número e sem situação de envio, a emissão não aconteceu: não finaliza
+  if (status === 'pendente' && !RX_JA_ENVIADO.test(situacao ?? '')) {
+    return { ok: false, error: `O CNET não mostrou a emissão (situação: ${situacao || '—'}) — confira a minuta e use Retomar` };
+  }
+
+  // Finaliza a minuta (não quando o SIAFI recusou: ela precisa ser corrigida)
+  if (status !== 'erro') {
+    const f = await clicarEConfirmar(tabId, '\\bFinalizar\\b');
+    if (f?.ok) {
+      await logVisivel('[Etapa 8] Minuta finalizada ✓', 'info');
+      try { await waitForNavigation(tabId, 15000); } catch {}
+    } else {
+      await logVisivel(`⚠ [Etapa 8] Não finalizei a minuta (${f?.error ?? 'sem resposta'}) — finalize no CNET depois`, 'warn');
+    }
+  }
+
+  const valorSolicitado = valorSolicitadoDe(payload);
+  const valorEmpenhado = (await getState()).valorEmpenhado ?? valorSolicitado;
+  const registro = {
+    id:          `${Date.now()}-${payload.numeroSolicitacao ?? ''}`,
+    data:        new Date().toISOString(),
+    solicitacao: payload.numeroSolicitacao ?? '',
+    ne,
+    status,
+    situacao:    situacao ?? '',
+    mensagem:    mensagem ?? '',
+    url,
+    fornecedor:  payload.fornecedorNome ?? '',
+    cnpj:        String(payload.fornecedorCnpj ?? payload.fornecedorCNPJ ?? '').replace(/\D/g, ''),
+    origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
+    valorSolicitado,
+    valorEmpenhado,
+  };
+  await registrarEmpenho(registro);
+
+  const diff = Math.abs(valorSolicitado - valorEmpenhado);
+  const resumo = status === 'emitido' ? `NE ${ne}`
+    : status === 'erro' ? `ERRO SIAFI${mensagem ? `: ${mensagem}` : ''}`
+    : 'NE em processamento no SIAFI — o número será buscado no fim da fila';
+  await appendLog(
+    `${status === 'emitido' ? '✅' : status === 'erro' ? '❌' : '⏳'} ${registro.solicitacao || 'Solicitação'} → ${resumo} | Empenhado: R$ ${fmtR$(valorEmpenhado)}${diff > 0.005 ? ` | ⚠ Diferença: R$ ${fmtR$(diff)}` : ''}`,
+    status === 'emitido' ? 'success' : status === 'erro' ? 'error' : 'warn',
+  );
+  notifySidePanel({ type: 'DONE', ne, status, mensagem, payload, valorEmpenhado, valorSolicitado });
+  return { ok: true, status };
+}
+
+/**
+ * Revisita as minutas que ficaram "em processamento" e anota o número da NE.
+ * `desde` (ISO) limita aos registros desta fila; null = todos os pendentes.
+ */
+async function resolverPendentes(tabId, desde = null) {
+  const data = await chrome.storage.local.get(REGISTRO_KEY);
+  const pendentes = (data[REGISTRO_KEY] ?? []).filter(r => r.status === 'pendente' && r.url && (!desde || r.data >= desde));
+  if (!pendentes.length) return { achadas: 0, restantes: 0 };
+  await appendLog(`🔎 Buscando o número de ${pendentes.length} NE(s) que ficaram em processamento…`, 'info');
+  notifySidePanel({ type: 'LOG', msg: `🔎 Buscando ${pendentes.length} NE(s) em processamento…`, level: 'info' });
+  let achadas = 0;
+  for (const reg of pendentes) {
+    const r = await recarregarMinuta(tabId, reg.url);
+    if (!r) continue;
+    let ne = extrairNE(r.numero) ?? extrairNE(r.mensagem);
+    if (ne && await donoDaNE(ne, reg.solicitacao)) ne = null;
+    if (ne) {
+      achadas++;
+      await atualizarRegistro(reg.id, { ne, status: 'emitido', situacao: r.situacao ?? '', mensagem: r.mensagem ?? '' });
+      await logVisivel(`✅ ${reg.solicitacao} → NE ${ne}`, 'success');
+      // Finaliza se tinha ficado aberta
+      await clicarEConfirmar(tabId, '\\bFinalizar\\b');
+      try { await waitForNavigation(tabId, 10000); } catch {}
+    } else if (RX_ERRO_SIAFI.test(r.situacao ?? '')) {
+      await atualizarRegistro(reg.id, { status: 'erro', situacao: r.situacao ?? '', mensagem: r.mensagem ?? '' });
+      await logVisivel(`❌ ${reg.solicitacao} → ERRO SIAFI${r.mensagem ? `: ${r.mensagem}` : ''}`, 'error');
+    }
+  }
+  return { achadas, restantes: pendentes.length - achadas };
+}
+
+/** Botão do painel: busca as NEs pendentes (só com o robô parado) */
+export async function resolverPendentesAgora(tabId) {
+  if (maquinaAtiva) return { ocupado: true };
+  maquinaAtiva = true;
+  try {
+    return await resolverPendentes(tabId, null);
+  } finally {
+    maquinaAtiva = false;
+  }
 }
 
 /** Se há solicitação na fila: abre o formulário de nova minuta e a põe para rodar */
@@ -828,73 +1100,31 @@ async function prepararProximoDaFila(tabId) {
   return true;
 }
 
-/** Emite após a confirmação humana; retorna true se deixou o próximo da fila pronto */
+/** Depois de um empenho: próximo da fila, ou fim (buscando as NEs pendentes) */
+async function seguirFila(tabId) {
+  if (await prepararProximoDaFila(tabId)) return true;
+  const s = await getState();
+  const r = await resolverPendentes(tabId, s.inicioFila ?? null);
+  if (r.restantes) {
+    await logVisivel(`⏳ ${r.restantes} NE(s) ainda em processamento — use "Buscar pendentes" na lista de empenhos gerados mais tarde`, 'warn');
+  }
+  await setState({ state: 'done' });
+  await appendLog('🏁 Fila concluída', 'success');
+  notifySidePanel({ type: 'QUEUE_DONE' });
+  return false;
+}
+
+/** Emite depois da confirmação manual no checkpoint; true se o próximo da fila ficou pronto */
 async function runStep8Confirm(tabId, payload) {
   await appendLog('[Etapa 8] Usuário confirmou — emitindo empenho…', 'info');
-  // NEs já presentes na tela não podem ser confundidas com a nova
-  const antes = await execInPage(tabId,
-    () => [...new Set((document.body?.textContent ?? '').match(/\d{4}NE\d{6}(?!\d)/g) ?? [])], []).catch(() => []) ?? [];
-
-  const result = await execInPage(tabId, () => {
-    const btn = document.querySelector('button[id*="emitir"], button.btn-success:not(.submeter)');
-    if (!btn) return { ok: false, error: 'Botão Emitir não encontrado — selecione manualmente' };
-    btn.click();
-    return { ok: true };
-  }, []);
-
-  if (!result?.ok) {
-    await appendLog(`❌ Falha ao emitir: ${result?.error}`, 'error');
-    await setState({ state: 'error' });
-    notifySidePanel({ type: 'ERROR', message: result?.error });
+  const r = await emitirEFinalizar(tabId, payload);
+  if (!r.ok) {
+    await appendLog(`❌ ${r.error}`, 'error');
+    await setState({ state: 'paused', step: 8 });
+    notifySidePanel({ type: 'PAUSED', error: r.error, step: 8 });
     return false;
   }
-
-  await appendLog('🎉 Emissão enviada — aguardando o número da NE…', 'info');
-  // O SIAFI pode demorar: procura por até ~45 s (a página pode estar navegando)
-  const ref = {
-    solicitacao: String(payload.numeroSolicitacao ?? '').toUpperCase(),
-    cnpj: String(payload.fornecedorCnpj ?? payload.fornecedorCNPJ ?? '').replace(/\D/g, ''),
-  };
-  let achado = null;
-  for (let t = 0; t < 15; t++) {
-    await delay(3000);
-    const r = await execInPage(tabId, lerNumeroNE, [antes, ref]).catch(() => null);
-    if (r?.ne) achado = r;
-    if (achado && !achado.duvida) break;
-  }
-  const ne = achado?.ne ?? null;
-
-  // Valor solicitado: soma dos itensEmpenho ou total do payload
-  const itensEmp = payload.itensEmpenho ?? [];
-  const valorSolicitado = itensEmp.length > 0
-    ? itensEmp.reduce((s, it) => s + (parseFloat(String(it.valor).replace(',', '.')) || 0), 0)
-    : parseFloat((payload.total ?? '0').replace(/\./g, '').replace(',', '.')) || 0;
-
-  // Valor empenhado: pode ter sido ajustado pelo modal de arredondamento
-  const s = await getState();
-  const valorEmpenhado = s.valorEmpenhado ?? valorSolicitado;
-  const diff = Math.abs(valorSolicitado - valorEmpenhado);
-
-  await registrarEmpenho({
-    data:        new Date().toISOString(),
-    solicitacao: payload.numeroSolicitacao ?? '',
-    ne,
-    conferir:    !ne || !!achado?.duvida,
-    fornecedor:  payload.fornecedorNome ?? '',
-    cnpj:        ref.cnpj,
-    origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
-    valorSolicitado,
-    valorEmpenhado,
-  });
-  await appendLog(
-    `✅ ${payload.numeroSolicitacao ?? 'Solicitação'} → NE ${ne ?? '(não lida — conferir no CNET)'}${achado?.duvida ? ' (conferir)' : ''} | Empenhado: R$ ${valorEmpenhado.toFixed(2)} | Solicitado: R$ ${valorSolicitado.toFixed(2)}${diff > 0.005 ? ` | ⚠ Diferença: R$ ${diff.toFixed(2)}` : ''}`,
-    ne && !achado?.duvida ? 'success' : 'warn'
-  );
-  notifySidePanel({ type: 'DONE', ne, payload, valorEmpenhado, valorSolicitado });
-
-  if (await prepararProximoDaFila(tabId)) return true;
-  await setState({ state: 'done' });
-  return false;
+  return seguirFila(tabId);
 }
 
 // ── Comunicação com Side Panel ────────────────────────────────────────────────

@@ -830,7 +830,13 @@ function setupAutomationControls() {
       enviar({ type: 'ABORT' });
     }
   });
-  el('btn-confirm').addEventListener('click', () => enviar({ type: 'CONFIRM_EMISSAO' }));
+  // Some no primeiro clique: um segundo clique chegava com a emissão já em curso
+  el('btn-confirm').addEventListener('click', () => {
+    if (!enviar({ type: 'CONFIRM_EMISSAO' })) return;
+    showCheckpoint(false);
+    setBadge('running');
+    appendLog('▶ Emissão confirmada — emitindo…', 'info');
+  });
 }
 
 // ── Conexão com background ────────────────────────────────────────────────────
@@ -886,19 +892,34 @@ function connectPort(pedirEstado = true) {
                               if (msg.error) appendLog(`❌ ${msg.error}`, 'error'); break;
         case 'ABORTED':       setBadge('idle');   setResumable(false);
                               appendLog('🛑 Abortado', 'warn');               break;
-        case 'DONE':          setBadge('done');
-                              appendLog(`🎉 Concluído${msg.ne ? ' — NE: ' + msg.ne : ''}`, 'success');
-                              showCheckpoint(false);
-                              showResultadoEmpenho(msg);
-                              renderEmpenhosGerados();
-                              logActivity('DONE', { ne: msg.ne ?? null });   break;
+        case 'DONE': {
+          const st = msg.status ?? (msg.ne ? 'emitido' : 'pendente');
+          setBadge('done');
+          appendLog(
+            st === 'emitido' ? `🎉 ${msg.payload?.numeroSolicitacao ?? ''} → NE ${msg.ne}`
+              : st === 'erro' ? `❌ ${msg.payload?.numeroSolicitacao ?? ''}: SIAFI recusou${msg.mensagem ? ' — ' + msg.mensagem : ''}`
+              : `⏳ ${msg.payload?.numeroSolicitacao ?? ''}: enviado ao SIAFI, NE em processamento (busco no fim da fila)`,
+            st === 'emitido' ? 'success' : st === 'erro' ? 'error' : 'warn');
+          showCheckpoint(false);
+          showResultadoEmpenho(msg);
+          renderEmpenhosGerados();
+          logActivity('DONE', { ne: msg.ne ?? null, status: st });
+          break;
+        }
+        case 'QUEUE_DONE':
+          setBadge('done');
+          appendLog('🏁 Fila concluída', 'success');
+          renderEmpenhosGerados();
+          break;
         case 'ERROR':         setBadge('error');
                               appendLog(`❌ ${msg.message}`, 'error');
                               // Se erro durante coleta, mostra no painel de solicitações
                               el('coleta-current').textContent = `Erro: ${msg.message}`;
                               logActivity('ERROR', { msg: msg.message });    break;
         case 'STARTED':       setBadge('running'); appendLog('▶ Iniciado', 'info'); break;
-        case 'CHECKPOINT':    showCheckpoint(true, msg.summary);             break;
+        case 'CHECKPOINT':    showCheckpoint(true, msg.summary);
+                              if (msg.summary?.motivo) appendLog(`⚠ ${msg.summary.motivo}`, 'warn');
+                              break;
         case 'NEXT_AVAILABLE':
           setBadge('running');
           showCheckpoint(false);
@@ -1059,7 +1080,10 @@ function showCheckpoint(show, summary = null) {
 }
 
 function showResultadoEmpenho(msg) {
-  const ne              = msg.ne ?? '(verificar manualmente)';
+  const st              = msg.status ?? (msg.ne ? 'emitido' : 'pendente');
+  const ne              = msg.ne ?? (st === 'erro' ? 'erro no SIAFI' : 'em processamento');
+  const titulo          = st === 'emitido' ? '✅ EMPENHO EMITIDO' : st === 'erro' ? '❌ SIAFI RECUSOU' : '⏳ ENVIADO AO SIAFI — NE EM PROCESSAMENTO';
+  const corTitulo       = st === 'emitido' ? '#4ade80' : st === 'erro' ? '#f87171' : '#fbbf24';
   const payload         = msg.payload ?? {};
   const vEmp            = Number(msg.valorEmpenhado ?? 0);
   const vSol            = Number(msg.valorSolicitado ?? 0);
@@ -1075,8 +1099,9 @@ function showResultadoEmpenho(msg) {
   div.id = 'resultado-empenho';
   div.style.cssText = 'margin:10px 0;padding:12px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:6px;';
   div.innerHTML = `
-    <div style="color:#4ade80;font-size:12px;font-weight:700;letter-spacing:.5px;">✅ EMPENHO EMITIDO</div>
-    <div style="font-size:18px;font-weight:700;color:#fff;margin:4px 0;">${ne}</div>
+    <div style="color:${corTitulo};font-size:12px;font-weight:700;letter-spacing:.5px;">${titulo}</div>
+    <div style="font-size:18px;font-weight:700;color:#fff;margin:4px 0;">${escHtml(ne)}</div>
+    ${st === 'erro' && msg.mensagem ? `<div style="font-size:11px;color:#fca5a5;margin-bottom:6px;">${escHtml(msg.mensagem)}</div>` : ''}
     <div style="display:flex;gap:8px;margin:8px 0;">
       <div style="flex:1;">
         <div style="font-size:9px;color:#94a3b8;letter-spacing:.4px;">SOLICITADO</div>
@@ -1150,12 +1175,25 @@ function renderDiff(p) {
 // Mesma chave de runner/stateMachine.js (REGISTRO_KEY), que grava a cada emissão
 const REGISTRO_EMPENHOS_KEY = 'empenhosGerados';
 
+// Mesma chave de runner/stateMachine.js (CONFIRMAR_ANTES_KEY)
+const CONFIRMAR_ANTES_KEY = 'empenhoConfirmarAntes';
+
 function setupEmpenhosGerados() {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[REGISTRO_EMPENHOS_KEY]) renderEmpenhosGerados();
   });
   renderEmpenhosGerados();
+
+  // Desligado (padrão): o robô confere a Etapa 8, emite, finaliza e segue a fila
+  const opt = el('opt-confirmar-antes');
+  if (opt) {
+    chrome.storage.local.get(CONFIRMAR_ANTES_KEY).then(d => { opt.checked = !!d[CONFIRMAR_ANTES_KEY]; }).catch(() => {});
+    opt.addEventListener('change', () => chrome.storage.local.set({ [CONFIRMAR_ANTES_KEY]: opt.checked }));
+  }
 }
+
+// Registros sem `status` vêm da versão 2.1.9, que podia anotar a NE de outra solicitação
+const statusRegistro = r => r.status ?? 'conferir';
 
 async function renderEmpenhosGerados() {
   const box = el('empenhos-gerados');
@@ -1169,10 +1207,19 @@ async function renderEmpenhosGerados() {
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? '' : `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   };
+  const pendentes = lista.filter(r => statusRegistro(r) === 'pendente' && r.url).length;
+  const celulaNE = r => {
+    const st = statusRegistro(r);
+    if (st === 'emitido') return `<td>${escHtml(r.ne)}</td>`;
+    if (st === 'erro') return `<td class="eg-erro" title="${escHtml(r.mensagem || r.situacao || 'Erro no SIAFI')}">erro SIAFI</td>`;
+    if (st === 'conferir') return `<td class="eg-conferir" title="Anotada pela versão anterior, que podia pegar a NE de outra solicitação — confira no CNET">${escHtml(r.ne ? r.ne + ' ⚠' : 'conferir no CNET')}</td>`;
+    return `<td class="eg-conferir" title="${r.url ? 'Ainda em processamento — use Buscar pendentes' : 'Número não lido — confira no CNET'}">${r.url ? 'em processamento' : 'conferir no CNET'}</td>`;
+  };
   box.innerHTML = `
     <div class="eg-head">
       <span>EMPENHOS GERADOS (${lista.length})</span>
       <span>
+        ${pendentes ? `<button id="eg-pendentes" class="eg-btn" title="Abre cada minuta em processamento no CNET e anota o número da NE">🔄 Buscar pendentes (${pendentes})</button>` : ''}
         <button id="eg-csv" class="eg-btn" title="Todos os empenhos registrados, com fornecedor e valores">📥 CSV</button>
         <button id="eg-copiar" class="eg-btn" title="Copia solicitação e NE (cola em planilha)">📋 Copiar</button>
         <button id="eg-limpar" class="eg-btn eg-btn-danger">Limpar</button>
@@ -1182,16 +1229,20 @@ async function renderEmpenhosGerados() {
       <thead><tr><th>Solicitação</th><th>NE</th><th>Valor R$</th><th>Data</th></tr></thead>
       <tbody>${[...lista].reverse().slice(0, 50).map(r => `<tr>
         <td>${escHtml(r.solicitacao || '–')}</td>
-        <td class="${r.conferir ? 'eg-conferir' : ''}"${r.conferir ? ' title="Número não confirmado — confira no CNET"' : ''}>${escHtml(r.ne || 'conferir no CNET')}${r.conferir && r.ne ? ' ⚠' : ''}</td>
+        ${celulaNE(r)}
         <td>${fmtV(r.valorEmpenhado)}</td>
         <td>${escHtml(quando(r.data))}</td>
       </tr>`).join('')}</tbody>
     </table>`;
 
+  if (el('eg-pendentes')) el('eg-pendentes').onclick = () => {
+    if (enviar({ type: 'RESOLVER_PENDENTES' })) appendLog('🔎 Buscando as NEs em processamento no CNET…', 'info');
+  };
   el('eg-csv').onclick = () => baixarCsvEmpenhos(lista);
   el('eg-copiar').onclick = async () => {
     try {
-      await navigator.clipboard.writeText(lista.map(r => `${r.solicitacao}\t${r.ne ?? ''}`).join('\n'));
+      // só NE confirmada; as demais vão em branco
+      await navigator.clipboard.writeText(lista.map(r => `${r.solicitacao}\t${statusRegistro(r) === 'emitido' ? r.ne : ''}`).join('\n'));
       el('eg-copiar').textContent = '✓ Copiado';
     } catch { el('eg-copiar').textContent = 'Falhou'; }
     setTimeout(() => { const b = el('eg-copiar'); if (b) b.textContent = '📋 Copiar'; }, 1500);
@@ -1205,11 +1256,16 @@ async function renderEmpenhosGerados() {
 function baixarCsvEmpenhos(lista) {
   const fmtV = v => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const linhas = [
-    ['Data', 'Nº Solicitação', 'Nº Empenho', 'Conferir', 'Fornecedor', 'CNPJ', 'Contrato/Compra', 'Valor Solicitado', 'Valor Empenhado'],
-    ...lista.map(r => [
-      new Date(r.data).toLocaleString('pt-BR'), r.solicitacao, r.ne ?? '', r.conferir ? 'sim' : '',
-      r.fornecedor, r.cnpj, r.origem, fmtV(r.valorSolicitado), fmtV(r.valorEmpenhado),
-    ]),
+    ['Data', 'Nº Solicitação', 'Nº Empenho', 'Situação', 'Mensagem SIAFI', 'Fornecedor', 'CNPJ', 'Contrato/Compra', 'Valor Solicitado', 'Valor Empenhado'],
+    ...lista.map(r => {
+      const st = statusRegistro(r);
+      return [
+        new Date(r.data).toLocaleString('pt-BR'), r.solicitacao, st === 'emitido' ? r.ne : '',
+        st === 'emitido' ? 'Emitido' : st === 'erro' ? 'Erro no SIAFI'
+          : st === 'conferir' ? `Conferir no CNET${r.ne ? ` (anotada: ${r.ne})` : ''}` : 'Em processamento',
+        r.mensagem ?? '', r.fornecedor, r.cnpj, r.origem, fmtV(r.valorSolicitado), fmtV(r.valorEmpenhado),
+      ];
+    }),
   ];
   const csv = linhas.map(l => l.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
   const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
