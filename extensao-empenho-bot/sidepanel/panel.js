@@ -6,6 +6,9 @@
 import { extractPdfText, parseSolicitacaoEmpenho } from '../runner/pdfParser.js';
 import { UG_POR_UNIDADE } from './ugPorUnidade.js';
 import { verificarFornecedor } from './fornecedor.js';
+import {
+  abaDoSicaf, conferirNoSicaf, lerDeclaracaoSicaf, resultadoSicaf, textoDiagnostico, fmtCnpj, SICAF_CONSULTA,
+} from './sicaf.js';
 
 // ── Lista de unidades da FAB ──────────────────────────────────────────────────
 const FAB_UNITS = [
@@ -304,7 +307,10 @@ function setupUploadScreen() {
 
   el('btn-back-upload').addEventListener('click', () => showMenuScreen());
   el('btn-browse').addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => processarArquivos(Array.from(fileInput.files)));
+  fileInput.addEventListener('change', async () => {
+    await processarArquivos(Array.from(fileInput.files));
+    fileInput.value = '';   // permite escolher o mesmo arquivo de novo (ex.: depois de Limpar)
+  });
 
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
@@ -319,6 +325,7 @@ function setupUploadScreen() {
 
   el('btn-limpar-upload').addEventListener('click', () => {
     solicitacoesParsed = [];
+    declaracoesSicaf.clear();
     el('upload-file-list').innerHTML = '';
     el('btn-ver-revisao').style.display = 'none';
     el('btn-limpar-upload').style.display = 'none';
@@ -346,6 +353,19 @@ async function processarArquivos(files) {
       console.group('[GAPMN PDF] ' + file.name);
       console.log(text);
       console.groupEnd();
+
+      // Declaração do SICAF (Situação do Fornecedor): vale para as solicitações do CNPJ
+      const declaracao = lerDeclaracaoSicaf(text);
+      if (declaracao) {
+        const r = resultadoSicaf({ declaracao, origem: 'pdf' });
+        declaracoesSicaf.set(declaracao.cnpj, r);
+        const doCnpj = solicitacoesParsed.filter(s => s.ok && soDigitos(s.fornecedorCnpj) === declaracao.cnpj);
+        doCnpj.forEach(s => { s._sicaf = r; atualizarBadgeFornecedor(s); });
+        const statusEl = item.querySelector('.ufi-status');
+        statusEl.className = 'ufi-status ufi-ok';
+        statusEl.textContent = `✓ SICAF ${fmtCnpj(declaracao.cnpj)}${doCnpj.length ? '' : ' (ainda sem solicitação)'}`;
+        continue;
+      }
 
       const parsed = parseSolicitacaoEmpenho(text);
       parsed._rawText = text;
@@ -425,6 +445,18 @@ function sanitize(s) { return s.replace(/[^a-zA-Z0-9]/g, '_'); }
 function setupReviewScreen() {
   el('btn-back-review').addEventListener('click', () => showScreen('upload'));
   el('btn-iniciar-fila').addEventListener('click', () => iniciarFila());
+  el('review-lista').addEventListener('click', aoClicarBadge);
+
+  // PDF arrastado na revisão (declaração do SICAF ou mais solicitações)
+  const tela = el('screen-review');
+  tela.addEventListener('dragover', e => e.preventDefault());
+  tela.addEventListener('drop', async e => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+    if (!files.length) return;
+    await processarArquivos(files);
+    abrirRevisao();
+  });
 }
 
 function abrirRevisao() {
@@ -432,6 +464,7 @@ function abrirRevisao() {
   renderReviewLista();
   showScreen('review');
   verificarFornecedoresDaRevisao();
+  conferirSicafDaRevisao();
 }
 
 // ── Verificação do fornecedor (sanções, impedimentos SICAF, Receita) ─────────
@@ -439,16 +472,62 @@ function abrirRevisao() {
 let proximoIdSol = 1;
 const idSol = sol => (sol._id ??= proximoIdSol++);
 
+const soDigitos = s => String(s ?? '').replace(/\D/g, '');
+
+// Declarações do SICAF arrastadas como PDF: CNPJ → resultado
+const declaracoesSicaf = new Map();
+
+function textoSicafPendente(s) {
+  switch (s?.estado) {
+    case 'sem-aba':   return 'Certidões não conferidas — abra o SICAF (logado) e clique em "Conferir no SICAF", ou arraste aqui o PDF da Situação do Fornecedor';
+    case 'sem-login': return `Certidões não conferidas — ${s.detalhe ?? 'o SICAF pediu login'}`;
+    case 'erro':      return `Certidões não conferidas no SICAF — ${s.detalhe ?? 'falha na consulta'}`;
+    default:          return 'Certidões ainda não conferidas no SICAF';
+  }
+}
+
+/**
+ * Veredito do fornecedor: MCP (sanções, impedimentos, CNPJ ativo) + SICAF
+ * (certidões). Sem as certidões conferidas nunca fica "regular".
+ */
+function vereditoFornecedor(sol) {
+  const m = sol._fornecedor, s = sol._sicaf;
+  if (!m || m.nivel === 'verificando' || s?.estado === 'consultando') return { nivel: 'verificando', itens: [] };
+  const itens = (m.itens ?? []).filter(i => i.nivel !== 'ok');
+  if (m.nivel === 'erro') itens.push({ nivel: 'atencao', texto: m.resumo });
+  for (const i of s?.itens ?? []) if (!itens.some(x => x.texto === i.texto)) itens.push(i);
+  if (s?.estado !== 'ok') itens.push({ nivel: 'atencao', texto: textoSicafPendente(s) });
+  const nivel = itens.some(i => i.nivel === 'bloqueio') ? 'bloqueio' : itens.some(i => i.nivel === 'atencao') ? 'atencao' : 'ok';
+  const resumo = nivel === 'ok'
+    ? `CNPJ ativo, sem sanções ou impedimentos · ${s.resumo}`
+    : itens.filter(i => i.nivel === nivel).map(i => i.texto).join(' · ');
+  return { nivel, resumo, itens, consultadoEm: s?.consultadoEm ?? m.consultadoEm ?? null };
+}
+
 function badgeFornecedor(sol) {
-  const v = sol._fornecedor;
   if (!sol.ok) return '';
-  if (!v) return '<span class="rcf rcf-verificando">Fornecedor: aguardando verificação</span>';
-  if (v.nivel === 'verificando') return '<span class="rcf rcf-verificando">⏳ Verificando fornecedor (sanções, SICAF, Receita)…</span>';
-  const icone = { ok: '✓', atencao: '⚠', bloqueio: '⛔', erro: '⚠' }[v.nivel] ?? '';
-  const titulo = v.nivel === 'ok' ? 'Fornecedor sem restrições' : v.nivel === 'bloqueio' ? 'Fornecedor impedido' : 'Fornecedor — atenção';
-  const lista = (v.itens ?? []).filter(i => i.nivel !== 'ok');
-  return `<span class="rcf rcf-${v.nivel}" title="${escHtml(v.resumo)}">${icone} ${titulo}${v.nivel === 'ok' || !lista.length ? `: ${escHtml(v.resumo)}` : ''}</span>
-    ${lista.length ? `<ul class="rcf-lista">${lista.map(i => `<li class="rcf-${i.nivel}">${escHtml(i.texto)}</li>`).join('')}</ul>` : ''}`;
+  const s = sol._sicaf;
+  if (!sol._fornecedor) return '<span class="rcf rcf-verificando">Fornecedor: aguardando verificação</span>';
+  const v = vereditoFornecedor(sol);
+  if (v.nivel === 'verificando') {
+    const oQue = s?.estado === 'consultando' ? 'Conferindo certidões no SICAF…' : 'Verificando fornecedor (sanções, impedimentos, CNPJ)…';
+    return `<span class="rcf rcf-verificando">⏳ ${oQue}</span>`;
+  }
+  const icone = { ok: '✓', atencao: '⚠', bloqueio: '⛔' }[v.nivel] ?? '';
+  const titulo = v.nivel === 'ok' ? 'Fornecedor regular' : v.nivel === 'bloqueio' ? 'Fornecedor impedido' : 'Fornecedor — atenção';
+  const origem = s?.estado === 'ok'
+    ? (s.origem === 'pdf' ? `SICAF: PDF emitido em ${s.emitidoEm || '?'}` : 'SICAF: consultado agora')
+    : '';
+  const id = idSol(sol);
+  const botoes = [
+    s?.estado !== 'ok'
+      ? `<button class="btn-sicaf" data-sol="${id}" type="button">Conferir no SICAF</button>`
+      : `<button class="btn-sicaf" data-sol="${id}" type="button" title="Consultar o SICAF de novo">↻ SICAF</button>`,
+    s?.diagnostico ? `<button class="btn-sicaf-diag" data-sol="${id}" type="button">Copiar diagnóstico</button>` : '',
+  ].join('');
+  return `<span class="rcf rcf-${v.nivel}" title="${escHtml(v.resumo)}">${icone} ${titulo}${v.nivel === 'ok' ? `: ${escHtml(v.resumo)}` : ''}</span>
+    ${v.itens.length ? `<ul class="rcf-lista">${v.itens.map(i => `<li class="rcf-${i.nivel}">${escHtml(i.texto)}</li>`).join('')}</ul>` : ''}
+    <div class="rcf-acoes">${origem ? `<span class="rcf-origem">${escHtml(origem)}</span>` : ''}${botoes}</div>`;
 }
 
 function atualizarBadgeFornecedor(sol) {
@@ -467,6 +546,57 @@ async function verificarFornecedoresDaRevisao() {
     }
   };
   await Promise.all([trabalhador(), trabalhador(), trabalhador()]);
+}
+
+/**
+ * Certidões no SICAF: PDF da declaração já arrastado, senão a aba do SICAF
+ * aberta (uma consulta por vez). Sem aba, o badge pede para abrir.
+ * `sols` + `forcar`: reconsulta (botão do cartão).
+ */
+async function conferirSicafDaRevisao({ sols = null, forcar = false } = {}) {
+  const alvo = (sols ?? solicitacoesParsed.filter(s => !s._sicaf)).filter(s => s.ok);
+  const porCnpj = new Map();
+  for (const s of alvo) {
+    const c = soDigitos(s.fornecedorCnpj);
+    if (!porCnpj.has(c)) porCnpj.set(c, []);
+    porCnpj.get(c).push(s);
+  }
+  const marcar = (lista, r) => lista.forEach(s => { s._sicaf = r; atualizarBadgeFornecedor(s); });
+
+  let aba = null;
+  try { aba = await abaDoSicaf(); } catch { /* sem permissão de abas */ }
+  const consultar = [];
+  for (const [cnpj, lista] of porCnpj) {
+    const doPdf = declaracoesSicaf.get(cnpj);
+    if (doPdf && !(forcar && aba)) marcar(lista, doPdf);
+    else if (!aba) marcar(lista, { estado: 'sem-aba' });
+    else { marcar(lista, { estado: 'consultando' }); consultar.push([cnpj, lista]); }
+  }
+  for (const [cnpj, lista] of consultar) marcar(lista, await conferirNoSicaf(cnpj, { forcar }));
+}
+
+// Botões do badge: conferir no SICAF (abre o SICAF se não houver aba) e diagnóstico
+async function aoClicarBadge(e) {
+  const btn = e.target.closest('.btn-sicaf, .btn-sicaf-diag');
+  if (!btn) return;
+  e.stopPropagation();
+  const sol = solicitacoesParsed.find(s => String(s._id) === btn.dataset.sol);
+  if (!sol) return;
+  if (btn.classList.contains('btn-sicaf-diag')) {
+    try { await navigator.clipboard.writeText(textoDiagnostico(sol._sicaf ?? {})); btn.textContent = '✓ Copiado'; }
+    catch { btn.textContent = 'Não consegui copiar'; }
+    return;
+  }
+  const mesmos = solicitacoesParsed.filter(s => s.ok && soDigitos(s.fornecedorCnpj) === soDigitos(sol.fornecedorCnpj));
+  if (!(await abaDoSicaf().catch(() => null))) {
+    await chrome.tabs.create({ url: SICAF_CONSULTA, active: true });
+    mesmos.forEach(s => {
+      s._sicaf = { estado: 'sem-login', detalhe: 'abri o SICAF numa aba nova — entre com sua conta gov.br e clique em "Conferir no SICAF" de novo' };
+      atualizarBadgeFornecedor(s);
+    });
+    return;
+  }
+  await conferirSicafDaRevisao({ sols: mesmos, forcar: true });
 }
 
 function renderReviewLista() {
@@ -736,7 +866,9 @@ function bindReviewInputs() {
       // CNPJ corrigido: verifica o fornecedor de novo
       if (key === 'fornecedorCnpj' && solicitacoesParsed[idx]) {
         solicitacoesParsed[idx]._fornecedor = null;
+        solicitacoesParsed[idx]._sicaf = null;
         verificarFornecedoresDaRevisao();
+        conferirSicafDaRevisao();
       }
       // Campo conferido pelo usuário deixa de ser "deduzido"
       if (solicitacoesParsed[idx]?._deduzidos?.[key]) {
@@ -829,15 +961,23 @@ function iniciarFila() {
   let validas = solicitacoesParsed.filter(s => s.ok);
   if (!validas.length) return;
 
-  // Fornecedor impedido não entra na fila; verificação em curso pede confirmação
-  const verificando = validas.filter(s => !s._fornecedor || s._fornecedor.nivel === 'verificando');
-  if (verificando.length && !confirm(`Ainda verificando ${verificando.length} fornecedor(es) (sanções, SICAF, Receita). Iniciar sem esperar o resultado?`)) return;
-  const impedidas = validas.filter(s => s._fornecedor?.nivel === 'bloqueio');
+  // Fornecedor impedido (sanção, impedimento ou certidão federal vencida) não
+  // entra na fila; verificação em curso e certidão não conferida pedem confirmação
+  const veredito = new Map(validas.map(s => [s, vereditoFornecedor(s)]));
+  const nome = s => `${s.solicitacao || s._fileName} — ${s.fornecedorNome || ''}`;
+  const verificando = validas.filter(s => veredito.get(s).nivel === 'verificando');
+  if (verificando.length && !confirm(`Ainda verificando ${verificando.length} fornecedor(es) (sanções e certidões no SICAF). Iniciar sem esperar o resultado?`)) return;
+  const impedidas = validas.filter(s => veredito.get(s).nivel === 'bloqueio');
   if (impedidas.length) {
-    const lista = impedidas.map(s => `• ${s.solicitacao || s._fileName} — ${s.fornecedorNome || ''}: ${s._fornecedor.resumo}`).join('\n');
+    const lista = impedidas.map(s => `• ${nome(s)}: ${veredito.get(s).resumo}`).join('\n');
     if (!confirm(`Fornecedor impedido — estas solicitações NÃO serão empenhadas:\n\n${lista}\n\nOK: empenhar só as demais · Cancelar: voltar à revisão`)) return;
     validas = validas.filter(s => !impedidas.includes(s));
     if (!validas.length) return;
+  }
+  const semCertidao = validas.filter(s => veredito.get(s).nivel !== 'verificando' && s._sicaf?.estado !== 'ok');
+  if (semCertidao.length) {
+    const lista = semCertidao.map(s => `• ${nome(s)}`).join('\n');
+    if (!confirm(`Certidões NÃO conferidas no SICAF:\n\n${lista}\n\nOK: empenhar assim mesmo · Cancelar: voltar e conferir`)) return;
   }
 
   const incompletas = validas
@@ -893,9 +1033,10 @@ function solToPayload(sol) {
     modalidade:        sol.modalidade ?? '',
     unidadeCompra:     sol.unidadeCompra || unidadeCompraDoPerfil(),
     tipoEmpenho:       sol.tipoEmpenho || tipoEmpenhoPadrao(sol),
-    verificacaoFornecedor: sol._fornecedor?.nivel && sol._fornecedor.nivel !== 'verificando'
-      ? { nivel: sol._fornecedor.nivel, resumo: sol._fornecedor.resumo, consultadoEm: sol._fornecedor.consultadoEm ?? null }
-      : null,
+    verificacaoFornecedor: (() => {
+      const v = vereditoFornecedor(sol);
+      return v.nivel === 'verificando' ? null : { nivel: v.nivel, resumo: v.resumo, consultadoEm: v.consultadoEm };
+    })(),
     il:                sol.il,
     ugCred:            sol.ugCred,
     codemp:            sol.codemp,
@@ -1532,8 +1673,18 @@ async function empenharSolicitacao(sol, mode) {
       alert(`Fornecedor impedido — empenho de ${sol.numero} não iniciado:\n\n${v.resumo}`);
       return;
     }
+    // Certidões: só com o SICAF aberto (senão pede confirmação)
+    const sicaf = (await abaDoSicaf().catch(() => null)) ? await conferirNoSicaf(sol.fornecedorCNPJ) : { estado: 'sem-aba' };
+    if (sicaf.estado === 'ok' && sicaf.nivel === 'bloqueio') {
+      alert(`Fornecedor irregular no SICAF — empenho de ${sol.numero} não iniciado:\n\n${sicaf.resumo}`);
+      return;
+    }
+    if (sicaf.estado !== 'ok' && !confirm(`Certidões do fornecedor NÃO conferidas no SICAF (${textoSicafPendente(sicaf)}).\n\nEmpenhar ${sol.numero} assim mesmo?`)) return;
     // Envia payload para empenho CONTRATOSGOV
-    const payload = { ...buildCnetPayload(sol), verificacaoFornecedor: { nivel: v.nivel, resumo: v.resumo, consultadoEm: v.consultadoEm ?? null } };
+    const ordem = ['ok', 'atencao', 'bloqueio'];
+    const nivel = ordem[Math.max(ordem.indexOf(v.nivel), ordem.indexOf(sicaf.estado === 'ok' ? sicaf.nivel : 'atencao'))];
+    const resumo = `${v.resumo} · ${sicaf.estado === 'ok' ? sicaf.resumo : 'certidões não conferidas no SICAF'}`;
+    const payload = { ...buildCnetPayload(sol), verificacaoFornecedor: { nivel, resumo, consultadoEm: sicaf.consultadoEm ?? v.consultadoEm ?? null } };
     el('auto-mode-label').textContent = 'CONTRATOSGOV';
     el('siloms-soon').style.display   = 'none';
     el('cnet-auto').style.display     = 'flex';

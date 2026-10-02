@@ -169,7 +169,8 @@ export function classificar(perfil, sancoes, hoje = new Date()) {
   const nivel = itens.some(i => i.nivel === 'bloqueio') ? 'bloqueio'
     : itens.some(i => i.nivel === 'atencao') ? 'atencao' : 'ok';
   const resumo = nivel === 'ok'
-    ? `Sem restrições — Receita: ${situacao} · SICAF: habilitado · CEIS/CNEP/impedimentos: nada consta`
+    // Situação cadastral do CNPJ (ATIVA) não é certidão: essas vêm do SICAF (sicaf.js)
+    ? `Sem sanções ou impedimentos — CNPJ ${String(situacao).toLowerCase()} na Receita · habilitado a licitar · CEIS/CNEP: nada consta (certidões: ver SICAF)`
     : itens.filter(i => i.nivel === nivel).map(i => i.texto).join(' · ');
   return {
     nivel, resumo, itens,
