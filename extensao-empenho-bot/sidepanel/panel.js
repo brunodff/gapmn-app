@@ -312,13 +312,24 @@ function setupUploadScreen() {
     fileInput.value = '';   // permite escolher o mesmo arquivo de novo (ex.: depois de Limpar)
   });
 
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', e => {
+  // Arrastar vale no painel inteiro (não só na caixa): soltar fora dela fazia o
+  // navegador ignorar ou abrir o PDF. Na revisão, os PDFs entram na lista atual.
+  const ativa = nome => el(`screen-${nome}`)?.classList.contains('active');
+  const pdfs = e => Array.from(e.dataTransfer?.files ?? []).filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+  document.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (ativa('upload')) zone.classList.add('drag-over');
+  });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) zone.classList.remove('drag-over'); });
+  document.addEventListener('drop', async e => {
     e.preventDefault();
     zone.classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
-    if (files.length) processarArquivos(files);
+    const naRevisao = ativa('review');
+    if (!naRevisao && !ativa('upload')) return;
+    const files = pdfs(e);
+    if (!files.length) return;
+    await processarArquivos(files);
+    if (naRevisao) abrirRevisao();
   });
 
   el('btn-ver-revisao').addEventListener('click', () => abrirRevisao());
@@ -414,6 +425,13 @@ async function processarArquivos(files) {
         }
       }
 
+      // Mesma solicitação arrastada de novo: não duplica o empenho
+      if (parsed.ok && parsed.solicitacao && solicitacoesParsed.some(s => s.ok && s.solicitacao === parsed.solicitacao)) {
+        const statusEl = item.querySelector('.ufi-status');
+        statusEl.className = 'ufi-status ufi-ok';
+        statusEl.textContent = `↺ ${parsed.solicitacao} já carregada`;
+        continue;
+      }
       solicitacoesParsed.push(parsed);
 
       const statusEl = item.querySelector('.ufi-status');
@@ -446,17 +464,7 @@ function setupReviewScreen() {
   el('btn-back-review').addEventListener('click', () => showScreen('upload'));
   el('btn-iniciar-fila').addEventListener('click', () => iniciarFila());
   el('review-lista').addEventListener('click', aoClicarBadge);
-
-  // PDF arrastado na revisão (declaração do SICAF ou mais solicitações)
-  const tela = el('screen-review');
-  tela.addEventListener('dragover', e => e.preventDefault());
-  tela.addEventListener('drop', async e => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
-    if (!files.length) return;
-    await processarArquivos(files);
-    abrirRevisao();
-  });
+  // PDF arrastado na revisão: tratado no painel inteiro (setupUploadScreen)
 }
 
 function abrirRevisao() {
