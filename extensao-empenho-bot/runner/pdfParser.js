@@ -246,7 +246,6 @@ export function parseSolicitacaoEmpenho(text) {
     // ── Itens da tabela ─────────────────────────────────────────────────────────
     // Estrutura: REQUISIÇÃO  SUB  DESCRIÇÃO  REF  QUANT  UNID  PRC UNITARIO  PRC TOTAL
     // Linha de item começa com código alfanumérico tipo "SNT177001AU"
-    const itens = [];
     // A linha de item começa com a coluna ITEM (nº do item na compra/contrato,
     // ex: 21) seguida da requisição. Ancorar no início da linha evita tomar por
     // requisição o código REF que fecha a linha de continuação da descrição.
@@ -254,32 +253,54 @@ export function parseSolicitacaoEmpenho(text) {
     const CAUDA = String.raw`\s+(\d+)\s+(.+?)\s+([\d,]+)\s+(` + UNIDADES + String.raw`)\s+([\d.,]+)\s+([\d.,]+)`;
     const itemAncorado = new RegExp(String.raw`^[ \t]*(\d{1,5})[ \t]+([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gim');
     const itemLivre    = new RegExp(String.raw`()\b([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gi');
-    const itemRe = itemAncorado.test(t) ? itemAncorado : itemLivre;
-    itemRe.lastIndex = 0;
-    let m;
-    while ((m = itemRe.exec(t)) !== null) {
-      itens.push({
-        item:         m[1] || '',
-        requisicao:   m[2],
-        subelemento:  m[3],
-        descricao:    m[4].trim(),
-        quant:        m[5],
-        unid:         m[6],
-        valorUnit:    m[7],
-        valorTotal:   m[8],
-      });
-    }
+    // Formato mais livre, só quando os de cima não acham nada: unidade qualquer
+    // (MES, MÊS, UNID, SERV…), quantidade com milhar e totais com centavos.
+    const UNID_LIVRE = String.raw`[A-ZÀ-Ú][A-ZÀ-Ú0-9²³]{0,5}\.?`;
+    const CAUDA_LIVRE = String.raw`\s+(\d+)\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*(?:,\d{1,5})?)\s+(` + UNID_LIVRE +
+      String.raw`)\s+(\d[\d.]*,\d{2,5}|\d+)\s+(\d{1,3}(?:\.\d{3})*,\d{2,4})(?![\d,])`;
+    const itemAncoradoAmplo = new RegExp(String.raw`^[ \t]*(\d{1,5})[ \t]+([A-Z]{2,}\d+[A-Z]*)` + CAUDA_LIVRE, 'gm');
+    const itemLivreAmplo    = new RegExp(String.raw`()\b([A-Z]{2,}\d+[A-Z]*)` + CAUDA_LIVRE, 'g');
 
-    // Se regex de item não pegou nada, tenta extrair descrição de forma mais genérica
-    if (!itens.length) {
-      const descM = /(?:DESCRIÇÃO|DESCRICAO)\s*\n(.+?)(?=\nPAG:|\nREF\s|\nQUANT)/si.exec(t);
-      if (descM) {
-        itens.push({
-          requisicao: '', subelemento: '', descricao: descM[1].trim(),
-          quant: '', unid: '', valorUnit: '', valorTotal: total,
+    const coletar = re => {
+      const lista = [];
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(t)) !== null) {
+        lista.push({
+          item:         m[1] || '',
+          requisicao:   m[2],
+          subelemento:  m[3],
+          descricao:    m[4].trim(),
+          quant:        m[5],
+          unid:         m[6],
+          valorUnit:    m[7],
+          valorTotal:   m[8],
         });
       }
-    }
+      return lista;
+    };
+    // Layout com a descrição antes do nº do item e o subelemento colado à requisição:
+    // "LUVA … CAIXA 164 OLT198002SA10 OLR333164SA 50,00 CX 23,38 1.169,0000"
+    const itemInvertido = new RegExp(String.raw`^(.*?)\s(\d{1,5})\s+([A-Z]{2,}\d+[A-Z]+)(\d{2,3})\s+(\S+)\s+(\d{1,3}(?:\.\d{3})*(?:,\d{1,5})?)\s+(` +
+      UNID_LIVRE + String.raw`)\s+(\d[\d.]*,\d{2,5}|\d+)\s+(\d{1,3}(?:\.\d{3})*,\d{2,4})(?![\d,])`, 'gm');
+    const coletarInvertido = () => {
+      const lista = [];
+      itemInvertido.lastIndex = 0;
+      let m;
+      while ((m = itemInvertido.exec(t)) !== null) {
+        lista.push({
+          item: m[2], requisicao: m[3], subelemento: m[4], descricao: m[1].trim(),
+          quant: m[6], unid: m[7], valorUnit: m[8], valorTotal: m[9],
+        });
+      }
+      return lista;
+    };
+
+    let itens = coletar(itemAncorado.test(t) ? itemAncorado : itemLivre);
+    if (!itens.length) itens = coletar(itemAncoradoAmplo);
+    if (!itens.length) itens = coletar(itemLivreAmplo);
+    if (!itens.length) itens = coletarInvertido();
+    // Sem itens, a revisão avisa; num contrato de item único o robô usa o TOTAL
 
     // Sem TOTAL legível, soma os itens da tabela
     const total = (() => {

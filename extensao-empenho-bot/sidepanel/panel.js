@@ -115,11 +115,11 @@ const TIPOS_EMPENHO = ['Ordinário', 'Estimativo', 'Global'];
 // Contrato de serviço público medido por consumo
 const RX_SERVICO_PUBLICO = /ENERGIA\s+EL[ÉE]TRICA|ESGOTO|SANEAMENTO|FORNECIMENTO\s+DE\s+[ÁA]GUA(?!\s+MINERAL)|TELEFONIA|\bSTFC\b|G[ÁA]S\s+CANALIZADO/i;
 
-// Padrão: compra = Global; contrato de serviço público = Estimativo; demais = Ordinário
+// Padrão: Global (compra e contrato); contrato de serviço público = Estimativo
 function tipoEmpenhoPadrao(sol) {
   if (sol.tipoOrigem === 'compra') return 'Global';
   const texto = [sol.obs, sol.contratoRaw, ...(sol.itens ?? []).map(it => it.descricao ?? it.desc ?? '')].join(' ');
-  return RX_SERVICO_PUBLICO.test(texto) ? 'Estimativo' : 'Ordinário';
+  return RX_SERVICO_PUBLICO.test(texto) ? 'Estimativo' : 'Global';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -490,6 +490,17 @@ function renderReviewLista() {
   bindReviewInputs();
 }
 
+// Soma dos itens lidos x TOTAL da solicitação: diferença indica item mal lido
+function divergenciaItens(sol) {
+  const itens = sol.itensEmpenho ?? [];
+  const total = parseFloat(String(sol.total ?? '').replace(/\./g, '').replace(',', '.'));
+  if (!sol.ok || !itens.length || !(total > 0)) return '';
+  const soma = itens.reduce((s, it) => s + (parseFloat(String(it.valor ?? '').replace(',', '.')) || 0), 0);
+  if (Math.abs(soma - total) <= 0.01) return '';
+  const fmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `Soma dos itens (R$ ${fmt(soma)}) diferente do TOTAL (R$ ${fmt(total)}) — confira os itens na revisão.`;
+}
+
 function criarReviewCard(sol, idx) {
   const card = document.createElement('div');
   card.className = 'review-card' + (!sol.ok ? ' review-card-error' : '');
@@ -506,6 +517,11 @@ function criarReviewCard(sol, idx) {
         </div>
         <div class="rc-forn">${sol.fornecedorNome || '—'}</div>
         <div class="rc-fornecedor" id="rcf-${idSol(sol)}">${badgeFornecedor(sol)}</div>
+        ${divergenciaItens(sol) ? `<div class="rc-sem-itens">⚠ ${divergenciaItens(sol)}</div>` : ''}
+        ${sol.ok && !(sol.itensEmpenho?.length) ? `<div class="rc-sem-itens">⚠ Itens não identificados no PDF. ${sol.tipoOrigem === 'compra'
+          ? 'Informe N.Item, Qtd e valor de cada item.'
+          : 'Se o contrato tiver um único item, o robô usa o total da solicitação; com mais de um, informe N.Item e valor.'}
+          <button class="btn-copiar-pdf" data-idx="${idx}" type="button">Copiar texto do PDF</button></div>` : ''}
         <div class="rc-om">${omAbrev}</div>
         ${!sol.ok ? `<div class="rc-err">⚠ ${sol.error ?? 'Erro ao ler PDF'}</div>` : ''}
         <div class="rc-toggle" data-idx="${idx}">▼ Ver / editar campos</div>
@@ -518,6 +534,19 @@ function criarReviewCard(sol, idx) {
 
   // Toggle expand
   card.querySelector('.rc-toggle').addEventListener('click', () => toggleReviewCard(idx));
+
+  // Texto bruto do PDF (para ajustar a leitura de formatos novos)
+  card.querySelector('.btn-copiar-pdf')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    try {
+      await navigator.clipboard.writeText(sol._rawText ?? '');
+      btn.textContent = '✓ Texto copiado';
+    } catch {
+      btn.textContent = 'Não consegui copiar';
+    }
+    setTimeout(() => { btn.textContent = 'Copiar texto do PDF'; }, 2000);
+  });
 
   // Remove
   card.querySelector('.btn-rc-remove').addEventListener('click', e => {
@@ -593,7 +622,7 @@ function renderCamposEditable(sol, idx) {
     if (key === 'tipoEmpenho') {
       const atual = sol.tipoEmpenho || tipoEmpenhoPadrao(sol);
       return `
-    <div class="rf-label" title="Padrão: compra = Global; contrato de serviço público (energia, água, esgoto, telefonia) = Estimativo; demais contratos = Ordinário">${label}</div>
+    <div class="rf-label" title="Padrão: Global; contrato de serviço público (energia, água, esgoto, telefonia) = Estimativo">${label}</div>
     <select class="rf-input" data-idx="${idx}" data-key="tipoEmpenho">
       ${TIPOS_EMPENHO.map(t => `<option value="${escHtml(t)}"${t === atual ? ' selected' : ''}>${escHtml(t)}</option>`).join('')}
     </select>`;

@@ -81,14 +81,15 @@ export async function step6Runner(p) {
   const d = new Date();
   fillInput('data_emissao', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
 
-  // Tipo de empenho pelo texto da opção
-  const tipo = p.tipoEmpenho || 'Ordinário';
+  // Tipo de empenho pelo texto da opção (padrão: Global)
+  const tipo = p.tipoEmpenho || 'Global';
   const selTipo = document.getElementById('tipo_empenho_id');
+  let optTipo = null;
   if (selTipo) {
-    const opt = Array.from(selTipo.options).find(o => o.value && norm(o.textContent).includes(norm(tipo)));
-    if (!opt) return { ok: false, error: `Tipo de empenho "${tipo}" não está entre as opções do CNET` };
-    escolher(selTipo, opt.value);
-    feitos.push(`Tipo de empenho: ${opt.textContent.trim()}`);
+    optTipo = Array.from(selTipo.options).find(o => o.value && norm(o.textContent).includes(norm(tipo)));
+    if (!optTipo) return { ok: false, error: `Tipo de empenho "${tipo}" não está entre as opções do CNET` };
+    escolher(selTipo, optTipo.value);
+    feitos.push(`Tipo de empenho: ${optTipo.textContent.trim()}`);
     await dorme(300);
   }
 
@@ -109,6 +110,15 @@ export async function step6Runner(p) {
   if (p.obs) fillInput('descricao', p.obs);
 
   await dorme(400);
+
+  // O CNET pode voltar o tipo ao padrão do contrato depois dos outros campos: confere
+  if (selTipo && optTipo && selTipo.value !== optTipo.value) {
+    escolher(selTipo, optTipo.value);
+    await dorme(400);
+    if (selTipo.value !== optTipo.value) {
+      return { ok: false, error: `O CNET voltou o tipo de empenho para "${selTipo.selectedOptions[0]?.textContent.trim() ?? '?'}" — escolha "${optTipo.textContent.trim()}" na tela e use Retomar`, feitos };
+    }
+  }
 
   const btn =
     document.querySelector('button.submeter') ||

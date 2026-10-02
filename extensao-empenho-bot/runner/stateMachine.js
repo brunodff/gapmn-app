@@ -847,6 +847,7 @@ function lerEtapa8() {
     mensagem:  valorDe('Mensagem SIAFI'),
     numero:    valorDe('Número Empenho', 'Número do Empenho', 'Nº Empenho', 'N° Empenho', 'Número da NE', 'Nota de Empenho', 'Número NE'),
     valor:     valorDe('Valor Total'),
+    tipo:      valorDe('Tipo de Empenho', 'Tipo Empenho'),
     descricao: valorDe('Descrição', 'Descricao'),
     temEmitir: !!emitir,
     emitirHabilitado: !!emitir && !emitir.disabled && !emitir.classList.contains('disabled'),
@@ -912,6 +913,12 @@ async function runStep8(tabId, payload, dryRun) {
   const naTela = numBR(tela.valor);
   if (naTela !== null && esperado > 0 && Math.abs(naTela - esperado) > Math.max(1, esperado * 0.005)) {
     motivos.push(`valor na tela R$ ${fmtR$(naTela)} ≠ solicitado R$ ${fmtR$(esperado)}`);
+  }
+  // Sem ler o valor não há conferência: pede confirmação em vez de emitir no escuro
+  if (naTela === null) motivos.push('não consegui ler o Valor Total na tela');
+  const semAcento = x => String(x ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  if (payload.tipoEmpenho && tela.tipo && !semAcento(tela.tipo).includes(semAcento(payload.tipoEmpenho))) {
+    motivos.push(`tipo de empenho na tela "${tela.tipo}" ≠ escolhido "${payload.tipoEmpenho}"`);
   }
   const sol = String(payload.numeroSolicitacao ?? '').toUpperCase();
   if (sol && tela.descricao && !tela.descricao.toUpperCase().includes(sol)) motivos.push(`a descrição não cita a solicitação ${sol}`);

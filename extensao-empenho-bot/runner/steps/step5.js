@@ -144,11 +144,24 @@ export async function step5Runner(p) {
       continue;
     }
 
-    // 2b. CONTRATO: valor a empenhar — o do item na revisão ou o valor total do item
+    // 2b. CONTRATO: valor a empenhar é o do item na revisão. Sem itens na
+    // solicitação, vale o total dela, mas só com um único item marcado. Nunca o
+    // "valor total do item" do contrato: é o saldo inteiro, não o que foi pedido.
     const vrInput  = porId('vrtotal') ?? naLinha('input[id^="vrtotal"]');
     const qtdInput = porId('qtditem') ?? naLinha('input[id^="qtditem"], input[name*="qtd" i], input[name*="quant" i]')
       ?? Array.from(tr.querySelectorAll('input[type="text"], input:not([type])')).filter(i => i !== vrInput).pop();
-    if (Number.isNaN(valor)) valor = num((porId('valor_total_item') ?? naLinha('input[id^="valor_total_item"]'))?.value);
+    if (Number.isNaN(valor)) {
+      if (!itensEmp.length && linhas.length === 1) {
+        valor = num(p.total);
+      } else {
+        return {
+          ok: false,
+          error: itensEmp.length
+            ? `O ${rotulo} está marcado no CNET mas não está na solicitação (N.Item na revisão: ${itensEmp.map(i => i.numeroItem).join(', ')}). Corrija o N.Item na revisão.`
+            : `A solicitação não traz o valor de cada item e há ${linhas.length} itens marcados no CNET — informe N.Item e valor de cada item na revisão.`,
+        };
+      }
+    }
     if (!(valor > 0)) return { ok: false, error: `Sem valor a empenhar para o ${rotulo} — preencha o valor na revisão.` };
 
     if (vrInput) {
