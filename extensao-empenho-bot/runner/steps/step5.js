@@ -67,7 +67,10 @@ export async function step5Runner(p) {
       parseInt((colunaPorCabecalho(tr, /^(N[úu]mero|N\.?\s*Item)$/i)?.textContent ?? '').replace(/\D/g, ''), 10) ||
       NaN;
     const rotulo = Number.isNaN(numItem) ? 'item' : `item ${String(numItem).padStart(5, '0')}`;
-    const empItem = itensEmp.find(it => parseInt(String(it.numeroItem ?? '').replace(/\D/g, ''), 10) === numItem);
+    const semNumero = it => !String(it.numeroItem ?? '').replace(/\D/g, '');
+    // Item da solicitação sem nº (contrato): vale só se for o único dos dois lados
+    const empItem = itensEmp.find(it => parseInt(String(it.numeroItem ?? '').replace(/\D/g, ''), 10) === numItem) ??
+      (!compra && itensEmp.length === 1 && linhas.length === 1 && semNumero(itensEmp[0]) ? itensEmp[0] : undefined);
 
     if (compra && itensEmp.length && !empItem) {
       return { ok: false, error: `O ${rotulo} está na tela mas não na solicitação (N.Item na revisão: ${itensEmp.map(i => i.numeroItem).join(', ')}).` };
@@ -156,7 +159,9 @@ export async function step5Runner(p) {
       } else {
         return {
           ok: false,
-          error: itensEmp.length
+          error: itensEmp.some(semNumero)
+            ? `A solicitação não diz qual item do contrato empenhar e há ${linhas.length} itens marcados no CNET — informe o N.Item na revisão.`
+            : itensEmp.length
             ? `O ${rotulo} está marcado no CNET mas não está na solicitação (N.Item na revisão: ${itensEmp.map(i => i.numeroItem).join(', ')}). Corrija o N.Item na revisão.`
             : `A solicitação não traz o valor de cada item e há ${linhas.length} itens marcados no CNET — informe N.Item e valor de cada item na revisão.`,
         };

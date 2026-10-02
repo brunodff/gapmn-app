@@ -381,12 +381,11 @@ async function processarArquivos(files) {
           parsed.itensEmpenho = fromObs;
         } else {
           // Monta itensEmpenho a partir dos itens do PDF
-          // N.Item = coluna ITEM do PDF (é o nº do item na compra/contrato no CNET).
-          // Sem ele, numa compra não há como adivinhar: fica vazio e a revisão cobra.
-          parsed.itensEmpenho = (parsed.itens ?? []).map((it, i) => ({
-            numeroItem: it.item
-              ? String(it.item).padStart(5, '0')
-              : (parsed.tipoOrigem === 'compra' ? '' : String(i + 1).padStart(5, '0')),
+          // N.Item = coluna ITEM do PDF ou linha "ITEM 14 - … - Ref a REQ" (é o nº do
+          // item na compra/contrato no CNET). Sem ele fica vazio, nunca adivinhado:
+          // um nº chutado marca e empenha outro item do contrato.
+          parsed.itensEmpenho = (parsed.itens ?? []).map(it => ({
+            numeroItem: it.item ? String(it.item).padStart(5, '0') : '',
             valor: (it.valorTotal ?? '').replace(/\./g, '').replace(',', '.'),
             valorFmt: it.valorTotal ?? '',
             subelemento: it.subelemento ?? '',
@@ -814,8 +813,14 @@ function pendenciasEtapa1(sol) {
     if (!itens.length || itens.some(it => !String(it.numeroItem ?? '').trim())) {
       p.push('N.Item de cada item (nº da coluna ITEM do PDF)');
     }
-  } else if (!sol.contrato) {
-    p.push('contrato (ou mude o Tipo para Compra)');
+  } else {
+    if (!sol.contrato) p.push('contrato (ou mude o Tipo para Compra)');
+    // Contrato com um item sem nº: o robô só segue se o CNET mostrar um único item.
+    // Com vários, não há como saber qual valor vai em qual item.
+    const itens = sol.itensEmpenho ?? [];
+    if (itens.length > 1 && itens.some(it => !String(it.numeroItem ?? '').trim())) {
+      p.push('N.Item de cada item do contrato');
+    }
   }
   return p;
 }

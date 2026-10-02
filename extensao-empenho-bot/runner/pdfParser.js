@@ -249,18 +249,27 @@ export function parseSolicitacaoEmpenho(text) {
     // A linha de item começa com a coluna ITEM (nº do item na compra/contrato,
     // ex: 21) seguida da requisição. Ancorar no início da linha evita tomar por
     // requisição o código REF que fecha a linha de continuação da descrição.
+    // A descrição pode vir vazia na linha (contrato: "BMT274013AU 16 1,00 UN 12030,50
+    // 12.030,5000", com a descrição na linha de cima).
     const UNIDADES = String.raw`UN|UN\.|M|M2|M3|KG|L|CX|PC|SV|SC|JG|PT|FD|GL|MO|HR|DI|SE|ME|AN`;
-    const CAUDA = String.raw`\s+(\d+)\s+(.+?)\s+([\d,]+)\s+(` + UNIDADES + String.raw`)\s+([\d.,]+)\s+([\d.,]+)`;
+    const CAUDA = String.raw`\s+(\d+)\s+(?:(.+?)\s+)?([\d,]+)\s+(` + UNIDADES + String.raw`)\s+([\d.,]+)\s+([\d.,]+)`;
     const itemAncorado = new RegExp(String.raw`^[ \t]*(\d{1,5})[ \t]+([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gim');
     const itemLivre    = new RegExp(String.raw`()\b([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gi');
     // Formato mais livre, só quando os de cima não acham nada: unidade qualquer
     // (MES, MÊS, UNID, SERV…), quantidade com milhar e totais com centavos.
     const UNID_LIVRE = String.raw`[A-ZÀ-Ú][A-ZÀ-Ú0-9²³]{0,5}\.?`;
-    const CAUDA_LIVRE = String.raw`\s+(\d+)\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*(?:,\d{1,5})?)\s+(` + UNID_LIVRE +
+    const CAUDA_LIVRE = String.raw`\s+(\d+)\s+(?:(.+?)\s+)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,5})?)\s+(` + UNID_LIVRE +
       String.raw`)\s+(\d[\d.]*,\d{2,5}|\d+)\s+(\d{1,3}(?:\.\d{3})*,\d{2,4})(?![\d,])`;
     const itemAncoradoAmplo = new RegExp(String.raw`^[ \t]*(\d{1,5})[ \t]+([A-Z]{2,}\d+[A-Z]*)` + CAUDA_LIVRE, 'gm');
     const itemLivreAmplo    = new RegExp(String.raw`()\b([A-Z]{2,}\d+[A-Z]*)` + CAUDA_LIVRE, 'g');
 
+    // Sem descrição na linha do item, usa a linha de cima (se não for o cabeçalho
+    // da tabela nem outra linha de item)
+    const linhaAcima = pos => {
+      const antes = t.slice(0, pos).replace(/\n[^\n]*$/, '');
+      const linha = (/[^\n]*$/.exec(antes)?.[0] ?? '').trim();
+      return /REQUISI|PRC\s+UNIT|Ref\.?\s+a\s+REQ|,\d{4}\s*$/i.test(linha) ? '' : linha;
+    };
     const coletar = re => {
       const lista = [];
       re.lastIndex = 0;
@@ -270,7 +279,7 @@ export function parseSolicitacaoEmpenho(text) {
           item:         m[1] || '',
           requisicao:   m[2],
           subelemento:  m[3],
-          descricao:    m[4].trim(),
+          descricao:    (m[4] ?? '').trim() || linhaAcima(m.index + m[0].search(/\S/)),
           quant:        m[5],
           unid:         m[6],
           valorUnit:    m[7],
@@ -300,6 +309,28 @@ export function parseSolicitacaoEmpenho(text) {
     if (!itens.length) itens = coletar(itemAncoradoAmplo);
     if (!itens.length) itens = coletar(itemLivreAmplo);
     if (!itens.length) itens = coletarInvertido();
+
+    // "ITEM 14 - 12.030,50 - Ref a REQ:BMT274013AU": nº do item no contrato numa
+    // linha à parte, com a coluna ITEM da tabela vazia. Liga pela requisição (e
+    // pelo valor, se a mesma requisição tiver mais de um item).
+    const refs = [];
+    const reRef = /\bITEM\s+(\d{1,5})\s*[-–:]\s*(\d[\d.]*,\d{2,4})\s*[-–]\s*Ref\.?\s+a\s+REQ\.?\s*:?\s*([A-Z]{2,}\d+[A-Z0-9]*)/gi;
+    for (let m; (m = reRef.exec(t)) !== null;) refs.push({ item: m[1], valor: m[2], req: m[3].toUpperCase(), usado: false });
+    const centavos = v => Math.round((parseFloat(String(v ?? '').replace(/\./g, '').replace(',', '.')) || 0) * 100);
+    for (const it of itens) {
+      if (it.item) continue;
+      const req = String(it.requisicao ?? '').toUpperCase();
+      const livres = refs.filter(r => !r.usado && (r.req === req || req.startsWith(r.req) || r.req.startsWith(req)));
+      const ref = livres.find(r => centavos(r.valor) === centavos(it.valorTotal)) ?? livres[0];
+      if (ref) { it.item = ref.item; ref.usado = true; }
+    }
+    // Nenhuma linha de item legível, mas há essas referências: monta os itens por elas
+    if (!itens.length) {
+      itens = refs.map(r => ({
+        item: r.item, requisicao: r.req, subelemento: '', descricao: '',
+        quant: '', unid: '', valorUnit: '', valorTotal: r.valor,
+      }));
+    }
     // Sem itens, a revisão avisa; num contrato de item único o robô usa o TOTAL
 
     // Sem TOTAL legível, soma os itens da tabela
