@@ -1148,8 +1148,8 @@ function connectPort(pedirEstado = true) {
         }
         case 'QUEUE_DONE':
           setBadge('done');
-          appendLog('🏁 Fila concluída', 'success');
           renderEmpenhosGerados();
+          renderRelatorioFila(msg.inicioFila ?? null);
           break;
         case 'ERROR':         setBadge('error');
                               appendLog(`❌ ${msg.message}`, 'error');
@@ -1393,6 +1393,47 @@ function showResultadoEmpenho(msg) {
   });
 }
 
+/**
+ * Relatório do fim da fila: empenhadas, as que faltou reforço irrisório (com o
+ * valor) e as que não foram empenhadas (com etapa e motivo).
+ */
+async function renderRelatorioFila(inicio) {
+  let lista = [];
+  try { lista = (await chrome.storage.local.get(REGISTRO_EMPENHOS_KEY))[REGISTRO_EMPENHOS_KEY] ?? []; } catch {}
+  lista = lista.filter(r => !inicio || r.data >= inicio);
+  document.getElementById('resultado-empenho')?.remove();
+  document.getElementById('relatorio-fila')?.remove();
+  if (!lista.length) return;
+
+  const fmtV = v => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const st = statusRegistro;
+  const emitidas  = lista.filter(r => st(r) === 'emitido' || st(r) === 'pendente');
+  const reforco   = emitidas.filter(r => (r.reforco ?? 0) > 0);
+  const problemas = lista.filter(r => ['falhou', 'erro', 'conferir'].includes(st(r)));
+  const totalReforco = reforco.reduce((t, r) => t + r.reforco, 0);
+  const ne = r => (st(r) === 'emitido' ? r.ne : 'NE em processamento');
+  const oQue = r => st(r) === 'erro' ? (r.motivo || `SIAFI recusou${r.mensagem ? `: ${r.mensagem}` : ''}`)
+    : `${r.etapa != null ? `Etapa ${r.etapa}: ` : ''}${r.motivo || 'confira no CNET'}`;
+  const secao = (titulo, cor, itens, linha) => itens.length ? `
+    <div class="rf-sec" style="color:${cor}">${titulo}</div>
+    <ul class="rf-lista">${itens.map(r => `<li>${linha(r)}</li>`).join('')}</ul>` : '';
+
+  const div = document.createElement('div');
+  div.id = 'relatorio-fila';
+  div.innerHTML = `
+    <div class="rf-titulo">🏁 RELATÓRIO DA FILA — ${lista.length} solicitação(ões)</div>
+    ${secao(`✅ Empenhadas (${emitidas.length})`, '#4ade80', emitidas,
+      r => `<b>${escHtml(r.solicitacao)}</b> → ${escHtml(ne(r))} · R$ ${fmtV(r.valorEmpenhado)}`)}
+    ${secao(`⚠ Faltou reforço irrisório (${reforco.length}) — total R$ ${fmtV(totalReforco)}`, '#fbbf24', reforco,
+      r => `<b>${escHtml(r.solicitacao)}</b> → ${escHtml(ne(r))} · <b>faltam R$ ${fmtV(r.reforco)}</b> (pedido R$ ${fmtV(r.valorSolicitado)}, empenhado R$ ${fmtV(r.valorEmpenhado)})`)}
+    ${secao(`⛔ Não empenhadas / com problema (${problemas.length})`, '#f87171', problemas,
+      r => `<b>${escHtml(r.solicitacao || '—')}</b>${st(r) === 'conferir' ? ' <i>(conferir no CNET)</i>' : ''} — ${escHtml(oQue(r))}`)}
+    <button id="rf-csv" class="eg-btn" type="button">📥 Baixar relatório da fila (CSV)</button>`;
+  const logEl = el('log');
+  logEl?.parentElement?.insertBefore(div, logEl.nextSibling);
+  el('rf-csv').onclick = () => baixarCsvEmpenhos(lista, 'relatorio_fila');
+}
+
 function renderDiff(p) {
   const rows = [
     ['Fornecedor CNPJ', formatCNPJ(p.fornecedorCNPJ ?? '')],
@@ -1452,7 +1493,8 @@ async function renderEmpenhosGerados() {
     const st = statusRegistro(r);
     if (st === 'emitido') return `<td>${escHtml(r.ne)}</td>`;
     if (st === 'erro') return `<td class="eg-erro" title="${escHtml(r.mensagem || r.situacao || 'Erro no SIAFI')}">erro SIAFI</td>`;
-    if (st === 'conferir') return `<td class="eg-conferir" title="Anotada pela versão anterior, que podia pegar a NE de outra solicitação — confira no CNET">${escHtml(r.ne ? r.ne + ' ⚠' : 'conferir no CNET')}</td>`;
+    if (st === 'falhou') return `<td class="eg-erro" title="${escHtml(`Etapa ${r.etapa ?? '?'}: ${r.motivo ?? ''}`)}">não empenhada</td>`;
+    if (st === 'conferir') return `<td class="eg-conferir" title="${escHtml(r.motivo ? `Etapa ${r.etapa ?? '?'}: ${r.motivo}` : 'Anotada pela versão anterior, que podia pegar a NE de outra solicitação — confira no CNET')}">${escHtml(r.ne ? r.ne + ' ⚠' : 'conferir no CNET')}</td>`;
     return `<td class="eg-conferir" title="${r.url ? 'Ainda em processamento — use Buscar pendentes' : 'Número não lido — confira no CNET'}">${r.url ? 'em processamento' : 'conferir no CNET'}</td>`;
   };
   box.innerHTML = `
@@ -1470,7 +1512,7 @@ async function renderEmpenhosGerados() {
       <tbody>${[...lista].reverse().slice(0, 50).map(r => `<tr>
         <td>${escHtml(r.solicitacao || '–')}</td>
         ${celulaNE(r)}
-        <td>${fmtV(r.valorEmpenhado)}</td>
+        <td>${statusRegistro(r) === 'falhou' ? '—' : fmtV(r.valorEmpenhado)}${(r.reforco ?? 0) > 0 ? ` <span class="eg-conferir" title="Reforço irrisório: falta para o solicitado">(falta ${fmtV(r.reforco)})</span>` : ''}</td>
         <td>${escHtml(quando(r.data))}</td>
       </tr>`).join('')}</tbody>
     </table>`;
@@ -1493,17 +1535,20 @@ async function renderEmpenhosGerados() {
   };
 }
 
-function baixarCsvEmpenhos(lista) {
+function baixarCsvEmpenhos(lista, nome = 'empenhos_gerados') {
   const fmtV = v => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const linhas = [
-    ['Data', 'Nº Solicitação', 'Nº Empenho', 'Situação', 'Mensagem SIAFI', 'Fornecedor', 'CNPJ', 'Contrato/Compra', 'Valor Solicitado', 'Valor Empenhado', 'Verificação do fornecedor'],
+    ['Data', 'Nº Solicitação', 'Nº Empenho', 'Situação', 'Etapa', 'Motivo do problema', 'Mensagem SIAFI', 'Fornecedor', 'CNPJ', 'Contrato/Compra',
+      'Valor Solicitado', 'Valor Empenhado', 'Reforço irrisório', 'Verificação do fornecedor'],
     ...lista.map(r => {
       const st = statusRegistro(r);
       return [
         new Date(r.data).toLocaleString('pt-BR'), r.solicitacao, st === 'emitido' ? r.ne : '',
-        st === 'emitido' ? 'Emitido' : st === 'erro' ? 'Erro no SIAFI'
+        st === 'emitido' ? 'Emitido' : st === 'erro' ? 'Erro no SIAFI' : st === 'falhou' ? 'Não empenhada'
           : st === 'conferir' ? `Conferir no CNET${r.ne ? ` (anotada: ${r.ne})` : ''}` : 'Em processamento',
-        r.mensagem ?? '', r.fornecedor, r.cnpj, r.origem, fmtV(r.valorSolicitado), fmtV(r.valorEmpenhado),
+        r.etapa ?? '', r.motivo ?? '',
+        r.mensagem ?? '', r.fornecedor, r.cnpj, r.origem, fmtV(r.valorSolicitado), st === 'falhou' ? '' : fmtV(r.valorEmpenhado),
+        (r.reforco ?? 0) > 0 ? fmtV(r.reforco) : '',
         r.verificacaoFornecedor ?? '',
       ];
     }),
@@ -1512,7 +1557,7 @@ function baixarCsvEmpenhos(lista) {
   const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `empenhos_gerados_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `${nome}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

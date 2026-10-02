@@ -159,7 +159,7 @@ export async function startEmpenho(payload, tabId, dryRun = false, initialQueue 
   await setState({
     state: 'running', flow: 'empenho-cnet',
     step: 0, payload, queue: initialQueue, cnetTabId: tabId, dryRun, log: [],
-    inicioFila: new Date().toISOString(), valorEmpenhado: null,
+    inicioFila: new Date().toISOString(), valorEmpenhado: null, valorNaTela: null, arredondado: false, falhasSeguidas: 0,
   });
   if (orfa) {
     await appendLog(`⚠ A execução anterior (${orfa}) tinha sido interrompida e foi descartada.`, 'warn');
@@ -490,12 +490,8 @@ async function runEmpenhoStep(s) {
         return false;
     }
 
-    if (!result.ok) {
-      await appendLog(`❌ Etapa ${step}: ${result.error}`, 'error');
-      await setState({ state: 'paused' });
-      notifySidePanel({ type: 'PAUSED', error: result.error, step });
-      return false;
-    }
+    // Problema desta solicitação: registra o motivo e segue para a próxima
+    if (!result.ok) return pularSolicitacao(tabId, step, result.error, { url: result.urlMinuta ?? null });
 
     if (result.checkpoint) {
       await setState({ state: 'checkpoint', step: 8 });
@@ -506,12 +502,7 @@ async function runEmpenhoStep(s) {
     // Etapa 8 conferida: emite, finaliza, registra a NE e segue a fila
     if (result.emitir) {
       const r = await emitirEFinalizar(tabId, payload);
-      if (!r.ok) {
-        await appendLog(`❌ Etapa 8: ${r.error}`, 'error');
-        await setState({ state: 'paused' });
-        notifySidePanel({ type: 'PAUSED', error: r.error, step });
-        return false;
-      }
+      if (!r.ok) return pularSolicitacao(tabId, 8, r.error, { status: r.talvezEmitido ? 'conferir' : 'falhou', url: r.url ?? null });
       return seguirFila(tabId);
     }
 
@@ -537,9 +528,9 @@ async function runEmpenhoStep(s) {
       // Verifica modal de arredondamento (aparece após Etapa 5 em alguns casos)
       const rounding = await handleRoundingModal(tabId);
       if (rounding?.handled) {
-        await appendLog(`⚠ Arredondamento detectado — selecionado "para menos" (${rounding.count} item(ns))`, 'warn');
-        notifySidePanel({ type: 'LOG', msg: `⚠ Arredondamento → "para menos" selecionado. Reforço irrisório será necessário.`, level: 'warn' });
-        await setState({ valorEmpenhado: rounding.totalEmpenhado || null });
+        // O valor que falta sai do Valor Total da Etapa 8 (o real), não deste modal
+        await logVisivel(`⚠ Arredondamento → "para menos" selecionado (${rounding.count} item(ns)). O reforço irrisório será calculado na Etapa 8.`, 'warn');
+        await setState({ valorEmpenhado: rounding.totalEmpenhado || null, arredondado: true });
         try { await waitForNavigation(tabId, 20000); await delay(800); } catch {}
       }
 
@@ -552,24 +543,89 @@ async function runEmpenhoStep(s) {
           : (depois.caminho === antes.caminho && depois.titulo === antes.titulo)
             ? `a página não avançou${depois.erros?.length ? ` — CNET: ${depois.erros.join(' | ').replace(/[.\s]+$/, '')}` : ''}`
             : null;
-        if (parada) {
-          const msg = `Etapa ${step}: cliquei em "Próxima", mas ${parada}. Corrija o que o CNET apontar (sem clicar em Próxima) e use Retomar — o robô refaz esta etapa.`;
-          await appendLog(`❌ ${msg}`, 'error');
-          await setState({ state: 'paused', step });
-          notifySidePanel({ type: 'PAUSED', error: msg, step });
-          return false;
-        }
+        if (parada) return pularSolicitacao(tabId, step, `cliquei em "Próxima", mas ${parada}`);
       }
     }
 
     return true;
 
   } catch (err) {
-    await appendLog(`❌ Exceção na Etapa ${step}: ${err.message}`, 'error');
-    await setState({ state: 'paused' });
-    notifySidePanel({ type: 'PAUSED', error: err.message, step });
+    // Na Etapa 8 a exceção pode ter vindo depois do clique em Emitir: conferir no CNET
+    return pularSolicitacao(tabId, step, `Exceção: ${err.message}`, { status: step === 8 ? 'conferir' : 'falhou' });
+  }
+}
+
+// ── Problema numa solicitação: registra o motivo e segue a fila ──────────────
+
+// Instruções de "Retomar" não servem no relatório: a fila já seguiu
+function limparMotivo(m) {
+  return String(m ?? '')
+    .replace(/\s*(?:—|-)\s*escolha[^.]*?use Retomar\.?/gi, '')
+    .replace(/\s*Volte à Etapa[^.]*\.?/gi, '')
+    .replace(/\s*Aborte,[^.]*\.?/gi, '')
+    .replace(/[,;\s—-]*(?:e\s+)?(?:depois\s+)?use Retomar[^.]*\.?/gi, '')
+    .replace(/\s+/g, ' ').replace(/[\s,;—-]+$/, '').trim();
+}
+
+// Falha "do sistema" (aba, sessão, CNET fora do ar) e não da solicitação: se
+// repetir, pular só criaria uma falha atrás da outra na fila inteira
+const RX_SISTEMICO = /Script não retornou|Exceção|timeout|não carregaram|bloqueada por um aviso|Não consegui ler a tela|sem resposta|sessão expirou/i;
+const RX_SESSAO = /\/login\b|acesso\.gov\.br|\bsso\./i;
+const LIMITE_FALHAS_SISTEMA = 3;
+
+/**
+ * A solicitação atual não deu para empenhar: grava no registro (status 'falhou',
+ * ou 'conferir' se a emissão pode ter acontecido) com etapa e motivo e segue a
+ * fila. Pausa só em sessão expirada ou falhas de sistema repetidas.
+ */
+async function pularSolicitacao(tabId, etapa, erro, { status = 'falhou', url = null } = {}) {
+  const s = await getState();
+  const payload = s.payload ?? {};
+  const sol = payload.numeroSolicitacao ?? '';
+
+  const aba = await chrome.tabs.get(tabId).catch(() => null);
+  if (RX_SESSAO.test(aba?.url ?? '')) {
+    const msg = `A sessão do CNET expirou (${sol || 'solicitação'}, Etapa ${etapa}). Entre de novo no CNET e use Retomar — o robô recomeça esta solicitação.`;
+    await appendLog(`❌ ${msg}`, 'error');
+    await setState({ state: 'paused', step: 0 });
+    notifySidePanel({ type: 'PAUSED', error: msg, step: 0 });
     return false;
   }
+
+  const motivo = limparMotivo(erro) || 'erro sem descrição';
+  await registrarEmpenho({
+    id:          `${Date.now()}-${sol}`,
+    data:        new Date().toISOString(),
+    solicitacao: sol,
+    ne:          null,
+    status,
+    etapa,
+    motivo,
+    url,
+    fornecedor:  payload.fornecedorNome ?? '',
+    cnpj:        String(payload.fornecedorCnpj ?? payload.fornecedorCNPJ ?? '').replace(/\D/g, ''),
+    origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
+    valorSolicitado: valorSolicitadoDe(payload),
+    valorEmpenhado:  0,
+    verificacaoFornecedor: payload.verificacaoFornecedor?.resumo ?? '',
+  });
+  await logVisivel(
+    `${status === 'conferir' ? '⚠' : '⛔'} ${sol || 'Solicitação'} ${status === 'conferir' ? 'precisa ser conferida no CNET' : 'NÃO empenhada'} (Etapa ${etapa}): ${motivo}${s.queue?.length ? ' — seguindo para a próxima' : ''}`,
+    'error',
+  );
+  notifySidePanel({ type: 'SKIPPED', numero: sol, etapa, motivo, status });
+
+  const falhas = RX_SISTEMICO.test(erro ?? '') ? (s.falhasSeguidas ?? 0) + 1 : (s.falhasSeguidas ?? 0);
+  await setState({ falhasSeguidas: falhas });
+  if (falhas >= LIMITE_FALHAS_SISTEMA && s.queue?.length) {
+    await prepararProximoDaFila(tabId);
+    const msg = `${falhas} falhas de sistema seguidas (aba, sessão ou CNET fora do ar) — confira o CNET e use Retomar para seguir com a próxima.`;
+    await appendLog(`⏸ ${msg}`, 'warn');
+    await setState({ state: 'paused', falhasSeguidas: 0 });
+    notifySidePanel({ type: 'PAUSED', error: msg, step: 0 });
+    return false;
+  }
+  return seguirFila(tabId);
 }
 
 // ── Implementações de etapas CNET ─────────────────────────────────────────────
@@ -585,7 +641,10 @@ async function runStep0(tabId, payload) {
   // Nova minuta pelo botão "Adicionar Minuta de Empenho", como o usuário faz. Aberto
   // pelo endereço logo depois de um empenho, o formulário pode vir preso à minuta
   // anterior, com o Número/Ano bloqueado.
-  const r = await execInPage(tabId, step0ClickAdicionarMinuta).catch(() => null);
+  // Com tempo limite: depois de uma solicitação que falhou, um alert() do CNET pode
+  // ter ficado aberto e travaria o script; aí abre o formulário pelo endereço
+  const comLimite = (p, ms) => Promise.race([p, new Promise(res => setTimeout(() => res(null), ms))]);
+  const r = await comLimite(execInPage(tabId, step0ClickAdicionarMinuta), 8000).catch(() => null);
   if (r?.ok) {
     await appendLog('[Pré] Abrindo nova minuta ("Adicionar Minuta de Empenho")…', 'info');
     notifySidePanel({ type: 'LOG', msg: '[Pré] Abrindo nova minuta…', level: 'info' });
@@ -594,8 +653,8 @@ async function runStep0(tabId, payload) {
     return { ok: true };
   }
 
-  const pageUrl = await execInPage(tabId, () => window.location.href).catch(() => '');
-  if ((pageUrl ?? '').includes('buscacompra')) {
+  const pageUrl = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? '';
+  if (pageUrl.includes('buscacompra')) {
     await appendLog('[Pré] Já está no formulário de empenho (buscacompra).', 'info');
     return { ok: true };
   }
@@ -908,9 +967,11 @@ async function runStep8(tabId, payload, dryRun) {
 
   const motivos = [];
   if (!tela.temEmitir && !RX_JA_ENVIADO.test(tela.situacao ?? '')) motivos.push('botão "Emitir Empenho SIAFI" não encontrado');
-  const s = await getState();
-  const esperado = s.valorEmpenhado ?? valorSolicitadoDe(payload);
+  // Compara com o pedido na solicitação. O arredondamento "para menos" deixa a tela
+  // alguns centavos abaixo (dentro da tolerância); a diferença vira reforço irrisório.
+  const esperado = valorSolicitadoDe(payload);
   const naTela = numBR(tela.valor);
+  await setState({ valorNaTela: naTela });
   if (naTela !== null && esperado > 0 && Math.abs(naTela - esperado) > Math.max(1, esperado * 0.005)) {
     motivos.push(`valor na tela R$ ${fmtR$(naTela)} ≠ solicitado R$ ${fmtR$(esperado)}`);
   }
@@ -923,11 +984,17 @@ async function runStep8(tabId, payload, dryRun) {
   const sol = String(payload.numeroSolicitacao ?? '').toUpperCase();
   if (sol && tela.descricao && !tela.descricao.toUpperCase().includes(sol)) motivos.push(`a descrição não cita a solicitação ${sol}`);
 
+  // Confirmação manual ligada no painel: para em toda solicitação. Desligada, uma
+  // divergência não trava a fila: a minuta fica pronta no CNET, sem emitir, e vai
+  // para o relatório com o motivo.
   const { [CONFIRMAR_ANTES_KEY]: confirmarAntes } = await chrome.storage.local.get(CONFIRMAR_ANTES_KEY);
-  if (motivos.length || confirmarAntes) {
+  if (confirmarAntes) {
     const motivo = motivos.length ? `Conferência automática: ${motivos.join('; ')} — confira e confirme` : 'Confirmação manual ligada no painel';
     await appendLog(`[Etapa 8] ⚠ CHECKPOINT — ${motivo}`, 'warn');
     return { ok: true, checkpoint: true, summary: { ...tela, payload, motivo } };
+  }
+  if (motivos.length) {
+    return { ok: false, error: `conferência antes de emitir: ${motivos.join('; ')} — minuta ficou pronta no CNET, sem emitir`, urlMinuta: tela.url };
   }
   await logVisivel(`[Etapa 8] Conferido: valor R$ ${fmtR$(naTela ?? esperado)}${sol ? `, solicitação ${sol}` : ''}`, 'info');
   return { ok: true, emitir: true };
@@ -976,11 +1043,11 @@ async function emitirEFinalizar(tabId, payload) {
     // Retomar depois da emissão: nunca emite duas vezes
     await logVisivel(`[Etapa 8] Já enviado ao SIAFI (situação: ${antes.situacao}) — não emito de novo`, 'warn');
   } else if (!antes.emitirHabilitado) {
-    return { ok: false, error: `"Emitir Empenho SIAFI" ${antes.temEmitir ? 'está desabilitado' : 'não foi encontrado'} (situação: ${antes.situacao || '—'}) — confira no CNET` };
+    return { ok: false, url, error: `"Emitir Empenho SIAFI" ${antes.temEmitir ? 'está desabilitado' : 'não foi encontrado'} (situação: ${antes.situacao || '—'}) — confira no CNET` };
   } else {
     await logVisivel('[Etapa 8] Emitindo empenho no SIAFI…', 'info');
     const r = await clicarEConfirmar(tabId, 'Emitir\\s+Empenho');
-    if (!r?.ok) return { ok: false, error: `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}` };
+    if (!r?.ok) return { ok: false, url, error: `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}` };
   }
 
   // O SIAFI devolve o número depois ("EM PROCESSAMENTO"): relê a minuta por ~1,5 min
@@ -1011,7 +1078,7 @@ async function emitirEFinalizar(tabId, payload) {
   const status = ne ? 'emitido' : erro ? 'erro' : 'pendente';
   // Sem número e sem situação de envio, a emissão não aconteceu: não finaliza
   if (status === 'pendente' && !RX_JA_ENVIADO.test(situacao ?? '')) {
-    return { ok: false, error: `O CNET não mostrou a emissão (situação: ${situacao || '—'}) — confira a minuta e use Retomar` };
+    return { ok: false, url, talvezEmitido: true, error: `cliquei em Emitir, mas o CNET não mostrou a emissão (situação: ${situacao || '—'}) — confira a minuta antes de empenhar de novo` };
   }
 
   // Finaliza a minuta (não quando o SIAFI recusou: ela precisa ser corrigida)
@@ -1025,8 +1092,13 @@ async function emitirEFinalizar(tabId, payload) {
     }
   }
 
+  // Empenhado = Valor Total da minuta (lido na tela); o que faltar para o
+  // solicitado é o reforço irrisório
+  const st = await getState();
   const valorSolicitado = valorSolicitadoDe(payload);
-  const valorEmpenhado = (await getState()).valorEmpenhado ?? valorSolicitado;
+  const valorEmpenhado = numBR(antes.valor) ?? st.valorNaTela ?? st.valorEmpenhado ?? valorSolicitado;
+  const falta = Math.round((valorSolicitado - valorEmpenhado) * 100) / 100;
+  const reforco = falta >= 0.01 ? falta : 0;
   const registro = {
     id:          `${Date.now()}-${payload.numeroSolicitacao ?? ''}`,
     data:        new Date().toISOString(),
@@ -1041,19 +1113,26 @@ async function emitirEFinalizar(tabId, payload) {
     origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
     valorSolicitado,
     valorEmpenhado,
+    reforco,
+    arredondado: !!st.arredondado,
+    motivo:      status === 'erro' ? `SIAFI recusou${mensagem ? `: ${mensagem}` : ''}` : '',
     verificacaoFornecedor: payload.verificacaoFornecedor?.resumo ?? "",
   };
   await registrarEmpenho(registro);
+  // Chegou ao SIAFI: a sequência de falhas de sistema acabou
+  await setState({ falhasSeguidas: 0 });
 
-  const diff = Math.abs(valorSolicitado - valorEmpenhado);
   const resumo = status === 'emitido' ? `NE ${ne}`
     : status === 'erro' ? `ERRO SIAFI${mensagem ? `: ${mensagem}` : ''}`
     : 'NE em processamento no SIAFI — o número será buscado no fim da fila';
   await appendLog(
-    `${status === 'emitido' ? '✅' : status === 'erro' ? '❌' : '⏳'} ${registro.solicitacao || 'Solicitação'} → ${resumo} | Empenhado: R$ ${fmtR$(valorEmpenhado)}${diff > 0.005 ? ` | ⚠ Diferença: R$ ${fmtR$(diff)}` : ''}`,
+    `${status === 'emitido' ? '✅' : status === 'erro' ? '❌' : '⏳'} ${registro.solicitacao || 'Solicitação'} → ${resumo} | Empenhado: R$ ${fmtR$(valorEmpenhado)}`,
     status === 'emitido' ? 'success' : status === 'erro' ? 'error' : 'warn',
   );
-  notifySidePanel({ type: 'DONE', ne, status, mensagem, payload, valorEmpenhado, valorSolicitado });
+  if (reforco && status !== 'erro') {
+    await logVisivel(`⚠ ${registro.solicitacao || 'Solicitação'}: faltou R$ ${fmtR$(reforco)} para o solicitado (R$ ${fmtR$(valorSolicitado)} pedido, R$ ${fmtR$(valorEmpenhado)} empenhado) — reforço irrisório`, 'warn');
+  }
+  notifySidePanel({ type: 'DONE', ne, status, mensagem, payload, valorEmpenhado, valorSolicitado, reforco });
   return { ok: true, status };
 }
 
@@ -1107,7 +1186,7 @@ async function prepararProximoDaFila(tabId) {
   await appendLog(`▶ Próxima da fila: ${next.numeroSolicitacao}${rest.length ? ` (depois dela, mais ${rest.length})` : ''}`, 'info');
   // A Etapa 0 abre a nova minuta (botão "Adicionar Minuta de Empenho" na tela atual)
   await delay(1000);
-  await setState({ state: 'running', flow: 'empenho-cnet', step: 0, payload: next, queue: rest, valorEmpenhado: null });
+  await setState({ state: 'running', flow: 'empenho-cnet', step: 0, payload: next, queue: rest, valorEmpenhado: null, valorNaTela: null, arredondado: false });
   notifySidePanel({ type: 'NEXT_AVAILABLE', numero: next.numeroSolicitacao, payload: next, restantes: rest.length });
   return true;
 }
@@ -1121,8 +1200,20 @@ async function seguirFila(tabId) {
     await logVisivel(`⏳ ${r.restantes} NE(s) ainda em processamento — use "Buscar pendentes" na lista de empenhos gerados mais tarde`, 'warn');
   }
   await setState({ state: 'done' });
-  await appendLog('🏁 Fila concluída', 'success');
-  notifySidePanel({ type: 'QUEUE_DONE' });
+  // Resumo da fila: empenhadas, reforço irrisório e as que tiveram problema
+  const data = await chrome.storage.local.get(REGISTRO_KEY);
+  const daFila = (data[REGISTRO_KEY] ?? []).filter(r => !s.inicioFila || r.data >= s.inicioFila);
+  const emitidas = daFila.filter(r => r.status === 'emitido' || r.status === 'pendente');
+  const comReforco = emitidas.filter(r => (r.reforco ?? 0) > 0);
+  const problemas = daFila.filter(r => ['falhou', 'erro', 'conferir'].includes(r.status));
+  const totalReforco = comReforco.reduce((t, r) => t + r.reforco, 0);
+  await logVisivel(
+    `🏁 Fila concluída: ${emitidas.length} empenhada(s)` +
+    (comReforco.length ? ` · ${comReforco.length} com reforço irrisório (R$ ${fmtR$(totalReforco)})` : '') +
+    (problemas.length ? ` · ${problemas.length} com problema` : ''),
+    'success',
+  );
+  notifySidePanel({ type: 'QUEUE_DONE', inicioFila: s.inicioFila ?? null });
   return false;
 }
 
@@ -1130,12 +1221,7 @@ async function seguirFila(tabId) {
 async function runStep8Confirm(tabId, payload) {
   await appendLog('[Etapa 8] Usuário confirmou — emitindo empenho…', 'info');
   const r = await emitirEFinalizar(tabId, payload);
-  if (!r.ok) {
-    await appendLog(`❌ ${r.error}`, 'error');
-    await setState({ state: 'paused', step: 8 });
-    notifySidePanel({ type: 'PAUSED', error: r.error, step: 8 });
-    return false;
-  }
+  if (!r.ok) return pularSolicitacao(tabId, 8, r.error, { status: r.talvezEmitido ? 'conferir' : 'falhou', url: r.url ?? null });
   return seguirFila(tabId);
 }
 
