@@ -418,6 +418,48 @@ export function parseSolicitacaoEmpenho(text) {
         quant: '', unid: '', valorUnit: '', valorTotal: r.valor,
       }));
     }
+    // Itens descritos DENTRO da descrição de uma linha da tabela (às vezes em várias
+    // páginas): "CONTRATO 045/GAP-MN/2025 ITEM 42: FRUTA…; VALOR UNITÁRIO: R$ 10,70;
+    // QUANTIDADE: 500KG; VALOR TOTAL: R$ 5.350,00.ITEM 46: …". Cada "ITEM n:" abre
+    // um trecho até o próximo; a soma dos itens tem de dar o TOTAL (a revisão confere).
+    let itensDaDescricao = false;
+    const naDescricao = (() => {
+      const corrido = t.replace(/\s*\n\s*/g, ' ');
+      const marcas = [...corrido.matchAll(/\bITEM\s+(\d{1,5})\s*:/gi)];
+      const valorBR = s => parseFloat(String(s ?? '').replace(/\./g, '').replace(',', '.'));
+      // Linha da tabela a que o item pertence: a última requisição antes dele no texto
+      const linhasTabela = itens.map(it => ({ it, pos: corrido.indexOf(it.requisicao) })).filter(x => x.pos >= 0);
+      const lista = [];
+      marcas.forEach((m, i) => {
+        const trecho = corrido.slice(m.index + m[0].length, i + 1 < marcas.length ? marcas[i + 1].index : corrido.length);
+        let total = /VALOR\s+TOTAL\s*:?\s*R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(trecho)?.[1] ?? '';
+        const unit = /VALOR\s+UNIT[ÁA]RIO\s*:?\s*R\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,4})?)/i.exec(trecho)?.[1] ?? '';
+        const q = /QUANTIDADE\s*:?\s*(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*([A-ZÀ-Ú]{1,8})?/i.exec(trecho);
+        // "1.000KG" → "1000" (ponto de milhar sem decimais; o robô leria 1,000)
+        const quant = (q?.[1] ?? '').replace(/^(\d{1,3}(?:\.\d{3})+)$/, s => s.replace(/\./g, ''));
+        // VALOR TOTAL cortado no PDF: unitário × quantidade (a soma x TOTAL confere)
+        if (!total && unit && quant) {
+          const calc = valorBR(unit) * valorBR(quant.includes(',') ? quant : quant.replace(/\./g, ''));
+          if (calc > 0) { total = calc.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); deduzidos.itensCalculados = true; }
+        }
+        if (!total) return;   // "ITEM 1: 4891,66" da OBS e afins não são esta forma
+        const dono = [...linhasTabela].reverse().find(x => x.pos < m.index)?.it ?? itens[0];
+        lista.push({
+          item: m[1], requisicao: dono?.requisicao ?? '', subelemento: dono?.subelemento ?? '',
+          // sem as colunas da linha da tabela que caem no meio ("1,00 UN 92.980,00 92.980,0000")
+          descricao: trecho.replace(/\s*;?\s*VALOR\s+UNIT[ÁA]RIO[\s\S]*$/i, '')
+            .replace(/\s\d{1,3}(?:\.\d{3})*,\d{2,4}\s+[A-Z]{1,4}\.?\s+[\d.,]+\s+[\d.,]+(?=\s|$)/g, '').trim().slice(0, 120),
+          quant, unid: q?.[2] ?? '', valorUnit: unit, valorTotal: total,
+        });
+      });
+      return lista;
+    })();
+    // A linha da tabela que embrulha esses itens não tem nº de item próprio
+    if (naDescricao.length && (naDescricao.length > 1 || !itens.length || itens.every(it => !it.item))) {
+      itens = naDescricao;
+      itensDaDescricao = true;
+    }
+
     // Sem itens, a revisão avisa; num contrato de item único o robô usa o TOTAL
 
     // Sem TOTAL legível, soma os itens da tabela
@@ -433,6 +475,7 @@ export function parseSolicitacaoEmpenho(text) {
     return {
       ok: true,
       _deduzidos: deduzidos,
+      itensDaDescricao,
       localEntrega,
       solicitacao,
       data,

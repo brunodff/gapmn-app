@@ -81,8 +81,13 @@ export function problemasDaSolicitacao(sol) {
     const total = num(sol.total);
     const soma = itens.reduce((s, it) => s + (num(it.valor) || 0), 0);
     if (total > 0 && soma > 0 && Math.abs(soma - total) > 0.01) {
-      aviso(`Soma dos itens (R$ ${fmtV(soma)}) diferente do TOTAL (R$ ${fmtV(total)}) — confira os itens`);
+      const msg = `Soma dos itens (R$ ${fmtV(soma)}) diferente do TOTAL (R$ ${fmtV(total)})`;
+      // Itens escritos na descrição: a soma TEM de dar o TOTAL; diferença é valor
+      // cortado/mal lido no PDF e empenharia errado
+      if (sol.itensDaDescricao) erro(`${msg} — itens lidos da descrição (${itens.length}); algum valor pode ter sido cortado no PDF. Corrija os itens`);
+      else aviso(`${msg} — confira os itens`);
     }
+    if (sol._deduzidos?.itensCalculados) aviso('Valor total de algum item não estava legível; calculei unitário × quantidade — confira');
   }
 
   // ── Valor ──
