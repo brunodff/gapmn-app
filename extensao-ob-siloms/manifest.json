@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GAPMN — Anexador de Ordens Bancárias SILOMS",
-  "version": "1.5.1",
+  "version": "1.6",
   "description": "Busca as OBs da UG no Portal da Transparência (ou na planilha do Tesouro Gerencial), gera o comprovante e anexa no SILOMS.",
   "permissions": ["storage", "scripting"],
   "host_permissions": [
