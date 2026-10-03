@@ -238,46 +238,50 @@ async function paginaPesquisar(cnpj) {
   return { ok: true };
 }
 
-/** Etapa B: espera o resultado — avisos e o link "Situação do Fornecedor". */
-async function paginaResultado() {
-  const dorme = ms => new Promise(r => setTimeout(r, ms));
+/**
+ * Etapa B, lida várias vezes pelo painel: avisos na tela e se o link "Situação
+ * do Fornecedor" já apareceu. Síncrona e instantânea — nada fica rodando dentro
+ * da página (se ela recarregar, a leitura seguinte pega a nova; aba em segundo
+ * plano no Firefox não atrasa nada).
+ */
+function paginaLerResultado() {
   const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
   const visivel = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
   const emMenu = e => !!e.closest('nav, header, [role="menu"], [role="menubar"], .ui-menu, .ui-menubar, .ui-tieredmenu, .ui-panelmenu, .ui-breadcrumb, .breadcrumb, .menu, .navbar, .dropdown-menu, #menu');
   const SEL = '.ui-growl-item, .ui-messages-warn, .ui-messages-error, .ui-messages-fatal, .ui-messages-info, .ui-message, [role="alert"], .alert, .br-message';
-  const msgs = window.__gapmnSicafMsgs ?? [];   // página recarregada: começa vazio
+  // Os guardados pelo observador da Etapa A (o growl some sozinho) + os da tela agora
+  const msgs = [...(window.__gapmnSicafMsgs ?? [])];
   const vistos = window.__gapmnSicafVistos ?? new WeakSet();
   let antes = [];
   try { antes = JSON.parse(sessionStorage.getItem('gapmnSicafAntes') ?? '[]'); } catch { /* sem sessionStorage */ }
-  const coletar = () => {
-    for (const m of document.querySelectorAll(SEL)) {
-      if (vistos.has(m)) continue;
-      const t = (m.textContent ?? '').replace(/\s+/g, ' ').trim();
-      if (antes.includes(t)) continue;
-      const c = `${m.className} ${m.closest('[class*="warn"], [class*="error"], [class*="fatal"], [class*="info"]')?.className ?? ''}`;
-      const tipo = /error|fatal|danger/i.test(c) ? 'erro' : /warn/i.test(c) ? 'aviso' : /info|success/i.test(c) ? 'info' : 'aviso';
-      if (t && !msgs.some(x => x.texto === t)) msgs.push({ texto: t, tipo });
-    }
-  };
-  const link = () => Array.from(document.querySelectorAll('a, button, input[type=submit], input[type=button], [role=button], [onclick]'))
-    .filter(e => visivel(e) && !emMenu(e) && !/consultarSituacaoFornecedor\.jsf/i.test(e.getAttribute('href') ?? ''))
-    .find(e => /^SITUACAO DO FORNECEDOR$/.test(norm(e.textContent || e.value || e.title)));
-
-  for (let t = 0; t < 20000; t += 250) {
-    coletar();
-    if (link()) { await dorme(500); coletar(); return { ok: true, temLink: true, mensagens: msgs }; }
-    // Sem o link, um erro do SICAF (CNPJ inválido, não cadastrado…) encerra a
-    // espera — mas o aviso pode chegar antes do link, então espera um pouco
-    if (t >= 8000 && msgs.some(m => m.tipo !== 'info')) return { ok: true, temLink: false, mensagens: msgs };
-    await dorme(250);
+  for (const m of document.querySelectorAll(SEL)) {
+    if (vistos.has(m)) continue;
+    const t = (m.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (!t || antes.includes(t)) continue;
+    const c = `${m.className} ${m.closest('[class*="warn"], [class*="error"], [class*="fatal"], [class*="info"]')?.className ?? ''}`;
+    const tipo = /error|fatal|danger/i.test(c) ? 'erro' : /warn/i.test(c) ? 'aviso' : /info|success/i.test(c) ? 'info' : 'aviso';
+    if (!msgs.some(x => x.texto === t)) msgs.push({ texto: t, tipo });
   }
+  const temLink = Array.from(document.querySelectorAll('a, button, input[type=submit], input[type=button], [role=button], [onclick]'))
+    .filter(e => visivel(e) && !emMenu(e) && !/consultarSituacaoFornecedor\.jsf/i.test(e.getAttribute('href') ?? ''))
+    .some(e => /^SITUACAO DO FORNECEDOR$/.test(norm(e.textContent || e.value || e.title)));
+  return { temLink, mensagens: msgs };
+}
+
+/** Retrato da página para o "Copiar diagnóstico" (síncrona). */
+function paginaDiagnostico() {
+  const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+  const visivel = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const emMenu = e => !!e.closest('nav, header, [role="menu"], [role="menubar"], .ui-menu, .ui-menubar, .ui-tieredmenu, .ui-panelmenu, .ui-breadcrumb, .breadcrumb, .menu, .navbar, .dropdown-menu, #menu');
   return {
-    ok: true, temLink: false, mensagens: msgs,
-    diagnostico: {
-      url: location.href,
-      botoes: Array.from(document.querySelectorAll('a, button, input[type=submit], input[type=button]')).filter(visivel).slice(0, 60)
-        .map(b => `${b.tagName.toLowerCase()} id=${b.id} "${norm(b.textContent || b.value).slice(0, 40)}"${emMenu(b) ? ' (menu)' : ''}`),
-    },
+    url: location.href,
+    titulo: document.title,
+    campos: Array.from(document.querySelectorAll('input, select, textarea')).filter(i => i.type !== 'hidden').slice(0, 30)
+      .map(i => `${i.tagName.toLowerCase()}[type=${i.type}] id=${i.id} name=${i.name}${visivel(i) ? '' : ' (oculto)'}`),
+    botoes: Array.from(document.querySelectorAll('a, button, input[type=submit], input[type=button]')).filter(visivel).slice(0, 60)
+      .map(b => `${b.tagName.toLowerCase()} id=${b.id} "${norm(b.textContent || b.value).slice(0, 40)}"${emMenu(b) ? ' (menu)' : ''}`),
+    avisos: Array.from(document.querySelectorAll('.ui-growl-item, .ui-messages, .ui-message, [role="alert"], .alert'))
+      .map(m => norm(m.textContent).slice(0, 120)).filter(Boolean).slice(0, 10),
   };
 }
 
@@ -354,85 +358,179 @@ export async function abaDoSicaf() {
   return abas.find(a => a.url?.includes('/private/')) ?? abas[0] ?? null;
 }
 
-async function esperarCarregar(tabId, ms = 25000) {
-  await dorme(500);
-  for (let t = 0; t < ms; t += 250) {
-    const aba = await chrome.tabs.get(tabId);
-    if (aba.status === 'complete') return aba;
-    await dorme(250);
-  }
-  throw new Error('o SICAF demorou demais para carregar');
+// Promessa com prazo: uma etapa que não responde (aviso aberto na página, página
+// recarregando no meio do script, servidor parado) não pode prender as consultas
+function comPrazo(p, ms, msg) {
+  let t;
+  const limite = new Promise((_, rej) => { t = setTimeout(() => rej(new Error(msg)), ms); });
+  return Promise.race([p, limite]).finally(() => clearTimeout(t));
 }
 
-async function consultarNaAba(cnpj) {
+// Dispara a navegação (`acao`) e espera a aba terminar de carregar
+function navegar(tabId, acao, ms = 25000) {
+  return new Promise((res, rej) => {
+    const fim = (erro) => {
+      clearTimeout(t);
+      chrome.tabs.onUpdated.removeListener(ouvinte);
+      erro ? rej(erro) : chrome.tabs.get(tabId).then(res, rej);
+    };
+    const ouvinte = (id, info) => { if (id === tabId && info.status === 'complete') fim(); };
+    const t = setTimeout(() => fim(new Error('o SICAF demorou demais para carregar')), ms);
+    chrome.tabs.onUpdated.addListener(ouvinte);
+    Promise.resolve().then(acao).catch(fim);
+  });
+}
+
+// Depois de um clique: se a página começar a recarregar em `inicio` ms, espera
+// terminar; se não (resposta AJAX), segue
+function esperarSeNavegar(tabId, inicio = 2500, ms = 25000) {
+  return new Promise(res => {
+    let navegando = false;
+    const fim = () => { clearTimeout(t1); clearTimeout(t2); chrome.tabs.onUpdated.removeListener(ouvinte); res(); };
+    const ouvinte = (id, info) => {
+      if (id !== tabId) return;
+      if (info.status === 'loading') navegando = true;
+      if (info.status === 'complete' && navegando) fim();
+    };
+    const t1 = setTimeout(() => { if (!navegando) fim(); }, inicio);
+    const t2 = setTimeout(fim, ms);
+    chrome.tabs.onUpdated.addListener(ouvinte);
+  });
+}
+
+const juntar = (lista, novas) => { for (const m of novas ?? []) if (!lista.some(x => x.texto === m.texto)) lista.push(m); };
+
+async function consultarNaAba(cnpj, aoAvancar, ctl) {
   const aba = await abaDoSicaf();
   if (!aba) return { estado: 'sem-aba' };
-  const exec = async (func, args = []) => {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId: aba.id }, world: 'MAIN', func, args });
-    return r?.result;
-  };
-  const falha = (etapa, detalhe, diagnostico, mensagens = []) => {
-    const itens = classificarMensagensSicaf(mensagens);
-    return { estado: 'erro', etapa, detalhe, diagnostico, mensagens, itens };
-  };
+  const tabId = aba.id;
+  const avancar = etapa => { if (!ctl.cancelada) aoAvancar(etapa); };
+  const checar = () => { if (ctl.cancelada) throw new Error('consulta cancelada'); };
+  const exec = (func, args = [], ms = 20000, msg = 'a página do SICAF não respondeu') =>
+    comPrazo(chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args }).then(r => r?.[0]?.result), ms, msg);
+  const falha = async (etapa, detalhe, diagnostico, mensagens = []) => ({
+    estado: 'erro', etapa, detalhe: explicarErro(detalhe), mensagens, itens: classificarMensagensSicaf(mensagens),
+    diagnostico: diagnostico ?? await exec(paginaDiagnostico, [], 5000).catch(e => ({ erro: e.message })),
+  });
 
   // 1. Página de consulta recarregada (formulário limpo a cada CNPJ). Se a aba já
   // está na consulta aberta pelo menu do SICAF, usa o endereço dela (GET, sem
   // reenviar formulário); senão, o endereço conhecido.
+  avancar('abrindo a consulta');
   const naConsulta = aba.url?.includes('/sicaf-web/private/') && /situacao.*fornecedor/i.test(aba.url);
-  await chrome.tabs.update(aba.id, { url: naConsulta ? aba.url.split('#')[0] : SICAF_CONSULTA });
-  const carregada = await esperarCarregar(aba.id);
+  let carregada;
+  try {
+    carregada = await navegar(tabId, () => chrome.tabs.update(tabId, { url: naConsulta ? aba.url.split('#')[0] : SICAF_CONSULTA }));
+  } catch (e) {
+    return falha('abrir', e.message, { erro: e.message });
+  }
   if (!carregada.url?.includes('/sicaf-web/private/')) return { estado: 'sem-login', detalhe: 'o SICAF pediu login' };
+  checar();
 
-  // 2. Pesquisa o CNPJ
-  const a = await exec(paginaPesquisar, [cnpj]);
+  // 2. Pesquisa o CNPJ. Se a página recarregar no meio (ex.: ao marcar Pessoa
+  // Jurídica), tenta mais uma vez na página nova.
+  avancar('pesquisando o CNPJ');
+  let a = null;
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    const espera = esperarSeNavegar(tabId);
+    try {
+      a = await exec(paginaPesquisar, [cnpj], 20000, 'a página de consulta não respondeu ao preencher o CNPJ');
+    } catch (e) {
+      a = { ok: false, detalhe: e.message, repetir: true };
+    }
+    await espera;
+    if (a?.ok || !a?.repetir) break;
+  }
   if (!a?.ok) {
     return falha('pesquisa', `${a?.detalhe ?? 'não consegui pesquisar o CNPJ'} — abra no SICAF o menu Consulta › Situação do Fornecedor e clique em "Conferir no SICAF" de novo`, a?.diagnostico);
   }
-  await dorme(1200);
-  await esperarCarregar(aba.id);
+  checar();
 
-  // 3. Resultado (se a página navegar no meio, tenta de novo)
-  let b;
-  for (let tentativa = 0; tentativa < 2 && !b; tentativa++) {
-    try { b = await exec(paginaResultado); } catch { await esperarCarregar(aba.id); }
+  // 3. Resultado: leituras rápidas a cada meio segundo, por até 20 s
+  avancar('lendo o resultado');
+  const mensagens = [];
+  let temLink = false;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 20000) {
+    checar();
+    const r = await exec(paginaLerResultado, [], 5000).catch(() => null);   // null: recarregando
+    if (r) {
+      juntar(mensagens, r.mensagens);
+      if (r.temLink) { temLink = true; break; }
+      // Aviso de erro sem o link (CNPJ inválido, não cadastrado…) encerra a espera,
+      // mas o aviso pode chegar antes do link: espera ao menos 8 s
+      if (Date.now() - t0 >= 8000 && mensagens.some(m => m.tipo !== 'info')) break;
+    }
+    await dorme(500);
   }
-  if (!b) return falha('resultado', 'não consegui ler o resultado da pesquisa');
-  if (!b.temLink) {
+  if (temLink) {
+    await dorme(500);
+    juntar(mensagens, (await exec(paginaLerResultado, [], 5000).catch(() => null))?.mensagens);
+  }
+  checar();
+  if (!temLink) {
     // CNPJ sem cadastro, aviso do SICAF ou página diferente da esperada
-    return b.mensagens.length
-      ? { ...resultadoSicaf({ mensagens: b.mensagens, origem: 'aba' }), mensagens: b.mensagens }
-      : falha('resultado', 'o SICAF não mostrou o link "Situação do Fornecedor"', b.diagnostico);
+    return mensagens.length
+      ? { ...resultadoSicaf({ mensagens, origem: 'aba' }), mensagens }
+      : falha('resultado', 'o SICAF não mostrou o link "Situação do Fornecedor" em 20 s');
   }
 
   // 4. PDF da declaração
+  avancar('baixando a declaração');
   let c;
-  try { c = await exec(paginaBaixarDeclaracao); } catch (e) { c = { ok: false, detalhe: e.message }; }
+  try {
+    c = await exec(paginaBaixarDeclaracao, [], 45000, 'o SICAF não entregou a declaração em 45 s');
+  } catch (e) {
+    c = { ok: false, detalhe: e.message };
+  }
+  checar();
   if (!c?.ok) {
     // Os avisos da pesquisa já dizem algo: mostra com a ressalva do PDF
-    return b.mensagens.length
-      ? { ...resultadoSicaf({ mensagens: b.mensagens, origem: 'aba' }), detalhe: c?.detalhe, diagnostico: c?.diagnostico }
-      : falha('declaracao', c?.detalhe ?? 'não consegui baixar a declaração', c?.diagnostico, b.mensagens);
+    return mensagens.length
+      ? { ...resultadoSicaf({ mensagens, origem: 'aba' }), detalhe: c?.detalhe, diagnostico: c?.diagnostico }
+      : falha('declaracao', c?.detalhe ?? 'não consegui baixar a declaração', c?.diagnostico, mensagens);
   }
+  avancar('lendo a declaração');
   const bin = atob(c.base64);
   const buf = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   const declaracao = lerDeclaracaoSicaf(await extractPdfText(buf.buffer));
-  if (!declaracao) return falha('declaracao', 'o PDF baixado não é a declaração do SICAF', null, b.mensagens);
-  if (declaracao.cnpj !== cnpj) return falha('declaracao', `a declaração baixada é de outro CNPJ (${fmtCnpj(declaracao.cnpj)})`, null, b.mensagens);
-  return { ...resultadoSicaf({ declaracao, mensagens: b.mensagens, origem: 'aba' }), mensagens: b.mensagens };
+  if (!declaracao) return falha('declaracao', 'o PDF baixado não é a declaração do SICAF', null, mensagens);
+  if (declaracao.cnpj !== cnpj) return falha('declaracao', `a declaração baixada é de outro CNPJ (${fmtCnpj(declaracao.cnpj)})`, null, mensagens);
+  return { ...resultadoSicaf({ declaracao, mensagens, origem: 'aba' }), mensagens };
 }
 
-// Uma consulta por vez (a aba é uma só); resultado bom fica guardado na sessão
+// Mensagem do navegador → instrução para o usuário
+function explicarErro(msg) {
+  if (/host permission|Missing host|permission to access|Cannot access contents/i.test(msg)) {
+    return 'a extensão não tem permissão para acessar o SICAF — no Firefox: about:addons › GAPMN Empenho Bot › Permissões › ative "www3.comprasnet.gov.br" (no Chrome, recarregue a extensão)';
+  }
+  return msg;
+}
+
+// Uma consulta por vez (a aba é uma só); resultado bom fica guardado na sessão.
+// Cada uma tem prazo total: a que travar vira erro e a próxima começa.
+const PRAZO_TOTAL = 150000;
 let filaSicaf = Promise.resolve();
 const cacheSicaf = new Map();
 
-/** Confere o CNPJ no SICAF aberto. Nunca rejeita: falha vira estado 'erro'. */
-export function conferirNoSicaf(cnpj, { forcar = false } = {}) {
+/**
+ * Confere o CNPJ no SICAF aberto. Nunca rejeita: falha vira estado 'erro'.
+ * `aoAvancar(etapa)` recebe o andamento ("pesquisando o CNPJ"…) para o painel.
+ */
+export function conferirNoSicaf(cnpj, { forcar = false, aoAvancar = () => {} } = {}) {
   const c = String(cnpj ?? '').replace(/\D/g, '');
   if (c.length !== 14) return Promise.resolve({ estado: 'erro', detalhe: 'CNPJ ausente ou inválido' });
   if (!forcar && cacheSicaf.has(c)) return Promise.resolve(cacheSicaf.get(c));
-  const p = filaSicaf.then(() => consultarNaAba(c)).catch(e => ({ estado: 'erro', detalhe: e.message }));
+  const ctl = { cancelada: false };
+  const p = filaSicaf
+    .then(() => {
+      const consulta = consultarNaAba(c, aoAvancar, ctl);
+      consulta.catch(() => {});   // se o prazo total vencer, ela ainda termina sozinha
+      return comPrazo(consulta, PRAZO_TOTAL, 'a consulta ao SICAF passou de 2,5 minutos — confira a aba do SICAF');
+    })
+    .catch(e => ({ estado: 'erro', detalhe: explicarErro(e.message) }))
+    .then(r => { ctl.cancelada = true; return r; });
   filaSicaf = p.then(() => {}, () => {});
   return p.then(r => { if (r.estado === 'ok') cacheSicaf.set(c, r); return r; });
 }

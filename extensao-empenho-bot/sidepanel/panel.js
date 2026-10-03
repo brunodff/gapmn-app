@@ -518,7 +518,9 @@ function badgeFornecedor(sol) {
   if (!sol._fornecedor) return '<span class="rcf rcf-verificando">Fornecedor: aguardando verificação</span>';
   const v = vereditoFornecedor(sol);
   if (v.nivel === 'verificando') {
-    const oQue = s?.estado === 'consultando' ? 'Conferindo certidões no SICAF…' : 'Verificando fornecedor (sanções, impedimentos, CNPJ)…';
+    const oQue = s?.estado === 'consultando'
+      ? `Certidões no SICAF: ${s.etapa ?? 'conferindo'}…`
+      : 'Verificando fornecedor (sanções, impedimentos, CNPJ)…';
     return `<span class="rcf rcf-verificando">⏳ ${oQue}</span>`;
   }
   const icone = { ok: '✓', atencao: '⚠', bloqueio: '⛔' }[v.nivel] ?? '';
@@ -578,9 +580,16 @@ async function conferirSicafDaRevisao({ sols = null, forcar = false } = {}) {
     const doPdf = declaracoesSicaf.get(cnpj);
     if (doPdf && !(forcar && aba)) marcar(lista, doPdf);
     else if (!aba) marcar(lista, { estado: 'sem-aba' });
-    else { marcar(lista, { estado: 'consultando' }); consultar.push([cnpj, lista]); }
+    else consultar.push([cnpj, lista]);
   }
-  for (const [cnpj, lista] of consultar) marcar(lista, await conferirNoSicaf(cnpj, { forcar }));
+  // Uma consulta por vez na aba do SICAF: cada cartão mostra a vez e o andamento
+  consultar.forEach(([, lista], i) => marcar(lista, {
+    estado: 'consultando', etapa: consultar.length > 1 ? `aguardando a vez (${i + 1} de ${consultar.length})` : 'começando',
+  }));
+  for (const [cnpj, lista] of consultar) {
+    const r = await conferirNoSicaf(cnpj, { forcar, aoAvancar: etapa => marcar(lista, { estado: 'consultando', etapa }) });
+    marcar(lista, r);
+  }
 }
 
 // Botões do badge: conferir no SICAF (abre o SICAF se não houver aba) e diagnóstico

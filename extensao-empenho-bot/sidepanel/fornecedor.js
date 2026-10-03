@@ -16,43 +16,71 @@ let sessao = null;
 let rpcId = 0;
 let handshake = null;
 
-async function postMcp(payload) {
+// Cada pedido ao MCP tem prazo (envio + leitura da resposta): servidor lento ou
+// fluxo SSE que nunca fecha deixavam o cartão "verificando" para sempre
+const PRAZO_MCP = 25000;
+async function comPrazo(fn, ms = PRAZO_MCP) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fn(ctrl.signal);
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new Error(`o servidor de verificação não respondeu em ${ms / 1000} s`);
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function postMcp(payload, signal) {
   const headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/event-stream',
     'mcp-protocol-version': PROTOCOL_VERSION,
   };
   if (sessao) headers['mcp-session-id'] = sessao;
-  return fetch(MCP_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
+  return fetch(MCP_URL, { method: 'POST', headers, body: JSON.stringify(payload), signal });
 }
 
-// Resposta em JSON ou em SSE (event-stream), conforme o servidor escolher
+// Resposta em JSON ou em SSE (event-stream), conforme o servidor escolher. No SSE
+// lê aos poucos e para na mensagem pedida — o fluxo pode continuar aberto.
 async function lerResposta(res, id) {
-  const corpo = await res.text();
-  if ((res.headers.get('content-type') ?? '').includes('text/event-stream')) {
-    for (const linha of corpo.split('\n')) {
-      if (!linha.startsWith('data:')) continue;
-      try {
-        const msg = JSON.parse(linha.slice(5));
-        if (msg.id === id) return msg;
-      } catch { /* evento sem JSON */ }
+  if (!(res.headers.get('content-type') ?? '').includes('text/event-stream')) return JSON.parse(await res.text());
+  const leitor = res.body.getReader();
+  const dec = new TextDecoder();
+  let resto = '';
+  const procurar = linha => {
+    if (!linha.startsWith('data:')) return null;
+    try { const msg = JSON.parse(linha.slice(5)); return msg.id === id ? msg : null; } catch { return null; }   // evento sem JSON
+  };
+  try {
+    for (;;) {
+      const { value, done } = await leitor.read();
+      resto += done ? dec.decode() : dec.decode(value, { stream: true });
+      const linhas = resto.split('\n');
+      resto = done ? '' : linhas.pop();
+      for (const l of linhas) { const msg = procurar(l.replace(/\r$/, '')); if (msg) return msg; }
+      if (done) break;
     }
-    throw new Error('resposta do MCP sem a mensagem pedida');
+  } finally {
+    leitor.cancel().catch(() => {});
   }
-  return JSON.parse(corpo);
+  throw new Error('resposta do MCP sem a mensagem pedida');
 }
 
 async function iniciarSessao() {
   sessao = null;
   const id = ++rpcId;
-  const res = await postMcp({
-    jsonrpc: '2.0', id, method: 'initialize',
-    params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'gapmn-empenho-bot', version: '1.0' } },
+  await comPrazo(async signal => {
+    const res = await postMcp({
+      jsonrpc: '2.0', id, method: 'initialize',
+      params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'gapmn-empenho-bot', version: '1.0' } },
+    }, signal);
+    if (!res.ok) throw new Error(`MCP indisponível (HTTP ${res.status})`);
+    sessao = res.headers.get('mcp-session-id');
+    await lerResposta(res, id);
   });
-  if (!res.ok) throw new Error(`MCP indisponível (HTTP ${res.status})`);
-  sessao = res.headers.get('mcp-session-id');
-  await lerResposta(res, id);
-  await postMcp({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  await comPrazo(signal => postMcp({ jsonrpc: '2.0', method: 'notifications/initialized' }, signal)).catch(() => {});
 }
 
 async function chamarTool(nome, args) {
@@ -62,11 +90,15 @@ async function chamarTool(nome, args) {
   }
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     const id = ++rpcId;
-    const res = await postMcp({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: nome, arguments: args } });
-    if (res.status === 404 || res.status === 400) { await iniciarSessao(); continue; }  // sessão perdida
-    if (res.status >= 500 || res.status === 429) { await new Promise(r => setTimeout(r, 800 * (tentativa + 1))); continue; }
-    if (!res.ok) throw new Error(`MCP respondeu HTTP ${res.status}`);
-    const msg = await lerResposta(res, id);
+    const resposta = await comPrazo(async signal => {
+      const res = await postMcp({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: nome, arguments: args } }, signal);
+      if (!res.ok) return { status: res.status };
+      return { status: res.status, msg: await lerResposta(res, id) };
+    });
+    if (resposta.status === 404 || resposta.status === 400) { await iniciarSessao(); continue; }  // sessão perdida
+    if (resposta.status >= 500 || resposta.status === 429) { await new Promise(ok => setTimeout(ok, 800 * (tentativa + 1))); continue; }
+    if (!resposta.msg) throw new Error(`MCP respondeu HTTP ${resposta.status}`);
+    const msg = resposta.msg;
     if (msg.error) throw new Error(msg.error.message ?? 'erro do MCP');
     const r = msg.result ?? {};
     const texto = r.content?.find(c => c.type === 'text')?.text ?? '';
@@ -170,7 +202,7 @@ export function classificar(perfil, sancoes, hoje = new Date()) {
     : itens.some(i => i.nivel === 'atencao') ? 'atencao' : 'ok';
   const resumo = nivel === 'ok'
     // Situação cadastral do CNPJ (ATIVA) não é certidão: essas vêm do SICAF (sicaf.js)
-    ? `Sem sanções ou impedimentos — CNPJ ${String(situacao).toLowerCase()} na Receita · habilitado a licitar · CEIS/CNEP: nada consta (certidões: ver SICAF)`
+    ? `Sem sanções ou impedimentos — situação cadastral ${String(situacao).toLowerCase()} na Receita · habilitado a licitar · CEIS/CNEP: nada consta (certidões: ver SICAF)`
     : itens.filter(i => i.nivel === nivel).map(i => i.texto).join(' · ');
   return {
     nivel, resumo, itens,
