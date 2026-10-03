@@ -67,6 +67,13 @@ export function parseSolicitacaoEmpenho(text) {
 
     // ── Local de Entrega (OM no cabeçalho, linha após "SOLICITAÇÃO DE EMPENHO") ──
     const localEntrega = (() => {
+      // Nome da OM no cabeçalho (antes da tabela de itens). No layout de julho a
+      // linha depois de "SOLICITAÇÃO DE EMPENHO" é "COMPRADORA DATA NÚMERO".
+      const cabecalho = t.split(/ITEM\s+REQUISI/)[0].split('\n').map(l => l.trim()).filter(Boolean);
+      const om = cabecalho.find(l => !l.includes(':') &&
+        /\b(BASE A[ÉE]REA|HOSPITAL|GRUPAMENTO|COMANDO|CENTRO|ESQUADR[ÃA]O|DESTACAMENTO|PREFEITURA|SERVI[ÇC]O REGIONAL|PARQUE|BATALH[ÃA]O|ESCOLA|INSTITUTO|ACADEMIA|CINDACTA|DEP[ÓO]SITO|DIRETORIA|GABINETE|ALA \d)/i.test(l) &&
+        !/\b(LTDA|EIRELI|S\/A|EPP|COM[ÉE]RCIO|IMPORTA|ENGENHARIA)\b/i.test(l));
+      if (om) return om;
       const m = /SOLICITAÇÃO\s+DE\s+EMPENHO\s*\n([^\n]+)/.exec(t);
       if (m) return m[1].trim();
       // fallback: segunda linha não-vazia
@@ -75,9 +82,14 @@ export function parseSolicitacaoEmpenho(text) {
     })();
 
     // ── Fornecedor ──────────────────────────────────────────────────────────────
+    // Primeira linha com nome depois de "FORNECEDOR" — no layout de julho a linha
+    // logo abaixo é "CNPJ: 505…" e o nome vem depois
     const fornecedorNome = (() => {
-      const m = /FORNECEDOR\s*\n([^\n]+)/.exec(t);
-      return m?.[1]?.trim() ?? '';
+      const m = /FORNECEDOR\s*\n((?:[^\n]*\n?){0,4})/.exec(t);
+      const linhas = (m?.[1] ?? '').split('\n').map(l => l.trim()).filter(Boolean);
+      // Nome de MEI começa com a raiz do CNPJ ("25.283.883 ERICA…"): dígito no início vale
+      return linhas.find(l => !/^(CNPJ|CPF|SOLICITA|COMPRADORA|TELEFONE|ITEM)\b/i.test(l) &&
+        !/^\d{2}\/\d{2}\/\d{4}/.test(l) && !/\b\d{2}[A-Z]\d{4}\b/.test(l) && /[A-Za-zÀ-ú]{3}/.test(l)) ?? '';
     })();
 
     const fornecedorCnpj = (() => {
@@ -214,16 +226,61 @@ export function parseSolicitacaoEmpenho(text) {
     // Compras do SIASG com número iniciado em 90 são pregões.
     const modalidadeSugerida = /^90/.test(licit) ? '05 - Pregão' : '';
 
-    const il = (() => {
-      const m = /I\/L:\s*(\S+)/.exec(t);
-      return m?.[1]?.trim() ?? '';
-    })();
-
     // ── Crédito ─────────────────────────────────────────────────────────────────
     // Campos preenchidos por dedução (não lidos direto do rótulo) — a revisão
     // marca esses com ⚠ para o usuário conferir.
     const deduzidos = {};
     if (contratoSemAno) deduzidos.contrato = true;   // ano não achado: revisão marca ⚠
+
+    // Formato de cada campo. O valor vem logo depois do rótulo, NA MESMA LINHA:
+    // atravessar a quebra (\s*) pegava o que vinha embaixo — no layout de julho,
+    // PI "J367$" (era o CODEMP) e CODEMP "FONTE:".
+    const FORMATO = {
+      ND:     String.raw`[34]\d{5}`,
+      PTRES:  String.raw`\d{6}`,
+      FONTE:  String.raw`\d{10}`,
+      PI:     String.raw`(?=[A-Z0-9]*[A-Z])[A-Z0-9]{4,11}`,
+      CODEMP: String.raw`[A-Z0-9]{2,8}\$`,
+      'I/L':  String.raw`[A-Z]\d{4,6}`,
+    };
+    // Na mesma linha do rótulo vale qualquer valor do tipo (como antes); os
+    // formatos estritos acima só servem para casar valores soltos
+    const NA_LINHA = { ND: String.raw`\d+`, PTRES: String.raw`\d+`, FONTE: String.raw`\d+`, PI: String.raw`[A-Z0-9][\w-]*`, CODEMP: String.raw`[^\s:]+`, 'I/L': String.raw`[^\s:]+` };
+    const naLinha = rotulo => {
+      const m = new RegExp(String.raw`${rotulo.replace('/', '\\/')}:[ \t]*(${NA_LINHA[rotulo]})(?![\w$:])`).exec(t);
+      return m?.[1] ?? '';
+    };
+    // Layout com os rótulos sozinhos numa linha ("ND: PTRES: PI:") e os valores
+    // numa linha próxima, na mesma ordem ("339030 214537 CG190904100")
+    const soltos = (() => {
+      const r = {};
+      const linhas = t.split('\n').map(l => l.trim());
+      const RX_ROT = /(ND|PTRES|PI|FONTE|CODEMP|I\/L):/g;
+      linhas.forEach((l, i) => {
+        const rotulos = [...l.matchAll(RX_ROT)].map(m => m[1]);
+        if (!rotulos.length) return;
+        // só rótulos (sem valores) nesta linha
+        if (l.replace(/(ND|PTRES|PI|FONTE|CODEMP|I\/L|UG\s*Cred|Licit|Contrato|PAG|TOTAL):?/g, '').trim()) return;
+        for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
+          const toks = linhas[j].split(/\s+/).filter(Boolean);
+          if (toks.length !== rotulos.length) continue;
+          if (rotulos.every((rot, k) => new RegExp(`^(?:${FORMATO[rot]})$`).test(toks[k]))) {
+            rotulos.forEach((rot, k) => { if (!r[rot]) r[rot] = toks[k]; });
+            break;
+          }
+        }
+      });
+      return r;
+    })();
+    const campo = rotulo => {
+      const v = naLinha(rotulo);
+      if (v) return v;
+      if (soltos[rotulo] && ['ND', 'PTRES', 'FONTE', 'PI'].includes(rotulo)) deduzidos.credito = true;
+      return soltos[rotulo] ?? '';
+    };
+
+    // I/L: no rótulo; senão o código "C26006" solto no texto
+    const il = campo('I/L') || (/(?<![\w\/])([A-Z]\d{5})(?![\w\/])/.exec(t)?.[1] ?? '');
 
     const ugCred = (() => {
       const m = /UG\s*Cred\.?\s*:?\s*(\d{6})\b/i.exec(t);
@@ -243,10 +300,7 @@ export function parseSolicitacaoEmpenho(text) {
       return melhor;
     })();
 
-    const codemp = (() => {
-      const m = /CODEMP:\s*(\S+)/.exec(t);
-      return m?.[1]?.trim() ?? '';
-    })();
+    const codemp = campo('CODEMP');
 
     // Subelemento: número de 2-3 dígitos que segue o código de requisição (ex: SNT177001AU 91)
     const subelemento = (() => {
@@ -254,25 +308,10 @@ export function parseSolicitacaoEmpenho(text) {
       return m?.[1] ?? '';
     })();
 
-    const ptres = (() => {
-      const m = /PTRES:\s*(\d+)/.exec(t);
-      return m?.[1] ?? '';
-    })();
-
-    const fonte = (() => {
-      const m = /FONTE:\s*(\d+)/.exec(t);
-      return m?.[1] ?? '';
-    })();
-
-    const pi = (() => {
-      const m = /PI:\s*(\S+)/.exec(t);
-      return m?.[1]?.trim() ?? '';
-    })();
-
-    const nd = (() => {
-      const m = /ND:\s*(\d+)/.exec(t);
-      return m?.[1] ?? '';
-    })();
+    const ptres = campo('PTRES');
+    const fonte = campo('FONTE');
+    const pi    = campo('PI');
+    const nd    = campo('ND');
 
     // ── Total ───────────────────────────────────────────────────────────────────
     // Exige formato monetário (11.020,0000): se o valor cair em outra linha, o

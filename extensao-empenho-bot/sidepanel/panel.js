@@ -6,6 +6,8 @@
 import { extractPdfText, parseSolicitacaoEmpenho } from '../runner/pdfParser.js';
 import { UG_POR_UNIDADE } from './ugPorUnidade.js';
 import { verificarFornecedor } from './fornecedor.js';
+import { problemasDaSolicitacao, temErro } from './conferencia.js';
+import { conferirContratosNoCnet } from './cnet.js';
 import {
   abaDoSicaf, conferirNoSicaf, lerDeclaracaoSicaf, resultadoSicaf, textoDiagnostico, fmtCnpj, SICAF_CONSULTA,
 } from './sicaf.js';
@@ -473,6 +475,7 @@ function abrirRevisao() {
   showScreen('review');
   verificarFornecedoresDaRevisao();
   conferirSicafDaRevisao();
+  conferirContratosDaRevisao();
 }
 
 // ── Verificação do fornecedor (sanções, impedimentos SICAF, Receita) ─────────
@@ -594,11 +597,18 @@ async function conferirSicafDaRevisao({ sols = null, forcar = false } = {}) {
 
 // Botões do badge: conferir no SICAF (abre o SICAF se não houver aba) e diagnóstico
 async function aoClicarBadge(e) {
-  const btn = e.target.closest('.btn-sicaf, .btn-sicaf-diag');
+  const btn = e.target.closest('.btn-sicaf, .btn-sicaf-diag, .btn-copiar-pdf');
   if (!btn) return;
   e.stopPropagation();
   const sol = solicitacoesParsed.find(s => String(s._id) === btn.dataset.sol);
   if (!sol) return;
+  // Texto bruto do PDF (para ajustar a leitura de formatos novos)
+  if (btn.classList.contains('btn-copiar-pdf')) {
+    try { await navigator.clipboard.writeText(sol._rawText ?? ''); btn.textContent = '✓ Texto copiado'; }
+    catch { btn.textContent = 'Não consegui copiar'; }
+    setTimeout(() => { btn.textContent = 'Copiar texto do PDF'; }, 2000);
+    return;
+  }
   if (btn.classList.contains('btn-sicaf-diag')) {
     try { await navigator.clipboard.writeText(textoDiagnostico(sol._sicaf ?? {})); btn.textContent = '✓ Copiado'; }
     catch { btn.textContent = 'Não consegui copiar'; }
@@ -621,10 +631,8 @@ function renderReviewLista() {
   lista.innerHTML = '';
 
   const validas = solicitacoesParsed.filter(s => s.ok);
-  const total   = solicitacoesParsed.length;
 
-  el('review-counter').textContent =
-    `${total} arquivo(s) carregado(s) — ${validas.length} lido(s) com sucesso`;
+  atualizarContadorRevisao();
   el('btn-iniciar-fila').disabled = validas.length === 0;
   el('btn-iniciar-fila').textContent =
     `▶ Iniciar ${validas.length} empenho(s)`;
@@ -636,20 +644,80 @@ function renderReviewLista() {
   bindReviewInputs();
 }
 
-// Soma dos itens lidos x TOTAL da solicitação: diferença indica item mal lido
-function divergenciaItens(sol) {
-  const itens = sol.itensEmpenho ?? [];
-  const total = parseFloat(String(sol.total ?? '').replace(/\./g, '').replace(',', '.'));
-  if (!sol.ok || !itens.length || !(total > 0)) return '';
-  const soma = itens.reduce((s, it) => s + (parseFloat(String(it.valor ?? '').replace(',', '.')) || 0), 0);
-  if (Math.abs(soma - total) <= 0.01) return '';
-  const fmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `Soma dos itens (R$ ${fmt(soma)}) diferente do TOTAL (R$ ${fmt(total)}) — confira os itens na revisão.`;
+// ── Conferência na revisão (o que vai travar o robô, visto antes de iniciar) ──
+
+function htmlProblemas(sol) {
+  if (!sol.ok) return '';
+  const ps = problemasDaSolicitacao(sol);
+  const erros = ps.filter(p => p.nivel === 'erro');
+  const avisos = ps.filter(p => p.nivel === 'aviso');
+  const k = sol.tipoOrigem !== 'compra' ? sol._cnetContrato : null;
+  const notaCnet =
+      k?.estado === 'ok'            ? `<div class="rp-ok">✓ Contrato encontrado no CNET: ${escHtml(String(k.texto).slice(0, 90))}</div>`
+    : k?.estado === 'consultando'   ? '<div class="rp-nota">⏳ Conferindo o contrato no CNET…</div>'
+    : k?.estado === 'sem-aba'       ? '<div class="rp-nota">Contrato não conferido no CNET — abra o CNET (logado) e reabra a revisão para conferir antes</div>'
+    : k?.estado === 'sem-login'     ? '<div class="rp-nota">Contrato não conferido — o CNET pediu login</div>'
+    : k?.estado === 'nao-conferido' ? `<div class="rp-nota">Contrato não conferido no CNET (${escHtml(k.texto)})</div>`
+    : '';
+  const semItens = !(sol.itensEmpenho?.length)
+    ? ` <button class="btn-copiar-pdf" data-sol="${idSol(sol)}" type="button">Copiar texto do PDF</button>` : '';
+  if (!ps.length) return `<div class="rp-ok">✓ Dados conferidos — nada impede o empenho</div>${notaCnet}`;
+  const titulo = erros.length
+    ? `<div class="rp-titulo rp-erro">⛔ ${erros.length} problema(s) que impedem o empenho${avisos.length ? ` · ⚠ ${avisos.length} para conferir` : ''}</div>`
+    : `<div class="rp-titulo rp-aviso">⚠ ${avisos.length} ponto(s) para conferir</div>`;
+  return `${titulo}<ul class="rp-lista">${[...erros, ...avisos].map(p => `<li class="rp-${p.nivel}">${escHtml(p.texto)}</li>`).join('')}</ul>${semItens}${notaCnet}`;
+}
+
+function atualizarContadorRevisao() {
+  const validas = solicitacoesParsed.filter(s => s.ok);
+  const comErro = validas.filter(temErro).length;
+  el('review-counter').textContent =
+    `${solicitacoesParsed.length} arquivo(s) carregado(s) — ${validas.length} lido(s) com sucesso` +
+    (comErro ? ` · ${comErro} com problema` : '');
+}
+
+// Refaz o quadro de conferência do cartão (depois de editar campos ou itens)
+function atualizarProblemas(sol) {
+  if (!sol) return;
+  const alvo = document.getElementById(`rcp-${idSol(sol)}`);
+  if (alvo) {
+    alvo.innerHTML = htmlProblemas(sol);
+    alvo.closest('.review-card')?.classList.toggle('review-card-problema', temErro(sol));
+  }
+  atualizarContadorRevisao();
+}
+
+/**
+ * Contratos da revisão conferidos no CNET (número + ano + CNPJ), uma vez por
+ * combinação. Sem o CNET aberto, o cartão só avisa que não conferiu.
+ */
+let conferenciaCnetEmCurso = null;
+async function conferirContratosDaRevisao() {
+  const chave = s => `${String(s.contrato ?? '').trim()}|${soDigitos(s.fornecedorCnpj)}`;
+  // Ainda não conferido, dados mudaram, ou da vez anterior não deu (CNET fechado / sem login)
+  const precisa = s => s.ok && s.tipoOrigem !== 'compra' && /^\d+/.test(String(s.contrato ?? '').trim()) &&
+    (!s._cnetContrato || s._cnetContrato.chave !== chave(s) || ['sem-aba', 'sem-login', 'nao-conferido'].includes(s._cnetContrato.estado));
+  if (!solicitacoesParsed.some(precisa)) return;
+  await conferenciaCnetEmCurso;   // uma conferência por vez (abre uma aba do CNET)
+  const pendentes = solicitacoesParsed.filter(precisa).filter(s => s._cnetContrato?.estado !== 'consultando');
+  if (!pendentes.length) return;
+  pendentes.forEach(s => { s._cnetContrato = { estado: 'consultando', chave: chave(s) }; atualizarProblemas(s); });
+  const pedidos = [...new Map(pendentes.map(s => [chave(s), { chave: chave(s), contrato: String(s.contrato).trim(), cnpj: soDigitos(s.fornecedorCnpj) }])).values()];
+  conferenciaCnetEmCurso = conferirContratosNoCnet(pedidos).catch(e => ({ estado: 'erro', detalhe: e.message }));
+  const r = await conferenciaCnetEmCurso;
+  conferenciaCnetEmCurso = null;
+  for (const s of pendentes) {
+    if (s._cnetContrato?.chave !== chave(s)) continue;   // editado durante a consulta: a próxima rodada confere
+    s._cnetContrato = r.estado === 'ok'
+      ? { ...(r.resultados.get(chave(s)) ?? { estado: 'nao-conferido', texto: 'sem resposta' }), chave: chave(s) }
+      : { estado: r.estado === 'erro' ? 'nao-conferido' : r.estado, texto: r.detalhe ?? '', chave: chave(s) };
+    atualizarProblemas(s);
+  }
 }
 
 function criarReviewCard(sol, idx) {
   const card = document.createElement('div');
-  card.className = 'review-card' + (!sol.ok ? ' review-card-error' : '');
+  card.className = 'review-card' + (!sol.ok ? ' review-card-error' : temErro(sol) ? ' review-card-problema' : '');
   card.dataset.idx = idx;
 
   const omAbrev = abreviarOM(sol.localEntrega ?? '');
@@ -662,15 +730,9 @@ function criarReviewCard(sol, idx) {
           <span class="rc-total">R$ ${sol.total || '—'}</span>
         </div>
         <div class="rc-forn">${sol.fornecedorNome || '—'}</div>
-        ${sol.ok ? (soDigitos(sol.fornecedorCnpj).length === 14
-          ? `<div class="rc-cnpj">CNPJ ${fmtCnpj(soDigitos(sol.fornecedorCnpj))}</div>`
-          : '<div class="rc-sem-itens">⚠ CNPJ do fornecedor não lido no PDF — informe em "Ver / editar campos"</div>') : ''}
+        ${sol.ok && soDigitos(sol.fornecedorCnpj).length === 14 ? `<div class="rc-cnpj">CNPJ ${fmtCnpj(soDigitos(sol.fornecedorCnpj))}</div>` : ''}
         <div class="rc-fornecedor" id="rcf-${idSol(sol)}">${badgeFornecedor(sol)}</div>
-        ${divergenciaItens(sol) ? `<div class="rc-sem-itens">⚠ ${divergenciaItens(sol)}</div>` : ''}
-        ${sol.ok && !(sol.itensEmpenho?.length) ? `<div class="rc-sem-itens">⚠ Itens não identificados no PDF. ${sol.tipoOrigem === 'compra'
-          ? 'Informe N.Item, Qtd e valor de cada item.'
-          : 'Se o contrato tiver um único item, o robô usa o total da solicitação; com mais de um, informe N.Item e valor.'}
-          <button class="btn-copiar-pdf" data-idx="${idx}" type="button">Copiar texto do PDF</button></div>` : ''}
+        <div class="rc-problemas" id="rcp-${idSol(sol)}">${htmlProblemas(sol)}</div>
         <div class="rc-om">${omAbrev}</div>
         ${!sol.ok ? `<div class="rc-err">⚠ ${sol.error ?? 'Erro ao ler PDF'}</div>` : ''}
         <div class="rc-toggle" data-idx="${idx}">▼ Ver / editar campos</div>
@@ -683,19 +745,6 @@ function criarReviewCard(sol, idx) {
 
   // Toggle expand
   card.querySelector('.rc-toggle').addEventListener('click', () => toggleReviewCard(idx));
-
-  // Texto bruto do PDF (para ajustar a leitura de formatos novos)
-  card.querySelector('.btn-copiar-pdf')?.addEventListener('click', async e => {
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    try {
-      await navigator.clipboard.writeText(sol._rawText ?? '');
-      btn.textContent = '✓ Texto copiado';
-    } catch {
-      btn.textContent = 'Não consegui copiar';
-    }
-    setTimeout(() => { btn.textContent = 'Copiar texto do PDF'; }, 2000);
-  });
 
   // Remove
   card.querySelector('.btn-rc-remove').addEventListener('click', e => {
@@ -902,6 +951,9 @@ function bindReviewInputs() {
         unidadesCompraSalvas[userProfile.unidade] = valor;
         chrome.storage.local.set({ [UNIDADE_COMPRA_KEY]: unidadesCompraSalvas });
       }
+      // Conferência do cartão na hora; contrato/CNPJ/tipo novos: confere no CNET de novo
+      atualizarProblemas(solicitacoesParsed[idx]);
+      if (['contrato', 'fornecedorCnpj', 'tipoOrigem'].includes(key)) conferirContratosDaRevisao();
     });
   });
 
@@ -916,6 +968,7 @@ function bindReviewInputs() {
       if (!sol.itensEmpenho) sol.itensEmpenho = [];
       if (!sol.itensEmpenho[iidx]) sol.itensEmpenho[iidx] = {};
       sol.itensEmpenho[iidx][key] = inp.value;
+      atualizarProblemas(sol);
     });
   });
 
@@ -935,6 +988,7 @@ function bindReviewInputs() {
         container.appendChild(div.firstElementChild);
         bindReviewInputs(); // re-bind para novos elementos
       }
+      atualizarProblemas(sol);
     });
   });
 
@@ -946,45 +1000,34 @@ function bindReviewInputs() {
       const sol  = solicitacoesParsed[idx];
       if (sol?.itensEmpenho) sol.itensEmpenho.splice(iidx, 1);
       btn.closest('.item-emp-row')?.remove();
+      atualizarProblemas(sol);
     });
   });
 }
 
 // ── Iniciar fila de empenho ───────────────────────────────────────────────────
 
-// Retorna a lista de pendências que impedem o robô de passar da Etapa 1
-function pendenciasEtapa1(sol) {
-  const p = [];
-  if (sol.tipoOrigem === 'compra') {
-    if (!/^\d{4,6}\/\d{4}$/.test(sol.numeroCompra ?? '')) p.push('nº da compra (ex: 90063/2025)');
-    if (!sol.modalidade)     p.push('modalidade');
-    if (!sol.unidadeCompra)  p.push('unidade da compra');
-    // Na compra a lista do CNET traz itens de outros empenhos: sem N.Item o
-    // robô não tem como saber qual marcar.
-    const itens = sol.itensEmpenho ?? [];
-    if (!itens.length || itens.some(it => !String(it.numeroItem ?? '').trim())) {
-      p.push('N.Item de cada item (nº da coluna ITEM do PDF)');
-    }
-  } else {
-    if (!sol.contrato) p.push('contrato (ou mude o Tipo para Compra)');
-    // Contrato com um item sem nº: o robô só segue se o CNET mostrar um único item.
-    // Com vários, não há como saber qual valor vai em qual item.
-    const itens = sol.itensEmpenho ?? [];
-    if (itens.length > 1 && itens.some(it => !String(it.numeroItem ?? '').trim())) {
-      p.push('N.Item de cada item do contrato');
-    }
-  }
-  return p;
-}
-
 function iniciarFila() {
   let validas = solicitacoesParsed.filter(s => s.ok);
   if (!validas.length) return;
 
+  const nome = s => `${s.solicitacao || s._fileName} — ${s.fornecedorNome || ''}`;
+
+  // Problema que impede o empenho (visto na conferência do cartão): fica fora da fila
+  const comErro = validas.filter(temErro);
+  if (comErro.length) {
+    const lista = comErro.map(s => `• ${nome(s)}:\n   ${problemasDaSolicitacao(s).filter(p => p.nivel === 'erro').map(p => p.texto).join('\n   ')}`).join('\n');
+    if (comErro.length === validas.length) {
+      alert(`Nenhuma solicitação está pronta para empenhar — corrija na revisão:\n\n${lista}`);
+      return;
+    }
+    if (!confirm(`Estas solicitações têm problema que impede o empenho e NÃO entrarão na fila:\n\n${lista}\n\nOK: empenhar só as demais · Cancelar: voltar e corrigir`)) return;
+    validas = validas.filter(s => !comErro.includes(s));
+  }
+
   // Fornecedor impedido (sanção, impedimento ou certidão federal vencida) não
   // entra na fila; verificação em curso e certidão não conferida pedem confirmação
   const veredito = new Map(validas.map(s => [s, vereditoFornecedor(s)]));
-  const nome = s => `${s.solicitacao || s._fileName} — ${s.fornecedorNome || ''}`;
   const verificando = validas.filter(s => veredito.get(s).nivel === 'verificando');
   if (verificando.length && !confirm(`Ainda verificando ${verificando.length} fornecedor(es) (sanções e certidões no SICAF). Iniciar sem esperar o resultado?`)) return;
   const impedidas = validas.filter(s => veredito.get(s).nivel === 'bloqueio');
@@ -998,15 +1041,6 @@ function iniciarFila() {
   if (semCertidao.length) {
     const lista = semCertidao.map(s => `• ${nome(s)}`).join('\n');
     if (!confirm(`Certidões NÃO conferidas no SICAF:\n\n${lista}\n\nOK: empenhar assim mesmo · Cancelar: voltar e conferir`)) return;
-  }
-
-  const incompletas = validas
-    .map(s => [s.solicitacao || s._fileName, pendenciasEtapa1(s)])
-    .filter(([, p]) => p.length);
-  if (incompletas.length) {
-    alert('Revise antes de iniciar:\n\n' +
-      incompletas.map(([n, p]) => `• ${n}: falta ${p.join(', ')}`).join('\n'));
-    return;
   }
 
   if (uploadDest === 'siloms') {
