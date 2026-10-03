@@ -425,14 +425,18 @@ export function parseSolicitacaoEmpenho(text) {
     let itensDaDescricao = false;
     const naDescricao = (() => {
       const corrido = t.replace(/\s*\n\s*/g, ' ');
-      const marcas = [...corrido.matchAll(/\bITEM\s+(\d{1,5})\s*:/gi)];
+      // "ITEM" pode vir colado ao ano do contrato ("045/GAP-MN/2025ITEM 07:"): vale
+      // qualquer coisa antes, menos letra (SUBITEM)
+      const marcas = [...corrido.matchAll(/(?<![A-Za-zÀ-ú])I\s?TEM\s+(\d{1,5})\s*:/gi)];
       const valorBR = s => parseFloat(String(s ?? '').replace(/\./g, '').replace(',', '.'));
       // Linha da tabela a que o item pertence: a última requisição antes dele no texto
       const linhasTabela = itens.map(it => ({ it, pos: corrido.indexOf(it.requisicao) })).filter(x => x.pos >= 0);
       const lista = [];
       marcas.forEach((m, i) => {
         const trecho = corrido.slice(m.index + m[0].length, i + 1 < marcas.length ? marcas[i + 1].index : corrido.length);
-        let total = /VALOR\s+TOTAL\s*:?\s*R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(trecho)?.[1] ?? '';
+        // "R$ 5.350,00" ou sem centavos com milhar ("R$ 7.900.ITEM 19"); "R$ 4.6"
+        // (cortado) não vale — aí sai de unitário × quantidade
+        let total = /VALOR\s+TOTAL\s*:?\s*R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,3}(?:\.\d{3})+)(?![\d,])/i.exec(trecho)?.[1] ?? '';
         const unit = /VALOR\s+UNIT[ÁA]RIO\s*:?\s*R\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,4})?)/i.exec(trecho)?.[1] ?? '';
         const q = /QUANTIDADE\s*:?\s*(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*([A-ZÀ-Ú]{1,8})?/i.exec(trecho);
         // "1.000KG" → "1000" (ponto de milhar sem decimais; o robô leria 1,000)
@@ -443,8 +447,12 @@ export function parseSolicitacaoEmpenho(text) {
           if (calc > 0) { total = calc.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); deduzidos.itensCalculados = true; }
         }
         if (!total) return;   // "ITEM 1: 4891,66" da OBS e afins não são esta forma
+        // Total ≠ unitário × quantidade: um dos dois foi mal lido — a revisão aponta
+        const calcConf = unit && quant ? valorBR(unit) * valorBR(quant.includes(',') ? quant : quant.replace(/\./g, '')) : NaN;
+        const confere = !(calcConf > 0) || Math.abs(calcConf - valorBR(total)) <= Math.max(0.05, valorBR(total) * 0.005);
         const dono = [...linhasTabela].reverse().find(x => x.pos < m.index)?.it ?? itens[0];
         lista.push({
+          confere,
           item: m[1], requisicao: dono?.requisicao ?? '', subelemento: dono?.subelemento ?? '',
           // sem as colunas da linha da tabela que caem no meio ("1,00 UN 92.980,00 92.980,0000")
           descricao: trecho.replace(/\s*;?\s*VALOR\s+UNIT[ÁA]RIO[\s\S]*$/i, '')
@@ -454,10 +462,14 @@ export function parseSolicitacaoEmpenho(text) {
       });
       return lista;
     })();
+    // Coluna PRC TOTAL das linhas da tabela: com os itens na descrição, é o valor
+    // oficial da solicitação (e a referência para conferir a soma deles)
+    const somaTabela = itens.reduce((s, it) => s + (parseFloat(String(it.valorTotal ?? '').replace(/\./g, '').replace(',', '.')) || 0), 0);
     // A linha da tabela que embrulha esses itens não tem nº de item próprio
     if (naDescricao.length && (naDescricao.length > 1 || !itens.length || itens.every(it => !it.item))) {
       itens = naDescricao;
       itensDaDescricao = true;
+      if (naDescricao.some(it => !it.confere)) deduzidos.itensDivergentes = naDescricao.filter(it => !it.confere).map(it => it.item);
     }
 
     // Sem itens, a revisão avisa; num contrato de item único o robô usa o TOTAL
@@ -465,6 +477,14 @@ export function parseSolicitacaoEmpenho(text) {
     // Sem TOTAL legível, soma os itens da tabela
     const total = (() => {
       if (totalLido) return totalLido;
+      const fmt4 = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+      // Itens na descrição: o valor da linha da tabela (PRC TOTAL), não a soma deles —
+      // senão a conferência compararia a soma com ela mesma
+      if (itensDaDescricao && somaTabela > 0) return fmt4(somaTabela);
+      // O SILOMS escreve PRC TOTAL e TOTAL com 4 casas ("90.250,0000"): o maior é o TOTAL
+      const quatroCasas = [...t.matchAll(/(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{4})(?![\d,])/g)]
+        .map(m => m[1]).sort((a, b) => parseFloat(b.replace(/\./g, '').replace(',', '.')) - parseFloat(a.replace(/\./g, '').replace(',', '.')));
+      if (quatroCasas.length && itensDaDescricao) return quatroCasas[0];
       const soma = itens.reduce((acc, it) =>
         acc + (parseFloat(String(it.valorTotal ?? '').replace(/\./g, '').replace(',', '.')) || 0), 0);
       if (!soma) return '';

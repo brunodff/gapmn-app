@@ -80,7 +80,10 @@ export function problemasDaSolicitacao(sol) {
     if (new Set(nums).size < nums.length) aviso('N.Item repetido entre os itens — confira');
     const total = num(sol.total);
     const soma = itens.reduce((s, it) => s + (num(it.valor) || 0), 0);
-    if (total > 0 && soma > 0 && Math.abs(soma - total) > 0.01) {
+    // TOTAL tirado da própria soma dos itens: comparar seria a soma com ela mesma
+    if (sol._deduzidos?.total) {
+      if (sol.itensDaDescricao) erro('TOTAL da solicitação não lido no PDF — não dá para conferir a soma dos itens; preencha o campo Total com o valor do PDF');
+    } else if (total > 0 && soma > 0 && Math.abs(soma - total) > 0.01) {
       const msg = `Soma dos itens (R$ ${fmtV(soma)}) diferente do TOTAL (R$ ${fmtV(total)})`;
       // Itens escritos na descrição: a soma TEM de dar o TOTAL; diferença é valor
       // cortado/mal lido no PDF e empenharia errado
@@ -88,11 +91,14 @@ export function problemasDaSolicitacao(sol) {
       else aviso(`${msg} — confira os itens`);
     }
     if (sol._deduzidos?.itensCalculados) aviso('Valor total de algum item não estava legível; calculei unitário × quantidade — confira');
+    if (sol._deduzidos?.itensDivergentes?.length) {
+      aviso(`Item ${sol._deduzidos.itensDivergentes.join(', ')}: valor total ≠ unitário × quantidade no PDF — confira`);
+    }
   }
 
   // ── Valor ──
   if (!(num(sol.total) > 0) && !itens.some(it => num(it.valor) > 0)) erro('Valor total não encontrado no PDF');
-  else if (sol._deduzidos?.total) aviso('TOTAL não legível no PDF; usei a soma dos itens — confira');
+  else if (sol._deduzidos?.total && !sol.itensDaDescricao) aviso('TOTAL não legível no PDF; usei a soma dos itens — confira');
 
   // ── Linha de crédito (Etapa 4) ──
   const faltam = [['PTRES', sol.ptres], ['Fonte', sol.fonte], ['ND', sol.nd]].filter(([, v]) => !dig(v)).map(([nome]) => nome);

@@ -688,7 +688,10 @@ function htmlSomaItens(sol) {
   const soma = itens.reduce((s, it) => s + (num(it.valor) || 0), 0);
   const total = num(sol.total);
   const qtd = `${itens.length} ite${itens.length === 1 ? 'm' : 'ns'}`;
-  if (!(total > 0)) return `Soma dos ${qtd}: <b>R$ ${fmt(soma)}</b> <span class="is-falta">(TOTAL da solicitação não lido)</span>`;
+  // TOTAL que veio da própria soma dos itens não serve de referência
+  if (!(total > 0) || sol._deduzidos?.total) {
+    return `Soma dos ${qtd}: <b>R$ ${fmt(soma)}</b> · <span class="is-falta">TOTAL da solicitação não lido no PDF — preencha o campo Total para conferir</span>`;
+  }
   const dif = Math.round((total - soma) * 100) / 100;
   const situacao = Math.abs(dif) < 0.01 ? '<span class="is-ok">✓ bate com o TOTAL</span>'
     : dif > 0 ? `<span class="is-falta">Falta R$ ${fmt(dif)}</span>`
