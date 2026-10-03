@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "GAPMN — Anexador de Ordens Bancárias SILOMS",
-  "version": "1.4",
-  "description": "Lê OBs do Google Sheets, gera PDF por dia e anexa automaticamente no SILOMS.",
+  "version": "1.5",
+  "description": "Busca as OBs da UG no Portal da Transparência (ou na planilha do Tesouro Gerencial), gera o comprovante e anexa no SILOMS.",
   "permissions": ["storage", "scripting"],
   "host_permissions": [
     "*://*.siloms.intraer/*",
     "https://docs.google.com/*",
-    "https://script.google.com/*"
+    "https://script.google.com/*",
+    "https://fychrtyyqbzlfbzbvzqp.supabase.co/*"
   ],
   "background": {
     "service_worker": "background.js",
