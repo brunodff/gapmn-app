@@ -676,9 +676,31 @@ function atualizarContadorRevisao() {
     (comErro ? ` · ${comErro} com problema` : '');
 }
 
+// Soma dos itens x TOTAL da solicitação: quanto falta (o que o robô não identificou)
+function htmlSomaItens(sol) {
+  const num = s => {
+    const t = String(s ?? '').trim().replace(/\s/g, '');
+    if (!t) return NaN;
+    return t.includes(',') ? parseFloat(t.replace(/\./g, '').replace(',', '.')) : parseFloat(t);
+  };
+  const fmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const itens = sol.itensEmpenho ?? [];
+  const soma = itens.reduce((s, it) => s + (num(it.valor) || 0), 0);
+  const total = num(sol.total);
+  const qtd = `${itens.length} ite${itens.length === 1 ? 'm' : 'ns'}`;
+  if (!(total > 0)) return `Soma dos ${qtd}: <b>R$ ${fmt(soma)}</b> <span class="is-falta">(TOTAL da solicitação não lido)</span>`;
+  const dif = Math.round((total - soma) * 100) / 100;
+  const situacao = Math.abs(dif) < 0.01 ? '<span class="is-ok">✓ bate com o TOTAL</span>'
+    : dif > 0 ? `<span class="is-falta">Falta R$ ${fmt(dif)}</span>`
+    : `<span class="is-falta">Passou R$ ${fmt(-dif)}</span>`;
+  return `Soma dos ${qtd}: <b>R$ ${fmt(soma)}</b> de R$ ${fmt(total)} · ${situacao}`;
+}
+
 // Refaz o quadro de conferência do cartão (depois de editar campos ou itens)
 function atualizarProblemas(sol) {
   if (!sol) return;
+  const somaEl = document.getElementById(`itens-soma-${solicitacoesParsed.indexOf(sol)}`);
+  if (somaEl) somaEl.innerHTML = htmlSomaItens(sol);
   const alvo = document.getElementById(`rcp-${idSol(sol)}`);
   if (alvo) {
     alvo.innerHTML = htmlProblemas(sol);
@@ -860,6 +882,7 @@ function renderCamposEditable(sol, idx) {
         ITENS P/ EMPENHO
         <span style="font-weight:400;color:#64748b;">(N.Item do CNET · Qtd · Valor R$)</span>
       </div>
+      <div class="itens-soma" id="itens-soma-${idx}">${htmlSomaItens(sol)}</div>
       <div id="itens-emp-${idx}">
         ${itensEmp.map((it, i) => renderItemEmpRow(it, idx, i)).join('')}
       </div>
@@ -957,20 +980,8 @@ function bindReviewInputs() {
     });
   });
 
-  // Itens empenho — campos número e valor
-  document.querySelectorAll('.item-emp-num, .item-emp-qtd, .item-emp-val').forEach(inp => {
-    inp.addEventListener('change', () => {
-      const idx  = Number(inp.dataset.idx);
-      const iidx = Number(inp.dataset.iidx);
-      const key  = inp.dataset.ikey;
-      const sol  = solicitacoesParsed[idx];
-      if (!sol) return;
-      if (!sol.itensEmpenho) sol.itensEmpenho = [];
-      if (!sol.itensEmpenho[iidx]) sol.itensEmpenho[iidx] = {};
-      sol.itensEmpenho[iidx][key] = inp.value;
-      atualizarProblemas(sol);
-    });
-  });
+  // Itens empenho (campos e ✕ de cada linha)
+  solicitacoesParsed.forEach((_, idx) => bindItensEmp(idx));
 
   // Botão adicionar item
   document.querySelectorAll('.btn-add-item-emp').forEach(btn => {
@@ -980,29 +991,45 @@ function bindReviewInputs() {
       if (!sol) return;
       if (!sol.itensEmpenho) sol.itensEmpenho = [];
       sol.itensEmpenho.push({ numeroItem: '', valor: '' });
-      const iidx = sol.itensEmpenho.length - 1;
-      const container = document.getElementById(`itens-emp-${idx}`);
-      if (container) {
-        const div = document.createElement('div');
-        div.innerHTML = renderItemEmpRow({ numeroItem: '', valor: '' }, idx, iidx);
-        container.appendChild(div.firstElementChild);
-        bindReviewInputs(); // re-bind para novos elementos
-      }
-      atualizarProblemas(sol);
+      redesenharItensEmp(idx);
     });
   });
+}
 
-  // Botão remover item
-  document.querySelectorAll('.btn-rm-item-emp').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx  = Number(btn.dataset.idx);
-      const iidx = Number(btn.dataset.iidx);
-      const sol  = solicitacoesParsed[idx];
-      if (sol?.itensEmpenho) sol.itensEmpenho.splice(iidx, 1);
-      btn.closest('.item-emp-row')?.remove();
+// Liga os campos e o ✕ das linhas de item de uma solicitação. Antes, adicionar
+// item religava a tela inteira (botões com o clique em dobro) e remover não
+// renumerava as linhas — o ✕ ou a edição seguinte caíam no item errado.
+function bindItensEmp(idx) {
+  const container = document.getElementById(`itens-emp-${idx}`);
+  if (!container) return;
+  container.querySelectorAll('.item-emp-num, .item-emp-qtd, .item-emp-val').forEach(inp => {
+    // 'input': a soma "falta R$…" acompanha a digitação
+    for (const evento of ['input', 'change']) inp.addEventListener(evento, () => {
+      const sol = solicitacoesParsed[idx];
+      const iidx = Number(inp.dataset.iidx);
+      if (!sol) return;
+      if (!sol.itensEmpenho) sol.itensEmpenho = [];
+      if (!sol.itensEmpenho[iidx]) sol.itensEmpenho[iidx] = {};
+      sol.itensEmpenho[iidx][inp.dataset.ikey] = inp.value;
       atualizarProblemas(sol);
     });
   });
+  container.querySelectorAll('.btn-rm-item-emp').forEach(btn => {
+    btn.addEventListener('click', () => {
+      solicitacoesParsed[idx]?.itensEmpenho?.splice(Number(btn.dataset.iidx), 1);
+      redesenharItensEmp(idx);
+    });
+  });
+}
+
+// Lista de itens redesenhada a partir dos dados (índices sempre certos)
+function redesenharItensEmp(idx) {
+  const sol = solicitacoesParsed[idx];
+  const container = document.getElementById(`itens-emp-${idx}`);
+  if (!sol || !container) return;
+  container.innerHTML = (sol.itensEmpenho ?? []).map((it, i) => renderItemEmpRow(it, idx, i)).join('');
+  bindItensEmp(idx);
+  atualizarProblemas(sol);
 }
 
 // ── Iniciar fila de empenho ───────────────────────────────────────────────────
