@@ -55,7 +55,12 @@ export async function step1Runner(payload) {
     // match pode ser texto direto OU CNPJ (14 dígitos) — compara sem formatação
     const opts = document.querySelectorAll('.select2-results__option:not(.select2-results__option--loading):not(.select2-results__option--disabled)');
     let target = null;
-    if (match) {
+    // match função: ela escolhe (ou devolve { erro }); nunca cai na "primeira da lista"
+    if (typeof match === 'function') {
+      const r = match(Array.from(opts));
+      if (!r || r.erro) { $el.select2('close'); return { ok: false, error: r?.erro ?? 'nenhuma opção corresponde', semNumero: !!r?.semNumero }; }
+      target = r;
+    } else if (match) {
       const matchDigits = match.replace(/\D/g, '');
       const useCnpj = matchDigits.length >= 11; // CNPJ tem 14 dígitos
       for (const o of opts) {
@@ -193,12 +198,54 @@ export async function step1Runner(payload) {
     }
     await hd();
   } else if (contrato) {
-    // Busca por "NNN/20" (número + prefixo do século) para retornar contratos de vários anos,
-    // depois seleciona pelo CNPJ do fornecedor (remove formatação na comparação).
-    // Ex: "034/2025" → busca "034/20" → seleciona linha que contém "07503890000101"
+    // Busca por "NNN/20" (número + prefixo do século), que traz o número de vários
+    // anos e fornecedores; escolhe por número + ano + CNPJ. Pegar "a primeira da
+    // lista" abria o 028/2016 de outro fornecedor no lugar do 028/2024.
     const numRaw = /^(\d+)/.exec(contrato ?? '')?.[1] ?? ''; // mantém zeros à esquerda: "034"
-    const searchTerm = numRaw ? numRaw + '/20' : contrato;
-    const rc = await setSelect2Ajax('#select2_ajax_id', searchTerm, fornecedorCnpj || null);
+    const num = parseInt(numRaw, 10);
+    const ano = /\/(\d{4})$/.exec(contrato ?? '')?.[1] ?? '';
+    const cnpj = String(fornecedorCnpj ?? '').replace(/\D/g, '');
+    const fmtCnpj = c => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+    const escolherContrato = opts => {
+      const info = opts.map(o => {
+        const txt = (o.textContent ?? '').replace(/\s+/g, ' ').trim();
+        const m = new RegExp(String.raw`(?:^|[^\d])0*${num}\/(\d{4})(?!\d)`).exec(txt);
+        const cnpjs = (txt.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g) ?? []).map(c => c.replace(/\D/g, '')).filter(c => c.length === 14);
+        return {
+          o, txt, ano: m?.[1] ?? null,
+          doFornecedor: cnpj.length === 14 && txt.replace(/\D/g, '').includes(cnpj),
+          deOutro: cnpjs.length > 0 && !cnpjs.includes(cnpj),
+        };
+      }).filter(x => x.ano);
+      const vistos = info.map(x => x.txt.slice(0, 60)).join(' | ') || 'nenhum com esse número';
+      if (!info.length) return { erro: `nenhum contrato nº ${numRaw} na lista do CNET`, semNumero: true };
+      const doFornecedor = info.filter(x => x.doFornecedor);
+      // 1) número + ano + fornecedor
+      let alvo = ano ? doFornecedor.find(x => x.ano === ano) : null;
+      // 2) número + ano, sem ser de outro fornecedor
+      if (!alvo && ano) {
+        const c = info.filter(x => x.ano === ano && !x.deOutro);
+        if (c.length === 1) alvo = c[0];
+      }
+      // 3) sem o ano no PDF: o único contrato desse número do fornecedor
+      if (!alvo && !ano) {
+        if (doFornecedor.length === 1) alvo = doFornecedor[0];
+        else if (doFornecedor.length > 1) {
+          return { erro: `há ${doFornecedor.length} contratos nº ${numRaw} deste fornecedor (${doFornecedor.map(x => x.ano).join(', ')}) — informe o ano do contrato na revisão` };
+        } else if (info.length === 1 && !info[0].deOutro) alvo = info[0];
+      }
+      if (alvo) return alvo.o;
+      return {
+        erro: `contrato ${ano ? `${numRaw}/${ano}` : `nº ${numRaw}`}${cnpj.length === 14 ? ` do fornecedor ${fmtCnpj(cnpj)}` : ''} não está na lista do CNET (achei: ${vistos})`,
+      };
+    };
+    // "028/20"; sem esse número na lista, tenta sem os zeros ("28/20")
+    const termos = [...new Set([numRaw ? numRaw + '/20' : contrato, Number.isNaN(num) ? null : `${num}/20`].filter(Boolean))];
+    let rc = null;
+    for (const termo of termos) {
+      rc = await setSelect2Ajax('#select2_ajax_id', termo, numRaw ? escolherContrato : (fornecedorCnpj || null));
+      if (rc.ok || !(rc.semNumero || /sem resultados/.test(rc.error ?? ''))) break;
+    }
     if (!rc.ok) return { ok: false, step: 1, error: `Contrato: ${rc.error}` };
     await hd();
   }

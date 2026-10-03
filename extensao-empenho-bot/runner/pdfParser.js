@@ -157,6 +157,10 @@ export function parseSolicitacaoEmpenho(text) {
       ? ''
       : _contratoMatch;
 
+    // Ano do contrato. O campo "Contrato:" costuma vir cortado ("028/GAPMN-BA");
+    // o número completo aparece na descrição ou na OBS, às vezes quebrado em duas
+    // linhas pelo PDF ("…028/GAPMN-BA" + "MN/2024."), com os valores do item no meio.
+    let contratoSemAno = false;
     const contrato = (() => {
       // Remove prefixo "DESPESA " que o SILOMS adiciona
       let raw = contratoRaw.replace(/^DESPESA\s+/i, '').trim();
@@ -164,17 +168,33 @@ export function parseSolicitacaoEmpenho(text) {
       const numMatch = /^(\d+)\//.exec(raw);
       if (!numMatch) return raw;
       const numero = numMatch[1];
-      // 1) Ano já presente no texto do campo (ex: "065/GAPMN-DACTAIV/2024")
-      const yearInRaw = /\/(\d{4})(?:[-\s]|$)/.exec(raw);
-      if (yearInRaw) return `${numero}/${yearInRaw[1]}`;
-      // 2) Busca no texto completo do PDF: "NNN/SIGLA/AAAA"
-      //    (frequentemente em OBS ou na descrição do item)
-      const yearAnywhere = new RegExp(`\\b${numero}\\/[A-Z][A-Z0-9\\-]*\\/(\\d{4})\\b`).exec(t);
-      if (yearAnywhere) return `${numero}/${yearAnywhere[1]}`;
-      // 3) Fallback: ano da data da solicitação (dd/mm/yyyy) — último recurso
-      const dataYear = /\/(\d{4})$/.exec(data ?? '');
-      if (dataYear) return `${numero}/${dataYear[1]}`;
-      return raw;
+      const anoMax = new Date().getFullYear() + 1;
+      const plausivel = a => +a >= 2000 && +a <= anoMax;
+      // 1) Ano no próprio campo (ex: "065/GAPMN-DACTAIV/2024")
+      const noCampo = /\/(\d{4})(?:[-\s]|$)/.exec(raw);
+      if (noCampo && plausivel(noCampo[1])) return `${numero}/${noCampo[1]}`;
+      // 2) Outras menções do número no texto (linhas emendadas). Depois de "NNN/",
+      //    o ano é o primeiro "/AAAA" logo após letras (fim da sigla: "MN/2024") ou
+      //    colado ao número ("028/2024"). Datas e PAG têm dígitos antes da barra e
+      //    o PAG ainda tem "-19" depois — não casam.
+      const emendado = t.replace(/\s*\n\s*/g, ' ');
+      const n = String(parseInt(numero, 10));
+      const mencao = new RegExp(String.raw`(?<![\d./])0*${n}\/`, 'g');
+      const posCampo = emendado.search(/Contrato:/);   // rótulo do campo (case-sensitive)
+      const anos = [];
+      for (let m; (m = mencao.exec(emendado)) !== null;) {
+        const depois = emendado.slice(m.index + m[0].length, m.index + m[0].length + 160);
+        const a = /^((?:19|20)\d{2})(?![\d-])/.exec(depois) ?? /[A-Za-z]\/((?:19|20)\d{2})(?![\d-])/.exec(depois);
+        const doCampo = posCampo >= 0 && m.index > posCampo && m.index - posCampo < 30;
+        if (a && plausivel(a[1])) anos.push({ ano: a[1], doCampo });
+      }
+      // Descrição/OBS antes do campo "Contrato:" (que é o cortado)
+      const achado = anos.find(x => !x.doCampo) ?? anos[0];
+      if (achado) return `${numero}/${achado.ano}`;
+      // 3) Sem o ano no PDF: só o número — o robô escolhe o contrato pelo CNPJ do
+      //    fornecedor (nunca o ano da data da solicitação, que errava o contrato)
+      contratoSemAno = true;
+      return numero;
     })();
 
     // ── Compra (Licit) ──────────────────────────────────────────────────────────
@@ -203,6 +223,7 @@ export function parseSolicitacaoEmpenho(text) {
     // Campos preenchidos por dedução (não lidos direto do rótulo) — a revisão
     // marca esses com ⚠ para o usuário conferir.
     const deduzidos = {};
+    if (contratoSemAno) deduzidos.contrato = true;   // ano não achado: revisão marca ⚠
 
     const ugCred = (() => {
       const m = /UG\s*Cred\.?\s*:?\s*(\d{6})\b/i.exec(t);
