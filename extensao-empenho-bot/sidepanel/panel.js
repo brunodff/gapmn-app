@@ -597,18 +597,11 @@ async function conferirSicafDaRevisao({ sols = null, forcar = false } = {}) {
 
 // Botões do badge: conferir no SICAF (abre o SICAF se não houver aba) e diagnóstico
 async function aoClicarBadge(e) {
-  const btn = e.target.closest('.btn-sicaf, .btn-sicaf-diag, .btn-copiar-pdf');
+  const btn = e.target.closest('.btn-sicaf, .btn-sicaf-diag');
   if (!btn) return;
   e.stopPropagation();
   const sol = solicitacoesParsed.find(s => String(s._id) === btn.dataset.sol);
   if (!sol) return;
-  // Texto bruto do PDF (para ajustar a leitura de formatos novos)
-  if (btn.classList.contains('btn-copiar-pdf')) {
-    try { await navigator.clipboard.writeText(sol._rawText ?? ''); btn.textContent = '✓ Texto copiado'; }
-    catch { btn.textContent = 'Não consegui copiar'; }
-    setTimeout(() => { btn.textContent = 'Copiar texto do PDF'; }, 2000);
-    return;
-  }
   if (btn.classList.contains('btn-sicaf-diag')) {
     try { await navigator.clipboard.writeText(textoDiagnostico(sol._sicaf ?? {})); btn.textContent = '✓ Copiado'; }
     catch { btn.textContent = 'Não consegui copiar'; }
@@ -659,13 +652,11 @@ function htmlProblemas(sol) {
     : k?.estado === 'sem-login'     ? '<div class="rp-nota">Contrato não conferido — o CNET pediu login</div>'
     : k?.estado === 'nao-conferido' ? `<div class="rp-nota">Contrato não conferido no CNET (${escHtml(k.texto)})</div>`
     : '';
-  const semItens = !(sol.itensEmpenho?.length)
-    ? ` <button class="btn-copiar-pdf" data-sol="${idSol(sol)}" type="button">Copiar texto do PDF</button>` : '';
   if (!ps.length) return `<div class="rp-ok">✓ Dados conferidos — nada impede o empenho</div>${notaCnet}`;
   const titulo = erros.length
     ? `<div class="rp-titulo rp-erro">⛔ ${erros.length} problema(s) que impedem o empenho${avisos.length ? ` · ⚠ ${avisos.length} para conferir` : ''}</div>`
     : `<div class="rp-titulo rp-aviso">⚠ ${avisos.length} ponto(s) para conferir</div>`;
-  return `${titulo}<ul class="rp-lista">${[...erros, ...avisos].map(p => `<li class="rp-${p.nivel}">${escHtml(p.texto)}</li>`).join('')}</ul>${semItens}${notaCnet}`;
+  return `${titulo}<ul class="rp-lista">${[...erros, ...avisos].map(p => `<li class="rp-${p.nivel}">${escHtml(p.texto)}</li>`).join('')}</ul>${notaCnet}`;
 }
 
 function atualizarContadorRevisao() {
