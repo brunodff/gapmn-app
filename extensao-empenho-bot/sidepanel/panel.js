@@ -662,6 +662,9 @@ function criarReviewCard(sol, idx) {
           <span class="rc-total">R$ ${sol.total || '—'}</span>
         </div>
         <div class="rc-forn">${sol.fornecedorNome || '—'}</div>
+        ${sol.ok ? (soDigitos(sol.fornecedorCnpj).length === 14
+          ? `<div class="rc-cnpj">CNPJ ${fmtCnpj(soDigitos(sol.fornecedorCnpj))}</div>`
+          : '<div class="rc-sem-itens">⚠ CNPJ do fornecedor não lido no PDF — informe em "Ver / editar campos"</div>') : ''}
         <div class="rc-fornecedor" id="rcf-${idSol(sol)}">${badgeFornecedor(sol)}</div>
         ${divergenciaItens(sol) ? `<div class="rc-sem-itens">⚠ ${divergenciaItens(sol)}</div>` : ''}
         ${sol.ok && !(sol.itensEmpenho?.length) ? `<div class="rc-sem-itens">⚠ Itens não identificados no PDF. ${sol.tipoOrigem === 'compra'

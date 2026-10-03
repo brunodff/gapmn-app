@@ -81,9 +81,36 @@ export function parseSolicitacaoEmpenho(text) {
     })();
 
     const fornecedorCnpj = (() => {
-      // CNPJ formatado (xx.xxx.xxx/xxxx-xx) ou somente dígitos (14)
-      const m = /CNPJ:\s*([\d.\/\-]{14,18}|\d{14})/.exec(t);
-      return m?.[1]?.replace(/\D/g, '') ?? '';
+      // O cabeçalho pode trazer o CNPJ da OM compradora (Comando da Aeronáutica,
+      // raiz 00.394.429) antes do fornecedor: o primeiro "CNPJ:" do texto não serve.
+      const RAIZ_COMAER = '00394429';
+      const valido = c => {
+        if (!/^\d{14}$/.test(c) || /^(\d)\1{13}$/.test(c)) return false;
+        const dv = n => {
+          let s = 0, p = n - 7;
+          for (let i = 0; i < n; i++) { s += +c[i] * p--; if (p < 2) p = 9; }
+          return s % 11 < 2 ? 0 : 11 - (s % 11);
+        };
+        return dv(12) === +c[12] && dv(13) === +c[13];
+      };
+      const doFornecedor = c => c.length === 14 && !c.startsWith(RAIZ_COMAER);
+      // 1) Logo depois de um rótulo "CNPJ:" (formatado ou só dígitos)
+      const rotulados = [];
+      const re = /CNPJ:\s*(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})(?!\d)/g;
+      for (let m; (m = re.exec(t)) !== null;) rotulados.push({ c: m[1].replace(/\D/g, ''), pos: m.index });
+      let lista = rotulados.filter(a => doFornecedor(a.c));
+      // 2) Rótulo e número separados pela extração do PDF: qualquer CNPJ válido do texto
+      if (!lista.length) {
+        const solto = /(?<![\d.\/])(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14})(?![\d.\/-])/g;
+        for (let m; (m = solto.exec(t)) !== null;) {
+          const c = m[1].replace(/\D/g, '');
+          if (doFornecedor(c) && valido(c)) lista.push({ c, pos: m.index });
+        }
+      }
+      if (lista.length <= 1) return lista[0]?.c ?? '';
+      // Vários: o primeiro depois do rótulo FORNECEDOR
+      const forn = t.search(/FORNECEDOR/);
+      return (lista.find(a => a.pos > forn) ?? lista[0]).c;
     })();
 
     // ── Compradora / Solicitação / Data ─────────────────────────────────────────
