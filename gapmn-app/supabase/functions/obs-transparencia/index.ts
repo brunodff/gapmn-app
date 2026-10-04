@@ -9,6 +9,13 @@
  * POST JSON:
  *   { ug: "120630", gestao?: "00001", dataInicio: "AAAA-MM-DD", dataFim: "AAAA-MM-DD" }
  *   → { obs: [...], dias: [...], incompleto?: { proximaData } }
+ *   Cada OB traz em `dados` o resto do documento (órgão pagador, classificação da despesa…).
+ *
+ *   { detalhar: ["120630000012026OB010629", ...] }
+ *   → { detalhes: { [codigo]: { empenhos: [...] } }, pendentes: [...] }
+ *   Empenhos pagos pela OB (empenhos-impactados) com o detalhe de cada empenho. Fica
+ *   fora da extração (1–2 consultas por OB, e o Portal limita ~90/min): a extensão pede
+ *   só para as OBs que vão para o comprovante.
  *
  * A API aceita só UM dia por consulta (e pagina o resultado): esta função percorre
  * os dias do período, no máximo 10 por chamada — a extensão chama de novo a
@@ -103,14 +110,55 @@ function pagaABanco(o: any) {
   return RAIZES_BANCO.has(String(o.favorecidoCodigo).replace(/\D/g, "").slice(0, 8));
 }
 
-/** Favorecido (código e nome) de um empenho — vários pagamentos usam o mesmo. */
-const cacheEmpenho = new Map<string, { codigo: string; nome: string } | null>();
-async function favorecidoDoEmpenho(codigo: string) {
+/** Detalhe de um empenho (documentos/{NE}) — vários pagamentos usam o mesmo. */
+const cacheEmpenho = new Map<string, any>();
+async function detalheEmpenho(codigo: string) {
   if (cacheEmpenho.has(codigo)) return cacheEmpenho.get(codigo);
   const d = await consultar(`documentos/${codigo}`, new URLSearchParams());
-  const r = d && !Array.isArray(d) ? { codigo: String(d.codigoFavorecido ?? ""), nome: String(d.nomeFavorecido ?? d.favorecido ?? "") } : null;
+  const r = d && !Array.isArray(d) ? {
+    codigo: String(d.codigoFavorecido ?? ""),
+    nome: String(d.nomeFavorecido ?? d.favorecido ?? ""),
+    data: String(d.data ?? ""),
+    valor: numero(d.valor),
+    especie: String(d.especie ?? ""),
+    elemento: String(d.elemento ?? ""),
+    modalidade: String(d.modalidade ?? ""),
+    planoOrcamentario: String(d.planoOrcamentario ?? ""),
+    observacao: String(d.observacao ?? ""),
+  } : null;
   cacheEmpenho.set(codigo, r);
   return r;
+}
+
+/** Empenhos pagos por uma OB, com o detalhe de cada um. */
+async function detalhePagamento(codigo: string) {
+  const empenhos: any[] = [];
+  for (let pagina = 1; pagina <= 3; pagina++) {
+    const lote = lista(await consultar("empenhos-impactados", new URLSearchParams({ codigoDocumento: codigo, fase: "3", pagina: String(pagina) })));
+    if (!lote.length) break;
+    for (const e of lote) {
+      const resumido = String(e.empenhoResumido ?? "");
+      const neCodigo = /^\d{15}NE\d{6}$/.test(String(e.empenho ?? "")) ? String(e.empenho) : codigo.slice(0, 11) + (resumido || String(e.empenho ?? ""));
+      const ne = await detalheEmpenho(neCodigo).catch(() => null);
+      empenhos.push({
+        empenho: resumido || String(e.empenho ?? ""),
+        subitem: String(e.subitem ?? ""),
+        valorPago: numero(e.valorPago),
+        valorLiquidado: numero(e.valorLiquidado),
+        valorRestoPago: numero(e.valorRestoPago),
+        favorecidoCodigo: ne?.codigo ?? "",
+        favorecidoNome: ne?.nome ?? "",
+        data: ne?.data ?? "",
+        valorEmpenho: ne?.valor ?? 0,
+        especie: ne?.especie ?? "",
+        elemento: ne?.elemento ?? "",
+        modalidade: ne?.modalidade ?? "",
+        planoOrcamentario: ne?.planoOrcamentario ?? "",
+        observacao: ne?.observacao ?? "",
+      });
+    }
+  }
+  return { empenhos };
 }
 
 /** Quem recebeu de fato uma OB paga a banco: o(s) favorecido(s) do(s) empenho(s) dela. */
@@ -122,7 +170,7 @@ async function favorecidosFinais(o: any) {
   const finais: any[] = [];
   for (const e of rel) {
     if (!/empenho/i.test(String(e.fase ?? "")) || !e.documento) continue;
-    const fav = await favorecidoDoEmpenho(String(e.documento));
+    const fav = await detalheEmpenho(String(e.documento));
     const codigo = fav?.codigo ?? "";
     const nome = (fav?.nome || String(e.favorecido ?? "")).trim();
     if (!codigo && !nome) continue;
@@ -157,6 +205,31 @@ function paraOB(d: any, ug: string, gestao: string, iso: string) {
     numeroProcesso: String(d.numeroProcesso ?? ""),
     elemento: String(d.elemento ?? ""),
     intermediario: !!(d.favorecidoListaFaturas || d.favorecidoIntermediario),   // marca do Portal (falta em parte)
+    // Resto do documento, para o comprovante (órgão pagador, classificação da despesa…)
+    dados: {
+      fase: String(d.fase ?? ""),
+      especie: String(d.especie ?? ""),
+      ufFavorecido: String(d.ufFavorecido ?? ""),
+      codigoOrgaoSuperior: String(d.codigoOrgaoSuperior ?? ""),
+      orgaoSuperior: String(d.orgaoSuperior ?? ""),
+      codigoOrgao: String(d.codigoOrgao ?? ""),
+      orgao: String(d.orgao ?? ""),
+      codigoUo: String(d.codigoUo ?? ""),
+      uo: String(d.uo ?? ""),
+      funcao: String(d.funcao ?? ""),
+      subfuncao: String(d.subfuncao ?? ""),
+      programa: String(d.programa ?? ""),
+      acao: String(d.acao ?? ""),
+      subTitulo: String(d.subTitulo ?? ""),
+      localizadorGasto: String(d.localizadorGasto ?? ""),
+      planoOrcamentario: String(d.planoOrcamentario ?? ""),
+      categoria: String(d.categoria ?? ""),
+      grupo: String(d.grupo ?? ""),
+      elemento: String(d.elemento ?? ""),
+      modalidade: String(d.modalidade ?? ""),
+      numeroProcesso: String(d.numeroProcesso ?? ""),
+      autor: String(d.autor ?? ""),
+    },
   };
 }
 
@@ -166,6 +239,19 @@ Deno.serve(async (req: Request) => {
   try {
     if (!CHAVE) return json({ error: "TRANSPARENCIA_API_KEY não configurada no Supabase" }, 500);
     const body = await req.json();
+
+    if (Array.isArray(body.detalhar)) {
+      const detalhes: Record<string, any> = {};
+      const pendentes: string[] = [];
+      for (const cod of body.detalhar.slice(0, 200).map(String)) {
+        if (!/^\d{15}OB\d{6}$/.test(cod)) continue;
+        if (Date.now() - inicio > PRAZO_MS) { pendentes.push(cod); continue; }
+        try { detalhes[cod] = await detalhePagamento(cod); }
+        catch (e: any) { detalhes[cod] = { erro: e?.message ?? String(e) }; }
+      }
+      return json({ detalhes, pendentes });
+    }
+
     const ug = String(body.ug ?? "").replace(/\D/g, "");
     const gestao = String(body.gestao ?? "00001").replace(/\D/g, "").padStart(5, "0");
     const di = String(body.dataInicio ?? "");
