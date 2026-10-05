@@ -133,9 +133,14 @@ export function parseSolicitacaoEmpenho(text) {
     })();
 
     const solicitacao = (() => {
-      // Padrão: dois dígitos + letra + quatro dígitos (ex: 26S0885)
-      const m = /\b(\d{2}[A-Z]\d{4})\b/.exec(t);
-      return m?.[1] ?? '';
+      // Padrão: dois dígitos + letra + quatro dígitos (ex: 26S0885, 26M0431). Na
+      // anulação/reforço a OC tem o mesmo formato ("OC Gerada: 25E2065", "Ident/OC
+      // 25E2065") e pode vir antes na mesma linha: o número da OC não vale
+      for (const m of t.matchAll(/\b(\d{2}[A-Z]\d{4})\b/g)) {
+        if (/\bOC\b(?:\s+Gerada)?\s*:?\s*$/i.test(t.slice(Math.max(0, m.index - 16), m.index))) continue;
+        return m[1];
+      }
+      return '';
     })();
 
     const data = (() => {
@@ -317,8 +322,8 @@ export function parseSolicitacaoEmpenho(text) {
     // Exige formato monetário (11.020,0000): se o valor cair em outra linha, o
     // rótulo sozinho pegaria o primeiro número da linha seguinte (ex: a UG).
     const totalLido = (() => {
-      const m = /TOTAL:\s*(\d{1,3}(?:\.\d{3})*,\d{2,4})\b/.exec(t);
-      return m?.[1] ?? '';
+      const m = /TOTAL:\s*(-?\s?\d{1,3}(?:\.\d{3})*,\d{2,4})\b/.exec(t);
+      return (m?.[1] ?? '').replace(/\s/g, '');
     })();
 
     // ── OBS ─────────────────────────────────────────────────────────────────────
@@ -339,14 +344,14 @@ export function parseSolicitacaoEmpenho(text) {
     // A descrição pode vir vazia na linha (contrato: "BMT274013AU 16 1,00 UN 12030,50
     // 12.030,5000", com a descrição na linha de cima).
     const UNIDADES = String.raw`UN|UN\.|M|M2|M3|KG|L|CX|PC|SV|SC|JG|PT|FD|GL|MO|HR|DI|SE|ME|AN`;
-    const CAUDA = String.raw`\s+(\d+)\s+(?:(.+?)\s+)?([\d,]+)\s+(` + UNIDADES + String.raw`)\s+([\d.,]+)\s+([\d.,]+)`;
+    const CAUDA = String.raw`\s+(\d+)\s+(?:(.+?)\s+)?([\d,]+)\s+(` + UNIDADES + String.raw`)\s+(-?[\d.,]+)\s+(-?[\d.,]+)`;
     const itemAncorado = new RegExp(String.raw`^[ \t]*(\d{1,5})[ \t]+([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gim');
     const itemLivre    = new RegExp(String.raw`()\b([A-Z]{2,}\d+[A-Z]*)` + CAUDA, 'gi');
     // Formato mais livre, só quando os de cima não acham nada: unidade qualquer
     // (MES, MÊS, UNID, SERV…), quantidade com milhar e totais com centavos.
     const UNID_LIVRE = String.raw`[A-ZÀ-Ú][A-ZÀ-Ú0-9²³]{0,5}\.?`;
     const CAUDA_LIVRE = String.raw`\s+(\d+)\s+(?:(.+?)\s+)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,5})?)\s+(` + UNID_LIVRE +
-      String.raw`)\s+(\d[\d.]*,\d{2,5}|\d+)\s+(\d{1,3}(?:\.\d{3})*,\d{2,4})(?![\d,])`;
+      String.raw`)\s+(-?\d[\d.]*,\d{2,5}|\d+)\s+(-?\d{1,3}(?:\.\d{3})*,\d{2,4})(?![\d,])`;
     const itemAncoradoAmplo = new RegExp(String.raw`^[ \t]*(\d{1,5})[ \t]+([A-Z]{2,}\d+[A-Z]*)` + CAUDA_LIVRE, 'gm');
     const itemLivreAmplo    = new RegExp(String.raw`()\b([A-Z]{2,}\d+[A-Z]*)` + CAUDA_LIVRE, 'g');
 
@@ -496,14 +501,24 @@ export function parseSolicitacaoEmpenho(text) {
     // "Anulação Ident/OC 26E0454 V. 3" (ou "Reforço …"). A NE a alterar NÃO vem no
     // PDF: o usuário informa na revisão. O valor também aparece na OBS
     // ("ANULAÇÃO DO VALOR DE R$ 9.998,73").
+    // O cabeçalho "SOLICITAÇÃO DE ANULAÇÃO/REFORÇO DE EMPENHO" é o mesmo para os dois:
+    // o tipo vem da linha "Anulação Ident/OC …"; sem ela, da OBS ou do sinal do
+    // TOTAL (a anulação vem negativa: "TOTAL: -100,00")
+    const negativo = /^-/.test(totalLido) || itens.some(it => /^-/.test(String(it.valorTotal ?? '')));
+    const cabecalhoAlteracao = /SOLICITA[ÇC][ÃA]O\s+(?:DE\s+)?ANULA[ÇC][ÃA]O\s*\/\s*REFOR[ÇC]O/i.test(t);
     const operacao = (() => {
-      const m = /(?:^|\s)(Anula[çc][ãa]o|Refor[çc]o)\s+(?:Ident\b|de\s+Empenho\b|da\s+OC\b|OC\b)/im.exec(t) ??
-        /SOLICITA[ÇC][ÃA]O\s+DE\s+(ANULA[ÇC][ÃA]O|REFOR[ÇC]O)\b/i.exec(t);
+      const m = /(?:^|\s)(Anula[çc][ãa]o|Refor[çc]o)\s+(?:Ident\b|da\s+OC\b|OC\b)/im.exec(t);
       if (m) return /^anula/i.test(m[1]) ? 'anulacao' : 'reforco';
       const o = /OBS:\s*(ANULA[ÇC][ÃA]O|REFOR[ÇC]O)\b/i.exec(t);
       if (o) { deduzidos.operacao = true; return /^anula/i.test(o[1]) ? 'anulacao' : 'reforco'; }
+      if (cabecalhoAlteracao || negativo) { deduzidos.operacao = true; return negativo ? 'anulacao' : 'reforco'; }
       return '';
     })();
+    // O valor a anular/reforçar é sempre positivo para o robô (o sinal já disse o tipo)
+    const semSinal = v => String(v ?? '').replace(/^-\s*/, '');
+    if (operacao) {
+      for (const it of itens) { it.valorTotal = semSinal(it.valorTotal); it.valorUnit = semSinal(it.valorUnit); }
+    }
     const identOperacao = operacao
       ? (/(?:Anula[çc][ãa]o|Refor[çc]o)\s+Ident\/?\s*OC\s+(\w+(?:\s+V\.\s*\d+)?)/i.exec(t)?.[1] ?? '').trim()
       : '';
@@ -538,7 +553,7 @@ export function parseSolicitacaoEmpenho(text) {
       fonte,
       pi,
       nd,
-      total,
+      total: operacao ? semSinal(total) : total,
       obs,
     };
   } catch (e) {
