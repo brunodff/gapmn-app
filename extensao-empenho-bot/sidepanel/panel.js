@@ -434,6 +434,12 @@ async function processarArquivos(files) {
         }
       }
 
+      // PDF original da solicitação: é anexado ao subprocesso no SILOMS (também quando
+      // ela é arrastada de novo — serve para guardar o PDF de uma já empenhada)
+      if (parsed.ok && parsed.solicitacao) {
+        guardarPdf(chaveSolicitacao(parsed.solicitacao), file.name, copia).catch(e => console.warn('[GAPMN] PDF da solicitação não guardado:', e));
+      }
+
       // Mesma solicitação arrastada de novo: não duplica o empenho
       if (parsed.ok && parsed.solicitacao && solicitacoesParsed.some(s => s.ok && s.solicitacao === parsed.solicitacao)) {
         const statusEl = item.querySelector('.ufi-status');
@@ -442,10 +448,6 @@ async function processarArquivos(files) {
         continue;
       }
       solicitacoesParsed.push(parsed);
-      // PDF original da solicitação: é anexado ao subprocesso no SILOMS
-      if (parsed.ok && parsed.solicitacao) {
-        guardarPdf(chaveSolicitacao(parsed.solicitacao), file.name, copia).catch(e => console.warn('[GAPMN] PDF da solicitação não guardado:', e));
-      }
 
       const statusEl = item.querySelector('.ufi-status');
       if (parsed.ok) {
