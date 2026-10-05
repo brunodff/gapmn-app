@@ -833,46 +833,63 @@ async function runStep6(tabId, payload) {
   return { ok: true };
 }
 
-// Detecta e trata o modal "Diferença de arredondamento identificada"
-// Seleciona sempre a opção "para menos" (primeiro radio de cada item) e clica "Avançar e ajustar depois"
+// Detecta e trata o modal "Diferença de arredondamento identificada": escolhe a
+// opção "para menos" de cada item (pelo texto; sem ele, a de menor valor) e clica
+// "Avançar e ajustar depois". A escolha é um clique de verdade: marcar `checked`
+// antes do clique não dispara o "change", o CNET seguia com o valor digitado e o
+// SIAFI recusava (ER0462: valor ≠ quantidade × unitário).
 async function handleRoundingModal(tabId) {
   return execInPage(tabId, () => {
     const bodyText = document.body?.textContent ?? '';
     if (!bodyText.toLowerCase().includes('arredondamento')) return { handled: false };
 
-    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+    // Só o modal aberto: um modelo escondido na página não conta
+    const caixas = Array.from(document.querySelectorAll('.modal, .swal2-popup, [role="dialog"]'))
+      .filter(m => /arredondamento/i.test(m.textContent ?? ''));
+    const caixa = caixas.find(m => m.offsetParent !== null || getComputedStyle(m).display !== 'none');
+    if (caixas.length && !caixa) return { handled: false };
+    const radios = Array.from((caixa ?? document).querySelectorAll('input[type="radio"]')).filter(r => !r.disabled);
     if (!radios.length) return { handled: false };
 
-    // Agrupa radios por name; seleciona o PRIMEIRO de cada grupo (valor menor = "para menos")
-    const seenGroups = new Set();
-    const selectedValues = [];
+    const textoDe = r => {
+      const l = r.closest('label') ?? (r.id ? document.querySelector(`label[for="${CSS.escape(r.id)}"]`) : null) ?? r.parentElement;
+      return (l?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    };
     const valorDe = r => {
-      const label = r.closest('label') ?? r.parentElement;
-      const m = /R\$\s*([\d.,]+)/.exec(label?.textContent ?? '');
+      const m = /R\$\s*([\d.,]+)/.exec(textoDe(r));
       return m ? (parseFloat(m[1].replace(/\./g, '').replace(',', '.')) || 0) : null;
     };
-    // Maior opção de cada grupo ("para mais"): a distância até ela é o degrau do
-    // arredondamento — o irrisório nunca passa disso
-    const maiores = {};
+    const grupos = new Map();
     for (const r of radios) {
-      const key = r.name || ('g_' + r.closest('div, li, p')?.dataset?.item ?? r.id);
-      const v = valorDe(r);
-      if (v !== null) maiores[key] = Math.max(maiores[key] ?? 0, v);
-      if (seenGroups.has(key)) continue;
-      seenGroups.add(key);
-      r.checked = true;
-      r.click();
-      if (v !== null) selectedValues.push(v);
+      const key = r.name || `g_${r.closest('[data-item]')?.dataset?.item ?? r.id}`;
+      if (!grupos.has(key)) grupos.set(key, []);
+      grupos.get(key).push(r);
     }
 
-    const totalEmpenhado = selectedValues.reduce((s, v) => s + v, 0);
-    const totalMais = Object.values(maiores).reduce((s, v) => s + v, 0);
+    const escolhidos = [], escolhas = [];
+    let totalMais = 0;
+    for (const grupo of grupos.values()) {
+      const comValor = grupo.filter(r => valorDe(r) !== null).sort((x, y) => valorDe(x) - valorDe(y));
+      const menos = grupo.find(r => /\bmenos\b|\bmenor\b|abaixo|inferior/i.test(textoDe(r)) && !/\bmais\b|\bmaior\b/i.test(textoDe(r)))
+        ?? comValor[0] ?? grupo[0];
+      // Maior opção do grupo ("para mais"): a distância até ela é o degrau do
+      // arredondamento — o irrisório nunca passa disso
+      if (comValor.length) totalMais += valorDe(comValor[comValor.length - 1]);
+      const jaMarcado = menos.checked;
+      if (!jaMarcado) menos.click();
+      if (!menos.checked) { menos.checked = true; menos.dispatchEvent(new Event('change', { bubbles: true })); }
+      else if (jaMarcado) menos.dispatchEvent(new Event('change', { bubbles: true }));
+      escolhidos.push(menos);
+      escolhas.push(textoDe(menos).slice(0, 60));
+    }
+    const valores = escolhidos.map(valorDe).filter(v => v !== null);
+    const totalEmpenhado = valores.reduce((s, v) => s + v, 0);
 
-    const btnAvancar = Array.from(document.querySelectorAll('button, a.btn'))
+    const btnAvancar = Array.from((caixa ?? document).querySelectorAll('button, a.btn'))
       .find(b => /avan[cç]ar/i.test(b.textContent ?? ''));
     if (btnAvancar) btnAvancar.click();
 
-    return { handled: true, totalEmpenhado, totalMais, count: selectedValues.length };
+    return { handled: true, totalEmpenhado, totalMais, count: escolhidos.length, escolhas };
   });
 }
 
@@ -1287,12 +1304,21 @@ const STEP_PAINEL_ALT = [1, 2, 5, 7, 8];   // pontos do indicador de etapas do p
 const LIMITE_IRRISORIO = 10;
 const limiteIrrisorio = degrau => (degrau > 0 ? degrau + 0.01 : LIMITE_IRRISORIO);
 
+// NE de ano anterior = restos a pagar: o CNET pode não oferecer a alteração dela
+function dicaRestosAPagar(ne) {
+  const ano = parseInt(String(ne ?? '').slice(0, 4), 10);
+  return ano && ano < new Date().getFullYear()
+    ? ` — a ${ne} é de ${ano} (restos a pagar): a alteração de RP costuma ser feita no SIAFI Web, não no CNET`
+    : '';
+}
+
 function estadoInicialDoPayload(payload) {
-  if (!payload?.operacao) return { flow: 'empenho-cnet', step: 0, altStep: null, alteracao: null, altValorFeito: null, altDegrau: null };
+  if (!payload?.operacao) return { flow: 'empenho-cnet', step: 0, altStep: null, alteracao: null, altValorFeito: null, altDegrau: null, altRestos: null };
   return {
-    flow: 'alteracao-cnet', step: 0, altStep: 0, altValorFeito: null, altDegrau: null,
+    flow: 'alteracao-cnet', step: 0, altStep: 0, altValorFeito: null, altDegrau: null, altRestos: null,
     alteracao: {
       ne: payload.neAlterar, tipo: payload.operacao, operacao: OPERACAO_CNET[payload.operacao],
+      operacaoIrrisoria: COMPLEMENTO_CNET[payload.operacao],
       valor: valorSolicitadoDe(payload), itens: payload.itensEmpenho ?? [],
       origem: 'solicitacao', solicitacao: payload.numeroSolicitacao ?? '',
     },
@@ -1340,13 +1366,17 @@ async function runAlteracaoStep(s) {
       await delay(800);
     }
     if (passo === 2) {
-      // Arredondamento: "para menos"; o que faltar vira o irrisório depois da emissão
+      // O robô já digitou o "para menos". Se o CNET ainda abrir o modal de
+      // arredondamento: "para menos" de novo; o que faltar vira o irrisório logo
+      // depois da emissão
       const navModal = waitForNavigation(tabId, 20000).then(() => true, () => false);
       const rounding = await handleRoundingModal(tabId);
       if (rounding?.handled) {
-        await logVisivel(`⚠ Arredondamento → "para menos" (${rounding.count} item(ns)) — o que faltar vira ${COMPLEMENTO_CNET[a.tipo]} depois da emissão`, 'warn');
-        await setState({ altValorFeito: rounding.totalEmpenhado || null,
-          altDegrau: rounding.totalMais > rounding.totalEmpenhado ? Math.round((rounding.totalMais - rounding.totalEmpenhado) * 100) / 100 : null });
+        await logVisivel(`⚠ O CNET pediu arredondamento → "para menos" (${rounding.escolhas?.join('; ') || `${rounding.count} item(ns)`}) — o que faltar vira ${COMPLEMENTO_CNET[a.tipo]} logo depois da emissão`, 'warn');
+        const st = await getState();
+        const degrauModal = rounding.totalMais > rounding.totalEmpenhado ? rounding.totalMais - rounding.totalEmpenhado : 0;
+        await setState({ altValorFeito: rounding.totalEmpenhado || null, altRestos: null,
+          altDegrau: Math.round(((st.altDegrau ?? 0) + degrauModal) * 100) / 100 || null });
         await navModal;
         await delay(800);
       }
@@ -1386,7 +1416,7 @@ async function altAbrirNE(tabId, a) {
     else { try { await waitForNavigation(tabId, 8000); } catch {} await delay(1500); }
     r = await execInPage(tabId, buscarNEnaLista, [a.ne]).catch(e => ({ ok: false, error: e.message }));
   }
-  if (!r?.ok) return { ok: false, error: r?.error ?? 'sem resposta da lista de minutas' };
+  if (!r?.ok) return { ok: false, error: (r?.error ?? 'sem resposta da lista de minutas') + dicaRestosAPagar(a.ne) };
   if (r.href) await navegarPara(tabId, r.href);
   else { try { await waitForNavigation(tabId, 20000); } catch {} await delay(800); }
   const tela = await impressaoDaPagina(tabId);
@@ -1406,13 +1436,43 @@ async function altAdicionar(tabId) {
   return { ok: true };
 }
 
-/** A3: Tipo Operação + valor/quantidade + Próxima Etapa */
+/**
+ * A3: Tipo Operação + valor/quantidade + Próxima Etapa. O valor que não fecha com
+ * quantidade (5 casas) × unitário já vai "para menos"; a diferença (e o degrau,
+ * que limita o irrisório) fica no estado para o irrisório logo depois da emissão.
+ */
 async function altSubelemento(tabId, a) {
   await maximizarTabelas(tabId, 'da alteração');
-  const r = await execInPage(tabId, alteracaoSubelementoRunner, [a]);
-  if (!r?.ok) return r ?? { ok: false, error: 'Script não retornou na tela da alteração' };
+  const rodar = () => execInPage(tabId, alteracaoSubelementoRunner, [a]).catch(e => ({ ok: false, error: `erro ao rodar na tela da alteração: ${e.message}` }));
+  let r = await rodar();
+  let navegacao = null;
+  if (!r) {
+    // A tela recarregou no meio (ou o script morreu sem resposta): mais uma vez
+    const tela = await impressaoDaPagina(tabId);
+    await logVisivel(`⚠ [Alteração] A tela não respondeu (${tela.titulo || tela.caminho || '?'}) — tentando de novo…`, 'warn');
+    await delay(2500);
+    navegacao = waitForNavigation(tabId, 25000).then(() => true, () => false);
+    r = await rodar();
+    if (!r) return { ok: false, error: `a tela da alteração não respondeu (duas tentativas; tela: ${tela.titulo || tela.caminho || '?'})` };
+  }
+  if (!r.ok) return { ...r, error: `${r.error}${r.semOperacao ? dicaRestosAPagar(a.ne) : ''}` };
   for (const f of r.feitos ?? []) await logVisivel(`[Alteração] ${f}`, 'info');
-  return { ok: true, esperarNavegacao: true, patch: { altValorDigitado: r.digitado } };
+  if (r.arredondou) {
+    await logVisivel(`⚠ [Alteração] R$ ${fmtR$(a.valor)} não fecha com quantidade × unitário: ${a.operacao} de R$ ${fmtR$(r.digitado)} ("para menos") e, logo depois da emissão, ${COMPLEMENTO_CNET[a.tipo]} de R$ ${fmtR$(Math.round((a.valor - r.digitado) * 100) / 100)}`, 'warn');
+  }
+  const patch = {
+    altValorDigitado: r.digitado,
+    altValorFeito: r.arredondou ? r.digitado : null,
+    altDegrau: r.degrau > 0 ? r.degrau : null,
+    altRestos: r.restos?.length ? r.restos : null,
+  };
+  if (navegacao) {
+    await setState(patch);
+    await navegacao;
+    await delay(800);
+    return { ok: true, patch };
+  }
+  return { ok: true, esperarNavegacao: true, patch };
 }
 
 /** A4: Passivo Anterior (pula se a tela já é a de emitir) */
@@ -1433,9 +1493,16 @@ async function altFinalizar(tabId, s) {
   }
   const tela = await execInPage(tabId, lerEtapa8).catch(() => null);
   if (!tela) return falhaAlteracao(tabId, s, 4, 'Não consegui ler a tela de emissão da alteração');
+  // Com arredondamento, a tela mostrando ainda o valor pedido = o "para menos" não
+  // pegou, e o SIAFI recusaria (ER0462): não emite
+  const naTela = numBR(tela.valor);
+  if (s.altValorFeito && naTela !== null && Math.abs(naTela - a.valor) < 0.005 && Math.abs(naTela - s.altValorFeito) >= 0.01) {
+    return falhaAlteracao(tabId, s, 4, `o CNET ficou com R$ ${fmtR$(naTela)}, não com o "para menos" R$ ${fmtR$(s.altValorFeito)} — o SIAFI recusaria (ER0462); não emiti`, { url: tela.url });
+  }
+  const valorFeito = s.altValorFeito || a.valor;
   const { [CONFIRMAR_ANTES_KEY]: confirmarAntes } = await chrome.storage.local.get(CONFIRMAR_ANTES_KEY);
   if (confirmarAntes) {
-    const motivo = `${a.operacao} de R$ ${fmtR$(a.valor)} na ${a.ne} — confira e confirme`;
+    const motivo = `${a.operacao} de R$ ${fmtR$(valorFeito)} na ${a.ne}${s.altValorFeito ? ` ("para menos" de R$ ${fmtR$(a.valor)}; a diferença vai de ${COMPLEMENTO_CNET[a.tipo]} em seguida)` : ''} — confira e confirme`;
     await appendLog(`[Alteração] ⚠ CHECKPOINT — ${motivo}`, 'warn');
     await setState({ state: 'checkpoint' });
     notifySidePanel({ type: 'CHECKPOINT', step: 8, summary: { ...tela, payload: s.payload, motivo } });
@@ -1461,7 +1528,7 @@ async function emitirAlteracao(tabId, s) {
   } else if (!antes.emitirHabilitado) {
     return falhaAlteracao(tabId, s, 4, `"Emitir Empenho SIAFI" ${antes.temEmitir ? 'está desabilitado' : 'não foi encontrado'} (situação: ${antes.situacao || '—'}) — confira no CNET`, { url });
   } else {
-    await logVisivel(`[Alteração] Emitindo ${a.operacao} de R$ ${fmtR$(a.valor)} na ${a.ne} no SIAFI…`, 'info');
+    await logVisivel(`[Alteração] Emitindo ${a.operacao} de R$ ${fmtR$(s.altValorFeito || a.valor)} na ${a.ne} no SIAFI…`, 'info');
     const r = await clicarEConfirmar(tabId, 'Emitir\\s+Empenho');
     if (!r?.ok) return falhaAlteracao(tabId, s, 4, `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}`, { url });
   }
@@ -1527,9 +1594,14 @@ async function emitirAlteracao(tabId, s) {
       await logVisivel(`⚠ Faltaram R$ ${fmtR$(complemento)} — mais que o arredondamento explica; confira e faça o ${COMPLEMENTO_CNET[a.tipo]} no CNET`, 'warn');
       return seguirFila(tabId);
     }
-    const item = a.itens?.length === 1 ? [{ numeroItem: a.itens[0].numeroItem, valor: String(complemento) }] : [];
+    // Resto de cada item (do arredondamento do robô); sem ele, o item único
+    const restos = (s.altRestos ?? []).filter(x => x.valor >= 0.01);
+    const somaRestos = restos.reduce((t, x) => t + x.valor, 0);
+    const item = restos.length && restos.every(x => x.numeroItem) && Math.abs(somaRestos - complemento) < 0.01
+      ? restos.map(x => ({ numeroItem: String(x.numeroItem), valor: String(x.valor) }))
+      : a.itens?.length === 1 ? [{ numeroItem: a.itens[0].numeroItem, valor: String(complemento) }] : [];
     await setState({
-      altStep: 0, altValorFeito: null, altDegrau: null,
+      altStep: 0, altValorFeito: null, altDegrau: null, altRestos: null,
       alteracao: { ne: ne ?? a.ne, tipo: a.tipo, operacao: COMPLEMENTO_CNET[a.tipo], valor: complemento, itens: item,
         irrisorio: true, origem: 'complemento', registroId: id, solicitacao: a.solicitacao },
     });
@@ -1559,7 +1631,7 @@ async function depoisDoEmpenho(tabId, payload, r) {
     } else {
       const itens = payload.itensEmpenho ?? [];
       await setState({
-        flow: 'alteracao-cnet', altStep: 0, altValorFeito: null, altDegrau: null,
+        flow: 'alteracao-cnet', altStep: 0, altValorFeito: null, altDegrau: null, altRestos: null,
         alteracao: { ne: r.ne, tipo: 'reforco', operacao: 'REFORÇO IRRISÓRIO', valor: falta,
           itens: itens.length === 1 ? [{ numeroItem: itens[0].numeroItem, valor: String(falta) }] : [],
           irrisorio: true, origem: 'irrisorio', registroId: r.registroId, solicitacao: sol },

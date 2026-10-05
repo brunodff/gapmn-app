@@ -91,4 +91,11 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
   REFORÇO IRRISÓRIO (empenho novo e reforço) ou ANULAÇÃO SALDO IRRISÓRIO (anulação).
   O robô só faz sozinho quando houve arredondamento e a diferença cabe nele; senão avisa
   no relatório ("Irrisório a fazer").
+- Na anulação/reforço (2.8.2) o próprio robô calcula o "para menos" antes de digitar: o SIAFI
+  só aceita valor = quantidade (até 5 casas) × valor unitário (senão recusa com ER0462). Ele
+  digita o valor que fecha, emite e logo em seguida faz o irrisório da diferença na mesma NE.
+  Se o CNET ainda abrir o aviso de arredondamento, escolhe "para menos" e, antes de emitir,
+  confere que o valor mudou (se não mudou, não emite).
+- NE de ano anterior (restos a pagar): a revisão avisa. Se o CNET não oferecer o
+  "Tipo Operação", o robô para e explica — alteração de RP costuma ser feita no SIAFI Web.
 - Anulação não confere o fornecedor; reforço confere (SICAF) como o empenho novo.

@@ -50,6 +50,9 @@ function problemasDaAlteracao(sol) {
 
   if (!sol.neAlterar) erro(`Informe a NE a ${sol.operacao === 'anulacao' ? 'anular' : 'reforçar'} (ex: 2026NE000552) — ela não vem no PDF`);
   else if (!/^\d{4}NE\d{6}$/.test(sol.neAlterar)) erro(`NE "${sol.neAlterar}" fora do formato (ex: 2026NE000552)`);
+  else if (+sol.neAlterar.slice(0, 4) < new Date().getFullYear()) {
+    aviso(`A ${sol.neAlterar} é de ${sol.neAlterar.slice(0, 4)} (restos a pagar): a alteração de RP costuma ser feita no SIAFI Web — se o CNET não oferecer o "Tipo Operação", o robô para e avisa`);
+  }
 
   const total = num(sol.total);
   const soma = itens.reduce((s, it) => s + (num(it.valor) || 0), 0);
