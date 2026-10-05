@@ -605,6 +605,8 @@ async function pularSolicitacao(tabId, etapa, erro, { status = 'falhou', url = n
     fornecedor:  payload.fornecedorNome ?? '',
     cnpj:        String(payload.fornecedorCnpj ?? payload.fornecedorCNPJ ?? '').replace(/\D/g, ''),
     origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
+    pag:         payload.pag ?? '',      // para o subprocesso no SILOMS
+    ugCred:      payload.ugCred ?? '',
     valorSolicitado: valorSolicitadoDe(payload),
     valorEmpenhado:  0,
     verificacaoFornecedor: payload.verificacaoFornecedor?.resumo ?? '',
@@ -1111,6 +1113,8 @@ async function emitirEFinalizar(tabId, payload) {
     fornecedor:  payload.fornecedorNome ?? '',
     cnpj:        String(payload.fornecedorCnpj ?? payload.fornecedorCNPJ ?? '').replace(/\D/g, ''),
     origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
+    pag:         payload.pag ?? '',      // para o subprocesso no SILOMS
+    ugCred:      payload.ugCred ?? '',
     valorSolicitado,
     valorEmpenhado,
     reforco,

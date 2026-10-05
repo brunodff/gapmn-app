@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "GAPMN Empenho Bot",
-  "version": "2.6.4",
-  "description": "Coleta solicitações de empenho no SILOMS e automatiza emissão no SILOMS ou Contratos.gov.br.",
+  "version": "2.7.0",
+  "description": "Coleta solicitações de empenho no SILOMS, automatiza a emissão no Contratos.gov.br e cria os subprocessos no SILOMS com a solicitação e a declaração do SICAF.",
 
   "permissions": [
     "storage",
     "sidePanel",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "webNavigation"
   ],
 
   "host_permissions": [
@@ -19,6 +20,7 @@
     "https://www3.comprasnet.gov.br/*",
     "https://mac1.siloms.intraer/*",
     "https://*.siloms.intraer/*",
+    "http://*.siloms.intraer/*",
     "https://*.intraer/*",
     "*://*.fab.mil.br/*",
     "*://*.defesa.gov.br/*"
@@ -59,6 +61,15 @@
   "action": {
     "default_title": "GAPMN Empenho Bot"
   },
+
+  "content_scripts": [
+    {
+      "matches": ["*://*.siloms.intraer/*"],
+      "js": ["siloms/subprocesso.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
 
   "web_accessible_resources": [
     {

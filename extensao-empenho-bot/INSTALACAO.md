@@ -58,3 +58,23 @@ Observações:
 - No Firefox a extensão é temporária: precisa ser recarregada a cada vez que o navegador é reiniciado.
 - O botão "enviar do gapmn.app" (mensagem direta da página para a extensão) só funciona no Chrome; no Firefox use o painel lateral.
 - Avisos do Firefox sobre `sidePanel` e `service_worker` são esperados e inofensivos.
+
+## Subprocessos no SILOMS (versão 2.7)
+
+Depois da fila de empenhos, o robô cria um subprocesso por solicitação empenhada e anexa
+a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
+"Criador de Subprocessos SILOMS", que pode ser desativada).
+
+1. Abra o SILOMS e entre em **Documentos na Unidade** (a lista com o botão Novo Subprocesso).
+2. No painel: **Criar subprocessos no SILOMS** (menu, relatório da fila ou "Empenhos gerados").
+3. Confira o PAG e o nome de cada um, marque os que quer criar e clique em **Criar subprocessos**.
+
+- Os PDFs ficam guardados quando você arrasta a solicitação e quando o SICAF é conferido
+  (ou quando arrasta a declaração do SICAF). Faltando a declaração, o botão
+  "Baixar do SICAF as declarações que faltam" usa a aba do SICAF logada.
+- Em **Configuração**: unidade do ePAG, fluxo, responsáveis (sorteio por peso) e o endereço
+  da planilha de controle (Apps Script) — o mesmo do robô antigo.
+- **Firefox:** em `about:addons` › GAPMN Empenho Bot › Permissões, deixe ligados os sites
+  do SILOMS (`*.siloms.intraer`); sem isso o robô não entra na aba do SILOMS.
+- Se o botão de inserir documento não for achado, o log lista os botões da tela —
+  mande o print para ajustar.

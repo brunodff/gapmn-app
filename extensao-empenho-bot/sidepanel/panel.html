@@ -159,6 +159,46 @@
       border-color: rgba(52,211,153,0.3);
       color: #6ee7b7;
     }
+    .action-subproc {
+      background: rgba(59,130,246,0.08);
+      border-color: rgba(59,130,246,0.3);
+      color: #93c5fd;
+    }
+
+    /* ── Subprocessos no SILOMS ──────────────────────────────────────────── */
+    #screen-subprocessos .auto-body { display: flex; flex-direction: column; gap: 8px; }
+    .sp-msg { font-size: 11px; line-height: 1.45; padding: 6px 8px; border-radius: 6px; border: 1px solid; }
+    .sp-ok, .sp-msg.sp-ok { color: #4ade80; }
+    .sp-msg.sp-ok   { background: rgba(22,101,52,.15); border-color: #166534; }
+    .sp-msg.sp-info { color: #93c5fd; background: rgba(30,58,138,.2); border-color: #1e3a8a; }
+    .sp-msg.sp-aviso{ color: #fbbf24; background: rgba(120,53,15,.2); border-color: #78350f; }
+    .sp-msg.sp-erro { color: #f87171; background: rgba(127,29,29,.2); border-color: #7f1d1d; }
+    .sp-falta { color: #fbbf24; }
+    .sp-topo { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11px; color: #94a3b8; }
+    #sp-lista { display: flex; flex-direction: column; gap: 6px; }
+    .sp-vazio { padding: 16px; text-align: center; color: #475569; font-size: 12px; }
+    .sp-item { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 7px 9px; }
+    .sp-item.sp-off { opacity: .5; }
+    .sp-l1 { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; flex-wrap: wrap; }
+    .sp-forn { color: #64748b; font-size: 10.5px; margin-left: 4px; }
+    .sp-aviso { font-size: 10.5px; color: #fbbf24; margin-top: 3px; }
+    .sp-campos { display: grid; grid-template-columns: 1fr 2fr; gap: 6px; margin-top: 6px; }
+    .sp-campos label { font-size: 9.5px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .sp-campos .form-input { padding: 5px 7px; font-size: 11px; margin-top: 2px; text-transform: none; }
+    .sp-docs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 10.5px; margin-top: 5px; }
+    .sp-barra { height: 4px; background: #1e293b; border-radius: 3px; overflow: hidden; }
+    .sp-barra > div { height: 100%; width: 0; background: #3b82f6; transition: width .3s; }
+    #sp-cfg summary { font-size: 11px; color: #94a3b8; cursor: pointer; }
+    #sp-cfg .form-group { margin: 6px 0 0; }
+    #sp-cfg .form-input { padding: 6px 8px; font-size: 11.5px; }
+    .sp-dica { font-size: 10.5px; color: #64748b; line-height: 1.4; }
+    .sp-resp { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #cbd5e1; padding: 2px 0; }
+    .sp-resp span:first-child { flex: 1; }
+    .sp-pct { color: #60a5fa; font-size: 10.5px; }
+    .sp-resp-novo { display: grid; grid-template-columns: 1fr 64px auto; gap: 5px; margin-top: 4px; }
+    .sp-res-titulo { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .5px; }
+    .sp-res { font-size: 11px; padding: 4px 0; border-bottom: 1px solid #1e293b; }
+    .sp-res-doc { font-size: 10.5px; padding-left: 10px; }
 
     /* ── Automation screen ───────────────────────────────────────────────── */
     #screen-automation {
@@ -607,6 +647,14 @@
     </div>
   </button>
 
+  <button id="btn-subprocessos" class="action-btn action-subproc">
+    <span class="action-icon">📁</span>
+    <div>
+      <div class="action-title">CRIAR SUBPROCESSOS NO SILOMS</div>
+      <div class="action-sub">Das solicitações empenhadas, com a solicitação e o SICAF anexados</div>
+    </div>
+  </button>
+
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════ -->
@@ -716,6 +764,56 @@
     </div>
   </div>
 
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: Subprocessos no SILOMS (motor: siloms/subprocesso.js)          -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-subprocessos">
+
+  <div class="auto-back-bar">
+    <button id="sp-voltar" class="btn-back">← Menu</button>
+    <span class="auto-mode-label">SUBPROCESSOS NO SILOMS</span>
+  </div>
+
+  <div class="auto-body">
+    <div id="sp-siloms" class="sp-msg sp-info">Verificando o SILOMS…</div>
+    <div class="sp-topo">
+      <span id="sp-resumo"></span>
+      <button id="sp-btn-recarregar" class="eg-btn" title="Lê de novo os empenhos gerados e os PDFs guardados">↻</button>
+    </div>
+    <button id="sp-btn-sicaf" class="eg-btn" style="display:none;margin:0;padding:5px 8px">🔎 Baixar do SICAF as declarações que faltam</button>
+    <div id="sp-lista"></div>
+
+    <details id="sp-cfg">
+      <summary>Configuração (unidade do ePAG, fluxo, responsáveis, planilha)</summary>
+      <div class="form-group"><label class="form-label" for="sp-cfg-epag">Unidade do ePAG (sigla)</label>
+        <input id="sp-cfg-epag" class="form-input"></div>
+      <div class="form-group"><label class="form-label" for="sp-cfg-fluxo">Fluxo a associar</label>
+        <input id="sp-cfg-fluxo" class="form-input"></div>
+      <div class="form-group"><label class="form-label">Responsáveis (sorteio por peso)</label>
+        <div id="sp-resp-lista"></div>
+        <div class="sp-resp-novo">
+          <input id="sp-resp-nome" class="form-input" placeholder="ex.: 2T FULANO">
+          <input id="sp-resp-peso" class="form-input" type="number" min="1" value="40" title="Peso">
+          <button id="sp-resp-add" class="eg-btn" style="margin:0">+ incluir</button>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label" for="sp-cfg-planilha">Planilha de controle (endereço do Apps Script, opcional)</label>
+        <input id="sp-cfg-planilha" class="form-input" placeholder="https://script.google.com/macros/s/…/exec">
+        <div class="sp-dica">O mesmo endereço do robô antigo de subprocessos: o resultado (nº, PAG, subprocesso, responsável) vai para a aba EMISSÃO.</div></div>
+    </details>
+
+    <div id="sp-barra" class="sp-barra" style="display:none"><div></div></div>
+    <div id="sp-andamento" class="sp-msg sp-info" style="display:none"></div>
+    <div id="sp-log" class="log" style="display:none"></div>
+    <div id="sp-resultado"></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-resume" id="sp-btn-criar" disabled>📁 Criar subprocessos</button>
+    <button class="btn btn-abort" id="sp-btn-parar" style="display:none">🛑 Parar</button>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════ -->

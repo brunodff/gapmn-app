@@ -9,8 +9,10 @@
  *      não possui certidão vigente na Receita Federal do Brasil.") e baixa o PDF
  *      da declaração pela própria página;
  *   2. PDF da declaração arrastado para o painel (consultarSituacaoFornecedor_*.pdf).
+ * O PDF fica guardado (runner/arquivos.js) para ser anexado ao subprocesso no SILOMS.
  */
 import { extractPdfText } from '../runner/pdfParser.js';
+import { guardarPdf, chaveSicaf } from '../runner/arquivos.js';
 
 export const SICAF_ORIGEM = 'https://www3.comprasnet.gov.br';
 export const SICAF_CONSULTA = `${SICAF_ORIGEM}/sicaf-web/private/geral/consultarSituacaoFornecedor.jsf`;
@@ -494,9 +496,12 @@ async function consultarNaAba(cnpj, aoAvancar, ctl) {
   const bin = atob(c.base64);
   const buf = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const copia = buf.slice();   // o pdf.js pode ficar com o buffer; a cópia vai para o subprocesso
   const declaracao = lerDeclaracaoSicaf(await extractPdfText(buf.buffer));
   if (!declaracao) return falha('declaracao', 'o PDF baixado não é a declaração do SICAF', null, mensagens);
   if (declaracao.cnpj !== cnpj) return falha('declaracao', `a declaração baixada é de outro CNPJ (${fmtCnpj(declaracao.cnpj)})`, null, mensagens);
+  // O PDF da declaração vai para o subprocesso do SILOMS
+  await guardarPdf(chaveSicaf(cnpj), `SICAF_${cnpj}.pdf`, copia).catch(e => console.warn('[GAPMN] PDF do SICAF não guardado:', e));
   return { ...resultadoSicaf({ declaracao, mensagens, origem: 'aba' }), mensagens };
 }
 

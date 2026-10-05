@@ -11,6 +11,8 @@ import { conferirContratosNoCnet } from './cnet.js';
 import {
   abaDoSicaf, conferirNoSicaf, lerDeclaracaoSicaf, resultadoSicaf, textoDiagnostico, fmtCnpj, SICAF_CONSULTA,
 } from './sicaf.js';
+import { guardarPdf, chaveSolicitacao, chaveSicaf } from '../runner/arquivos.js';
+import { setupSubprocessos, abrirSubprocessos } from './subprocessos.js';
 
 // ── Lista de unidades da FAB ──────────────────────────────────────────────────
 const FAB_UNITS = [
@@ -141,6 +143,8 @@ async function init() {
   setupDevPanel();
   setupFeedbackWidget();
   setupEmpenhosGerados();
+  setupSubprocessos({ el, showScreen, escHtml, voltar: showMenuScreen });
+  el('btn-subprocessos').addEventListener('click', () => abrirSubprocessos());
 
   const data = await chrome.storage.local.get(['empenho_profile', UNIDADE_COMPRA_KEY]);
   userProfile = data.empenho_profile ?? null;
@@ -157,7 +161,7 @@ async function init() {
 }
 
 // ── Gerenciamento de telas ────────────────────────────────────────────────────
-const SCREENS = ['profile', 'menu', 'upload', 'review', 'solicitacoes', 'automation'];
+const SCREENS = ['profile', 'menu', 'upload', 'review', 'solicitacoes', 'automation', 'subprocessos'];
 
 function showScreen(name) {
   SCREENS.forEach(s => el(`screen-${s}`)?.classList.remove('active'));
@@ -360,6 +364,7 @@ async function processarArquivos(files) {
 
     try {
       const buf    = await file.arrayBuffer();
+      const copia  = buf.slice(0);   // o original vai para o pdf.js; a cópia é o arquivo do subprocesso
       const text   = await extractPdfText(buf);
 
       // F12 → Console: texto bruto extraído do PDF para inspeção
@@ -372,6 +377,8 @@ async function processarArquivos(files) {
       if (declaracao) {
         const r = resultadoSicaf({ declaracao, origem: 'pdf' });
         declaracoesSicaf.set(declaracao.cnpj, r);
+        // Vai para o subprocesso do SILOMS junto com a solicitação
+        guardarPdf(chaveSicaf(declaracao.cnpj), file.name, copia).catch(e => console.warn('[GAPMN] PDF do SICAF não guardado:', e));
         const doCnpj = solicitacoesParsed.filter(s => s.ok && soDigitos(s.fornecedorCnpj) === declaracao.cnpj);
         doCnpj.forEach(s => { s._sicaf = r; atualizarBadgeFornecedor(s); });
         const statusEl = item.querySelector('.ufi-status');
@@ -435,6 +442,10 @@ async function processarArquivos(files) {
         continue;
       }
       solicitacoesParsed.push(parsed);
+      // PDF original da solicitação: é anexado ao subprocesso no SILOMS
+      if (parsed.ok && parsed.solicitacao) {
+        guardarPdf(chaveSolicitacao(parsed.solicitacao), file.name, copia).catch(e => console.warn('[GAPMN] PDF da solicitação não guardado:', e));
+      }
 
       const statusEl = item.querySelector('.ufi-status');
       if (parsed.ok) {
@@ -1495,10 +1506,12 @@ async function renderRelatorioFila(inicio) {
       r => `<b>${escHtml(r.solicitacao)}</b> → ${escHtml(ne(r))} · <b>faltam R$ ${fmtV(r.reforco)}</b> (pedido R$ ${fmtV(r.valorSolicitado)}, empenhado R$ ${fmtV(r.valorEmpenhado)})`)}
     ${secao(`⛔ Não empenhadas / com problema (${problemas.length})`, '#f87171', problemas,
       r => `<b>${escHtml(r.solicitacao || '—')}</b>${st(r) === 'conferir' ? ' <i>(conferir no CNET)</i>' : ''} — ${escHtml(oQue(r))}`)}
-    <button id="rf-csv" class="eg-btn" type="button">📥 Baixar relatório da fila (CSV)</button>`;
+    <button id="rf-csv" class="eg-btn" type="button">📥 Baixar relatório da fila (CSV)</button>
+    ${emitidas.length ? `<button id="rf-subproc" class="eg-btn" type="button" title="Um subprocesso por solicitação empenhada, com a solicitação e a declaração do SICAF — com o SILOMS aberto">📁 Criar subprocessos no SILOMS (${emitidas.length})</button>` : ''}`;
   const logEl = el('log');
   logEl?.parentElement?.insertBefore(div, logEl.nextSibling);
   el('rf-csv').onclick = () => baixarCsvEmpenhos(lista, 'relatorio_fila');
+  if (el('rf-subproc')) el('rf-subproc').onclick = () => abrirSubprocessos();
 }
 
 function renderDiff(p) {
@@ -1569,6 +1582,7 @@ async function renderEmpenhosGerados() {
       <span>EMPENHOS GERADOS (${lista.length})</span>
       <span>
         ${pendentes ? `<button id="eg-pendentes" class="eg-btn" title="Abre cada minuta em processamento no CNET e anota o número da NE">🔄 Buscar pendentes (${pendentes})</button>` : ''}
+        <button id="eg-subproc" class="eg-btn" title="Criar no SILOMS os subprocessos das solicitações empenhadas">📁 Subprocessos</button>
         <button id="eg-csv" class="eg-btn" title="Todos os empenhos registrados, com fornecedor e valores">📥 CSV</button>
         <button id="eg-copiar" class="eg-btn" title="Copia solicitação e NE (cola em planilha)">📋 Copiar</button>
         <button id="eg-limpar" class="eg-btn eg-btn-danger">Limpar</button>
@@ -1588,6 +1602,7 @@ async function renderEmpenhosGerados() {
     if (enviar({ type: 'RESOLVER_PENDENTES' })) appendLog('🔎 Buscando as NEs em processamento no CNET…', 'info');
   };
   el('eg-csv').onclick = () => baixarCsvEmpenhos(lista);
+  el('eg-subproc').onclick = () => abrirSubprocessos();
   el('eg-copiar').onclick = async () => {
     try {
       // só NE confirmada; as demais vão em branco

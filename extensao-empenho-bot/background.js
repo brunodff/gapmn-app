@@ -14,6 +14,10 @@ import {
   pauseEmpenho, resumeEmpenho, abortEmpenho,
   confirmEmissao, setSidePanelPort, recuperarExecucaoOrfa, resolverPendentesAgora,
 } from './runner/stateMachine.js';
+import { registrarMensagensSubprocesso } from './runner/subprocessoBg.js';
+
+// Subprocessos no SILOMS: o content script (siloms/subprocesso.js) pede cliques e arquivos
+registrarMensagensSubprocesso();
 
 const COMPRASNET_ORIGIN = 'https://contratos.comprasnet.gov.br';
 const SILOMS_PATTERNS   = ['mac1.siloms.intraer', 'siloms.intraer', '/siloms_mac/', 'fab.mil.br', 'siloms'];
