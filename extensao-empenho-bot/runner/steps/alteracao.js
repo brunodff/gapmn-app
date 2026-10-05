@@ -149,11 +149,19 @@ export async function alteracaoSubelementoRunner(a) {
       try { input.blur(); } catch (e) { /* segue */ }
     };
 
+    // Tabela recolhida (DataTables Responsive, tela estreita): ao abrir a linha, as
+    // células escondidas — Tipo Operação, Qtd, Valor da Alteração — MUDAM para a
+    // linha-filha (tr.child). Tudo da linha é procurado nela e na filha.
+    const filhaDe = tr => (tr.nextElementSibling?.classList.contains('child') ? tr.nextElementSibling : null);
+    const naLinha = (tr, css) => [tr, filhaDe(tr)].filter(Boolean).flatMap(el => Array.from(el.querySelectorAll(css)));
+    const tituloLi = li => (li.querySelector('.dtr-title')?.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/:$/, '');
+
     // Itens: linhas com o select de Tipo Operação
     const ehSelectOperacao = s => Array.from(s.options).some(o => /^(ANULACAO|REFORCO)/.test(norm(o.text)));
     let linhas = [];
     for (let t = 0; t < 15000; t += 500) {
-      linhas = Array.from(document.querySelectorAll('table tbody tr')).filter(tr => Array.from(tr.querySelectorAll('select')).some(ehSelectOperacao));
+      linhas = Array.from(document.querySelectorAll('table tbody tr'))
+        .filter(tr => !tr.classList.contains('child') && naLinha(tr, 'select').some(ehSelectOperacao));
       if (linhas.length) break;
       await dorme(500);
     }
@@ -173,8 +181,15 @@ export async function alteracaoSubelementoRunner(a) {
       const i = ths.findIndex(th => re.test((th.textContent ?? '').replace(/\s+/g, ' ').trim()));
       return i >= 0 ? tr.cells[i] : null;
     };
-    const numeroDa = tr => parseInt((coluna(tr, /^N[úu]mero$|^N\.?\s*Item$/i)?.textContent ?? '').replace(/\D/g, ''), 10) ||
-      parseInt(tr.querySelector('input[name="numero_item[]"]')?.value ?? '', 10) || NaN;
+    // Texto da coluna: na célula ou, com a linha aberta, no item da linha-filha
+    const textoColuna = (tr, re) => {
+      const t = (coluna(tr, re)?.textContent ?? '').trim();
+      if (t) return t;
+      const li = Array.from(filhaDe(tr)?.querySelectorAll('li') ?? []).find(l => re.test(tituloLi(l)));
+      return (li?.querySelector('.dtr-data')?.textContent ?? '').trim();
+    };
+    const numeroDa = tr => parseInt(textoColuna(tr, /^N[úu]mero$|^N\.?\s*Item$/i).replace(/\D/g, ''), 10) ||
+      parseInt(naLinha(tr, 'input[name="numero_item[]"]')[0]?.value ?? '', 10) || NaN;
 
     // Que linha recebe que valor
     const itens = (a.itens ?? []).filter(it => num(it.valor) > 0 || num(it.quantidade) > 0);
@@ -199,7 +214,8 @@ export async function alteracaoSubelementoRunner(a) {
     let pedido = 0, feito = 0, degrau = 0, arredondou = false, irrisorioDireto = false;
     for (const [tr, it] of pares) {
       const rotulo = Number.isNaN(numeroDa(tr)) ? 'item' : `item ${String(numeroDa(tr)).padStart(5, '0')}`;
-      // Linha recolhida (DataTables Responsive): os campos ficam na linha-filha
+      const unit = num(textoColuna(tr, /^Valor\s*Unit/i));
+      // Linha recolhida (DataTables Responsive): abre — os campos vão para a linha-filha
       const controle = tr.cells[0];
       const ehControle = controle && (controle.getAttribute('tabindex') === '0' || controle.classList.contains('dtr-control'));
       if (ehControle && !tr.classList.contains('parent') && !tr.nextElementSibling?.classList.contains('child')) {
@@ -209,7 +225,6 @@ export async function alteracaoSubelementoRunner(a) {
 
       // Plano do valor: o pedido, ou o "para menos" se a quantidade não fecha em 5 casas
       const valor = num(it.valor) > 0 ? num(it.valor) : num(a.valor);
-      const unit = num(coluna(tr, /^Valor\s*Unit/i)?.textContent);
       let digitar = valor, operacao = a.operacao, qtdPlano = NaN;
       if (!a.irrisorio && valor > 0 && unit > 0) {
         const q = valor / unit;
@@ -229,7 +244,11 @@ export async function alteracaoSubelementoRunner(a) {
       pedido += valor > 0 ? valor : 0;
 
       // 1. Tipo Operação: opção exata ("ANULAÇÃO" ≠ "ANULAÇÃO SALDO IRRISÓRIO")
-      const sel = Array.from(tr.querySelectorAll('select')).find(ehSelectOperacao);
+      const sel = naLinha(tr, 'select').find(ehSelectOperacao);
+      if (!sel) {
+        const campos = naLinha(tr, 'input,select').map(e => e.name || e.id || e.type).join(', ');
+        return { ok: false, error: `o "Tipo Operação" do ${rotulo} sumiu da linha depois de abri-la (campos: ${campos || 'nenhum'})` };
+      }
       const alvo = norm(operacao);
       const op = Array.from(sel.options).find(o => norm(o.text) === alvo);
       if (!op) return { ok: false, error: `"${operacao}" não existe no Tipo Operação do ${rotulo} (opções: ${Array.from(sel.options).map(o => o.text.trim()).join(' | ')})` };
@@ -239,13 +258,13 @@ export async function alteracaoSubelementoRunner(a) {
       if (sel.value !== op.value) return { ok: false, error: `Não consegui escolher "${operacao}" no ${rotulo}` };
 
       // 2. Campos da linha (e da linha-filha): "Valor da Alteração" e "Qtd"
-      const filha = tr.nextElementSibling?.classList.contains('child') ? tr.nextElementSibling : null;
+      const filha = filhaDe(tr);
       const campoEm = (re, nomeRe) => {
         const cel = coluna(tr, re);
         const naCel = cel?.querySelector('input:not([type="hidden"])');
         if (naCel) return naCel;
         for (const li of filha?.querySelectorAll('li') ?? []) {
-          if (re.test((li.querySelector('.dtr-title')?.textContent ?? '').trim())) {
+          if (re.test(tituloLi(li))) {
             const i = li.querySelector('input:not([type="hidden"])');
             if (i) return i;
           }
