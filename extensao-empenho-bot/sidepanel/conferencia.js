@@ -29,10 +29,51 @@ export function cnpjValido(c) {
   return dv(12) === +c[12] && dv(13) === +c[13];
 }
 
+/** NE no formato do SIAFI (2026NE000552); aceita "NE552" / "552" e completa com o ano. */
+export function normalizarNE(s, ano = new Date().getFullYear()) {
+  const m = /(?:(\d{4})\s*)?NE\s*0*(\d{1,6})\b|^\s*0*(\d{1,6})\s*$/i.exec(String(s ?? '').trim());
+  if (!m) return '';
+  return `${m[1] ?? ano}NE${String(m[2] ?? m[3]).padStart(6, '0')}`;
+}
+
+/**
+ * Reforço / anulação de empenho já emitido: o robô vai direto à minuta da NE
+ * (Alterar Empenho) — contrato, fornecedor e linha de crédito não são escolhidos.
+ * Valem a NE a alterar, os itens e o valor.
+ */
+function problemasDaAlteracao(sol) {
+  const p = [];
+  const erro = texto => p.push({ nivel: 'erro', texto });
+  const aviso = texto => p.push({ nivel: 'aviso', texto });
+  const itens = sol.itensEmpenho ?? [];
+  const nome = sol.operacao === 'anulacao' ? 'anulação' : 'reforço';
+
+  if (!sol.neAlterar) erro(`Informe a NE a ${sol.operacao === 'anulacao' ? 'anular' : 'reforçar'} (ex: 2026NE000552) — ela não vem no PDF`);
+  else if (!/^\d{4}NE\d{6}$/.test(sol.neAlterar)) erro(`NE "${sol.neAlterar}" fora do formato (ex: 2026NE000552)`);
+
+  const total = num(sol.total);
+  const soma = itens.reduce((s, it) => s + (num(it.valor) || 0), 0);
+  if (!(total > 0) && !(soma > 0)) erro(`Valor da ${nome} não encontrado no PDF`);
+  const daObs = num(sol.valorOperacao);
+  if (daObs > 0 && total > 0 && Math.abs(daObs - total) > 0.01) {
+    aviso(`A OBS fala em R$ ${fmtV(daObs)}, mas o TOTAL é R$ ${fmtV(total)} — confira o valor da ${nome}`);
+  }
+  if (itens.length > 1 && itens.some(it => !dig(it.numeroItem))) {
+    erro('Mais de um item: informe o N.Item de cada um (é o "Número" do item na NE)');
+  } else if (itens.length === 1 && !dig(itens[0].numeroItem)) {
+    aviso('Item sem N.Item: vale se a NE tiver um único item; se tiver mais, o robô para e pede o número');
+  }
+  if (sol.operacao === 'reforco' && !dig(sol.fornecedorCnpj)) aviso('CNPJ do fornecedor não lido — sem ele as certidões do reforço não são conferidas');
+  if (sol._deduzidos?.operacao) aviso(`Tipo (${nome}) deduzido pela OBS — confira`);
+  if (!sol.solicitacao) aviso('Número da solicitação não lido');
+  return p;
+}
+
 /** Lista de { nivel: 'erro' | 'aviso', texto } da solicitação. */
 export function problemasDaSolicitacao(sol) {
   const p = [];
   if (!sol?.ok) return p;
+  if (sol.operacao) return problemasDaAlteracao(sol);
   const erro = texto => p.push({ nivel: 'erro', texto });
   const aviso = texto => p.push({ nivel: 'aviso', texto });
   const compra = sol.tipoOrigem === 'compra';

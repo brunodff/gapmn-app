@@ -6,7 +6,7 @@
 import { extractPdfText, parseSolicitacaoEmpenho } from '../runner/pdfParser.js';
 import { UG_POR_UNIDADE } from './ugPorUnidade.js';
 import { verificarFornecedor } from './fornecedor.js';
-import { problemasDaSolicitacao, temErro } from './conferencia.js';
+import { problemasDaSolicitacao, temErro, normalizarNE } from './conferencia.js';
 import { conferirContratosNoCnet } from './cnet.js';
 import {
   abaDoSicaf, conferirNoSicaf, lerDeclaracaoSicaf, resultadoSicaf, textoDiagnostico, fmtCnpj, SICAF_CONSULTA,
@@ -397,6 +397,12 @@ async function processarArquivos(files) {
         const textoObs = parsed.obs ? ' ' + parsed.obs : '';
         parsed.obs = (prefixo + textoObs).replace(/;/g, '').trim();
 
+        // Reforço/anulação: sem TOTAL legível, vale o valor escrito na OBS
+        if (parsed.operacao && !parsed.total && parsed.valorOperacao) {
+          parsed.total = parsed.valorOperacao;
+          (parsed._deduzidos ??= {}).total = true;
+        }
+
         // Contrato tem prioridade; sem contrato e com "Licit:", é empenho de compra
         parsed.tipoOrigem    = parsed.contrato ? 'contrato' : (parsed.licit ? 'compra' : 'contrato');
         parsed.numeroCompra  = parsed.licit ?? '';
@@ -530,6 +536,7 @@ function vereditoFornecedor(sol) {
 
 function badgeFornecedor(sol) {
   if (!sol.ok) return '';
+  if (sol.operacao === 'anulacao') return '<span class="rcf rcf-ok">Fornecedor: não conferido (anulação só reduz o empenho)</span>';
   const s = sol._sicaf;
   if (!sol._fornecedor) return '<span class="rcf rcf-verificando">Fornecedor: aguardando verificação</span>';
   const v = vereditoFornecedor(sol);
@@ -563,7 +570,8 @@ function atualizarBadgeFornecedor(sol) {
 
 // Consulta o MCP para cada fornecedor da revisão (no máximo 3 ao mesmo tempo)
 async function verificarFornecedoresDaRevisao() {
-  const fila = solicitacoesParsed.filter(s => s.ok && !s._fornecedor);
+  // Anulação só reduz o empenho: fornecedor não é conferido (decisão do usuário)
+  const fila = solicitacoesParsed.filter(s => s.ok && !s._fornecedor && s.operacao !== 'anulacao');
   for (const sol of fila) { sol._fornecedor = { nivel: 'verificando' }; atualizarBadgeFornecedor(sol); }
   const trabalhador = async () => {
     for (let sol = fila.shift(); sol; sol = fila.shift()) {
@@ -580,7 +588,7 @@ async function verificarFornecedoresDaRevisao() {
  * `sols` + `forcar`: reconsulta (botão do cartão).
  */
 async function conferirSicafDaRevisao({ sols = null, forcar = false } = {}) {
-  const alvo = (sols ?? solicitacoesParsed.filter(s => !s._sicaf)).filter(s => s.ok);
+  const alvo = (sols ?? solicitacoesParsed.filter(s => !s._sicaf)).filter(s => s.ok && s.operacao !== 'anulacao');
   const porCnpj = new Map();
   for (const s of alvo) {
     const c = soDigitos(s.fornecedorCnpj);
@@ -724,7 +732,8 @@ let conferenciaCnetEmCurso = null;
 async function conferirContratosDaRevisao() {
   const chave = s => `${String(s.contrato ?? '').trim()}|${soDigitos(s.fornecedorCnpj)}`;
   // Ainda não conferido, dados mudaram, ou da vez anterior não deu (CNET fechado / sem login)
-  const precisa = s => s.ok && s.tipoOrigem !== 'compra' && /^\d+/.test(String(s.contrato ?? '').trim()) &&
+  // Reforço/anulação não escolhem contrato no CNET (vão direto à NE)
+  const precisa = s => s.ok && !s.operacao && s.tipoOrigem !== 'compra' && /^\d+/.test(String(s.contrato ?? '').trim()) &&
     (!s._cnetContrato || s._cnetContrato.chave !== chave(s) || ['sem-aba', 'sem-login', 'nao-conferido'].includes(s._cnetContrato.estado));
   if (!solicitacoesParsed.some(precisa)) return;
   await conferenciaCnetEmCurso;   // uma conferência por vez (abre uma aba do CNET)
@@ -758,6 +767,7 @@ function criarReviewCard(sol, idx) {
           <span class="rc-numero">${sol.solicitacao || sol._fileName || '—'}</span>
           <span class="rc-total">R$ ${sol.total || '—'}</span>
         </div>
+        ${sol.operacao ? `<div class="rc-operacao rc-op-${sol.operacao}">${sol.operacao === 'anulacao' ? '➖ ANULAÇÃO' : '➕ REFORÇO'} da ${escHtml(sol.neAlterar || 'NE ? (informe abaixo)')}${sol.identOperacao ? ` · Ident/OC ${escHtml(sol.identOperacao)}` : ''}</div>` : ''}
         <div class="rc-forn">${sol.fornecedorNome || '—'}</div>
         ${sol.ok && soDigitos(sol.fornecedorCnpj).length === 14 ? `<div class="rc-cnpj">CNPJ ${fmtCnpj(soDigitos(sol.fornecedorCnpj))}</div>` : ''}
         <div class="rc-fornecedor" id="rcf-${idSol(sol)}">${badgeFornecedor(sol)}</div>
@@ -805,6 +815,8 @@ function avisoDeduzido(sol, key) {
 
 function renderCamposEditable(sol, idx) {
   const campos = [
+    ['Operação',       'operacao'],
+    ['NE a alterar',   'neAlterar'],
     ['Solicitação',    'solicitacao'],
     ['Data',           'data'],
     ['Local Entrega',  'localEntrega'],
@@ -838,6 +850,23 @@ function renderCamposEditable(sol, idx) {
     const oculto = (grupo === 'compra' && !ehCompra) || (grupo === 'contrato' && ehCompra);
     const attrGrupo = grupo ? ` data-grupo="${grupo}" data-gidx="${idx}"${oculto ? ' style="display:none"' : ''}` : '';
 
+    if (key === 'operacao') {
+      const op = sol.operacao || '';
+      return `
+    <div class="rf-label" title="Reforço e anulação alteram uma NE já emitida (Alterar Empenho no CNET)">${label}</div>
+    <select class="rf-input" data-idx="${idx}" data-key="operacao">
+      <option value=""${!op ? ' selected' : ''}>Empenho novo</option>
+      <option value="reforco"${op === 'reforco' ? ' selected' : ''}>Reforço de empenho</option>
+      <option value="anulacao"${op === 'anulacao' ? ' selected' : ''}>Anulação de empenho</option>
+    </select>`;
+    }
+    if (key === 'neAlterar') {
+      const vis = sol.operacao ? '' : ' style="display:none"';
+      return `
+    <div class="rf-label" data-alt="${idx}"${vis} title="Não vem no PDF da solicitação">${label}</div>
+    <input class="rf-input" data-idx="${idx}" data-key="neAlterar" data-alt="${idx}"${vis}
+           value="${escHtml(sol.neAlterar ?? '')}" placeholder="ex: 2026NE000552" />`;
+    }
     if (key === 'tipoOrigem') {
       return `
     <div class="rf-label">${label}</div>
@@ -945,8 +974,20 @@ function bindReviewInputs() {
     inp.addEventListener('change', () => {
       const idx = Number(inp.dataset.idx);
       const key = inp.dataset.key;
-      const valor = inp.value.trim();
+      let valor = inp.value.trim();
+      if (key === 'neAlterar' && valor) { valor = normalizarNE(valor) || valor; inp.value = valor; }
       if (solicitacoesParsed[idx]) solicitacoesParsed[idx][key] = valor;
+
+      if (key === 'operacao' || key === 'neAlterar') {
+        const sol = solicitacoesParsed[idx];
+        document.querySelectorAll(`[data-alt="${idx}"]`).forEach(n => { n.style.display = sol?.operacao ? '' : 'none'; });
+        if (sol) delete sol._deduzidos?.operacao;
+        // Cabeçalho (tipo/NE) e verificação do fornecedor mudam com a operação
+        renderReviewLista();
+        verificarFornecedoresDaRevisao();
+        conferirSicafDaRevisao();
+        return;
+      }
 
       if (key === 'tipoOrigem') {
         const compra = valor === 'compra';
@@ -1061,17 +1102,19 @@ function iniciarFila() {
 
   // Fornecedor impedido (sanção, impedimento ou certidão federal vencida) não
   // entra na fila; verificação em curso e certidão não conferida pedem confirmação
-  const veredito = new Map(validas.map(s => [s, vereditoFornecedor(s)]));
-  const verificando = validas.filter(s => veredito.get(s).nivel === 'verificando');
+  // Anulação não confere fornecedor (só reduz o empenho)
+  const conferidas = validas.filter(s => s.operacao !== 'anulacao');
+  const veredito = new Map(conferidas.map(s => [s, vereditoFornecedor(s)]));
+  const verificando = conferidas.filter(s => veredito.get(s).nivel === 'verificando');
   if (verificando.length && !confirm(`Ainda verificando ${verificando.length} fornecedor(es) (sanções e certidões no SICAF). Iniciar sem esperar o resultado?`)) return;
-  const impedidas = validas.filter(s => veredito.get(s).nivel === 'bloqueio');
+  const impedidas = conferidas.filter(s => veredito.get(s).nivel === 'bloqueio');
   if (impedidas.length) {
     const lista = impedidas.map(s => `• ${nome(s)}: ${veredito.get(s).resumo}`).join('\n');
     if (!confirm(`Fornecedor impedido — estas solicitações NÃO serão empenhadas:\n\n${lista}\n\nOK: empenhar só as demais · Cancelar: voltar à revisão`)) return;
     validas = validas.filter(s => !impedidas.includes(s));
     if (!validas.length) return;
   }
-  const semCertidao = validas.filter(s => veredito.get(s).nivel !== 'verificando' && s._sicaf?.estado !== 'ok');
+  const semCertidao = conferidas.filter(s => validas.includes(s) && veredito.get(s).nivel !== 'verificando' && s._sicaf?.estado !== 'ok');
   if (semCertidao.length) {
     const lista = semCertidao.map(s => `• ${nome(s)}`).join('\n');
     if (!confirm(`Certidões NÃO conferidas no SICAF:\n\n${lista}\n\nOK: empenhar assim mesmo · Cancelar: voltar e conferir`)) return;
@@ -1111,6 +1154,9 @@ function iniciarFila() {
 function solToPayload(sol) {
   return {
     numeroSolicitacao: sol.solicitacao,
+    operacao:          sol.operacao || '',        // '' | 'reforco' | 'anulacao'
+    neAlterar:         sol.operacao ? (sol.neAlterar || '') : '',
+    identOperacao:     sol.identOperacao || '',
     fornecedorNome:    sol.fornecedorNome,
     fornecedorCnpj:    sol.fornecedorCnpj,
     localEntrega:      sol.localEntrega,
@@ -1121,7 +1167,7 @@ function solToPayload(sol) {
     modalidade:        sol.modalidade ?? '',
     unidadeCompra:     sol.unidadeCompra || unidadeCompraDoPerfil(),
     tipoEmpenho:       sol.tipoEmpenho || tipoEmpenhoPadrao(sol),
-    verificacaoFornecedor: (() => {
+    verificacaoFornecedor: sol.operacao === 'anulacao' ? null : (() => {
       const v = vereditoFornecedor(sol);
       return v.nivel === 'verificando' ? null : { nivel: v.nivel, resumo: v.resumo, consultadoEm: v.consultadoEm };
     })(),
@@ -1305,7 +1351,8 @@ function handleStateMsg(state) {
     }
     showScreen('automation');
     renderPayloadCard(state.payload);
-    updateStep(state.step);
+    // Alteração (reforço/anulação/irrisório): A1–A5 nos pontos 1, 2, 5, 7 e 8
+    updateStep(state.flow === 'alteracao-cnet' ? ([1, 2, 5, 7, 8][state.altStep ?? 0] ?? 8) : state.step);
   }
 
   if (state.state === 'checkpoint' && state.flow !== 'coleta') {
@@ -1488,7 +1535,12 @@ async function renderRelatorioFila(inicio) {
   const fmtV = v => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const st = statusRegistro;
   const emitidas  = lista.filter(r => st(r) === 'emitido' || st(r) === 'pendente');
-  const reforco   = emitidas.filter(r => (r.reforco ?? 0) > 0);
+  // Irrisório: o robô faz sozinho depois da emissão; aqui só os que ficaram por fazer
+  const reforco   = emitidas.filter(r => (r.reforco ?? 0) > 0 && r.reforcoStatus !== 'feito');
+  const irrFeitos = emitidas.filter(r => (r.reforco ?? 0) > 0 && r.reforcoStatus === 'feito');
+  const op = r => r.operacao === 'anulacao' ? ' <i>(anulação)</i>' : r.operacao === 'reforco' ? ' <i>(reforço)</i>' : '';
+  const nomeIrr = r => r.operacao === 'anulacao' ? 'anulação saldo irrisório' : 'reforço irrisório';
+  const porque = r => ({ 'pendente-ne': 'NE ainda em processamento', falhou: r.reforcoMotivo || 'o robô não conseguiu', conferir: r.reforcoMotivo || 'confira no CNET', erro: 'SIAFI recusou' })[r.reforcoStatus] ?? 'faça no CNET';
   const problemas = lista.filter(r => ['falhou', 'erro', 'conferir'].includes(st(r)));
   const totalReforco = reforco.reduce((t, r) => t + r.reforco, 0);
   const ne = r => (st(r) === 'emitido' ? r.ne : 'NE em processamento');
@@ -1502,10 +1554,12 @@ async function renderRelatorioFila(inicio) {
   div.id = 'relatorio-fila';
   div.innerHTML = `
     <div class="rf-titulo">🏁 RELATÓRIO DA FILA — ${lista.length} solicitação(ões)</div>
-    ${secao(`✅ Empenhadas (${emitidas.length})`, '#4ade80', emitidas,
-      r => `<b>${escHtml(r.solicitacao)}</b> → ${escHtml(ne(r))} · R$ ${fmtV(r.valorEmpenhado)}`)}
-    ${secao(`⚠ Faltou reforço irrisório (${reforco.length}) — total R$ ${fmtV(totalReforco)}`, '#fbbf24', reforco,
-      r => `<b>${escHtml(r.solicitacao)}</b> → ${escHtml(ne(r))} · <b>faltam R$ ${fmtV(r.reforco)}</b> (pedido R$ ${fmtV(r.valorSolicitado)}, empenhado R$ ${fmtV(r.valorEmpenhado)})`)}
+    ${secao(`✅ Empenhadas / alteradas (${emitidas.length})`, '#4ade80', emitidas,
+      r => `<b>${escHtml(r.solicitacao)}</b>${op(r)} → ${escHtml(ne(r))} · R$ ${fmtV(r.valorEmpenhado)}`)}
+    ${secao(`✓ Irrisório feito pelo robô (${irrFeitos.length})`, '#86efac', irrFeitos,
+      r => `<b>${escHtml(r.solicitacao)}</b> → ${nomeIrr(r)} de R$ ${fmtV(r.reforco)} na ${escHtml(ne(r))}`)}
+    ${secao(`⚠ Irrisório a fazer (${reforco.length}) — total R$ ${fmtV(totalReforco)}`, '#fbbf24', reforco,
+      r => `<b>${escHtml(r.solicitacao)}</b> → ${escHtml(ne(r))} · <b>${nomeIrr(r)} de R$ ${fmtV(r.reforco)}</b> — ${escHtml(porque(r))}`)}
     ${secao(`⛔ Não empenhadas / com problema (${problemas.length})`, '#f87171', problemas,
       r => `<b>${escHtml(r.solicitacao || '—')}</b>${st(r) === 'conferir' ? ' <i>(conferir no CNET)</i>' : ''} — ${escHtml(oQue(r))}`)}
     <button id="rf-csv" class="eg-btn" type="button">📥 Baixar relatório da fila (CSV)</button>

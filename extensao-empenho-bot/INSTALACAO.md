@@ -78,3 +78,17 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
   do SILOMS (`*.siloms.intraer`); sem isso o robô não entra na aba do SILOMS.
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
+
+## Reforço, anulação e irrisório (versão 2.8)
+
+- Solicitação com "Anulação Ident/OC …" ou "Reforço …" é reconhecida no PDF. Na revisão,
+  informe a **NE a alterar** (não vem no PDF; aceita "552", "NE552" ou "2026NE000552").
+  Com mais de um item na NE, informe o N.Item.
+- No CNET o robô pesquisa a NE em Minutas de Empenho (remove os filtros se ela não aparecer),
+  abre **Alterar Empenho › Adicionar Alteração do empenho**, escolhe o Tipo Operação, digita
+  o valor, passa pelo Passivo Anterior e emite — conferindo o número da NE na Mensagem SIAFI.
+- Arredondamento: sempre "para menos". O que faltar vira, na mesma NE:
+  REFORÇO IRRISÓRIO (empenho novo e reforço) ou ANULAÇÃO SALDO IRRISÓRIO (anulação).
+  O robô só faz sozinho quando houve arredondamento e a diferença cabe nele; senão avisa
+  no relatório ("Irrisório a fazer").
+- Anulação não confere o fornecedor; reforço confere (SICAF) como o empenho novo.

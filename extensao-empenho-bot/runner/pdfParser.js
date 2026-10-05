@@ -492,9 +492,31 @@ export function parseSolicitacaoEmpenho(text) {
       return soma.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
     })();
 
+    // ── Reforço / anulação de um empenho já emitido ─────────────────────────────
+    // "Anulação Ident/OC 26E0454 V. 3" (ou "Reforço …"). A NE a alterar NÃO vem no
+    // PDF: o usuário informa na revisão. O valor também aparece na OBS
+    // ("ANULAÇÃO DO VALOR DE R$ 9.998,73").
+    const operacao = (() => {
+      const m = /(?:^|\s)(Anula[çc][ãa]o|Refor[çc]o)\s+(?:Ident\b|de\s+Empenho\b|da\s+OC\b|OC\b)/im.exec(t) ??
+        /SOLICITA[ÇC][ÃA]O\s+DE\s+(ANULA[ÇC][ÃA]O|REFOR[ÇC]O)\b/i.exec(t);
+      if (m) return /^anula/i.test(m[1]) ? 'anulacao' : 'reforco';
+      const o = /OBS:\s*(ANULA[ÇC][ÃA]O|REFOR[ÇC]O)\b/i.exec(t);
+      if (o) { deduzidos.operacao = true; return /^anula/i.test(o[1]) ? 'anulacao' : 'reforco'; }
+      return '';
+    })();
+    const identOperacao = operacao
+      ? (/(?:Anula[çc][ãa]o|Refor[çc]o)\s+Ident\/?\s*OC\s+(\w+(?:\s+V\.\s*\d+)?)/i.exec(t)?.[1] ?? '').trim()
+      : '';
+    const valorOperacao = operacao
+      ? (/(?:ANULA[ÇC][ÃA]O|REFOR[ÇC]O)\s+(?:DO\s+|DE\s+)?VALOR\s+(?:DE\s+)?R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(t)?.[1] ?? '')
+      : '';
+
     return {
       ok: true,
       _deduzidos: deduzidos,
+      operacao,          // '' | 'anulacao' | 'reforco'
+      identOperacao,     // "26E0454 V. 3"
+      valorOperacao,     // "9.998,73" (da OBS)
       itensDaDescricao,
       localEntrega,
       solicitacao,

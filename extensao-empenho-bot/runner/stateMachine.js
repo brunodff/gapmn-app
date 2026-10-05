@@ -5,6 +5,8 @@
  *   1. COLETA: Navega no SILOMS, coleta todas as solicitações assinadas (comum a ambos os modos)
  *   2. EMPENHO-CNET: Preenche minuta no Contratos.gov.br (8 etapas existentes)
  *   2b. EMPENHO-SILOMS: (Phase 3 — a implementar)
+ *   3. ALTERACAO-CNET: reforço/anulação de NE já emitida e os "irrisórios" que
+ *      completam o arredondamento (altStep 0-4; ver runner/steps/alteracao.js)
  *
  * Estado persistido em chrome.storage.local (chave: STORAGE_KEY):
  *   state          = 'idle' | 'running' | 'paused' | 'checkpoint' | 'done' | 'error'
@@ -31,6 +33,10 @@ import { step4Runner } from './steps/step4.js';
 import { step5Runner } from './steps/step5.js';
 import { step6Runner } from './steps/step6.js';
 import {
+  paginaMinutas, buscarNEnaLista, removerFiltros, adicionarAlteracao,
+  alteracaoSubelementoRunner, alteracaoPassivo,
+} from './steps/alteracao.js';
+import {
   step0ClickAdicionarMinuta,
   step0PesquisarContrato,
   step0SelecionarContrato,
@@ -48,6 +54,8 @@ import {
 
 const STORAGE_KEY = 'empenhoBot';
 const COMPRASNET_URL = 'https://contratos.comprasnet.gov.br/empenho/buscacompra';
+// Lista de minutas (palpite: o robô prefere o link do menu da própria tela)
+const MINUTAS_URL = 'https://contratos.comprasnet.gov.br/empenho/minuta';
 // Empenhos emitidos (solicitação → NE), guardados entre execuções
 export const REGISTRO_KEY = 'empenhosGerados';
 // Painel: "parar para confirmar antes de emitir" (desligado = emite sozinho)
@@ -157,9 +165,9 @@ export async function startEmpenho(payload, tabId, dryRun = false, initialQueue 
   }
 
   await setState({
-    state: 'running', flow: 'empenho-cnet',
-    step: 0, payload, queue: initialQueue, cnetTabId: tabId, dryRun, log: [],
-    inicioFila: new Date().toISOString(), valorEmpenhado: null, valorNaTela: null, arredondado: false, falhasSeguidas: 0,
+    state: 'running', ...estadoInicialDoPayload(payload),
+    payload, queue: initialQueue, cnetTabId: tabId, dryRun, log: [],
+    inicioFila: new Date().toISOString(), valorEmpenhado: null, valorNaTela: null, arredondado: false, degrauArredondamento: null, falhasSeguidas: 0,
   });
   if (orfa) {
     await appendLog(`⚠ A execução anterior (${orfa}) tinha sido interrompida e foi descartada.`, 'warn');
@@ -200,6 +208,21 @@ export async function abortEmpenho() {
 
 export async function confirmEmissao() {
   const s = await getState();
+  if (s.state === 'checkpoint' && s.flow === 'alteracao-cnet' && s.altStep === 4) {
+    if (maquinaAtiva) return { ok: false, error: 'O robô ainda está executando' };
+    await setState({ state: 'running' });
+    maquinaAtiva = true;
+    let proximo = false;
+    try { proximo = await emitirAlteracao(s.cnetTabId, await getState()); } finally { maquinaAtiva = false; }
+    if (proximo) {
+      runStateMachine().catch(async err => {
+        await appendLog(`❌ Erro fatal: ${err.message}`, 'error');
+        await setState({ state: 'error' });
+        notifySidePanel({ type: 'ERROR', message: err.message });
+      });
+    }
+    return { ok: true };
+  }
   if (s.state !== 'checkpoint' || s.step !== 8) {
     return { ok: false, error: 'Não está no checkpoint da Etapa 8' };
   }
@@ -241,7 +264,9 @@ export async function recuperarExecucaoOrfa() {
   if (s.state !== 'running' || maquinaAtiva) return null;
   const id = s.flow === 'coleta'
     ? 'coleta do SILOMS'
-    : `${s.payload?.numeroSolicitacao ?? 'solicitação'}, Etapa ${s.step}`;
+    : s.flow === 'alteracao-cnet'
+      ? `${s.alteracao?.operacao ?? 'alteração'} da ${s.alteracao?.ne ?? 'NE'}, ${ROTULO_ALT[s.altStep] ?? ''}`
+      : `${s.payload?.numeroSolicitacao ?? 'solicitação'}, Etapa ${s.step}`;
   await setState({ state: 'paused' });
   await appendLog(`⚠ Execução interrompida (${id}) — a extensão foi recarregada ou o navegador a encerrou. Use Retomar ou Abortar.`, 'warn');
   return id;
@@ -270,6 +295,9 @@ async function laçoDaMaquina() {
       if (!shouldContinue) break;
     } else if (s.flow === 'empenho-cnet') {
       const shouldContinue = await runEmpenhoStep(s);
+      if (!shouldContinue) break;
+    } else if (s.flow === 'alteracao-cnet') {
+      const shouldContinue = await runAlteracaoStep(s);
       if (!shouldContinue) break;
     } else {
       break;
@@ -503,7 +531,7 @@ async function runEmpenhoStep(s) {
     if (result.emitir) {
       const r = await emitirEFinalizar(tabId, payload);
       if (!r.ok) return pularSolicitacao(tabId, 8, r.error, { status: r.talvezEmitido ? 'conferir' : 'falhou', url: r.url ?? null });
-      return seguirFila(tabId);
+      return depoisDoEmpenho(tabId, payload, r);
     }
 
     await appendLog(`✅ Etapa ${step} concluída`, 'info');
@@ -530,7 +558,8 @@ async function runEmpenhoStep(s) {
       if (rounding?.handled) {
         // O valor que falta sai do Valor Total da Etapa 8 (o real), não deste modal
         await logVisivel(`⚠ Arredondamento → "para menos" selecionado (${rounding.count} item(ns)). O reforço irrisório será calculado na Etapa 8.`, 'warn');
-        await setState({ valorEmpenhado: rounding.totalEmpenhado || null, arredondado: true });
+        await setState({ valorEmpenhado: rounding.totalEmpenhado || null, arredondado: true,
+          degrauArredondamento: rounding.totalMais > rounding.totalEmpenhado ? Math.round((rounding.totalMais - rounding.totalEmpenhado) * 100) / 100 : null });
         try { await waitForNavigation(tabId, 20000); await delay(800); } catch {}
       }
 
@@ -607,6 +636,8 @@ async function pularSolicitacao(tabId, etapa, erro, { status = 'falhou', url = n
     origem:      payload.tipoOrigem === 'compra' ? `Compra ${payload.numeroCompra ?? ''}` : (payload.contrato ?? ''),
     pag:         payload.pag ?? '',      // para o subprocesso no SILOMS
     ugCred:      payload.ugCred ?? '',
+    operacao:    payload.operacao || undefined,
+    neAlterar:   payload.neAlterar || undefined,
     valorSolicitado: valorSolicitadoDe(payload),
     valorEmpenhado:  0,
     verificacaoFornecedor: payload.verificacaoFornecedor?.resumo ?? '',
@@ -815,26 +846,33 @@ async function handleRoundingModal(tabId) {
     // Agrupa radios por name; seleciona o PRIMEIRO de cada grupo (valor menor = "para menos")
     const seenGroups = new Set();
     const selectedValues = [];
-
+    const valorDe = r => {
+      const label = r.closest('label') ?? r.parentElement;
+      const m = /R\$\s*([\d.,]+)/.exec(label?.textContent ?? '');
+      return m ? (parseFloat(m[1].replace(/\./g, '').replace(',', '.')) || 0) : null;
+    };
+    // Maior opção de cada grupo ("para mais"): a distância até ela é o degrau do
+    // arredondamento — o irrisório nunca passa disso
+    const maiores = {};
     for (const r of radios) {
       const key = r.name || ('g_' + r.closest('div, li, p')?.dataset?.item ?? r.id);
+      const v = valorDe(r);
+      if (v !== null) maiores[key] = Math.max(maiores[key] ?? 0, v);
       if (seenGroups.has(key)) continue;
       seenGroups.add(key);
       r.checked = true;
       r.click();
-      // Extrai o valor R$ do label desta opção
-      const label = r.closest('label') ?? r.parentElement;
-      const m = /R\$\s*([\d.,]+)/.exec(label?.textContent ?? '');
-      if (m) selectedValues.push(parseFloat(m[1].replace(/\./g, '').replace(',', '.')) || 0);
+      if (v !== null) selectedValues.push(v);
     }
 
     const totalEmpenhado = selectedValues.reduce((s, v) => s + v, 0);
+    const totalMais = Object.values(maiores).reduce((s, v) => s + v, 0);
 
     const btnAvancar = Array.from(document.querySelectorAll('button, a.btn'))
       .find(b => /avan[cç]ar/i.test(b.textContent ?? ''));
     if (btnAvancar) btnAvancar.click();
 
-    return { handled: true, totalEmpenhado, count: selectedValues.length };
+    return { handled: true, totalEmpenhado, totalMais, count: selectedValues.length };
   });
 }
 
@@ -1118,6 +1156,7 @@ async function emitirEFinalizar(tabId, payload) {
     valorSolicitado,
     valorEmpenhado,
     reforco,
+    reforcoStatus: reforco && status !== 'erro' ? 'a-fazer' : undefined,
     arredondado: !!st.arredondado,
     motivo:      status === 'erro' ? `SIAFI recusou${mensagem ? `: ${mensagem}` : ''}` : '',
     verificacaoFornecedor: payload.verificacaoFornecedor?.resumo ?? "",
@@ -1137,7 +1176,7 @@ async function emitirEFinalizar(tabId, payload) {
     await logVisivel(`⚠ ${registro.solicitacao || 'Solicitação'}: faltou R$ ${fmtR$(reforco)} para o solicitado (R$ ${fmtR$(valorSolicitado)} pedido, R$ ${fmtR$(valorEmpenhado)} empenhado) — reforço irrisório`, 'warn');
   }
   notifySidePanel({ type: 'DONE', ne, status, mensagem, payload, valorEmpenhado, valorSolicitado, reforco });
-  return { ok: true, status };
+  return { ok: true, status, ne, reforco, registroId: registro.id };
 }
 
 /**
@@ -1155,7 +1194,9 @@ async function resolverPendentes(tabId, desde = null) {
     const r = await recarregarMinuta(tabId, reg.url);
     if (!r) continue;
     let ne = extrairNE(r.numero) ?? extrairNE(r.mensagem);
-    if (ne && await donoDaNE(ne, reg.solicitacao)) ne = null;
+    // Alteração (reforço/anulação) fica com o número da própria NE alterada
+    if (reg.neAlterar) { if (ne !== reg.neAlterar || !/EMITID|SUCESSO/i.test(r.situacao ?? '')) ne = null; }
+    else if (ne && await donoDaNE(ne, reg.solicitacao)) ne = null;
     if (ne) {
       achadas++;
       await atualizarRegistro(reg.id, { ne, status: 'emitido', situacao: r.situacao ?? '', mensagem: r.mensagem ?? '' });
@@ -1190,7 +1231,7 @@ async function prepararProximoDaFila(tabId) {
   await appendLog(`▶ Próxima da fila: ${next.numeroSolicitacao}${rest.length ? ` (depois dela, mais ${rest.length})` : ''}`, 'info');
   // A Etapa 0 abre a nova minuta (botão "Adicionar Minuta de Empenho" na tela atual)
   await delay(1000);
-  await setState({ state: 'running', flow: 'empenho-cnet', step: 0, payload: next, queue: rest, valorEmpenhado: null, valorNaTela: null, arredondado: false });
+  await setState({ state: 'running', ...estadoInicialDoPayload(next), payload: next, queue: rest, valorEmpenhado: null, valorNaTela: null, arredondado: false, degrauArredondamento: null });
   notifySidePanel({ type: 'NEXT_AVAILABLE', numero: next.numeroSolicitacao, payload: next, restantes: rest.length });
   return true;
 }
@@ -1208,12 +1249,13 @@ async function seguirFila(tabId) {
   const data = await chrome.storage.local.get(REGISTRO_KEY);
   const daFila = (data[REGISTRO_KEY] ?? []).filter(r => !s.inicioFila || r.data >= s.inicioFila);
   const emitidas = daFila.filter(r => r.status === 'emitido' || r.status === 'pendente');
-  const comReforco = emitidas.filter(r => (r.reforco ?? 0) > 0);
+  // Reforço irrisório que o robô não conseguiu fazer (os feitos não contam)
+  const comReforco = emitidas.filter(r => (r.reforco ?? 0) > 0 && r.reforcoStatus !== 'feito');
   const problemas = daFila.filter(r => ['falhou', 'erro', 'conferir'].includes(r.status));
   const totalReforco = comReforco.reduce((t, r) => t + r.reforco, 0);
   await logVisivel(
     `🏁 Fila concluída: ${emitidas.length} empenhada(s)` +
-    (comReforco.length ? ` · ${comReforco.length} com reforço irrisório (R$ ${fmtR$(totalReforco)})` : '') +
+    (comReforco.length ? ` · ${comReforco.length} com irrisório a fazer (R$ ${fmtR$(totalReforco)})` : '') +
     (problemas.length ? ` · ${problemas.length} com problema` : ''),
     'success',
   );
@@ -1226,8 +1268,333 @@ async function runStep8Confirm(tabId, payload) {
   await appendLog('[Etapa 8] Usuário confirmou — emitindo empenho…', 'info');
   const r = await emitirEFinalizar(tabId, payload);
   if (!r.ok) return pularSolicitacao(tabId, 8, r.error, { status: r.talvezEmitido ? 'conferir' : 'falhou', url: r.url ?? null });
+  return depoisDoEmpenho(tabId, payload, r);
+}
+
+// ── Fluxo ALTERAÇÃO: reforço, anulação e irrisórios ──────────────────────────
+// Reforço e anulação vêm de solicitações ("Anulação Ident/OC …"); a NE a alterar
+// o usuário informa na revisão. Os irrisórios completam o arredondamento "para
+// menos": depois de um empenho novo ou de um reforço → REFORÇO IRRISÓRIO; depois
+// de uma anulação → ANULAÇÃO SALDO IRRISÓRIO (o que faltou anular).
+
+const OPERACAO_CNET = { reforco: 'REFORÇO', anulacao: 'ANULAÇÃO' };
+const COMPLEMENTO_CNET = { reforco: 'REFORÇO IRRISÓRIO', anulacao: 'ANULAÇÃO SALDO IRRISÓRIO' };
+const ROTULO_ALT = ['A1 busca da NE', 'A2 Adicionar Alteração', 'A3 Subelemento', 'A4 Passivo Anterior', 'A5 emissão'];
+const STEP_PAINEL_ALT = [1, 2, 5, 7, 8];   // pontos do indicador de etapas do painel
+// A diferença do arredondamento nunca passa de um "degrau" (para mais − para menos,
+// lido no modal): acima disso algum valor está errado e o robô não faz sozinho.
+// Sem o degrau, vale este teto.
+const LIMITE_IRRISORIO = 10;
+const limiteIrrisorio = degrau => (degrau > 0 ? degrau + 0.01 : LIMITE_IRRISORIO);
+
+function estadoInicialDoPayload(payload) {
+  if (!payload?.operacao) return { flow: 'empenho-cnet', step: 0, altStep: null, alteracao: null, altValorFeito: null, altDegrau: null };
+  return {
+    flow: 'alteracao-cnet', step: 0, altStep: 0, altValorFeito: null, altDegrau: null,
+    alteracao: {
+      ne: payload.neAlterar, tipo: payload.operacao, operacao: OPERACAO_CNET[payload.operacao],
+      valor: valorSolicitadoDe(payload), itens: payload.itensEmpenho ?? [],
+      origem: 'solicitacao', solicitacao: payload.numeroSolicitacao ?? '',
+    },
+  };
+}
+
+async function navegarPara(tabId, url) {
+  const navegou = waitForNavigation(tabId, 30000).catch(() => {});
+  await chrome.tabs.update(tabId, { url });
+  await navegou;
+  await delay(900);
+}
+
+// Clique que pode navegar: a página sumir junto com o script não é falha
+async function execQuePodeNavegar(tabId, func, args = []) {
+  try {
+    return await execInPage(tabId, func, args);
+  } catch (e) {
+    if (/destroyed|navigat|unload|removed|no frame|closed/i.test(String(e?.message ?? e))) return { ok: true, navegou: true };
+    throw e;
+  }
+}
+
+async function runAlteracaoStep(s) {
+  const { altStep: passo = 0, alteracao: a, cnetTabId: tabId } = s;
+  notifySidePanel({ type: 'STEP', step: STEP_PAINEL_ALT[passo] ?? 8 });
+  await appendLog(`━ ${a.operacao} da ${a.ne} — ${ROTULO_ALT[passo]}`, 'info');
+  const antes = passo === 2 || passo === 3 ? await impressaoDaPagina(tabId) : null;
+  // Ouve a navegação ANTES do clique: numa tela rápida ela termina antes de o
+  // robô começar a esperar, e a espera ia até o tempo limite
+  const navegacao = passo === 2 || passo === 3 ? waitForNavigation(tabId, 25000).then(() => true, () => false) : null;
+  try {
+    let r;
+    if (passo === 0) r = await altAbrirNE(tabId, a);
+    else if (passo === 1) r = await altAdicionar(tabId);
+    else if (passo === 2) r = await altSubelemento(tabId, a);
+    else if (passo === 3) r = await altPassivo(tabId);
+    else return await altFinalizar(tabId, s);
+    if (!r?.ok) return falhaAlteracao(tabId, s, passo, r?.error ?? 'sem resposta da página');
+
+    await setState({ altStep: passo + 1, ...(r.patch ?? {}) });
+    if (r.esperarNavegacao) {
+      await appendLog('⏳ Aguardando a próxima tela…', 'info');
+      await navegacao;
+      await delay(800);
+    }
+    if (passo === 2) {
+      // Arredondamento: "para menos"; o que faltar vira o irrisório depois da emissão
+      const navModal = waitForNavigation(tabId, 20000).then(() => true, () => false);
+      const rounding = await handleRoundingModal(tabId);
+      if (rounding?.handled) {
+        await logVisivel(`⚠ Arredondamento → "para menos" (${rounding.count} item(ns)) — o que faltar vira ${COMPLEMENTO_CNET[a.tipo]} depois da emissão`, 'warn');
+        await setState({ altValorFeito: rounding.totalEmpenhado || null,
+          altDegrau: rounding.totalMais > rounding.totalEmpenhado ? Math.round((rounding.totalMais - rounding.totalEmpenhado) * 100) / 100 : null });
+        await navModal;
+        await delay(800);
+      }
+    }
+    if (antes && !antes.bloqueada && r.esperarNavegacao) {
+      const depois = await impressaoDaPagina(tabId);
+      const parada = depois.bloqueada
+        ? 'a página está bloqueada por um aviso (alert) do CNET'
+        : (depois.caminho === antes.caminho && depois.titulo === antes.titulo)
+          ? `a página não avançou${depois.erros?.length ? ` — CNET: ${depois.erros.join(' | ').replace(/[.\s]+$/, '')}` : ''}`
+          : null;
+      if (parada) return falhaAlteracao(tabId, s, passo, `cliquei em "Próxima", mas ${parada}`);
+    }
+    return true;
+  } catch (err) {
+    return falhaAlteracao(tabId, s, passo, `Exceção: ${err.message}`, { status: passo === 4 ? 'conferir' : 'falhou' });
+  }
+}
+
+/** A1: lista de minutas → pesquisa a NE → "Alterar Empenho" */
+async function altAbrirNE(tabId, a) {
+  if (!/^\d{4}NE\d{6}$/.test(a.ne ?? '')) return { ok: false, error: `NE a alterar inválida ("${a.ne ?? ''}") — informe na revisão (ex: 2026NE000552)` };
+  let p = await execInPage(tabId, paginaMinutas).catch(() => null);
+  if (!p?.naLista) {
+    const url = p?.menuHref || MINUTAS_URL;
+    await logVisivel('[Alteração] Abrindo a lista de Minutas de Empenho…', 'info');
+    await navegarPara(tabId, url);
+    p = await execInPage(tabId, paginaMinutas).catch(() => null);
+    if (!p?.naLista) return { ok: false, error: `não achei a lista de Minutas de Empenho (abri ${url}) — abra Gestão Orçamentária › Minuta Empenho › Minutas no CNET e use Retomar` };
+  }
+  await logVisivel(`[Alteração] Pesquisando a ${a.ne} nas minutas…`, 'info');
+  let r = await execInPage(tabId, buscarNEnaLista, [a.ne]).catch(e => ({ ok: false, error: e.message }));
+  if (!r?.ok && r?.removerFiltros) {
+    await logVisivel('[Alteração] A NE não apareceu — removendo os filtros da lista e pesquisando de novo…', 'warn');
+    const f = await execQuePodeNavegar(tabId, removerFiltros);
+    if (f?.href) await navegarPara(tabId, f.href);
+    else { try { await waitForNavigation(tabId, 8000); } catch {} await delay(1500); }
+    r = await execInPage(tabId, buscarNEnaLista, [a.ne]).catch(e => ({ ok: false, error: e.message }));
+  }
+  if (!r?.ok) return { ok: false, error: r?.error ?? 'sem resposta da lista de minutas' };
+  if (r.href) await navegarPara(tabId, r.href);
+  else { try { await waitForNavigation(tabId, 20000); } catch {} await delay(800); }
+  const tela = await impressaoDaPagina(tabId);
+  if (!/altera/i.test(`${tela.titulo ?? ''} ${tela.caminho ?? ''}`)) {
+    return { ok: false, error: `cliquei em "Alterar Empenho", mas a tela é "${tela.titulo || tela.caminho || '?'}"` };
+  }
+  await logVisivel(`[Alteração] ${a.ne}: "Alteração do empenho" aberta ✓`, 'info');
+  return { ok: true };
+}
+
+/** A2: "Adicionar Alteração do empenho" */
+async function altAdicionar(tabId) {
+  const r = await execQuePodeNavegar(tabId, adicionarAlteracao);
+  if (!r?.ok) return r ?? { ok: false, error: 'sem resposta da página' };
+  if (r.href) await navegarPara(tabId, r.href);
+  else { try { await waitForNavigation(tabId, 20000); } catch {} await delay(800); }
+  return { ok: true };
+}
+
+/** A3: Tipo Operação + valor/quantidade + Próxima Etapa */
+async function altSubelemento(tabId, a) {
+  await maximizarTabelas(tabId, 'da alteração');
+  const r = await execInPage(tabId, alteracaoSubelementoRunner, [a]);
+  if (!r?.ok) return r ?? { ok: false, error: 'Script não retornou na tela da alteração' };
+  for (const f of r.feitos ?? []) await logVisivel(`[Alteração] ${f}`, 'info');
+  return { ok: true, esperarNavegacao: true, patch: { altValorDigitado: r.digitado } };
+}
+
+/** A4: Passivo Anterior (pula se a tela já é a de emitir) */
+async function altPassivo(tabId) {
+  const r = await execQuePodeNavegar(tabId, alteracaoPassivo);
+  if (!r?.ok) return r ?? { ok: false, error: 'sem resposta no Passivo Anterior' };
+  if (r.jaNoFinal) return { ok: true };
+  await logVisivel('[Alteração] Passivo Anterior — avançando…', 'info');
+  return { ok: true, esperarNavegacao: true };
+}
+
+/** A5: confere e emite (ou para no checkpoint, se a confirmação manual estiver ligada) */
+async function altFinalizar(tabId, s) {
+  const a = s.alteracao;
+  if (s.dryRun) {
+    await logVisivel(`[DRY-RUN] ${a.operacao} da ${a.ne} preenchido — emissão NÃO feita`, 'warn');
+    return seguirFila(tabId);
+  }
+  const tela = await execInPage(tabId, lerEtapa8).catch(() => null);
+  if (!tela) return falhaAlteracao(tabId, s, 4, 'Não consegui ler a tela de emissão da alteração');
+  const { [CONFIRMAR_ANTES_KEY]: confirmarAntes } = await chrome.storage.local.get(CONFIRMAR_ANTES_KEY);
+  if (confirmarAntes) {
+    const motivo = `${a.operacao} de R$ ${fmtR$(a.valor)} na ${a.ne} — confira e confirme`;
+    await appendLog(`[Alteração] ⚠ CHECKPOINT — ${motivo}`, 'warn');
+    await setState({ state: 'checkpoint' });
+    notifySidePanel({ type: 'CHECKPOINT', step: 8, summary: { ...tela, payload: s.payload, motivo } });
+    return false;
+  }
+  return emitirAlteracao(tabId, s);
+}
+
+/**
+ * Emite a alteração no SIAFI, espera a confirmação (a Mensagem SIAFI traz o número
+ * da própria NE), finaliza, registra e — se o arredondamento deixou diferença —
+ * emenda o irrisório. Retorna true se a máquina deve continuar.
+ */
+async function emitirAlteracao(tabId, s) {
+  const a = s.alteracao;
+  const payload = s.payload ?? {};
+  const antes = await execInPage(tabId, lerEtapa8).catch(() => null);
+  if (!antes) return falhaAlteracao(tabId, s, 4, 'Não consegui ler a tela de emissão da alteração');
+  const url = antes.url;
+
+  if (RX_JA_ENVIADO.test(antes.situacao ?? '')) {
+    await logVisivel(`[Alteração] Já enviada ao SIAFI (situação: ${antes.situacao}) — não emito de novo`, 'warn');
+  } else if (!antes.emitirHabilitado) {
+    return falhaAlteracao(tabId, s, 4, `"Emitir Empenho SIAFI" ${antes.temEmitir ? 'está desabilitado' : 'não foi encontrado'} (situação: ${antes.situacao || '—'}) — confira no CNET`, { url });
+  } else {
+    await logVisivel(`[Alteração] Emitindo ${a.operacao} de R$ ${fmtR$(a.valor)} na ${a.ne} no SIAFI…`, 'info');
+    const r = await clicarEConfirmar(tabId, 'Emitir\\s+Empenho');
+    if (!r?.ok) return falhaAlteracao(tabId, s, 4, `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}`, { url });
+  }
+
+  // O SIAFI responde depois ("EM PROCESSAMENTO"): relê por ~1,5 min
+  let ne = null, situacao = antes.situacao, mensagem = null, erro = false;
+  for (let i = 1; i <= 12 && !ne && !erro; i++) {
+    await delay(4000);
+    const r = i % 2 === 0 ? await recarregarMinuta(tabId, url) : await execInPage(tabId, lerEtapa8).catch(() => null);
+    if (!r) continue;
+    situacao = r.situacao ?? situacao;
+    mensagem = r.mensagem || mensagem;
+    const lido = extrairNE(r.numero) ?? extrairNE(r.mensagem);
+    if (lido === a.ne || (lido && /EMITID|SUCESSO/i.test(situacao ?? ''))) ne = lido;
+    erro = !ne && i >= 3 && RX_ERRO_SIAFI.test(situacao ?? '');
+  }
+  const status = ne ? 'emitido' : erro ? 'erro' : 'pendente';
+  if (status === 'pendente' && !RX_JA_ENVIADO.test(situacao ?? '')) {
+    return falhaAlteracao(tabId, s, 4, `cliquei em Emitir, mas o CNET não mostrou a emissão (situação: ${situacao || '—'}) — confira a alteração antes de fazer de novo`, { status: 'conferir', url });
+  }
+  if (ne && ne !== a.ne) await logVisivel(`⚠ A alteração voltou com a ${ne}, não a ${a.ne} — confira`, 'warn');
+
+  if (status !== 'erro') {
+    const f = await clicarEConfirmar(tabId, '\\bFinalizar\\b');
+    if (f?.ok) { await logVisivel('[Alteração] Finalizada ✓', 'info'); try { await waitForNavigation(tabId, 15000); } catch {} }
+    else await logVisivel(`⚠ [Alteração] Não finalizei (${f?.error ?? 'sem resposta'}) — finalize no CNET depois`, 'warn');
+  }
+
+  // O que o arredondamento deixou de fora (valor do modal "para menos")
+  const valorFeito = s.altValorFeito || a.valor;
+  const falta = Math.round((a.valor - valorFeito) * 100) / 100;
+  const complemento = a.origem === 'solicitacao' && falta >= 0.01 ? falta : 0;
+  const id = `${Date.now()}-${a.solicitacao}`;
+
+  if (a.origem === 'solicitacao') {
+    await registrarEmpenho({
+      id, data: new Date().toISOString(), solicitacao: a.solicitacao, ne: ne ?? a.ne, status,
+      operacao: a.tipo, neAlterar: a.ne, situacao: situacao ?? '', mensagem: mensagem ?? '', url,
+      fornecedor: payload.fornecedorNome ?? '', cnpj: String(payload.fornecedorCnpj ?? '').replace(/\D/g, ''),
+      origem: payload.contrato ?? '', pag: payload.pag ?? '', ugCred: payload.ugCred ?? '',
+      valorSolicitado: a.valor, valorEmpenhado: valorFeito,
+      reforco: complemento, reforcoStatus: complemento && status !== 'erro' ? 'a-fazer' : undefined,
+      arredondado: !!s.altValorFeito,
+      motivo: status === 'erro' ? `SIAFI recusou${mensagem ? `: ${mensagem}` : ''}` : '',
+      verificacaoFornecedor: payload.verificacaoFornecedor?.resumo ?? '',
+    });
+  } else if (a.registroId) {
+    await atualizarRegistro(a.registroId, {
+      reforcoStatus: status === 'emitido' ? 'feito' : status, reforcoEm: new Date().toISOString(),
+      reforcoMensagem: mensagem ?? '', reforcoOperacao: a.operacao,
+    });
+  }
+  await setState({ falhasSeguidas: 0 });
+
+  const resumo = status === 'emitido' ? `emitido na ${ne}` : status === 'erro' ? `ERRO SIAFI${mensagem ? `: ${mensagem}` : ''}` : 'em processamento no SIAFI — confira depois';
+  await logVisivel(`${status === 'emitido' ? '✅' : status === 'erro' ? '❌' : '⏳'} ${a.solicitacao || ''} ${a.operacao} de R$ ${fmtR$(valorFeito)} → ${resumo}`,
+    status === 'emitido' ? 'success' : status === 'erro' ? 'error' : 'warn');
+  notifySidePanel({ type: 'DONE', ne: ne ?? a.ne, status, mensagem, payload, valorEmpenhado: valorFeito, valorSolicitado: a.valor, reforco: complemento });
+
+  // Arredondamento deixou diferença: emenda o irrisório na mesma NE
+  if (complemento && status !== 'erro') {
+    if (complemento > limiteIrrisorio(s.altDegrau)) {
+      await logVisivel(`⚠ Faltaram R$ ${fmtR$(complemento)} — mais que o arredondamento explica; confira e faça o ${COMPLEMENTO_CNET[a.tipo]} no CNET`, 'warn');
+      return seguirFila(tabId);
+    }
+    const item = a.itens?.length === 1 ? [{ numeroItem: a.itens[0].numeroItem, valor: String(complemento) }] : [];
+    await setState({
+      altStep: 0, altValorFeito: null, altDegrau: null,
+      alteracao: { ne: ne ?? a.ne, tipo: a.tipo, operacao: COMPLEMENTO_CNET[a.tipo], valor: complemento, itens: item,
+        irrisorio: true, origem: 'complemento', registroId: id, solicitacao: a.solicitacao },
+    });
+    await logVisivel(`▶ Agora o ${COMPLEMENTO_CNET[a.tipo]} de R$ ${fmtR$(complemento)} na ${ne ?? a.ne} (o que o arredondamento deixou de fora)`, 'info');
+    return true;
+  }
   return seguirFila(tabId);
 }
+
+/**
+ * Depois de um empenho novo: arredondamento "para menos" deixou diferença →
+ * REFORÇO IRRISÓRIO na NE recém-emitida (precisa do número dela).
+ */
+async function depoisDoEmpenho(tabId, payload, r) {
+  const s = await getState();
+  const falta = r.reforco ?? 0;
+  if (falta >= 0.01 && r.status !== 'erro' && !s.dryRun) {
+    const sol = payload.numeroSolicitacao ?? '';
+    if (!s.arredondado) {
+      // Diferença sem arredondamento não é caso de irrisório: fica no relatório
+      await logVisivel(`⚠ ${sol}: faltaram R$ ${fmtR$(falta)} sem arredondamento no CNET — confira (o robô não faz reforço irrisório nesse caso)`, 'warn');
+    } else if (r.status !== 'emitido' || !r.ne) {
+      await atualizarRegistro(r.registroId, { reforcoStatus: 'pendente-ne' });
+      await logVisivel(`⚠ ${sol}: o reforço irrisório de R$ ${fmtR$(falta)} fica para depois — a NE ainda está em processamento no SIAFI`, 'warn');
+    } else if (falta > limiteIrrisorio(s.degrauArredondamento)) {
+      await logVisivel(`⚠ ${sol}: faltaram R$ ${fmtR$(falta)} — mais que o arredondamento explica; confira e faça o reforço no CNET`, 'warn');
+    } else {
+      const itens = payload.itensEmpenho ?? [];
+      await setState({
+        flow: 'alteracao-cnet', altStep: 0, altValorFeito: null, altDegrau: null,
+        alteracao: { ne: r.ne, tipo: 'reforco', operacao: 'REFORÇO IRRISÓRIO', valor: falta,
+          itens: itens.length === 1 ? [{ numeroItem: itens[0].numeroItem, valor: String(falta) }] : [],
+          irrisorio: true, origem: 'irrisorio', registroId: r.registroId, solicitacao: sol },
+      });
+      await logVisivel(`▶ ${sol}: fazendo o REFORÇO IRRISÓRIO de R$ ${fmtR$(falta)} na ${r.ne}…`, 'info');
+      return true;
+    }
+  }
+  return seguirFila(tabId);
+}
+
+/**
+ * Falha na alteração. Da solicitação (reforço/anulação): registra e segue a fila,
+ * como no empenho. Do irrisório: o principal já foi feito — anota no registro dele.
+ */
+async function falhaAlteracao(tabId, s, passo, erro, { status = 'falhou', url = null } = {}) {
+  const a = s.alteracao ?? {};
+  if (a.origem === 'solicitacao') return pularSolicitacao(tabId, ROTULO_ALT[passo] ?? passo, erro, { status, url });
+
+  const aba = await chrome.tabs.get(tabId).catch(() => null);
+  if (RX_SESSAO.test(aba?.url ?? '')) {
+    const msg = `A sessão do CNET expirou (${a.operacao} da ${a.ne}). Entre de novo no CNET e use Retomar — o robô recomeça o irrisório.`;
+    await appendLog(`❌ ${msg}`, 'error');
+    await setState({ state: 'paused', altStep: 0 });
+    notifySidePanel({ type: 'PAUSED', error: msg, step: 0 });
+    return false;
+  }
+  const motivo = limparMotivo(erro) || 'erro sem descrição';
+  if (a.registroId) {
+    await atualizarRegistro(a.registroId, { reforcoStatus: status === 'conferir' ? 'conferir' : 'falhou', reforcoMotivo: `${ROTULO_ALT[passo]}: ${motivo}` });
+  }
+  await logVisivel(`⛔ ${a.operacao} de R$ ${fmtR$(a.valor ?? 0)} na ${a.ne} NÃO feito (${ROTULO_ALT[passo]}): ${motivo} — faça no CNET`, 'error');
+  return seguirFila(tabId);
+}
+
 
 // ── Comunicação com Side Panel ────────────────────────────────────────────────
 
