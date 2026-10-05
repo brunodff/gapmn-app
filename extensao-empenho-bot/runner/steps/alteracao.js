@@ -102,6 +102,39 @@ export function adicionarAlteracao() {
 }
 
 /**
+ * Lista "Alteração do empenho" da NE: Mensagem SIAFI e Situação de cada alteração.
+ * Depois de "Emitir Empenho SIAFI" o CNET volta para esta lista — a alteração nova
+ * é a linha a mais com "EMPENHO EMITIDO" (a Mensagem SIAFI traz o número da NE).
+ */
+export async function lerListaAlteracoes() {
+  const dorme = ms => new Promise(r => setTimeout(r, ms));
+  const txt = s => String(s ?? '').replace(/\s+/g, ' ').trim();
+  const titulo = txt(document.querySelector('.content-header h1, section.content-header, h1')?.textContent);
+  const temAdicionar = Array.from(document.querySelectorAll('a, button')).some(b => /adicionar\s+altera/i.test(txt(b.textContent)));
+  if (!/altera[çc][ãa]o\s+do\s+empenho/i.test(titulo) || !temAdicionar) return { naLista: false, titulo, url: location.href };
+
+  // O DataTables pode carregar as linhas depois (AJAX)
+  for (let t = 0; t < 6000; t += 300) {
+    const processando = Array.from(document.querySelectorAll('.dataTables_processing'))
+      .some(e => getComputedStyle(e).display !== 'none' && e.offsetParent !== null);
+    if (!processando && document.querySelector('table tbody tr')) break;
+    await dorme(300);
+  }
+  const linhas = [];
+  for (const tabela of document.querySelectorAll('table')) {
+    const ths = Array.from(tabela.querySelectorAll('thead th')).map(th => txt(th.textContent));
+    const iMsg = ths.findIndex(t => /^mensagem\s+siafi$/i.test(t));
+    const iSit = ths.findIndex(t => /^situa[çc][ãa]o$/i.test(t));
+    if (iMsg < 0 || iSit < 0) continue;
+    for (const tr of tabela.querySelectorAll('tbody tr')) {
+      if (tr.classList.contains('child') || tr.cells.length <= Math.max(iMsg, iSit)) continue;
+      linhas.push({ mensagem: txt(tr.cells[iMsg].textContent), situacao: txt(tr.cells[iSit].textContent) });
+    }
+  }
+  return { naLista: true, linhas, url: location.href.split('#')[0] };
+}
+
+/**
  * Tela Subelemento da alteração: Tipo Operação de cada item, valor (ou quantidade)
  * e Próxima Etapa. `a` = { operacao: 'ANULAÇÃO' | 'REFORÇO' | 'REFORÇO IRRISÓRIO' |
  * 'ANULAÇÃO SALDO IRRISÓRIO', operacaoIrrisoria, valor, itens: [{ numeroItem, valor,

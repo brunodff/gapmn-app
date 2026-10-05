@@ -34,7 +34,7 @@ import { step5Runner } from './steps/step5.js';
 import { step6Runner } from './steps/step6.js';
 import {
   paginaMinutas, buscarNEnaLista, removerFiltros, adicionarAlteracao,
-  alteracaoSubelementoRunner, alteracaoPassivo,
+  alteracaoSubelementoRunner, alteracaoPassivo, lerListaAlteracoes,
 } from './steps/alteracao.js';
 import {
   step0ClickAdicionarMinuta,
@@ -1304,6 +1304,29 @@ const STEP_PAINEL_ALT = [1, 2, 5, 7, 8];   // pontos do indicador de etapas do p
 const LIMITE_IRRISORIO = 10;
 const limiteIrrisorio = degrau => (degrau > 0 ? degrau + 0.01 : LIMITE_IRRISORIO);
 
+// Lista "Alteração do empenho": quantas emitidas / com erro (para achar a nova)
+const RX_EMITIDA = /EMITID|EMPENHAD/i;
+const resumoLista = l => ({
+  total: l.linhas.length,
+  emitidos: l.linhas.filter(x => RX_EMITIDA.test(x.situacao)).length,
+  erros: l.linhas.filter(x => RX_ERRO_SIAFI.test(x.situacao)).length,
+});
+// Compara com a lista de antes de "Adicionar Alteração": uma emitida a mais = a nossa
+function avaliarLista(lista, antes, ne) {
+  const agora = resumoLista(lista);
+  if (antes && agora.emitidos > antes.emitidos) {
+    const nes = lista.linhas.filter(x => RX_EMITIDA.test(x.situacao)).map(x => extrairNE(x.mensagem)).filter(Boolean);
+    return { ne: nes.includes(ne) ? ne : (nes[nes.length - 1] ?? ne), situacao: 'EMPENHO EMITIDO' };
+  }
+  if (antes && agora.erros > antes.erros) {
+    const l = lista.linhas.filter(x => RX_ERRO_SIAFI.test(x.situacao)).pop();
+    return { erro: true, situacao: l.situacao, mensagem: l.mensagem };
+  }
+  const proc = lista.linhas.find(x => /PROCESSAMENTO|ENVIAD|AGUARD/i.test(x.situacao));
+  return { situacao: proc?.situacao ?? null, semReferencia: !antes };
+}
+const comLimite = (p, ms = 10000) => Promise.race([Promise.resolve(p).catch(() => null), new Promise(r => setTimeout(() => r(null), ms))]);
+
 // NE de ano anterior = restos a pagar: o CNET pode não oferecer a alteração dela
 function dicaRestosAPagar(ne) {
   const ano = parseInt(String(ne ?? '').slice(0, 4), 10);
@@ -1399,6 +1422,12 @@ async function runAlteracaoStep(s) {
 /** A1: lista de minutas → pesquisa a NE → "Alterar Empenho" */
 async function altAbrirNE(tabId, a) {
   if (!/^\d{4}NE\d{6}$/.test(a.ne ?? '')) return { ok: false, error: `NE a alterar inválida ("${a.ne ?? ''}") — informe na revisão (ex: 2026NE000552)` };
+  // Depois de emitir, o CNET fica na lista de alterações desta NE: o irrisório começa dali
+  const aqui = await comLimite(execInPage(tabId, lerListaAlteracoes));
+  if (aqui?.naLista && aqui.linhas.some(x => extrairNE(x.mensagem) === a.ne)) {
+    await logVisivel(`[Alteração] ${a.ne}: já na lista de alterações ✓`, 'info');
+    return { ok: true };
+  }
   let p = await execInPage(tabId, paginaMinutas).catch(() => null);
   if (!p?.naLista) {
     const url = p?.menuHref || MINUTAS_URL;
@@ -1429,11 +1458,14 @@ async function altAbrirNE(tabId, a) {
 
 /** A2: "Adicionar Alteração do empenho" */
 async function altAdicionar(tabId) {
+  // A lista de antes: depois de emitir, a alteração nova é a linha emitida a mais
+  const lista = await comLimite(execInPage(tabId, lerListaAlteracoes));
+  const patch = lista?.naLista ? { altListaAntes: resumoLista(lista), altListaUrl: lista.url } : { altListaAntes: null, altListaUrl: null };
   const r = await execQuePodeNavegar(tabId, adicionarAlteracao);
   if (!r?.ok) return r ?? { ok: false, error: 'sem resposta da página' };
   if (r.href) await navegarPara(tabId, r.href);
   else { try { await waitForNavigation(tabId, 20000); } catch {} await delay(800); }
-  return { ok: true };
+  return { ok: true, patch };
 }
 
 /**
@@ -1533,25 +1565,47 @@ async function emitirAlteracao(tabId, s) {
     if (!r?.ok) return falhaAlteracao(tabId, s, 4, `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}`, { url });
   }
 
-  // O SIAFI responde depois ("EM PROCESSAMENTO"): relê por ~1,5 min
-  let ne = null, situacao = antes.situacao, mensagem = null, erro = false;
-  for (let i = 1; i <= 12 && !ne && !erro; i++) {
+  // O SIAFI responde depois ("EM PROCESSAMENTO"): relê por ~1,5 min. O CNET pode
+  // ficar na tela da alteração ou voltar para a lista "Alteração do empenho" — aí a
+  // nossa é a linha emitida (ou com erro) a mais que a lista de antes
+  let ne = null, situacao = antes.situacao, mensagem = null, erro = false, naLista = false;
+  for (let i = 1; i <= 15 && !ne && !erro; i++) {
     await delay(4000);
-    const r = i % 2 === 0 ? await recarregarMinuta(tabId, url) : await execInPage(tabId, lerEtapa8).catch(() => null);
-    if (!r) continue;
-    situacao = r.situacao ?? situacao;
-    mensagem = r.mensagem || mensagem;
-    const lido = extrairNE(r.numero) ?? extrairNE(r.mensagem);
-    if (lido === a.ne || (lido && /EMITID|SUCESSO/i.test(situacao ?? ''))) ne = lido;
-    erro = !ne && i >= 3 && RX_ERRO_SIAFI.test(situacao ?? '');
+    let lista = await comLimite(execInPage(tabId, lerListaAlteracoes));
+    if (lista?.naLista) {
+      naLista = true;
+      if (i % 3 === 0) {   // relê do servidor
+        await comLimite(navegarPara(tabId, lista.url), 35000);
+        const nova = await comLimite(execInPage(tabId, lerListaAlteracoes));
+        if (nova?.naLista) lista = nova;
+      }
+      const v = avaliarLista(lista, s.altListaAntes, a.ne);
+      if (v.ne) { ne = v.ne; situacao = v.situacao; }
+      else if (v.erro) { erro = true; situacao = v.situacao; mensagem = v.mensagem; }
+      else if (v.situacao) situacao = v.situacao;
+    } else {
+      const r = i % 2 === 0 ? await comLimite(recarregarMinuta(tabId, url), 40000) : await comLimite(execInPage(tabId, lerEtapa8));
+      if (!r) continue;
+      situacao = r.situacao ?? situacao;
+      mensagem = r.mensagem || mensagem;
+      const lido = extrairNE(r.numero) ?? extrairNE(r.mensagem);
+      if (lido === a.ne || (lido && /EMITID|SUCESSO/i.test(situacao ?? ''))) ne = lido;
+      erro = !ne && i >= 3 && RX_ERRO_SIAFI.test(situacao ?? '');
+    }
+    if (i % 4 === 0 && !ne && !erro) await logVisivel(`⏳ [Alteração] Aguardando o SIAFI… (situação: ${situacao || '—'})`, 'info');
   }
+  if (ne) await logVisivel(`[Alteração] SIAFI: ${a.operacao} emitida na ${ne} ✓${naLista ? ' (lista de alterações)' : ''}`, 'info');
   const status = ne ? 'emitido' : erro ? 'erro' : 'pendente';
   if (status === 'pendente' && !RX_JA_ENVIADO.test(situacao ?? '')) {
     return falhaAlteracao(tabId, s, 4, `cliquei em Emitir, mas o CNET não mostrou a emissão (situação: ${situacao || '—'}) — confira a alteração antes de fazer de novo`, { status: 'conferir', url });
   }
   if (ne && ne !== a.ne) await logVisivel(`⚠ A alteração voltou com a ${ne}, não a ${a.ne} — confira`, 'warn');
 
-  if (status !== 'erro') {
+  // De volta à lista de alterações, o CNET já fechou a alteração: não há "Finalizar"
+  const naListaAgora = (await comLimite(execInPage(tabId, lerListaAlteracoes)))?.naLista;
+  if (status !== 'erro' && naListaAgora) {
+    await logVisivel('[Alteração] O CNET voltou para a lista de alterações — finalizada ✓', 'info');
+  } else if (status !== 'erro') {
     const f = await clicarEConfirmar(tabId, '\\bFinalizar\\b');
     if (f?.ok) { await logVisivel('[Alteração] Finalizada ✓', 'info'); try { await waitForNavigation(tabId, 15000); } catch {} }
     else await logVisivel(`⚠ [Alteração] Não finalizei (${f?.error ?? 'sem resposta'}) — finalize no CNET depois`, 'warn');
