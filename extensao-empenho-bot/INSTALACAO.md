@@ -95,6 +95,10 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - No CNET o robô pesquisa a NE em Minutas de Empenho (remove os filtros se ela não aparecer),
   abre **Alterar Empenho › Adicionar Alteração do empenho**, escolhe o Tipo Operação, digita
   o valor, passa pelo Passivo Anterior e emite — conferindo o número da NE na Mensagem SIAFI.
+- Aviso "Diferença de arredondamento identificada" (2.8.6): o robô escolhe a opção de menor
+  valor e clica **"Corrigir agora"** (o valor do item passa a ser o calculado); se a tela não
+  avançar sozinha, clica "Próxima Etapa" de novo. "Avançar e ajustar depois" seguia com o valor
+  digitado e o SIAFI recusava (ER0462).
 - Arredondamento: sempre "para menos". O que faltar vira, na mesma NE:
   REFORÇO IRRISÓRIO (empenho novo e reforço) ou ANULAÇÃO SALDO IRRISÓRIO (anulação).
   O robô só faz sozinho quando houve arredondamento e a diferença cabe nele; senão avisa

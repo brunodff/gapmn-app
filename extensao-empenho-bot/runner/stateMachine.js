@@ -557,10 +557,10 @@ async function runEmpenhoStep(s) {
       const rounding = await handleRoundingModal(tabId);
       if (rounding?.handled) {
         // O valor que falta sai do Valor Total da Etapa 8 (o real), não deste modal
-        await logVisivel(`⚠ Arredondamento → "para menos" selecionado (${rounding.count} item(ns)). O reforço irrisório será calculado na Etapa 8.`, 'warn');
+        await logVisivel(`⚠ Arredondamento → "para menos" (${rounding.escolhas?.join('; ') || `${rounding.count} item(ns)`}) e "${rounding.acao === 'corrigir' ? 'Corrigir agora' : 'Avançar e ajustar depois'}". O reforço irrisório da diferença vem depois da emissão.`, 'warn');
+        const degrau = await concluirArredondamento(tabId, rounding);
         await setState({ valorEmpenhado: rounding.totalEmpenhado || null, arredondado: true,
-          degrauArredondamento: rounding.totalMais > rounding.totalEmpenhado ? Math.round((rounding.totalMais - rounding.totalEmpenhado) * 100) / 100 : null });
-        try { await waitForNavigation(tabId, 20000); await delay(800); } catch {}
+          degrauArredondamento: degrau > 0 ? Math.round(degrau * 100) / 100 : null });
       }
 
       // "Próxima" clicado não prova avanço: com um campo inválido o CNET fica na
@@ -834,10 +834,12 @@ async function runStep6(tabId, payload) {
 }
 
 // Detecta e trata o modal "Diferença de arredondamento identificada": escolhe a
-// opção "para menos" de cada item (pelo texto; sem ele, a de menor valor) e clica
-// "Avançar e ajustar depois". A escolha é um clique de verdade: marcar `checked`
-// antes do clique não dispara o "change", o CNET seguia com o valor digitado e o
-// SIAFI recusava (ER0462: valor ≠ quantidade × unitário).
+// opção "para menos" de cada item (pelo texto; sem ele, a de menor valor — ex.:
+// "Quantidade: 0,02873 = Valor calculado: R$ 22.984,00") e clica "Corrigir agora",
+// que troca o valor do item pelo escolhido. "Avançar e ajustar depois" (só se não
+// houver o outro botão) segue com o valor digitado e o SIAFI recusa (ER0462: valor ≠
+// quantidade × unitário). A escolha é um clique de verdade (marcar `checked` antes do
+// clique não dispara o "change").
 async function handleRoundingModal(tabId) {
   return execInPage(tabId, () => {
     const bodyText = document.body?.textContent ?? '';
@@ -885,12 +887,50 @@ async function handleRoundingModal(tabId) {
     const valores = escolhidos.map(valorDe).filter(v => v !== null);
     const totalEmpenhado = valores.reduce((s, v) => s + v, 0);
 
-    const btnAvancar = Array.from((caixa ?? document).querySelectorAll('button, a.btn'))
-      .find(b => /avan[cç]ar/i.test(b.textContent ?? ''));
-    if (btnAvancar) btnAvancar.click();
+    const botoes = Array.from((caixa ?? document).querySelectorAll('button, a.btn, input[type="button"]'));
+    const rotulo = b => String(b.textContent || b.value || '');
+    const btnCorrigir = botoes.find(b => /corrigir/i.test(rotulo(b)));
+    const btnAvancar = botoes.find(b => /avan[cç]ar/i.test(rotulo(b)));
+    const btn = btnCorrigir ?? btnAvancar;
+    if (btn) btn.click();
 
-    return { handled: true, totalEmpenhado, totalMais, count: escolhidos.length, escolhas };
+    return { handled: true, totalEmpenhado, totalMais, count: escolhidos.length, escolhas,
+      acao: btnCorrigir ? 'corrigir' : btnAvancar ? 'avancar' : null };
   });
+}
+
+// Depois do aviso de arredondamento. "Corrigir agora" troca o valor do item pelo
+// escolhido e fecha o aviso: a etapa pode avançar sozinha ou ficar na tela — aí o
+// robô clica "Próxima Etapa" de novo (o aviso pode voltar para outro item). Devolve o
+// degrau somado de todos os avisos tratados (limite do irrisório).
+async function concluirArredondamento(tabId, rounding, tentativa = 1) {
+  const degrau = r => (r.totalMais > r.totalEmpenhado ? r.totalMais - r.totalEmpenhado : 0);
+  const soma = degrau(rounding);
+  if (rounding.acao !== 'corrigir') {
+    try { await waitForNavigation(tabId, 20000); } catch {}
+    await delay(800);
+    return soma;
+  }
+  if (await waitForNavigation(tabId, 8000).then(() => true, () => false)) { await delay(800); return soma; }
+  const navegou = waitForNavigation(tabId, 25000).then(() => true, () => false);
+  const clicou = await execInPage(tabId, () => {
+    const btn = document.querySelector('button.submeter') ||
+      Array.from(document.querySelectorAll('button, a.btn')).find(b => /pr[óo]xima/i.test(b.textContent ?? ''));
+    if (!btn) return 'sem-botao';
+    btn.click();
+    return 'ok';
+  }).catch(() => 'navegou');
+  if (clicou === 'ok') {
+    await logVisivel('[Arredondamento] Valor corrigido — clicando "Próxima Etapa" de novo…', 'info');
+    if (await navegou) { await delay(800); return soma; }
+    // não avançou: o aviso pode ter voltado (outro item)
+    if (tentativa < 3) {
+      const r2 = await handleRoundingModal(tabId);
+      if (r2?.handled) return soma + await concluirArredondamento(tabId, r2, tentativa + 1);
+    }
+  }
+  await delay(800);
+  return soma;
 }
 
 // Passivo Anterior: normalmente só avançar. Se a tela exigir alguma escolha, a
@@ -1392,16 +1432,13 @@ async function runAlteracaoStep(s) {
       // O robô já digitou o "para menos". Se o CNET ainda abrir o modal de
       // arredondamento: "para menos" de novo; o que faltar vira o irrisório logo
       // depois da emissão
-      const navModal = waitForNavigation(tabId, 20000).then(() => true, () => false);
       const rounding = await handleRoundingModal(tabId);
       if (rounding?.handled) {
-        await logVisivel(`⚠ O CNET pediu arredondamento → "para menos" (${rounding.escolhas?.join('; ') || `${rounding.count} item(ns)`}) — o que faltar vira ${COMPLEMENTO_CNET[a.tipo]} logo depois da emissão`, 'warn');
+        await logVisivel(`⚠ O CNET pediu arredondamento → "para menos" (${rounding.escolhas?.join('; ') || `${rounding.count} item(ns)`}) e "${rounding.acao === 'corrigir' ? 'Corrigir agora' : 'Avançar e ajustar depois'}" — o que faltar vira ${COMPLEMENTO_CNET[a.tipo]} logo depois da emissão`, 'warn');
+        const degrauModal = await concluirArredondamento(tabId, rounding);
         const st = await getState();
-        const degrauModal = rounding.totalMais > rounding.totalEmpenhado ? rounding.totalMais - rounding.totalEmpenhado : 0;
         await setState({ altValorFeito: rounding.totalEmpenhado || null, altRestos: null,
           altDegrau: Math.round(((st.altDegrau ?? 0) + degrauModal) * 100) / 100 || null });
-        await navModal;
-        await delay(800);
       }
     }
     if (antes && !antes.bloqueada && r.esperarNavegacao) {
