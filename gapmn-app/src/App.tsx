@@ -8,6 +8,7 @@ import ControleOrcamentario from "./pages/ControleOrcamentario";
 import FerramentasGestao from "./pages/FerramentasGestao";
 import EmpenhoAutomatico from "./pages/EmpenhoAutomatico";
 import OrdensBancarias from "./pages/OrdensBancarias";
+import UsoExtensoes from "./pages/UsoExtensoes";
 import CnetBot from "./pages/CnetBot";
 import AptPage from "./pages/AptPage";
 import PaineisExternos from "./pages/PaineisExternos";
@@ -135,6 +136,15 @@ export default function App() {
             element={
               <RequireDev>
                 <OrdensBancarias />
+              </RequireDev>
+            }
+          />
+
+          <Route
+            path="/uso-extensoes"
+            element={
+              <RequireDev>
+                <UsoExtensoes />
               </RequireDev>
             }
           />

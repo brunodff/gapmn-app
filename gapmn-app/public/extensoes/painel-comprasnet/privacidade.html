@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel ComprasNet — Política de Privacidade</title>
+<style>
+  :root { --fundo: #f8fafc; --texto: #0f172a; --suave: #475569; --borda: #e2e8f0; --cartao: #ffffff; --destaque: #1d4ed8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fundo: #0b1220; --texto: #e2e8f0; --suave: #94a3b8; --borda: #1e293b; --cartao: #0f172a; --destaque: #60a5fa; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--texto); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; padding: 32px 16px 56px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 32px 0 8px; }
+  p, li { color: var(--texto); }
+  .sub { color: var(--suave); margin: 0 0 24px; }
+  .caixa { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px; padding: 4px 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 8px; border-bottom: 1px solid var(--borda); }
+  th { color: var(--suave); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .tabela { overflow-x: auto; }
+  a { color: var(--destaque); }
+  footer { margin-top: 40px; color: var(--suave); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Painel ComprasNet — Política de Privacidade</h1>
+  <p class="sub">Extensão para Chrome e Firefox · última atualização: 6 de outubro de 2026</p>
+
+  <p>O Painel ComprasNet é uma ferramenta <strong>não oficial</strong>, desenvolvida no GAP-MN (Grupamento de Apoio de Manaus) para ajudar pregoeiros e equipes de licitação a acompanhar os processos de compra da sua unidade no Compras.gov.br. Não tem vínculo com o Ministério da Gestão nem com o Serpro.</p>
+
+  <h2>O que a extensão lê</h2>
+  <p>Com a sessão que <strong>você</strong> já abriu no Compras.gov.br, a extensão lê os processos da sua UASG: situação, itens, propostas, licitantes e resultados. Esses dados aparecem no painel e ficam guardados no seu navegador para abrir mais rápido. O token de acesso do Compras.gov.br é usado só nas consultas ao próprio Compras.gov.br — não é enviado a nenhum outro servidor.</p>
+
+  <h2>O que a extensão envia e para onde</h2>
+  <div class="caixa tabela">
+    <table>
+      <tr><th>Dado</th><th>Quando</th><th>Para quê</th></tr>
+      <tr>
+        <td>Anotações da equipe: tipo de contratação, observações, etapa e valor negociado de itens, exequibilidade, checklist de habilitação, amostras e ocorrências (com o número do processo e do item)</td>
+        <td>Quando você registra essas informações no painel</td>
+        <td>Guardar essas anotações fora do navegador, ligadas ao número do processo, para consultá-las depois. Ficam em um banco de dados Supabase.</td>
+      </tr>
+      <tr>
+        <td>Sugestões e comentários (texto que você escreve, tipo, versão da extensão e navegador)</td>
+        <td>Só quando você envia pelo botão 💬 Sugestões</td>
+        <td>Melhorar a extensão.</td>
+      </tr>
+      <tr>
+        <td>Contagem anônima de uso: um código aleatório criado na instalação, a versão da extensão, o navegador, a UASG (tirada dos números dos processos) e quantas vezes o painel foi aberto no dia</td>
+        <td>Ao abrir o painel. No Firefox, só se você permitir "dados técnicos e de interação" (pode mudar em <em>about:addons</em>)</td>
+        <td>Saber quantas pessoas e unidades usam a extensão e quais versões estão em uso. Não identifica a pessoa.</td>
+      </tr>
+    </table>
+  </div>
+  <p>A extensão também baixa uma configuração (mensagens de erro e aviso de versão nova) e verifica se há atualização. Esses pedidos não enviam dados seus.</p>
+
+  <h2>O que a extensão não faz</h2>
+  <ul>
+    <li>Não coleta nome, CPF, e-mail, senha nem histórico de navegação.</li>
+    <li>Não vende nem repassa dados a terceiros e não usa dados para propaganda.</li>
+    <li>Não executa código baixado da internet: todo o código vai no pacote da extensão.</li>
+  </ul>
+  <p>Os links de certidões (TCU, CADIN, FGTS, CNDT, CNJ, Portal da Transparência) apenas abrem esses sites públicos em uma aba nova.</p>
+
+  <h2>Onde os dados ficam e por quanto tempo</h2>
+  <p>Os dados enviados ficam em bancos de dados Supabase usados pelo GAP-MN. As anotações da equipe ficam enquanto forem úteis ao processo; a contagem anônima é guardada por dia e pode ser apagada a qualquer momento. Para apagar os dados guardados no seu navegador, remova a extensão.</p>
+
+  <h2>Contato</h2>
+  <p>Dúvidas ou pedidos sobre seus dados: use o botão <strong>💬 Sugestões</strong> dentro da extensão ou procure o GAP-MN pelo <a href="https://gapmn.app">GAP-MN App</a>.</p>
+
+  <footer>Desenvolvido por 2º Ten Int Bruno — GAP-MN · Ferramenta não oficial para uso com o Compras.gov.br.</footer>
+</main>
+</body>
+</html>

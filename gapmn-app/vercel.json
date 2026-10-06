@@ -9,6 +9,18 @@
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" },
         { "key": "Pragma", "value": "no-cache" }
       ]
+    },
+    {
+      "source": "/extensoes/(.*).xpi",
+      "headers": [
+        { "key": "Content-Type", "value": "application/x-xpinstall" }
+      ]
+    },
+    {
+      "source": "/extensoes/(.*)/updates.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+      ]
     }
   ]
 }
