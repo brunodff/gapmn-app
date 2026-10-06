@@ -220,8 +220,9 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
             nomeVencedor,
             it.quantidade ?? "",
             it.unidade ?? "",
-            it.valor_vencedor_unitario ?? it.valor_estimado_unitario ?? "",
-            it.valor_vencedor_total ?? it.valor_estimado_total ?? "",
+            // Só o valor ofertado: item deserto/sem proposta fica vazio (nunca o estimado)
+            it.valor_vencedor_unitario ?? "",
+            it.valor_vencedor_total ?? "",
             30,
             it.descricao_detalhada || it.descricao || "",
             it.situacao ?? "",
