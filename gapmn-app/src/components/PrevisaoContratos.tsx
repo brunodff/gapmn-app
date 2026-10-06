@@ -577,18 +577,18 @@ export function PrevisaoOrcamentaria({
 
           {siafiErro && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              Planilha de execução SIAFI indisponível ({siafiErro}). Previsão provisória: estimativos usam valor ÷ vigência e o crédito
+              Planilha de execução SIAFI indisponível ({siafiErro}). Previsão provisória: todos usam valor ÷ vigência e o crédito
               necessário conta só daqui para frente, sem descontar o que já foi empenhado. Recarregue a página para tentar de novo.
             </div>
           )}
 
           {verMetodo && (
             <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-slate-700 space-y-1">
-              <p><strong>📅 Parcela fixa</strong> (limpeza, manutenção preventiva, outsourcing…): valor do contrato ÷ meses de vigência, uma parcela por mês a partir do início.</p>
-              <p><strong>⚡ Estimativo</strong> (energia, água, telefonia, credenciamentos, manutenção por OS…): ritmo de liquidação do ano (liquidado ÷ meses já faturados, considerando ~1 mês de defasagem da fatura) combinado com os empenhos anuais dos últimos 3 anos, com peso maior para o mais recente. Sem empenho no ano há 3 meses ou mais, a previsão é zerada (provável substituição). Sem histórico, usa valor ÷ vigência, só daqui para frente.</p>
+              <p><strong>Valor mensal</strong> (📅 parcela fixa e ⚡ estimativo): <em>liquidado/pago nas NEs do contrato ÷ meses já faturados</em>. A fatura do mês só é liquidada no mês seguinte, então conta até o fim do mês retrasado. Contrato com mais de 12 meses: só os últimos 12, que mostram a fatura de hoje, com reajustes. Contrato que ainda não tem nada liquidado/pago: <em>valor do contrato ÷ meses de vigência</em> (no estimativo, só daqui para frente).</p>
+              <p>As NEs do contrato são as do seu PAG, com os restos a pagar (o que foi liquidado depois do ano da NE). O liquidado conta pelo ano em que foi liquidado: em cada ano ele paga as faturas de dezembro do ano anterior a novembro. Se o PAG já pagava um contrato anterior, os meses de antes do início deste não entram.</p>
               <p><strong>🏗️ Saldo</strong> (obras, aquisições): saldo a empenhar distribuído até o fim da vigência.</p>
               <p><strong>Crédito necessário</strong> em cada exercício = faturas ainda não liquidadas até o fim do período − saldo a liquidar dos empenhos do ano (NEs do ano). As competências já liquidadas entram pelo valor pago, não pela previsão. O <em>pendente</em> é a parte de competências que já passaram sem empenho suficiente, como a fatura do mês passado que ainda vai ser liquidada. Restos a pagar não entram: pagam competências de anos anteriores.</p>
-              <p>O regime é deduzido do objeto; uma parcela fixa que executa menos de 60% do valor vira estimativo. Contratos do mesmo PAG dividem o histórico pelo valor mensal de cada um. Tudo pode ser ajustado em <em>Dados Gerais → Previsão mensal</em>.</p>
+              <p>O regime é deduzido do objeto. Contratos do mesmo PAG dividem o liquidado pelo valor mensal de cada um. Tudo pode ser ajustado em <em>Dados Gerais → Previsão mensal</em>.</p>
             </div>
           )}
         </div>

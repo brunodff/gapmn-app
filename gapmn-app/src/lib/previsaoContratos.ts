@@ -1,11 +1,16 @@
 /**
  * Previsão orçamentária de contratos — regras de cálculo (sem React).
  *
- * Cada contrato tem um REGIME que define como o gasto mensal é previsto:
- *   fixo        serviço contínuo com fatura mensal definida (limpeza, manutenção…):
- *               valor do contrato ÷ meses de vigência
- *   estimativo  consumo variável (energia, água, telefonia, credenciamentos…):
- *               média mensal do histórico de empenhos/liquidações do PAG
+ * Valor mensal dos contratos contínuos (fixo e estimativo), regra do usuário:
+ *   - com NE liquidada/paga: soma do liquidado/pago nas NEs do contrato, desde o
+ *     início da vigência, ÷ meses do início da vigência até hoje
+ *   - sem nada liquidado/pago ainda: valor do contrato ÷ meses de vigência
+ *
+ * O REGIME ainda separa:
+ *   fixo        serviço contínuo com fatura mensal (limpeza, manutenção…): reajuste
+ *               no aniversário da data-base
+ *   estimativo  consumo variável (energia, água, telefonia, credenciamentos…): sem
+ *               liquidação, o valor ÷ vigência vale só daqui para frente
  *   saldo       execução pontual (obras, aquisições): saldo a empenhar distribuído
  *               até o fim da vigência
  *   nao_prever  fora da previsão (contratos de receita, ou exclusão manual)
@@ -29,11 +34,11 @@ export type Regime = "fixo" | "estimativo" | "saldo" | "nao_prever";
 export const REGIMES: Record<Regime, { rotulo: string; curto: string; icone: string; descricao: string }> = {
   fixo: {
     rotulo: "Parcela mensal fixa", curto: "Parcela fixa", icone: "📅",
-    descricao: "Serviço contínuo com fatura mensal definida: valor do contrato ÷ meses de vigência.",
+    descricao: "Serviço contínuo com fatura mensal: liquidado/pago nas NEs ÷ meses desde o início da vigência; sem nada liquidado ainda, valor do contrato ÷ meses de vigência.",
   },
   estimativo: {
-    rotulo: "Estimativo (histórico)", curto: "Estimativo", icone: "⚡",
-    descricao: "Consumo variável (energia, água, telefonia, credenciamentos…): média mensal do histórico de empenhos e liquidações do PAG.",
+    rotulo: "Estimativo (consumo)", curto: "Estimativo", icone: "⚡",
+    descricao: "Consumo variável (energia, água, telefonia, credenciamentos…): liquidado/pago nas NEs ÷ meses desde o início da vigência; sem nada liquidado ainda, valor ÷ vigência, só daqui para frente.",
   },
   saldo: {
     rotulo: "Saldo a empenhar", curto: "Saldo", icone: "🏗️",
@@ -96,7 +101,7 @@ export const mesHoje = (d: Date) => mesIdx(d.getFullYear(), d.getMonth() + 1);
 const MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 export const rotuloMes = (mi: number) => `${MESES_ABREV[mesDe(mi) - 1]}/${String(anoDe(mi)).slice(2)}`;
 
-type Dia = { y: number; m: number; d: number };
+export type Dia = { y: number; m: number; d: number };
 
 function lerData(s: string | null | undefined): Dia | null {
   const r = /^(\d{4})-(\d{2})-(\d{2})/.exec(s ?? "");
@@ -110,14 +115,19 @@ function somaMeses(a: Dia, n: number): Dia {
 }
 const emDias = (a: Dia) => Date.UTC(a.y, a.m - 1, a.d) / 86400000;
 
-/** Duração em meses, com fração: 04/08/2026→04/08/2027 = 12; 18/08→19/10 = 2 + 1/31. */
-export function mesesVigencia(ini: string | null, fim: string | null): number {
-  const a = lerData(ini), b = lerData(fim);
-  if (!a || !b || emDias(b) <= emDias(a)) return 0;
+/** Meses entre duas datas, com fração: 04/08→04/10 = 2; 18/08→19/10 = 2 + 1/31. */
+function mesesEntre(a: Dia, b: Dia): number {
+  if (emDias(b) <= emDias(a)) return 0;
   let n = (b.y - a.y) * 12 + (b.m - a.m);
   if (emDias(somaMeses(a, n)) > emDias(b)) n--;
   const c = somaMeses(a, n), prox = somaMeses(a, n + 1);
   return n + (emDias(b) - emDias(c)) / (emDias(prox) - emDias(c));
+}
+
+/** Duração em meses, com fração: 04/08/2026→04/08/2027 = 12; 18/08→19/10 = 2 + 1/31. */
+export function mesesVigencia(ini: string | null, fim: string | null): number {
+  const a = lerData(ini), b = lerData(fim);
+  return a && b ? mesesEntre(a, b) : 0;
 }
 
 // ─── Histórico SIAFI por PAG ──────────────────────────────────────────────────
@@ -127,6 +137,18 @@ export interface HistPag {
   anos: Map<number, ExecAno>;
   /** ano da NE mais antiga do PAG, contando também as inscritas em restos a pagar */
   primeiroAno: number;
+  /** liquidado/pago por ano em que foi LIQUIDADO (não o ano da NE: a NE de dezembro
+   *  paga faturas do ano seguinte como resto a pagar) */
+  liqAno: Map<number, number>;
+}
+/** Restos a pagar de uma NE (planilha de RP): o que entra como liquidado/pago */
+export interface RpLiquidacao {
+  ne: string;
+  processo: string;
+  rp_nao_proc_liq_pag?: number;   // não processado, liquidado a pagar
+  rp_nao_proc_pago?: number;      // não processado, pago
+  rp_proc_a_pagar?: number;       // processado (liquidado no ano da NE), a pagar
+  rp_proc_pagos?: number;         // processado, pago
 }
 /** PAG normalizado → histórico */
 export type HistoricoPag = Map<string, HistPag>;
@@ -135,17 +157,23 @@ export const normPag = (p: string | null | undefined) => (p ?? "").trim().replac
 const anoNE = (ne: string) => { const a = /^(\d{4})NE/i.exec(ne ?? "")?.[1]; return a ? +a : null; };
 
 /**
- * Agrega a planilha de execução (uma linha por NE) por PAG e ano da NE.
- * As NEs de restos a pagar entram só para datar o início do PAG: um processo
- * com RP de 2025 já existia antes de 2026 mesmo sem NE de 2025 na execução.
+ * Agrega a planilha de execução (uma linha por NE) por PAG e ano da NE, e o
+ * liquidado/pago por ano de liquidação. Na execução, as NEs de anos anteriores trazem
+ * só o que foi pago no próprio ano; o resto está nos restos a pagar: o processado foi
+ * liquidado no ano da NE, o não processado liquidado/pago é do exercício corrente
+ * (`anoAtual`, o da planilha de RP). As NEs de RP também datam o início do PAG: um
+ * processo com RP de 2025 já existia antes de 2026.
  */
-export function montarHistorico(linhas: ExecucaoLinha[], rps: Array<{ ne: string; processo: string }> = []): HistoricoPag {
+export function montarHistorico(linhas: ExecucaoLinha[], rps: RpLiquidacao[] = [], anoAtual = new Date().getFullYear()): HistoricoPag {
   const h: HistoricoPag = new Map();
   const doPag = (pag: string, ano: number) => {
-    const x = h.get(pag) ?? { anos: new Map<number, ExecAno>(), primeiroAno: ano };
+    const x = h.get(pag) ?? { anos: new Map<number, ExecAno>(), primeiroAno: ano, liqAno: new Map<number, number>() };
     x.primeiroAno = Math.min(x.primeiroAno, ano);
     h.set(pag, x);
     return x;
+  };
+  const liquidou = (x: HistPag, ano: number, valor: number) => {
+    if (valor) x.liqAno.set(ano, (x.liqAno.get(ano) ?? 0) + valor);
   };
   for (const l of linhas) {
     const pag = normPag(l.info_g), ano = anoNE(l.nota_empenho);
@@ -157,10 +185,14 @@ export function montarHistorico(linhas: ExecucaoLinha[], rps: Array<{ ne: string
     a.empenhado += l.a_liquidar + l.liquidado_pagar + l.pago;
     a.nNE++;
     x.anos.set(ano, a);
+    liquidou(x, ano, l.liquidado_pagar + l.pago);
   }
   for (const rp of rps) {
     const pag = normPag(rp.processo), ano = anoNE(rp.ne);
-    if (pag && ano !== null) doPag(pag, ano);
+    if (!pag || ano === null) continue;
+    const x = doPag(pag, ano);
+    liquidou(x, ano, (rp.rp_proc_a_pagar ?? 0) + (rp.rp_proc_pagos ?? 0));
+    liquidou(x, anoAtual, (rp.rp_nao_proc_liq_pag ?? 0) + (rp.rp_nao_proc_pago ?? 0));
   }
   return h;
 }
@@ -295,9 +327,9 @@ export function projetarContratos(
     const hist = pag ? historico.get(pag) : undefined;
     const cfg = cfgs.get(c.numero_contrato);
     const auto = classificarRegime(c);
-    let regime: Regime = cfg?.regime ?? auto.regime;
+    const regime: Regime = cfg?.regime ?? auto.regime;
     const origem: "auto" | "manual" = cfg?.regime ? "manual" : "auto";
-    let motivo = cfg?.regime ? `definido manualmente${cfg.updated_nome ? ` por ${cfg.updated_nome}` : ""}` : auto.motivo;
+    const motivo = cfg?.regime ? `definido manualmente${cfg.updated_nome ? ` por ${cfg.updated_nome}` : ""}` : auto.motivo;
     const alertas: string[] = [];
     const grupo = pag ? grupos.get(pag) : undefined;
     const pagContratos = grupo?.length ?? 1;
@@ -327,45 +359,52 @@ export function projetarContratos(
     if (!pag) alertas.push("Sem PAG/NUP — não é possível ler os empenhos do SIAFI");
     else if (!hist && !semExec) alertas.push("PAG não encontrado na planilha de execução SIAFI");
 
-    // ── Ritmo observado no SIAFI ─────────────────────────────────────────────
-    // Exercício corrente: a fatura do mês M costuma ser liquidada em M+1, então até
-    // hoje há competências liquidadas até ~2 meses atrás, mais a fração já decorrida
-    // do mês anterior. Anos anteriores: empenho anual ÷ meses cobertos.
-    const p0 = parcela(c, ano0);
-    const atual = hist?.anos.get(ano0);
-    const inicioLiq = inicioExercicio(ano0);
-    const dia = op.hoje.getDate(), dm = diasNoMes(op.hoje.getFullYear(), op.hoje.getMonth() + 1);
-    const mesesLiq = Math.max(0, hojeMi - 2 - inicioLiq + 1) + (dia - 1) / dm;
-    const taxaAtual = atual && atual.liquidado > 0 && mesesLiq >= 2.5 ? (atual.liquidado * p0) / mesesLiq : null;
-
-    const anosHist = hist ? [...hist.anos.entries()].filter(([a, e]) => a < ano0 && e.empenhado > 0).sort((x, y) => y[0] - x[0]).slice(0, 3) : [];
-    let somaPesos = 0, somaTaxas = 0;
-    const partes: string[] = [];
-    anosHist.forEach(([a, e], i) => {
-      // meses cobertos no ano: 12, salvo se o contrato começou nesse ano sem antecessor no PAG
-      const meses = v && anoDe(v.iniMi) === a && a === hist!.primeiroAno ? Math.max(1, 13 - mesDe(v.iniMi)) : 12;
-      const taxa = (e.empenhado * parcela(c, a)) / meses;
-      const peso = 3 - i;   // o ano mais recente pesa mais
-      somaPesos += peso; somaTaxas += taxa * peso;
-      partes.push(`${a}: ${fmt(taxa)}/mês`);
-    });
-    const taxaHist = somaPesos > 0 ? somaTaxas / somaPesos : null;
-
-    // Parcela fixa só pelo objeto pode ser serviço por demanda com valor-teto
-    // (ex.: manutenção predial por ordem de serviço). Com execução conhecida e
-    // bem abaixo da parcela, a previsão passa a seguir o histórico.
-    if (origem === "auto" && regime === "fixo" && v && v.nominal > 0) {
-      const observado = taxaAtual !== null && mesesLiq >= 5 ? taxaAtual : taxaHist;
-      if (observado !== null) {
-        const razao = observado / v.nominal;
-        if (razao < 0.6) {
-          regime = "estimativo";
-          motivo = `parcela seria ${fmt(v.nominal)}/mês, mas a execução real é ${Math.round(razao * 100)}% disso — tratado como demanda variável`;
-        } else if (razao > 1.6) {
-          alertas.push(`Execução real (${fmt(observado)}/mês) bem acima da parcela calculada — o valor do contrato pode estar desatualizado (reajuste ou aditivo). Informe a parcela atual.`);
-        }
+    // ── Liquidado/pago nas NEs do contrato (regra do usuário) ──────────────
+    // Valor mensal = liquidado/pago ÷ meses já faturados. A fatura do mês só é
+    // liquidada no seguinte: a janela vai até o fim do mês retrasado. Contrato com
+    // mais de 12 meses: só os últimos 12 (a fatura de hoje, com reajustes). O
+    // liquidado é conhecido por ano de liquidação, e o liquidado num ano paga as
+    // faturas de dezembro do ano anterior a novembro: cada ano entra na proporção
+    // desses meses que caem na janela.
+    const iniDia = lerData(c.data_inicio);
+    const liq = (() => {
+      const r0 = { total: 0, meses: 0, de: 0, ate: 0, jaLiquidou: false };
+      if (!v || !iniDia || !hist || semExec) return r0;
+      const instante = (d: Dia) => mesIdx(d.y, d.m) + (d.d - 1) / diasNoMes(d.y, d.m);
+      const inicio = instante(iniDia);
+      // O PAG já corria antes do início gravado quando: outro contrato do mesmo PAG
+      // começou antes (o anterior); houve liquidação antes do ano de início (contrato
+      // anterior fora da lista, ou prorrogação com o início do período atual gravado);
+      // ou o PAG é de vários contratos e tem NE de ano anterior (ex.: energia, com dois
+      // contratos novos no PAG que pagava o fornecimento anterior). Em PAG de um
+      // contrato só, NE antiga sem liquidação antes do início é empenho prévio dele.
+      const outroAntes = (grupo ?? []).some((x) => x.id !== c.id && (vig.get(x.id)?.iniMi ?? Infinity) < v.iniMi);
+      const liqAntes = [...hist.liqAno].some(([a, val]) => a < iniDia.y && val > 0);
+      const corriaAntes = outroAntes || liqAntes || (pagContratos > 1 && hist.primeiroAno < iniDia.y);
+      const fimDia = lerData(c.data_final);
+      let ate = hojeMi - 1;                       // início do mês passado = fim do retrasado
+      if (fimDia) ate = Math.min(ate, instante(fimDia));
+      // PAG de vários contratos: o rateio é por ano, então antes do início deste contrato
+      // não dá para saber o que era dele — a janela começa no início
+      const de = Math.max(corriaAntes && pagContratos < 2 ? -Infinity : inicio, ate - 12);
+      r0.de = de; r0.ate = ate;
+      r0.jaLiquidou = [...hist.liqAno].some(([a, val]) => (a >= iniDia.y || corriaAntes) && val > 0);
+      if (ate - de <= 0) return r0;
+      r0.meses = ate - de;
+      for (const [ano, valor] of hist.liqAno) {
+        if (valor <= 0) continue;
+        // faturas pagas pelo liquidado do ano: de dezembro do ano anterior a novembro
+        // (no exercício corrente, até o fim do mês retrasado); sem nada antes do
+        // início, nunca antes dele
+        let cIni = mesIdx(ano, 1) - 1;
+        if (!corriaAntes) cIni = Math.max(cIni, inicio);
+        const cFim = ano === ano0 ? hojeMi - 1 : mesIdx(ano, 12);
+        if (cFim <= cIni) continue;
+        const naJanela = Math.max(0, Math.min(cFim, ate) - Math.max(cIni, de));
+        r0.total += valor * parcela(c, ano) * naJanela / (cFim - cIni);
       }
-    }
+      return r0;
+    })();
 
     // ── Valor mensal de referência ───────────────────────────────────────────
     let mensal = 0;
@@ -378,17 +417,31 @@ export function projetarContratos(
     } else if (manual !== null && regime !== "saldo") {
       mensal = manual;
       base = `Valor mensal informado manualmente: ${fmt(manual)}`;
-    } else if (regime === "fixo") {
-      if (c.num_parcelas && c.valor_parcela) {
-        mensal = c.valor_parcela;
-        base = `${c.num_parcelas} parcelas de ${fmt(c.valor_parcela)} (dados do contrato)`;
+    } else if (regime === "fixo" || regime === "estimativo") {
+      const fmtMeses = (m: number) => (Math.abs(m - Math.round(m)) < 0.05 ? String(Math.round(m)) : m.toFixed(1).replace(".", ","));
+      const dataBR = (d: Dia) => `${String(d.d).padStart(2, "0")}/${String(d.m).padStart(2, "0")}/${d.y}`;
+      if (liq.total > 0.005 && liq.meses > 0 && iniDia) {
+        // Já há NE liquidada/paga: o ritmo real do contrato
+        mensal = liq.total / liq.meses;
+        const ultimo = Math.ceil(liq.ate - 1e-9) - 1;
+        const periodo = liq.meses >= 11.95
+          ? `nos últimos 12 meses faturados (${rotuloMes(ultimo - 11)} a ${rotuloMes(ultimo)})`
+          : `desde o início (${dataBR(iniDia)}) até ${rotuloMes(ultimo)}, último mês já faturado`;
+        base = `Liquidado/pago nas NEs ${periodo}: ${fmt(liq.total)} ÷ ${fmtMeses(liq.meses)} ${liq.meses > 1.05 ? "meses" : "mês"} = ${fmt(mensal)}/mês`;
+        if (pagContratos > 1) base += ` · parcela deste contrato no PAG: ${Math.round(parcela(c, ano0) * 100)}%`;
       } else if (v && (c.vl_contratual ?? 0) > 0) {
+        // Nada liquidado/pago (na janela): o valor do contrato distribuído na vigência
         mensal = v.nominal;
-        const mesesTxt = Math.abs(v.dur - Math.round(v.dur)) < 0.01 ? String(Math.round(v.dur)) : v.dur.toFixed(2).replace(".", ",");
-        base = `${fmt(c.vl_contratual ?? 0)} ÷ ${mesesTxt} meses de vigência = ${fmt(mensal)}/mês`;
-        if (v.dur > 24) alertas.push("Vigência longa: valor ÷ meses é uma média do período todo — informe a parcela atual se ela for diferente");
+        const divisao = `${fmt(c.vl_contratual ?? 0)} ÷ ${fmtMeses(v.dur)} meses de vigência = ${fmt(mensal)}/mês`;
+        if (semExec) base = `Execução SIAFI indisponível — ${divisao} (provisório)`;
+        else if (liq.meses <= 0) base = `Ainda sem mês faturado (a fatura sai no mês seguinte) — ${divisao}`;
+        else if (liq.jaLiquidou) base = `Nada liquidado/pago nos últimos meses faturados — ${divisao}`;
+        else base = `Nenhuma NE liquidada/paga ainda — ${divisao}`;
+        // Consumo sem histórico: o valor é um teto, vale daqui para frente (sem cobrar
+        // como pendentes os meses que já passaram)
+        if (regime === "estimativo") pisoExercicio = hojeMi;
       } else {
-        alertas.push("Contrato sem valor — informe o valor mensal");
+        alertas.push("Sem nada liquidado/pago e sem valor do contrato — informe o valor mensal");
       }
     } else if (regime === "saldo") {
       saldoRestante = Math.max(0, c.vl_a_empenhar ?? ((c.vl_contratual ?? 0) - (c.vl_empenhado ?? 0)));
@@ -403,52 +456,6 @@ export function projetarContratos(
         ? `Saldo a empenhar ${fmt(saldoRestante)} distribuído até o fim da vigência (${Math.max(1, Math.ceil(mesesRestantes - 1e-9))} ${Math.ceil(mesesRestantes - 1e-9) > 1 ? "meses" : "mês"})`
         : saldoRestante > 0 ? `Saldo a empenhar ${fmt(saldoRestante)} com vigência encerrada` : "Sem saldo a empenhar";
       if (saldoRestante > 0 && mesesRestantes === 0) alertas.push("Saldo a empenhar com vigência encerrada");
-    } else {
-      // estimativo: ritmo de liquidação do exercício e empenhos dos anos anteriores
-      let mesesAtivosNoAno = 0;
-      if (v && fimMi !== null) for (let mi = Math.max(mesIdx(ano0, 1), v.iniMi); mi < hojeMi && mi <= fimMi; mi++) mesesAtivosNoAno++;
-      const parado = !semExec && !vencido && pag !== "" && mesesAtivosNoAno >= 3 && execAno(ano0).empenhado === 0;
-      if (parado) {
-        // Sem nenhum empenho no ano há meses: substituído por outro instrumento ou
-        // empenhado em outro PAG. Prever pelo histórico contaria o gasto em dobro.
-        mensal = 0;
-        base = `Sem empenho em ${ano0} há ${mesesAtivosNoAno} meses de vigência — previsão zerada`;
-        const principal = /PAG\s+PRINCIPAL\s+(?:DE\s+)?N\D{0,3}\s*([\d.]+\/\d{4}-\d{2})/i.exec(c.descricao ?? "")?.[1];
-        const hp = principal ? historico.get(normPag(principal)) : undefined;
-        const empPrincipal = hp?.anos.get(ano0)?.empenhado ?? 0;
-        alertas.push(empPrincipal > 0
-          ? `Sem empenho no próprio PAG em ${ano0}; o PAG principal ${principal} tem ${fmt(empPrincipal)} empenhados — os empenhos devem estar lá. Informe o valor mensal deste contrato se quiser prevê-lo.`
-          : `Sem empenho em ${ano0} há ${mesesAtivosNoAno} meses — provável substituição por outro contrato. Se ainda é executado, informe o valor mensal.`);
-      } else if (taxaAtual !== null && taxaHist !== null) {
-        const peso = Math.min(1, mesesLiq / 6);
-        mensal = taxaAtual * peso + taxaHist * (1 - peso);
-        base = peso >= 1
-          ? `Liquidado em ${ano0}: ${fmt(atual!.liquidado * p0)} em ${mesesLiq.toFixed(1).replace(".", ",")} meses = ${fmt(taxaAtual)}/mês`
-          : `${Math.round(peso * 100)}% ritmo de ${ano0} (${fmt(taxaAtual)}/mês) + ${Math.round((1 - peso) * 100)}% histórico (${partes.join(" · ")})`;
-      } else if (taxaAtual !== null) {
-        mensal = taxaAtual;
-        base = `Liquidado em ${ano0}: ${fmt(atual!.liquidado * p0)} em ${mesesLiq.toFixed(1).replace(".", ",")} meses = ${fmt(taxaAtual)}/mês`;
-      } else if (taxaHist !== null) {
-        mensal = taxaHist;
-        base = `Média ponderada dos empenhos anuais (${partes.join(" · ")})`;
-      } else if (v && (c.vl_contratual ?? 0) > 0) {
-        // Sem histórico, valor ÷ vigência é só um teto: vale daqui para frente,
-        // sem cobrar como pendentes os meses que já passaram
-        mensal = v.nominal;
-        pisoExercicio = hojeMi;
-        const divisao = `${fmt(c.vl_contratual ?? 0)} ÷ ${v.dur.toFixed(1).replace(".", ",")} meses de vigência`;
-        if (semExec) base = `Execução SIAFI indisponível — ${divisao} (provisório)`;
-        else {
-          base = `Sem histórico no SIAFI — ${divisao} (a partir de agora)`;
-          alertas.push("Estimativo sem histórico: usando valor ÷ vigência até haver liquidações");
-        }
-      } else {
-        alertas.push("Sem histórico e sem valor — informe o valor mensal");
-      }
-      // rateio só se aplica ao que veio do histórico do PAG (não ao valor ÷ vigência)
-      if (pagContratos > 1 && mensal > 0 && (taxaAtual !== null || taxaHist !== null)) {
-        base += ` · parcela deste contrato no PAG: ${Math.round(p0 * 100)}%`;
-      }
     }
 
     // ── Previsto por mês de competência ──────────────────────────────────────
@@ -492,11 +499,15 @@ export function projetarContratos(
     const primeiraAberta = (ano: number) => (ano === ano0 ? abertaAno0 : inicioExercicio(ano));
 
     if (vencido && !op.suporProrrogacao && regime !== "nao_prever") alertas.push("Vigência encerrada — sem previsão para os próximos meses");
-    // Parcela fixa em vigor sem nenhum empenho no exercício: a previsão continua
-    // (o valor é firme), mas pode ser contrato substituído ou empenho em outro PAG.
-    if (regime === "fixo" && manual === null && v && !vencido && pag && !semExec
+    // Contrato em vigor sem nenhum empenho no exercício: a previsão continua, mas
+    // pode ser contrato substituído ou empenhado em outro PAG
+    if ((regime === "fixo" || regime === "estimativo") && manual === null && v && !vencido && pag && !semExec
         && hojeMi - Math.max(mesIdx(ano0, 1), v.iniMi) >= 2 && execAno(ano0).empenhado === 0) {
-      alertas.push(`Nenhum empenho em ${ano0} até agora — confirme se o contrato ainda é executado (se foi substituído, marque "Não prever")`);
+      const principal = /PAG\s+PRINCIPAL\s+(?:DE\s+)?N\D{0,3}\s*([\d.]+\/\d{4}-\d{2})/i.exec(c.descricao ?? "")?.[1];
+      const empPrincipal = principal ? historico.get(normPag(principal))?.anos.get(ano0)?.empenhado ?? 0 : 0;
+      alertas.push(empPrincipal > 0
+        ? `Sem empenho no próprio PAG em ${ano0}; o PAG principal ${principal} tem ${fmt(empPrincipal)} empenhados — os empenhos devem estar lá. Informe o valor mensal deste contrato se quiser prevê-lo.`
+        : `Nenhum empenho em ${ano0} até agora — confirme se o contrato ainda é executado (se foi substituído, marque "Não prever")`);
     }
 
     out.set(c.id, {
