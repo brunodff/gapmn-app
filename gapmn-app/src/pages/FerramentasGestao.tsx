@@ -154,7 +154,7 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
     category: "licitacoes",
     icon: "🧩",
     title: "Extensão Painel ComprasNet",
-    subtitle: "Painel ComprasNet v1.14 (Chrome / Firefox)",
+    subtitle: "Painel ComprasNet v1.16 (Chrome / Firefox)",
     tagline: "Acompanhe processos, fornecedores e habilitação em tempo real no ComprasNet",
     description:
       "Extensão para Chrome e Firefox que acessa a API interna do ComprasNet usando sua sessão já autenticada. Exibe processos com situação em tempo real, três abas por processo (Itens · Licitantes · Habilitação), busca livre por nome do processo ou por descrição de item, alertas de pendências, checklist de habilitação, frases jurídicas padronizadas e exportação XLS.",
@@ -174,6 +174,7 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
       "— USO —",
       "Acesse o ComprasNet (cnetmobile.estaleiro.serpro.gov.br) e faça login normalmente",
       "Clique no ícone da extensão na barra do navegador → clique '↺ Sincronizar'",
+      "Na primeira vez, clique em '👥 Equipe' e informe o código da sua equipe (peça a quem já usa o painel na sua unidade). Se for o primeiro da unidade, crie a equipe e passe o código aos colegas — sem ele as anotações não são salvas",
       "Os processos da sua UASG são carregados automaticamente",
       "Use o campo de busca para filtrar por processo ou por descrição de item (ex: batata)",
       "Clique em qualquer processo para ver as abas: 📋 Itens · 🏢 Licitantes · ✅ Habilitação",

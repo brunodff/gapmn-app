@@ -93,6 +93,71 @@ function GraficoDias({ porDia }: { porDia: Record<string, number> | null }) {
   );
 }
 
+interface Equipe { id: string; nome: string; uasgs: string[]; anotacoes: number; criado_em: string }
+
+// Equipes do Painel ComprasNet: cada uma tem um código que dá acesso às anotações
+// das suas UASGs. O código só existe na criação; aqui o DEV gera outro se perderem.
+function EquipesPainel() {
+  const [equipes, setEquipes] = useState<Equipe[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [novo, setNovo] = useState<{ id: string; codigo: string } | null>(null);
+
+  async function carregar() {
+    const { data, error } = await supabase.rpc("painel_equipes_resumo");
+    if (error) setErro(error.message); else setEquipes((data as Equipe[]) ?? []);
+  }
+  useEffect(() => { carregar(); }, []);
+
+  async function gerarCodigo(e: Equipe) {
+    if (!confirm(`Gerar um código novo para ${e.nome}? O código atual deixa de valer e a equipe precisa informar o novo.`)) return;
+    const { data, error } = await supabase.rpc("painel_novo_codigo", { p_equipe: e.id });
+    if (error) { alert("Não consegui gerar: " + error.message); return; }
+    setNovo({ id: e.id, codigo: data as string });
+  }
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold text-slate-800">Equipes do Painel ComprasNet</h2>
+      <p className="text-sm text-slate-500">Cada equipe vê só as anotações das suas UASGs, com o código que recebeu. O código não fica guardado aqui: se uma equipe perder o dela, gere outro.</p>
+      {erro && <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm p-3">Não consegui carregar as equipes: {erro}</div>}
+      {equipes && equipes.length === 0 && <p className="text-sm text-slate-400">Nenhuma equipe ainda.</p>}
+      {equipes && equipes.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
+                <th className="px-4 py-2 font-semibold">Equipe</th>
+                <th className="px-4 py-2 font-semibold">UASG</th>
+                <th className="px-4 py-2 font-semibold text-right">Anotações</th>
+                <th className="px-4 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {equipes.map(e => (
+                <tr key={e.id} className="border-b border-slate-50 last:border-0">
+                  <td className="px-4 py-2 font-medium text-slate-800">{e.nome}</td>
+                  <td className="px-4 py-2 text-slate-600">{e.uasgs.join(", ") || "—"}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-600">{e.anotacoes}</td>
+                  <td className="px-4 py-2 text-right">
+                    {novo?.id === e.id ? (
+                      <span className="inline-flex items-center gap-2">
+                        <code className="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-mono tracking-wider">{novo.codigo}</code>
+                        <button onClick={() => navigator.clipboard.writeText(novo.codigo)} className="text-xs text-blue-600 hover:underline">Copiar</button>
+                      </span>
+                    ) : (
+                      <button onClick={() => gerarCodigo(e)} className="text-xs text-blue-600 hover:underline">Gerar novo código</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function UsoExtensoes() {
   const [dados, setDados] = useState<ResumoExtensao[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -133,6 +198,8 @@ export default function UsoExtensoes() {
             Nenhum uso registrado ainda. A contagem começa quando as pessoas abrirem a versão 1.15.0 do Painel ComprasNet.
           </div>
         )}
+
+        <EquipesPainel />
 
         {dados?.map(e => {
           const versaoAtual = Object.keys(e.versoes ?? {}).filter(v => v !== "?").sort(compararVersoes).pop();
