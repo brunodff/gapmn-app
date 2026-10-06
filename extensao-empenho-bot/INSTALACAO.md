@@ -79,6 +79,14 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Credenciamento (versão 2.8.5)
+
+- O PDF traz o contrato cortado ("CREDENCIAMENTO 019/2"). O robô reconhece o credenciamento,
+  guarda o número (019) e, na Etapa 1, pesquisa **00019/2** no CNET: aparecem os credenciamentos
+  desse número (um por credenciado) e ele escolhe o do **CNPJ do fornecedor** da solicitação.
+- Na revisão, a caixa "Credenciamento" (abaixo do Contrato) vem marcada; dá para desmarcar ou
+  marcar à mão. Se o fornecedor tiver mais de um credenciamento com esse número, informe o ano.
+
 ## Reforço, anulação e irrisório (versão 2.8)
 
 - Solicitação com "Anulação Ident/OC …" ou "Reforço …" é reconhecida no PDF. Na revisão,

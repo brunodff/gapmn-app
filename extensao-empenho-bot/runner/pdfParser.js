@@ -159,10 +159,11 @@ export function parseSolicitacaoEmpenho(text) {
     const _contratoMatch = (() => {
       // Estratégia 1: procura "Contrato:" na mesma linha que "PAG:" (seção financeira)
       const pagLine = /^[^\n]*PAG:[^\n]*/m.exec(t)?.[0] ?? '';
-      const m1 = /Contrato:\s*(.+?)(?:\s{2,}|\s+I\/L:|$)/.exec(pagLine);
+      // termina em espaço duplo, "I/L:" ou "PAG:" (que pode vir depois na mesma linha)
+      const m1 = /Contrato:\s*(.+?)(?:\s{2,}|\s+I\/L:|\s+PAG:|$)/.exec(pagLine);
       if (m1) return m1[1].trim();
       // Estratégia 2: case-SENSITIVE (evita "CONTRATO:" maiúsculo da descrição de item)
-      const m2 = /Contrato:\s*(.+?)(?:\s{2,}|\s+I\/L:|[\n])/.exec(t);
+      const m2 = /Contrato:\s*(.+?)(?:\s{2,}|\s+I\/L:|\s+PAG:|[\n])/.exec(t);
       if (m2) return m2[1].trim();
       return '';
     })();
@@ -178,9 +179,13 @@ export function parseSolicitacaoEmpenho(text) {
     // o número completo aparece na descrição ou na OBS, às vezes quebrado em duas
     // linhas pelo PDF ("…028/GAPMN-BA" + "MN/2024."), com os valores do item no meio.
     let contratoSemAno = false;
+    // Credenciamento vem cortado ("CREDENCIAMENTO 019/2"): fica só o número, e a
+    // Etapa 1 pesquisa "00019/2" e escolhe o credenciamento pelo CNPJ do fornecedor
+    const RX_CREDENCIAMENTO = /^CRED(?:ENCIAMENTO)?\.?\s+(?=\d)/i;
+    const credenciamento = RX_CREDENCIAMENTO.test(contratoRaw.replace(/^DESPESA\s+/i, '').trim());
     const contrato = (() => {
-      // Remove prefixo "DESPESA " que o SILOMS adiciona
-      let raw = contratoRaw.replace(/^DESPESA\s+/i, '').trim();
+      // Remove prefixo "DESPESA " que o SILOMS adiciona (e o "CREDENCIAMENTO ")
+      let raw = contratoRaw.replace(/^DESPESA\s+/i, '').trim().replace(RX_CREDENCIAMENTO, '');
       // Formata como NNN/ANO para o CONTRATOSGOV (ex: "065/2024")
       const numMatch = /^(\d+)\//.exec(raw);
       if (!numMatch) return raw;
@@ -544,6 +549,7 @@ export function parseSolicitacaoEmpenho(text) {
       pag,
       contrato,
       contratoRaw,
+      credenciamento,
       licit,
       modalidadeSugerida,
       il,

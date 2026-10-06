@@ -119,8 +119,9 @@ export async function conferirContratosNoCnet(pedidos) {
     for (const p of pedidos) {
       const numRaw = /^(\d+)/.exec(p.contrato ?? '')?.[1];
       if (!numRaw) continue;
-      // "028/20"; sem esse número na lista, "28/20" (como a Etapa 1)
-      const termos = [...new Set([`${numRaw}/20`, `${parseInt(numRaw, 10)}/20`])];
+      // "028/20"; sem esse número na lista, "28/20"; credenciamento: "00019/2" (como a Etapa 1)
+      const n = parseInt(numRaw, 10);
+      const termos = [...new Set([p.credenciamento ? `${String(n).padStart(5, '0')}/2` : null, `${numRaw}/20`, `${n}/20`].filter(Boolean))];
       for (const [i, termo] of termos.entries()) {
         const r = await buscar(termo);
         if (!r?.ok) { resultados.set(p.chave, { estado: 'nao-conferido', texto: r?.erro ?? 'sem resposta do CNET' }); break; }

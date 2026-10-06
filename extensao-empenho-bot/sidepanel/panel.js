@@ -730,7 +730,7 @@ function atualizarProblemas(sol) {
  */
 let conferenciaCnetEmCurso = null;
 async function conferirContratosDaRevisao() {
-  const chave = s => `${String(s.contrato ?? '').trim()}|${soDigitos(s.fornecedorCnpj)}`;
+  const chave = s => `${String(s.contrato ?? '').trim()}|${soDigitos(s.fornecedorCnpj)}|${s.credenciamento ? 'cred' : ''}`;
   // Ainda não conferido, dados mudaram, ou da vez anterior não deu (CNET fechado / sem login)
   // Reforço/anulação não escolhem contrato no CNET (vão direto à NE)
   const precisa = s => s.ok && !s.operacao && s.tipoOrigem !== 'compra' && /^\d+/.test(String(s.contrato ?? '').trim()) &&
@@ -740,7 +740,7 @@ async function conferirContratosDaRevisao() {
   const pendentes = solicitacoesParsed.filter(precisa).filter(s => s._cnetContrato?.estado !== 'consultando');
   if (!pendentes.length) return;
   pendentes.forEach(s => { s._cnetContrato = { estado: 'consultando', chave: chave(s) }; atualizarProblemas(s); });
-  const pedidos = [...new Map(pendentes.map(s => [chave(s), { chave: chave(s), contrato: String(s.contrato).trim(), cnpj: soDigitos(s.fornecedorCnpj) }])).values()];
+  const pedidos = [...new Map(pendentes.map(s => [chave(s), { chave: chave(s), contrato: String(s.contrato).trim(), cnpj: soDigitos(s.fornecedorCnpj), credenciamento: !!s.credenciamento }])).values()];
   conferenciaCnetEmCurso = conferirContratosNoCnet(pedidos).catch(e => ({ estado: 'erro', detalhe: e.message }));
   const r = await conferenciaCnetEmCurso;
   conferenciaCnetEmCurso = null;
@@ -891,11 +891,16 @@ function renderCamposEditable(sol, idx) {
       ${MODALIDADES.map(m => `<option value="${escHtml(m)}"${m === sol.modalidade ? ' selected' : ''}>${escHtml(m)}</option>`).join('')}
     </select>`;
     }
-    // Após o campo Contrato, injeta uma linha de inspeção com o texto bruto do PDF
-    const afterRow = key === 'contrato' && sol.contratoRaw && !ehCompra
-      ? `</div><div style="font-size:9px;color:#64748b;margin:1px 0 6px;padding-left:2px;">
+    // Após o campo Contrato: a caixa "Credenciamento" e o texto bruto do PDF
+    const afterRow = key === 'contrato'
+      ? `</div><div${attrGrupo} style="font-size:10px;color:#94a3b8;margin:1px 0 4px;padding-left:2px;">
+           <label title="Pesquisa 00019/2 no CNET e escolhe o credenciamento pelo CNPJ do fornecedor" style="cursor:pointer;">
+             <input type="checkbox" class="rf-cred" data-idx="${idx}"${sol.credenciamento ? ' checked' : ''} style="vertical-align:middle;">
+             Credenciamento (pesquisa ${escHtml(String(parseInt(sol.contrato, 10) || 'NNN').padStart(5, '0'))}/2 e escolhe pelo CNPJ)
+           </label>
+         </div>${sol.contratoRaw ? `<div${attrGrupo} style="font-size:9px;color:#64748b;margin:1px 0 6px;padding-left:2px;">
            📄 PDF (original): <span style="color:#94a3b8;font-family:monospace;">${escHtml(sol.contratoRaw)}</span>
-         </div><div class="rf-grid">`
+         </div>` : ''}<div class="rf-grid">`
       : '';
     // OBS usa textarea para não truncar texto longo
     const input = key === 'obs'
@@ -968,6 +973,16 @@ function escHtml(s) {
 
 // Salva edições nos inputs de volta para solicitacoesParsed
 function bindReviewInputs() {
+  // Caixa "Credenciamento" (abaixo do Contrato)
+  document.querySelectorAll('.rf-cred').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const sol = solicitacoesParsed[Number(chk.dataset.idx)];
+      if (!sol) return;
+      sol.credenciamento = chk.checked;
+      atualizarProblemas(sol);
+      conferirContratosDaRevisao();
+    });
+  });
   // Campos principais
   document.querySelectorAll('.rf-input').forEach(inp => {
     if (inp.dataset.ikey) return; // tratado abaixo (itens empenho)
@@ -976,6 +991,13 @@ function bindReviewInputs() {
       const key = inp.dataset.key;
       let valor = inp.value.trim();
       if (key === 'neAlterar' && valor) { valor = normalizarNE(valor) || valor; inp.value = valor; }
+      if (key === 'contrato' && /^(?:DESPESA\s+)?CRED(?:ENCIAMENTO)?\.?\s+\d/i.test(valor)) {
+        valor = valor.replace(/^(?:DESPESA\s+)?CRED(?:ENCIAMENTO)?\.?\s+/i, '');
+        inp.value = valor;
+        if (solicitacoesParsed[idx]) solicitacoesParsed[idx].credenciamento = true;
+        const chk = document.querySelector(`.rf-cred[data-idx="${idx}"]`);
+        if (chk) chk.checked = true;
+      }
       if (solicitacoesParsed[idx]) solicitacoesParsed[idx][key] = valor;
 
       if (key === 'operacao' || key === 'neAlterar') {
@@ -1162,6 +1184,7 @@ function solToPayload(sol) {
     localEntrega:      sol.localEntrega,
     compradora:        sol.compradora,
     contrato:          sol.contrato,
+    credenciamento:    !!sol.credenciamento,
     tipoOrigem:        sol.tipoOrigem ?? (sol.contrato ? 'contrato' : 'compra'),
     numeroCompra:      sol.numeroCompra ?? '',
     modalidade:        sol.modalidade ?? '',
@@ -1894,7 +1917,8 @@ function buildCnetPayload(sol) {
     fornecedorNome:    sol.fornecedorNome ?? sol.fornecedor ?? '',
     fornecedorCNPJ:    sol.fornecedorCNPJ ?? '',
     numeroCompra:      sol.pag ?? '',
-    contrato:          sol.contrato ?? '',
+    contrato:          String(sol.contrato ?? '').replace(/^(?:DESPESA\s+)?CRED(?:ENCIAMENTO)?\.?\s+(?=\d)/i, ''),
+    credenciamento:    /^(?:DESPESA\s+)?CRED(?:ENCIAMENTO)?\.?\s+\d/i.test(String(sol.contrato ?? '')),
     tipoOrigem:        sol.contrato ? 'contrato' : 'compra',
     unidadeCompra:     sol.ugCred ?? '120630',
     tipoEmpenho:       tipoEmpenhoPadrao({ tipoOrigem: sol.contrato ? 'contrato' : 'compra', obs: sol.obs, itens: sol.items }),

@@ -125,7 +125,7 @@ export async function step1Runner(payload) {
     return ok();
   }
 
-  const { tipoOrigem, modalidade, numeroCompra, contrato, unidadeCompra = '120630', fornecedorCnpj = '' } = payload;
+  const { tipoOrigem, modalidade, numeroCompra, contrato, unidadeCompra = '120630', fornecedorCnpj = '', credenciamento = false } = payload;
 
   const radioEl = tipoOrigem === 'contrato'
     ? document.getElementById('opc_contrato')
@@ -239,8 +239,14 @@ export async function step1Runner(payload) {
         erro: `contrato ${ano ? `${numRaw}/${ano}` : `nº ${numRaw}`}${cnpj.length === 14 ? ` do fornecedor ${fmtCnpj(cnpj)}` : ''} não está na lista do CNET (achei: ${vistos})`,
       };
     };
-    // "028/20"; sem esse número na lista, tenta sem os zeros ("28/20")
-    const termos = [...new Set([numRaw ? numRaw + '/20' : contrato, Number.isNaN(num) ? null : `${num}/20`].filter(Boolean))];
+    // "028/20"; sem esse número na lista, tenta sem os zeros ("28/20"). Credenciamento:
+    // no CNET o número tem 5 dígitos — "00019/2" traz os credenciamentos desse número
+    // (um por credenciado) e o CNPJ do fornecedor escolhe o certo
+    const termos = [...new Set([
+      credenciamento && !Number.isNaN(num) ? `${String(num).padStart(5, '0')}/2` : null,
+      numRaw ? numRaw + '/20' : contrato,
+      Number.isNaN(num) ? null : `${num}/20`,
+    ].filter(Boolean))];
     let rc = null;
     for (const termo of termos) {
       rc = await setSelect2Ajax('#select2_ajax_id', termo, numRaw ? escolherContrato : (fornecedorCnpj || null));
