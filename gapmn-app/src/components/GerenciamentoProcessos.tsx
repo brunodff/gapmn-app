@@ -209,7 +209,8 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
 
       if (!xlsItens.length) return;
       const rows: unknown[][] = [
-        ["LOTE", "ITEM", "REQUISIÇÃO", "CNPJ", "EMPRESA", "QTDE", "UND", "VALOR UNIT", "VALOR TOTAL", "PRAZO", "DESCRIÇÃO", "SITUAÇÃO", "FORNECEDOR", "MODELO/VERSAO", "MARCA"],
+        // Mesma ordem da planilha da extensão (importada em outro sistema): novas colunas só no fim
+        ["LOTE", "ITEM", "REQUISIÇÃO", "CNPJ", "EMPRESA", "QTDE", "UND", "VALOR UNIT", "VALOR TOTAL", "PRAZO", "DESCRIÇÃO", "SITUAÇÃO", "FORNECEDOR", "MODELO/VERSAO", "MARCA", "VALOR ESTIMADO"],
         ...xlsItens.map((it) => {
           const nomeVencedor = it.vencedor_nome ?? resolveNome(it.vencedor_cnpj) ?? "";
           return [
@@ -229,6 +230,7 @@ export default function GerenciamentoProcessos({ canImport = true, canEdit = fal
             nomeVencedor,
             "",
             "",
+            it.valor_estimado_unitario ?? "",
           ];
         }),
       ];
