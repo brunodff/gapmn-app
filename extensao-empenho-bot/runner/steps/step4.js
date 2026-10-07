@@ -146,7 +146,7 @@ export async function step4Runner(p, modo = 'selecionar', valorSolicitado = 0) {
     try {
       btn.click();
       let swals = 0;
-      for (const ini = Date.now(); Date.now() - ini < 25000;) {
+      for (const ini = Date.now(); Date.now() - ini < 60000;) {   // CNET lento: até 1 min
         await dorme(300);
         if (saiu) return { ok: true, navegando: true, antes };
         // "Deseja atualizar?" / "Saldo atualizado": lê e confirma (até 4 avisos)

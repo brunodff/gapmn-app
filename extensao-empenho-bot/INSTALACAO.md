@@ -79,6 +79,15 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## CNET lento (versão 2.8.13)
+
+- Com o CNET sobrecarregado, o robô **não desiste em 20 s**: espera a próxima tela e as tabelas
+  (fornecedores, itens, crédito, subelementos) **até 5 min**, avisando no log a cada 20 s
+  ("⏳ O CNET está lento — esperando os itens (40 s)…").
+- Se a tela ainda está carregando, ele espera em vez de clicar "Próxima" de novo.
+- Se uma tabela não vier em 2 min (a busca pode ter se perdido), ele recarrega a tela uma vez.
+- Só desiste depois de 5 min; três solicitações seguidas assim pausam a fila (CNET fora do ar).
+
 ## Unidade da compra e listas longas (versão 2.8.12)
 
 - Etapa 1: com o CNET lento, a busca da unidade (120630) mostrava "Pesquisando…" e o robô clicava

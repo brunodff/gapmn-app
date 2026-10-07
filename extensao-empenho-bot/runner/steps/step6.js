@@ -61,7 +61,7 @@ export async function step6Runner(p) {
     campo.value = busca;
     campo.dispatchEvent(new Event('input', { bubbles: true }));
     campo.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-    for (let t = 0; t < 40; t++) {  // até ~8 s pela resposta do servidor
+    for (let t = 0; t < 225; t++) {  // até ~45 s pela resposta do servidor (CNET lento)
       await dorme(200);
       const res = Array.from(document.querySelectorAll('.select2-container--open .select2-results__option'))
         .find(o => !o.classList.contains('loading-results') && casa(o.textContent));

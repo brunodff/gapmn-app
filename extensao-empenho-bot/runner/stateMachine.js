@@ -123,6 +123,90 @@ async function waitForNavigation(tabId, timeout = 25000) {
 
 async function delay(ms) { await new Promise(r => setTimeout(r, ms)); }
 
+// ── CNET lento ────────────────────────────────────────────────────────────────
+// Sobrecarregado, o CNET leva às vezes bem mais que 20 s para trazer uma tela ou uma
+// tabela. O robô não desiste por isso: espera até ESPERA_MAX_CNET, avisa no log a
+// cada 20 s e, se a tabela não vier em 2 min, recarrega a tela uma vez (a busca
+// AJAX pode ter se perdido).
+const ESPERA_MAX_CNET = 5 * 60 * 1000;
+const AVISO_CNET_LENTO = 20000;
+const segDesde = t => Math.round((Date.now() - t) / 1000);
+
+// A aba ainda está carregando a próxima tela: espera, sem clicar de novo
+async function esperarAbaCarregar(tabId, etapa, desde = Date.now(), maxMs = ESPERA_MAX_CNET) {
+  let aviso = Date.now() + AVISO_CNET_LENTO;
+  for (;;) {
+    const aba = await chrome.tabs.get(tabId).catch(() => null);
+    if (!aba || aba.status !== 'loading') return true;
+    if (Date.now() - desde > maxMs) return false;
+    if (Date.now() >= aviso) {
+      await logVisivel(`⏳ [Etapa ${etapa}] O CNET está lento — esperando a tela carregar (${segDesde(desde)} s)…`, 'warn');
+      aviso += AVISO_CNET_LENTO;
+    }
+    await delay(1000);
+  }
+}
+
+// Página (mundo MAIN): a tabela da etapa já tem linhas? "ocioso" = página carregada,
+// sem "Processando…" e sem pedido AJAX em andamento
+function sondaTabela(tipo) {
+  const visivel = e => !!e && e.getClientRects().length > 0 && getComputedStyle(e).display !== 'none';
+  const fora = e => !!e.closest('.modal, #inserir_celular_orcamentaria');
+  const SEL = {
+    etapa1: '#opc_compra, #opc_contrato',
+    fornecedores: 'a[selecionar], a[title*="Selecionar"], a[href*="/empenho/item/"]',
+    itens: 'table tbody input[type="checkbox"]:not(#selectAll)',
+    creditos: 'table tbody tr input[type="radio"]',
+    subelementos: 'table tbody tr select',
+  };
+  const n = Array.from(document.querySelectorAll(SEL[tipo] ?? 'table tbody tr')).filter(e => !fora(e)).length;
+  const processando = Array.from(document.querySelectorAll('.dataTables_processing')).some(visivel);
+  const vazioTd = Array.from(document.querySelectorAll('td.dataTables_empty')).find(e => !fora(e));
+  const carregandoTxt = /carregando|processando|loading|processing|aguarde/i.test(vazioTd?.textContent ?? '');
+  const ocioso = document.readyState === 'complete' && !processando && !carregandoTxt && !((window.jQuery || window.$)?.active > 0);
+  return { pronto: n > 0 || (!!vazioTd && ocioso), vazio: n === 0, ocioso, url: location.href };
+}
+
+// Espera a tabela da etapa ter linhas (ou o CNET dizer que não há nenhuma)
+async function esperarTabela(tabId, etapa, tipo, oQue) {
+  const ini = Date.now();
+  let aviso = ini + AVISO_CNET_LENTO, recarregou = false, ociosoDesde = null, semResposta = null;
+  for (;;) {
+    const s = await comLimite(execInPage(tabId, sondaTabela, [tipo]), 8000);
+    if (s?.pronto) {
+      if (Date.now() - ini > AVISO_CNET_LENTO) await logVisivel(`[Etapa ${etapa}] ${oQue} carregaram depois de ${segDesde(ini)} s`, 'info');
+      return { ok: true, vazio: s.vazio };
+    }
+    if (RX_SESSAO.test(s?.url ?? '')) return { ok: false, error: 'a sessão do CNET expirou' };
+    // Página parada, sem nada carregando, há 15 s: não vai vir mais nada — a etapa decide
+    ociosoDesde = s?.ocioso ? ociosoDesde ?? Date.now() : null;
+    if (ociosoDesde && Date.now() - ociosoDesde > 15000) return { ok: true, vazio: true };
+    // Sem resposta da página (alert do CNET, ex.: "Ajax error") há 30 s com a aba parada
+    const aba = await chrome.tabs.get(tabId).catch(() => null);
+    semResposta = !s && aba?.status === 'complete' ? semResposta ?? Date.now() : null;
+
+    const passou = Date.now() - ini;
+    if (passou > ESPERA_MAX_CNET) {
+      return { ok: false, error: `o CNET não trouxe ${oQue} em ${Math.round(passou / 60000)} min (site sobrecarregado?) — tente esta solicitação de novo mais tarde` };
+    }
+    if (!recarregou && aba?.url && (passou > 120000 || (semResposta && Date.now() - semResposta > 30000))) {
+      recarregou = true;
+      await logVisivel(`⚠ [Etapa ${etapa}] ${oQue} não vieram em ${segDesde(ini)} s — recarregando a tela do CNET…`, 'warn');
+      const nav = waitForNavigation(tabId, 60000).then(() => true, () => false);
+      try { await chrome.tabs.update(tabId, { url: aba.url }); } catch { /* segue esperando */ }
+      await nav;
+      await esperarAbaCarregar(tabId, etapa);
+      ociosoDesde = semResposta = null;
+      continue;
+    }
+    if (Date.now() >= aviso) {
+      await logVisivel(`⏳ [Etapa ${etapa}] O CNET está lento — esperando ${oQue} (${segDesde(ini)} s)…`, 'warn');
+      aviso += AVISO_CNET_LENTO;
+    }
+    await delay(1500);
+  }
+}
+
 // ── API pública ───────────────────────────────────────────────────────────────
 
 /**
@@ -553,10 +637,14 @@ async function runEmpenhoStep(s) {
       await appendLog('⏳ Aguardando carregamento da próxima etapa…', 'info');
       // Depois da Etapa 5 o aviso de arredondamento pode abrir na própria tela: olha
       // por ele enquanto espera a navegação (antes esperava os 25 s inteiros)
+      const clicouEm = Date.now();
       const espera = step === 5
         ? await esperarNavegacaoOuAviso(tabId, 25000)
         : await waitForNavigation(tabId, 25000).then(() => 'navegou', () => 'tempo');
       if (espera === 'navegou') await delay(800);
+      // CNET lento: a próxima tela ainda carregando depois de 25 s — continua esperando
+      // em vez de clicar "Próxima" de novo
+      else if (espera === 'tempo' && await esperarAbaCarregar(tabId, step, clicouEm)) await delay(800);
 
       // Verifica modal de arredondamento (aparece após Etapa 5 em alguns casos)
       const rounding = await handleRoundingModal(tabId);
@@ -592,14 +680,19 @@ async function runEmpenhoStep(s) {
               b?.click();
               return !!b;
             }).catch(() => null);
-            if (await esperarNavegacaoOuAviso(tabId, 25000, nav) === 'aviso') {
+            const clicouDeNovo = Date.now();
+            const e2 = await esperarNavegacaoOuAviso(tabId, 25000, nav);
+            if (e2 === 'aviso') {
               const r3 = await handleRoundingModal(tabId);
               if (r3?.handled) {
                 const degrau = await concluirArredondamento(tabId, r3);
                 const st = await getState();
                 await setState({ arredondado: true, degrauArredondamento: Math.round(((st.degrauArredondamento ?? 0) + degrau) * 100) / 100 || null });
               }
-            } else await delay(800);
+            } else {
+              if (e2 === 'tempo') await esperarAbaCarregar(tabId, step, clicouDeNovo);
+              await delay(800);
+            }
           }
           depois = await impressaoDaPagina(tabId);
         }
@@ -634,7 +727,7 @@ function limparMotivo(m) {
 
 // Falha "do sistema" (aba, sessão, CNET fora do ar) e não da solicitação: se
 // repetir, pular só criaria uma falha atrás da outra na fila inteira
-const RX_SISTEMICO = /Script não retornou|Exceção|timeout|não carregaram|bloqueada por um aviso|Não consegui ler a tela|sem resposta|sessão expirou/i;
+const RX_SISTEMICO = /Script não retornou|Exceção|timeout|não carregaram|não trouxe|bloqueada por um aviso|Não consegui ler a tela|sem resposta|sessão expirou/i;
 const RX_SESSAO = /\/login\b|acesso\.gov\.br|\bsso\./i;
 const LIMITE_FALHAS_SISTEMA = 3;
 
@@ -717,7 +810,8 @@ async function runStep0(tabId, payload) {
   if (r?.ok) {
     await appendLog('[Pré] Abrindo nova minuta ("Adicionar Minuta de Empenho")…', 'info');
     notifySidePanel({ type: 'LOG', msg: '[Pré] Abrindo nova minuta…', level: 'info' });
-    try { await waitForNavigation(tabId, 25000); } catch { await delay(3000); }
+    const clicouEm = Date.now();
+    try { await waitForNavigation(tabId, 25000); } catch { await esperarAbaCarregar(tabId, 0, clicouEm); await delay(1500); }
     await delay(800);
     return { ok: true };
   }
@@ -731,8 +825,10 @@ async function runStep0(tabId, payload) {
   // Sem o botão nesta tela: abre o formulário pelo endereço
   await appendLog('[Pré] Botão "Adicionar Minuta" não está nesta tela — abrindo o formulário pelo endereço…', 'warn');
   const navegou = waitForNavigation(tabId, 30000).catch(() => {});
+  const abriuEm = Date.now();
   try { await chrome.tabs.update(tabId, { url: COMPRASNET_URL }); } catch {}
   await navegou;
+  await esperarAbaCarregar(tabId, 0, abriuEm);
   await delay(800);
   return { ok: true };
 }
@@ -744,6 +840,8 @@ async function runStep1(tabId, payload) {
     : `contrato ${payload.contrato ?? '—'}`;
   notifySidePanel({ type: 'LOG', msg: `[Etapa 1] Preenchendo ${alvo}…`, level: 'info' });
 
+  const pronta = await esperarTabela(tabId, 1, 'etapa1', 'o formulário da Etapa 1');
+  if (!pronta.ok) return { ok: false, error: `Etapa 1: ${pronta.error}` };
   const result = await execInPage(tabId, step1Runner, [payload]);
   if (!result) return { ok: false, error: 'Script não retornou — aba pode ter recarregado ou sessão expirou' };
   if (result.ok) {
@@ -768,6 +866,8 @@ async function runStep2(tabId, payload) {
     };
   }
 
+  const pronta = await esperarTabela(tabId, 2, 'fornecedores', 'os fornecedores');
+  if (!pronta.ok) return { ok: false, error: `Fornecedores: ${pronta.error}` };
   await maximizarTabelas(tabId, 2);
   const cnpjRaw = (payload.fornecedorCnpj ?? '').replace(/\D/g, '');
 
@@ -822,6 +922,8 @@ async function runStep3(tabId, payload) {
   await appendLog('[Etapa 3] Aguardando carregamento dos itens (AJAX)…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 3] Aguardando itens carregarem…', level: 'info' });
 
+  const pronta = await esperarTabela(tabId, 3, 'itens', 'os itens');
+  if (!pronta.ok) return { ok: false, error: `Itens não carregaram: ${pronta.error}` };
   await maximizarTabelas(tabId, 3);
   const result = await execInPage(tabId, step3Runner, [itensEmpenho, payload.tipoOrigem]);
 
@@ -833,20 +935,24 @@ async function runStep3(tabId, payload) {
 async function runStep4(tabId, payload) {
   await appendLog('[Etapa 4] Buscando linha de crédito orçamentário…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 4] Selecionando crédito…', level: 'info' });
+  const pronta = await esperarTabela(tabId, 4, 'creditos', 'as linhas de crédito');
+  if (!pronta.ok) return { ok: false, error: `Crédito: ${pronta.error}` };
   // Sem isto, crédito na página 2 levava a cadastrar uma célula orçamentária duplicada
   await maximizarTabelas(tabId, 4);
 
   // Antes de marcar a linha, atualiza o crédito dela (⟳): o valor guardado no CNET
   // pode estar velho e barrar um empenho que cabe no crédito real
   await logVisivel('[Etapa 4] Atualizando o crédito da linha (⟳)…', 'info');
-  const nav = waitForNavigation(tabId, 30000).then(() => true, () => false);
-  const at = await comLimite(execInPage(tabId, step4Runner, [payload, 'atualizar', valorSolicitadoDe(payload)]), 35000);
+  const nav = waitForNavigation(tabId, 90000).then(() => true, () => false);
+  const at = await comLimite(execInPage(tabId, step4Runner, [payload, 'atualizar', valorSolicitadoDe(payload)]), 75000);
   if (!at || at.navegando) {
     // O botão recarregou a página (ou o script caiu): espera a tela voltar
     const aba = await chrome.tabs.get(tabId).catch(() => null);
     const navegou = aba?.status === 'loading' || at?.navegando ? await nav : await Promise.race([nav, delay(1500).then(() => false)]);
     if (navegou) {
+      await esperarAbaCarregar(tabId, 4);
       await delay(800);
+      await esperarTabela(tabId, 4, 'creditos', 'as linhas de crédito');
       await maximizarTabelas(tabId, 4);
       await logVisivel('[Etapa 4] Crédito da linha atualizado (o CNET recarregou a página)', 'info');
     } else {
@@ -869,6 +975,8 @@ async function runStep4(tabId, payload) {
 async function runStep5(tabId, payload) {
   await appendLog('[Etapa 5] Preenchendo subelemento e valores…', 'info');
   notifySidePanel({ type: 'LOG', msg: '[Etapa 5] Preenchendo subelemento e valores…', level: 'info' });
+  const pronta = await esperarTabela(tabId, 5, 'subelementos', 'os itens da Etapa 5');
+  if (!pronta.ok) return { ok: false, error: `Etapa 5: ${pronta.error}` };
   await maximizarTabelas(tabId, 5);
 
   const result = await execInPage(tabId, step5Runner, [payload]);
