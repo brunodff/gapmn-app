@@ -551,13 +551,19 @@ async function runEmpenhoStep(s) {
       await delay(1500);
     } else if (step > 0 && step < 8) {
       await appendLog('⏳ Aguardando carregamento da próxima etapa…', 'info');
-      try { await waitForNavigation(tabId, 25000); await delay(800); } catch {}
+      // Depois da Etapa 5 o aviso de arredondamento pode abrir na própria tela: olha
+      // por ele enquanto espera a navegação (antes esperava os 25 s inteiros)
+      const espera = step === 5
+        ? await esperarNavegacaoOuAviso(tabId, 25000)
+        : await waitForNavigation(tabId, 25000).then(() => 'navegou', () => 'tempo');
+      if (espera === 'navegou') await delay(800);
 
       // Verifica modal de arredondamento (aparece após Etapa 5 em alguns casos)
       const rounding = await handleRoundingModal(tabId);
       if (rounding?.handled) {
-        // O valor que falta sai do Valor Total da Etapa 8 (o real), não deste modal
-        await logVisivel(`⚠ Arredondamento → "para menos" (${rounding.escolhas?.join('; ') || `${rounding.count} item(ns)`}) e "${rounding.acao === 'corrigir' ? 'Corrigir agora' : 'Avançar e ajustar depois'}". O reforço irrisório da diferença vem depois da emissão.`, 'warn');
+        // O valor exato que falta sai do Valor Total da Etapa 8; aqui, a conta pelo aviso
+        const falta = faltaDoArredondamento(rounding, payload.itensEmpenho, valorSolicitadoDe(payload));
+        await logVisivel(textoArredondamento(rounding, falta, 'reforço irrisório'), 'warn');
         const degrau = await concluirArredondamento(tabId, rounding);
         await setState({ valorEmpenhado: rounding.totalEmpenhado || null, arredondado: true,
           degrauArredondamento: degrau > 0 ? Math.round(degrau * 100) / 100 : null });
@@ -868,7 +874,29 @@ async function handleRoundingModal(tabId) {
       grupos.get(key).push(r);
     }
 
-    const escolhidos = [], escolhas = [];
+    // Nº do item do grupo ("Item 00001"): no bloco que só tem os radios dele, ou no
+    // título logo antes; com um item só, o único "Item NNNNN" do aviso
+    const raiz = caixa ?? document.body;
+    const itemDoGrupo = grupo => {
+      const nome = grupo[0].name;
+      for (let el = grupo[0].parentElement; el && el !== raiz.parentElement; el = el.parentElement) {
+        const nomes = new Set(Array.from(el.querySelectorAll('input[type="radio"]')).map(r => r.name));
+        if (nomes.size > 1 || (nome && !nomes.has(nome))) break;
+        const m = /Item\s+(\d{1,6})/i.exec(el.textContent ?? '');
+        if (m) return m[1];
+      }
+      let bloco = grupo[0];
+      while (bloco.parentElement && bloco.parentElement !== raiz) bloco = bloco.parentElement;
+      for (let s = bloco.previousElementSibling; s; s = s.previousElementSibling) {
+        if (s.querySelector?.('input[type="radio"]')) break;
+        const m = /Item\s+(\d{1,6})/i.exec(s.textContent ?? '');
+        if (m) return m[1];
+      }
+      const todos = (raiz.textContent ?? '').match(/Item\s+\d{1,6}/gi) ?? [];
+      return grupos.size === 1 && todos.length === 1 ? /\d+/.exec(todos[0])[0] : null;
+    };
+
+    const escolhidos = [], escolhas = [], itens = [];
     let totalMais = 0;
     for (const grupo of grupos.values()) {
       const comValor = grupo.filter(r => valorDe(r) !== null).sort((x, y) => valorDe(x) - valorDe(y));
@@ -883,6 +911,7 @@ async function handleRoundingModal(tabId) {
       else if (jaMarcado) menos.dispatchEvent(new Event('change', { bubbles: true }));
       escolhidos.push(menos);
       escolhas.push(textoDe(menos).slice(0, 60));
+      itens.push({ numeroItem: itemDoGrupo(grupo), menos: valorDe(menos), mais: comValor.length ? valorDe(comValor[comValor.length - 1]) : null });
     }
     const valores = escolhidos.map(valorDe).filter(v => v !== null);
     const totalEmpenhado = valores.reduce((s, v) => s + v, 0);
@@ -894,9 +923,69 @@ async function handleRoundingModal(tabId) {
     const btn = btnCorrigir ?? btnAvancar;
     if (btn) btn.click();
 
-    return { handled: true, totalEmpenhado, totalMais, count: escolhidos.length, escolhas,
+    return { handled: true, totalEmpenhado, totalMais, count: escolhidos.length, escolhas, itens,
       acao: btnCorrigir ? 'corrigir' : btnAvancar ? 'avancar' : null };
   });
+}
+
+// O aviso de arredondamento está aberto na tela? (função da página)
+function avisoArredondamentoAberto() {
+  const visivel = e => { const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && e.getClientRects().length > 0; };
+  const caixas = Array.from(document.querySelectorAll('.modal, .swal2-popup, [role="dialog"], .bootbox'));
+  if (caixas.some(m => /arredondamento/i.test(m.textContent ?? '') && visivel(m))) return true;
+  return !caixas.length && /Diferen[çc]a de arredondamento identificada/i.test(document.body?.innerText ?? '');
+}
+
+// Depois de "Próxima Etapa": a página muda OU o aviso de arredondamento abre na
+// própria tela. Antes o robô esperava a navegação até o tempo limite (25 s) para só
+// então olhar o aviso. `navPronta`: espera de navegação já ligada antes do clique.
+async function esperarNavegacaoOuAviso(tabId, ms, navPronta = null) {
+  let acabou = false;
+  const nav = (navPronta ?? waitForNavigation(tabId, ms).then(() => true, () => false)).then(ok => (ok ? 'navegou' : 'tempo'));
+  const olhar = (async () => {
+    const fim = Date.now() + ms;
+    await delay(600);
+    while (!acabou && Date.now() < fim) {
+      if (await comLimite(execInPage(tabId, avisoArredondamentoAberto), 2500) === true) return 'aviso';
+      await delay(600);
+    }
+    return 'tempo';
+  })();
+  const r = await Promise.race([nav, olhar]);
+  acabou = true;
+  return r;
+}
+
+// Quanto falta depois do "para menos": para cada item do aviso, o valor pedido na
+// solicitação − o corrigido; sem o nº do item, com um item só, total pedido − corrigido
+function faltaDoArredondamento(rounding, itensPedidos, totalPedido) {
+  const num = s => parseFloat(String(s ?? '').replace(',', '.'));
+  const numItem = n => parseInt(String(n ?? '').replace(/\D/g, ''), 10);
+  let falta = 0;
+  const itens = rounding.itens ?? [];
+  const todosAchados = itens.length > 0 && itens.every(it => {
+    const ped = (itensPedidos ?? []).find(p => numItem(p.numeroItem) === numItem(it.numeroItem));
+    if (!ped || !(num(ped.valor) > 0) || it.menos == null) return false;
+    falta += num(ped.valor) - it.menos;
+    return true;
+  });
+  if (!todosAchados) {
+    if (rounding.count === 1 && (itensPedidos?.length ?? 0) <= 1 && totalPedido > 0) falta = totalPedido - rounding.totalEmpenhado;
+    else return null;
+  }
+  falta = Math.round(falta * 100) / 100;
+  return falta >= 0.005 ? falta : null;
+}
+
+// Linha do log no "Corrigir agora": o valor de cada item e o que falta para o irrisório
+function textoArredondamento(rounding, falta, complemento) {
+  const itens = (rounding.itens ?? []).filter(i => i.menos != null);
+  const descr = itens.length
+    ? itens.map(i => `${i.numeroItem ? `item ${i.numeroItem}` : 'item'} → R$ ${fmtR$(i.menos)}`).join('; ')
+    : (rounding.escolhas?.join('; ') || `${rounding.count} item(ns)`);
+  const botao = rounding.acao === 'corrigir' ? 'Corrigir agora' : 'Avançar e ajustar depois';
+  return `⚠ Arredondamento "para menos" (${descr}) + "${botao}"`
+    + (falta ? ` — faltam R$ ${fmtR$(falta)}, que vão de ${complemento} logo depois da emissão` : ` — o que faltar vai de ${complemento} logo depois da emissão`);
 }
 
 // Depois do aviso de arredondamento. "Corrigir agora" troca o valor do item pelo
@@ -911,7 +1000,8 @@ async function concluirArredondamento(tabId, rounding, tentativa = 1) {
     await delay(800);
     return soma;
   }
-  if (await waitForNavigation(tabId, 8000).then(() => true, () => false)) { await delay(800); return soma; }
+  // "Corrigir agora" é na própria tela: se em 2,5 s não navegou, segue com "Próxima"
+  if (await waitForNavigation(tabId, 2500).then(() => true, () => false)) { await delay(800); return soma; }
   const navegou = waitForNavigation(tabId, 25000).then(() => true, () => false);
   const clicou = await execInPage(tabId, () => {
     const btn = document.querySelector('button.submeter') ||
@@ -922,9 +1012,10 @@ async function concluirArredondamento(tabId, rounding, tentativa = 1) {
   }).catch(() => 'navegou');
   if (clicou === 'ok') {
     await logVisivel('[Arredondamento] Valor corrigido — clicando "Próxima Etapa" de novo…', 'info');
-    if (await navegou) { await delay(800); return soma; }
-    // não avançou: o aviso pode ter voltado (outro item)
-    if (tentativa < 3) {
+    const r = await esperarNavegacaoOuAviso(tabId, 25000, navegou);
+    if (r === 'navegou') { await delay(800); return soma; }
+    // o aviso voltou (outro item)
+    if (r === 'aviso' && tentativa < 3) {
       const r2 = await handleRoundingModal(tabId);
       if (r2?.handled) return soma + await concluirArredondamento(tabId, r2, tentativa + 1);
     }
@@ -1110,6 +1201,11 @@ async function donoDaNE(ne, solicitacao) {
   const data = await chrome.storage.local.get(REGISTRO_KEY);
   const r = (data[REGISTRO_KEY] ?? []).find(x => x.ne === ne && x.solicitacao !== solicitacao && (x.status ?? 'emitido') === 'emitido');
   return r ? (r.solicitacao || '?') : null;
+}
+
+async function lerRegistro(id) {
+  const data = await chrome.storage.local.get(REGISTRO_KEY);
+  return (data[REGISTRO_KEY] ?? []).find(r => r.id === id) ?? null;
 }
 
 async function atualizarRegistro(id, patch) {
@@ -1425,8 +1521,9 @@ async function runAlteracaoStep(s) {
     await setState({ altStep: passo + 1, ...(r.patch ?? {}) });
     if (r.esperarNavegacao) {
       await appendLog('⏳ Aguardando a próxima tela…', 'info');
-      await navegacao;
-      await delay(800);
+      // tela do Subelemento: o aviso de arredondamento pode abrir nela mesma
+      if (passo === 2) { if (await esperarNavegacaoOuAviso(tabId, 25000, navegacao) === 'navegou') await delay(800); }
+      else { await navegacao; await delay(800); }
     }
     if (passo === 2) {
       // O robô já digitou o "para menos". Se o CNET ainda abrir o modal de
@@ -1434,7 +1531,7 @@ async function runAlteracaoStep(s) {
       // depois da emissão
       const rounding = await handleRoundingModal(tabId);
       if (rounding?.handled) {
-        await logVisivel(`⚠ O CNET pediu arredondamento → "para menos" (${rounding.escolhas?.join('; ') || `${rounding.count} item(ns)`}) e "${rounding.acao === 'corrigir' ? 'Corrigir agora' : 'Avançar e ajustar depois'}" — o que faltar vira ${COMPLEMENTO_CNET[a.tipo]} logo depois da emissão`, 'warn');
+        await logVisivel(textoArredondamento(rounding, faltaDoArredondamento(rounding, a.itens, a.valor), COMPLEMENTO_CNET[a.tipo]), 'warn');
         const degrauModal = await concluirArredondamento(tabId, rounding);
         const st = await getState();
         await setState({ altValorFeito: rounding.totalEmpenhado || null, altRestos: null,
@@ -1677,7 +1774,20 @@ async function emitirAlteracao(tabId, s) {
   const resumo = status === 'emitido' ? `emitido na ${ne}` : status === 'erro' ? `ERRO SIAFI${mensagem ? `: ${mensagem}` : ''}` : 'em processamento no SIAFI — confira depois';
   await logVisivel(`${status === 'emitido' ? '✅' : status === 'erro' ? '❌' : '⏳'} ${a.solicitacao || ''} ${a.operacao} de R$ ${fmtR$(valorFeito)} → ${resumo}`,
     status === 'emitido' ? 'success' : status === 'erro' ? 'error' : 'warn');
-  notifySidePanel({ type: 'DONE', ne: ne ?? a.ne, status, mensagem, payload, valorEmpenhado: valorFeito, valorSolicitado: a.valor, reforco: complemento });
+  if (a.origem !== 'solicitacao' && a.registroId && status === 'emitido') {
+    // Irrisório feito: a solicitação está completa — o painel deixa de mostrar "falta"
+    const reg = await lerRegistro(a.registroId);
+    const base = Number(reg?.valorEmpenhado ?? 0);
+    const pedido = Number(reg?.valorSolicitado ?? 0);
+    const total = Math.round((base + a.valor) * 100) / 100;
+    const oQue = a.tipo === 'anulacao' ? 'Anulação completa' : a.origem === 'complemento' ? 'Reforço completo' : 'Empenho completo';
+    await logVisivel(`✅ ${a.solicitacao || ''}: ${oQue} na ${ne} — R$ ${fmtR$(base)} + ${a.operacao.toLowerCase()} R$ ${fmtR$(a.valor)} = R$ ${fmtR$(total)}`
+      + (pedido > 0 && Math.abs(total - pedido) < 0.01 ? ' (o valor solicitado)' : pedido > 0 ? ` (solicitado R$ ${fmtR$(pedido)})` : ''), 'success');
+    notifySidePanel({ type: 'DONE', ne, status, mensagem, payload, valorEmpenhado: total, valorSolicitado: pedido || total, reforco: 0,
+      irrisorio: { base, valor: a.valor, operacao: a.operacao, tipo: a.tipo } });
+  } else {
+    notifySidePanel({ type: 'DONE', ne: ne ?? a.ne, status, mensagem, payload, valorEmpenhado: valorFeito, valorSolicitado: a.valor, reforco: complemento });
+  }
 
   // Arredondamento deixou diferença: emenda o irrisório na mesma NE
   if (complemento && status !== 'erro') {

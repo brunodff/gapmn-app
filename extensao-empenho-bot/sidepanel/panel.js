@@ -1472,7 +1472,9 @@ function showCheckpoint(show, summary = null) {
 function showResultadoEmpenho(msg) {
   const st              = msg.status ?? (msg.ne ? 'emitido' : 'pendente');
   const ne              = msg.ne ?? (st === 'erro' ? 'erro no SIAFI' : 'em processamento');
-  const titulo          = st === 'emitido' ? '✅ EMPENHO EMITIDO' : st === 'erro' ? '❌ SIAFI RECUSOU' : '⏳ ENVIADO AO SIAFI — NE EM PROCESSAMENTO';
+  const irr             = st === 'emitido' ? msg.irrisorio : null;   // irrisório feito: solicitação completa
+  const titulo          = irr ? `✅ ${irr.tipo === 'anulacao' ? 'ANULAÇÃO' : 'EMPENHO'} COMPLETO — IRRISÓRIO FEITO`
+    : st === 'emitido' ? '✅ EMPENHO EMITIDO' : st === 'erro' ? '❌ SIAFI RECUSOU' : '⏳ ENVIADO AO SIAFI — NE EM PROCESSAMENTO';
   const corTitulo       = st === 'emitido' ? '#4ade80' : st === 'erro' ? '#f87171' : '#fbbf24';
   const payload         = msg.payload ?? {};
   const vEmp            = Number(msg.valorEmpenhado ?? 0);
@@ -1492,6 +1494,7 @@ function showResultadoEmpenho(msg) {
     <div style="color:${corTitulo};font-size:12px;font-weight:700;letter-spacing:.5px;">${titulo}</div>
     <div style="font-size:18px;font-weight:700;color:#fff;margin:4px 0;">${escHtml(ne)}</div>
     ${st === 'erro' && msg.mensagem ? `<div style="font-size:11px;color:#fca5a5;margin-bottom:6px;">${escHtml(msg.mensagem)}</div>` : ''}
+    ${irr ? `<div style="font-size:11px;color:#86efac;margin-bottom:4px;">R$ ${fmtV(Number(irr.base))} + ${escHtml(String(irr.operacao).toLowerCase())} R$ ${fmtV(Number(irr.valor))}</div>` : ''}
     <div style="display:flex;gap:8px;margin:8px 0;">
       <div style="flex:1;">
         <div style="font-size:9px;color:#94a3b8;letter-spacing:.4px;">SOLICITADO</div>
@@ -1672,7 +1675,10 @@ async function renderEmpenhosGerados() {
       <tbody>${[...lista].reverse().slice(0, 50).map(r => `<tr>
         <td>${escHtml(r.solicitacao || '–')}</td>
         ${celulaNE(r)}
-        <td>${statusRegistro(r) === 'falhou' ? '—' : fmtV(r.valorEmpenhado)}${(r.reforco ?? 0) > 0 ? ` <span class="eg-conferir" title="Reforço irrisório: falta para o solicitado">(falta ${fmtV(r.reforco)})</span>` : ''}</td>
+        <td>${statusRegistro(r) === 'falhou' ? '—'
+          : (r.reforco ?? 0) > 0 && r.reforcoStatus === 'feito'
+            ? `${fmtV((r.valorEmpenhado ?? 0) + r.reforco)} <span class="eg-ok" title="R$ ${fmtV(r.valorEmpenhado)} + irrisório R$ ${fmtV(r.reforco)}">✓ irrisório ${fmtV(r.reforco)}</span>`
+            : `${fmtV(r.valorEmpenhado)}${(r.reforco ?? 0) > 0 ? ` <span class="eg-conferir" title="Irrisório: falta para o solicitado">(falta ${fmtV(r.reforco)})</span>` : ''}`}</td>
         <td>${escHtml(quando(r.data))}</td>
       </tr>`).join('')}</tbody>
     </table>`;
