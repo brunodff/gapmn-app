@@ -742,21 +742,75 @@ function acharAssunto(pd) {
   return null;
 }
 
-// Select de tipo de documento, se a janela tiver: escolhe a opção que combina
-function escolherTipo(pd, doc) {
-  var rx = doc.tipo === 'sicaf' ? /sicaf|declara|certid|regularidade|habilita/i : /solicita|empenho|requisi/i;
-  pd.querySelectorAll('select').forEach(function (sel) {
-    var opcoes = Array.prototype.map.call(sel.options, function (o) { return o.text.trim(); });
-    log('    select ' + (sel.name || sel.id || '') + ': ' + opcoes.slice(0, 12).join(' | '));
-    for (var i = 0; i < sel.options.length; i++) {
-      if (rx.test(sel.options[i].text)) {
-        sel.selectedIndex = i;
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
-        log('    → ' + sel.options[i].text.trim(), 'ok');
-        return;
-      }
+// Campo pelo rótulo da linha ("Nome do Documento", "Data de Elaboração"…): o campo
+// fica na mesma linha (tr) do rótulo ou logo depois dele
+function campoPorRotulo(pd, rx, seletor) {
+  var rotulos = pd.querySelectorAll('td, th, label, span, b, div, font');
+  for (var i = 0; i < rotulos.length; i++) {
+    var t = (rotulos[i].textContent || '').replace(/\s+/g, ' ').trim();
+    if (t.length > 45 || !rx.test(t)) continue;
+    var campo = null;
+    var tr = rotulos[i].closest ? rotulos[i].closest('tr') : null;
+    if (tr) {
+      var lista = tr.querySelectorAll(seletor);
+      if (lista.length === 1) campo = lista[0];
     }
+    if (!campo) {
+      var prox = rotulos[i].nextElementSibling || (rotulos[i].parentElement && rotulos[i].parentElement.nextElementSibling);
+      if (prox) campo = prox.matches && prox.matches(seletor) ? prox : prox.querySelector(seletor);
+    }
+    if (campo && !campo.disabled && !campo.readOnly) return campo;
+  }
+  return null;
+}
+
+function hojeBR(curto) {
+  var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + (curto ? String(d.getFullYear()).slice(2) : d.getFullYear());
+}
+
+// Campos obrigatórios da janela de inclusão: Nome do Documento, Data de Elaboração e
+// Tipo de Documento (Sigilo e Tipo de Conferência ficam no padrão: OSTENSIVO / ORIGINAL)
+function preencherCabecalhoDoc(pd, doc) {
+  var nome = campoPorRotulo(pd, /^nome\s+do\s+documento\s*:?$/i, 'input[type="text"], input:not([type])');
+  if (nome) { fill(nome, String(doc.nome || doc.assunto).slice(0, nome.maxLength > 0 ? nome.maxLength : 100)); log('    Nome do Documento: ' + nome.value, 'ok'); }
+  else log('    ⚠ Campo "Nome do Documento" não encontrado', 'warn');
+
+  var data = campoPorRotulo(pd, /^data\s+de\s+elabora/i, 'input[type="text"], input:not([type])');
+  if (data && !/\d/.test(data.value || '')) { fill(data, hojeBR(data.maxLength > 0 && data.maxLength <= 8)); log('    Data de Elaboração: ' + data.value, 'ok'); }
+
+  var tipo = campoPorRotulo(pd, /^tipo\s+de\s+documento\s*:?$/i, 'select');
+  if (!tipo) return;
+  var opcoes = Array.prototype.map.call(tipo.options, function (o) { return o.text.trim(); });
+  var rx = doc.tipo === 'sicaf' ? /sicaf|declara|certid|regularidade|habilita/i : /solicita|empenho|requisi/i;
+  var escolher = function (re) {
+    for (var i = 0; i < tipo.options.length; i++) if (re.test(tipo.options[i].text)) { tipo.selectedIndex = i; return true; }
+    return false;
+  };
+  if (escolher(rx) || escolher(/^outros?\b|diversos|anexo/i)) {
+    tipo.dispatchEvent(new Event('change', { bubbles: true }));
+    log('    Tipo de Documento: ' + tipo.options[tipo.selectedIndex].text.trim(), 'ok');
+  } else {
+    log('    ⚠ Tipo de Documento sem opção que combine: ' + opcoes.slice(0, 15).join(' | '), 'warn');
+  }
+}
+
+// alert() do SILOMS ("Nome do documento é obrigatório."): guarda o texto em vez de
+// travar a janela (vale 60 s, em todas as molduras da tela)
+function capturarAlertas() {
+  allDocs().forEach(function (d) {
+    try { d.documentElement.removeAttribute('data-gapmn-alerta'); } catch (_) {}
+    rodarNaPagina(d,
+      'var w=window,o=w.alert;w.alert=function(m){document.documentElement.setAttribute("data-gapmn-alerta",String(m==null?"":m));};' +
+      'setTimeout(function(){w.alert=o;},60000);');
   });
+}
+function alertaCapturado() {
+  var docs = allDocs();
+  for (var i = 0; i < docs.length; i++) {
+    try { var a = docs[i].documentElement.getAttribute('data-gapmn-alerta'); if (a) return a; } catch (_) {}
+  }
+  return null;
 }
 
 function acharConfirmar(pd) {
@@ -798,10 +852,12 @@ async function inserirDocumento(item, doc) {
   await delay(800);
   log('    Janela de inclusão aberta — campos: ' + camposDe(pd).join(' ; ').slice(0, 400));
 
+  capturarAlertas();
+  preencherCabecalhoDoc(pd, doc);
+  await delay(200);
   var assunto = acharAssunto(pd);
   if (assunto) { fill(assunto, doc.assunto); await delay(200); }
   else log('    ⚠ Campo Assunto não encontrado', 'warn');
-  escolherTipo(pd, doc);
 
   var marca = 'ga' + Date.now() + Math.random().toString(36).slice(2, 7);
   campoArq.setAttribute('data-gapmn-arquivo', marca);
@@ -815,10 +871,16 @@ async function inserirDocumento(item, doc) {
   await descarregarLog();
   await clicarNoMain(confirmar);
 
-  // Fechou a janela (o campo de arquivo saiu da tela) = documento incluído
+  // Fechou a janela (o campo de arquivo saiu da tela) = documento incluído. Um aviso do
+  // SILOMS (campo obrigatório etc.) volta como erro, com os campos da janela no log.
   fim = Date.now() + 20000;
   while (Date.now() < fim) {
     await delay(500);
+    var alerta = alertaCapturado();
+    if (alerta) {
+      log('    Campos da janela: ' + camposDe(pd).join(' ; ').slice(0, 500), 'warn');
+      return { status: 'erro', motivo: 'o SILOMS recusou: "' + alerta.replace(/\s+/g, ' ').trim().slice(0, 160) + '"' };
+    }
     var aberto = false;
     try { aberto = campoArq.isConnected && arquivosNaTela().indexOf(campoArq) !== -1; } catch (_) {}
     if (!aberto) return { status: 'ok' };

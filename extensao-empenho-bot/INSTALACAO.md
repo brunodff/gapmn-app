@@ -79,6 +79,15 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Documentos no subprocesso (versão 2.8.10)
+
+- Na janela "Inclusão de Documento em Subprocesso" o robô preenche **Nome do Documento**
+  ("Solicitação de Empenho 26S1593" / "Declaração SICAF - <empresa>"), **Data de Elaboração**
+  (hoje), **Tipo de Documento** (a opção que combinar), o Assunto e o arquivo; Sigilo e Tipo de
+  Conferência ficam no padrão (OSTENSIVO / ORIGINAL).
+- Se o SILOMS recusar (ex.: "campo obrigatório"), o aviso aparece no log e no resultado, com os
+  campos da janela — o robô não fica parado no alerta.
+
 ## Credenciamento (versão 2.8.7)
 
 - O PDF traz o contrato cortado ("CREDENCIAMENTO 004/2"). O robô reconhece o credenciamento e
