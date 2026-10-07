@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instalar o Painel ComprasNet</title>
+<style>
+  :root { --fundo: #f8fafc; --texto: #0f172a; --suave: #475569; --borda: #e2e8f0; --cartao: #ffffff; --destaque: #1d4ed8; --botao-texto: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fundo: #0b1220; --texto: #e2e8f0; --suave: #94a3b8; --borda: #1e293b; --cartao: #0f172a; --destaque: #3b82f6; --botao-texto: #ffffff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--texto); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 56px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 0 0 8px; }
+  .sub { color: var(--suave); margin: 0 0 24px; }
+  .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .botao { display: inline-block; background: var(--destaque); color: var(--botao-texto); text-decoration: none; font-weight: 600; padding: 10px 18px; border-radius: 10px; margin: 6px 0 10px; }
+  ol { padding-left: 20px; margin: 8px 0 0; }
+  li { margin: 4px 0; }
+  code { font-size: .92em; }
+  .nota { color: var(--suave); font-size: .92rem; }
+  a { color: var(--destaque); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Instalar o Painel ComprasNet</h1>
+  <p class="sub">Ferramenta não oficial do GAP-MN para acompanhar os processos de compra da sua UASG no Compras.gov.br.</p>
+
+  <section class="cartao">
+    <h2>Chrome e Edge</h2>
+    <a class="botao" href="https://chromewebstore.google.com/detail/painel-comprasnet/nenkoocjnchhfmlabgllambjiekifdgn">Abrir na Chrome Web Store</a>
+    <ol>
+      <li>Clique em <strong>Usar no Chrome</strong>. Pela loja, as próximas versões chegam sozinhas.</li>
+      <li>Se você tinha instalado pelo arquivo ZIP, remova a versão antiga em <code>chrome://extensions</code> (senão ficam duas).</li>
+    </ol>
+  </section>
+
+  <section class="cartao">
+    <h2>Firefox</h2>
+    <a class="botao" href="/gapmn-cnet-extensao.zip" download>Baixar o arquivo (.zip)</a>
+    <ol>
+      <li>Extraia o ZIP numa pasta.</li>
+      <li>Abra <code>about:debugging</code> → <strong>Este Firefox</strong> → <strong>Carregar extensão temporária…</strong> e escolha o <code>manifest.json</code> da pasta.</li>
+      <li>No Firefox, essa instalação some quando o navegador fecha — a versão assinada, que fica e se atualiza sozinha, está a caminho.</li>
+    </ol>
+  </section>
+
+  <section class="cartao">
+    <h2>Primeira vez: código da equipe</h2>
+    <p>As anotações (habilitação, etapas, amostras, observações) ficam guardadas para a sua equipe. Clique em <strong>👥 Equipe</strong> no painel e informe o código da sua equipe — peça a quem já usa o painel na sua unidade. Se for o primeiro da unidade, crie a equipe e passe o código aos colegas.</p>
+  </section>
+
+  <p class="nota">Dúvidas ou sugestões: botão 💬 Sugestões dentro da extensão. <a href="privacidade">Política de privacidade</a>.</p>
+</main>
+</body>
+</html>

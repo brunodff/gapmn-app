@@ -20,6 +20,7 @@ interface Tool {
   appsScriptCode?: string;
   videos?: { titulo: string; youtubeId: string }[];
   extensaoDownload?: string; // path relativo em /public para download do zip
+  lojaChrome?: string;       // página da extensão na Chrome Web Store (atualiza sozinha)
   allowUser?: boolean;       // se true, usuários USER também podem baixar/instalar
 }
 
@@ -154,18 +155,16 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
     category: "licitacoes",
     icon: "🧩",
     title: "Extensão Painel ComprasNet",
-    subtitle: "Painel ComprasNet v1.16 (Chrome / Firefox)",
+    subtitle: "Painel ComprasNet (Chrome Web Store / Firefox)",
     tagline: "Acompanhe processos, fornecedores e habilitação em tempo real no ComprasNet",
     description:
       "Extensão para Chrome e Firefox que acessa a API interna do ComprasNet usando sua sessão já autenticada. Exibe processos com situação em tempo real, três abas por processo (Itens · Licitantes · Habilitação), busca livre por nome do processo ou por descrição de item, alertas de pendências, checklist de habilitação, frases jurídicas padronizadas e exportação XLS.",
     steps: [
-      "— CHROME —",
-      "Clique em 'Baixar extensão' abaixo e extraia o arquivo ZIP em qualquer pasta",
-      "No Chrome, acesse chrome://extensions na barra de endereço",
-      "Ative o 'Modo do desenvolvedor' (chave no canto superior direito)",
-      "Clique em 'Carregar sem compactação' e selecione a pasta extraída",
-      "O ícone 🧩 aparece na barra — fixe-o clicando no ícone de quebra-cabeça geral → 📌",
-      "— FIREFOX —",
+      "— CHROME (e Edge) —",
+      "Clique em 'Chrome Web Store' abaixo e depois em 'Usar no Chrome' — a extensão passa a se atualizar sozinha",
+      "Se você tinha instalado pelo arquivo ZIP, remova a versão antiga em chrome://extensions (senão ficam duas)",
+      "O ícone CN aparece na barra — fixe-o clicando no ícone de quebra-cabeça geral → 📌",
+      "— FIREFOX (até a versão assinada sair) —",
       "Extraia o ZIP em qualquer pasta",
       "No Firefox, acesse about:debugging na barra de endereço",
       "Clique em 'Este Firefox' → 'Carregar extensão temporária...'",
@@ -184,6 +183,7 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
     ],
     status: "ativo",
     extensaoDownload: "/gapmn-cnet-extensao.zip",
+    lojaChrome: "https://chromewebstore.google.com/detail/painel-comprasnet/nenkoocjnchhfmlabgllambjiekifdgn",
     allowUser: true,
     videos: [
       { titulo: "Tutorial: Extensão Painel ComprasNet", youtubeId: "BMmczv-vXSo" },
@@ -449,14 +449,25 @@ export default function FerramentasGestao() {
                             {copiedId === tool.id ? <>✓ Copiado!</> : <>⬇ Instalar</>}
                           </button>
                         )}
+                        {(hasRole || tool.allowUser) && tool.lojaChrome && (
+                          <a
+                            href={tool.lojaChrome}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all no-underline ${colors.btn}`}
+                          >
+                            🧩 Chrome Web Store
+                          </a>
+                        )}
                         {(hasRole || tool.allowUser) && tool.extensaoDownload && (
                           <a
                             href={tool.extensaoDownload}
                             download
                             onClick={(e) => e.stopPropagation()}
-                            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all no-underline ${colors.btn}`}
+                            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all no-underline ${tool.lojaChrome ? "border border-slate-200 text-slate-600 hover:bg-slate-50" : colors.btn}`}
                           >
-                            ⬇ Baixar
+                            ⬇ {tool.lojaChrome ? "ZIP (Firefox)" : "Baixar"}
                           </a>
                         )}
                         {!hasRole && !tool.allowUser && (
@@ -625,10 +636,27 @@ export default function FerramentasGestao() {
                         </button>
                       </div>
                     )}
+                    {selectedTool.lojaChrome && (
+                      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-center">
+                        <p className="text-xs text-gray-500 mb-3">
+                          Chrome e Edge: instale pela loja — as atualizações chegam sozinhas.
+                        </p>
+                        <a
+                          href={selectedTool.lojaChrome}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all no-underline ${TOOL_COLORS[selectedTool.id].btn}`}
+                        >
+                          🧩 Abrir na Chrome Web Store
+                        </a>
+                      </div>
+                    )}
                     {selectedTool.extensaoDownload && (
                       <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-center">
                         <p className="text-xs text-gray-500 mb-3">
-                          Baixe o arquivo da extensão e siga o passo a passo acima para instalar.
+                          {selectedTool.lojaChrome
+                            ? "Firefox: baixe o arquivo e siga o passo a passo do Firefox acima."
+                            : "Baixe o arquivo da extensão e siga o passo a passo acima para instalar."}
                         </p>
                         <a
                           href={selectedTool.extensaoDownload}
