@@ -1,16 +1,25 @@
 {
   "manifest_version": 3,
   "name": "GAPMN — Anexador de Ordens Bancárias SILOMS",
-  "version": "2.5.1",
-  "description": "Extrai as OBs da UG no Portal da Transparência, gera o comprovante com a fonte e anexa no SILOMS.",
-  "permissions": ["storage", "scripting", "sidePanel", "tabs"],
+  "version": "2.6.0",
+  "description": "Lê as OBs da UG na planilha do Tesouro Gerencial, gera o comprovante (modelo oficial, com banco/agência/conta) e anexa no SILOMS.",
+  "permissions": [
+    "storage",
+    "scripting",
+    "sidePanel",
+    "tabs"
+  ],
   "host_permissions": [
     "*://*.siloms.intraer/*",
-    "https://fychrtyyqbzlfbzbvzqp.supabase.co/*"
+    "https://fychrtyyqbzlfbzbvzqp.supabase.co/*",
+    "https://docs.google.com/*",
+    "https://*.googleusercontent.com/*"
   ],
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "action": {
     "default_title": "Anexador de OBs"
@@ -25,8 +34,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.siloms.intraer/*"],
-      "js": ["jspdf.umd.min.js", "jspdf.plugin.autotable.min.js", "obs-portal.js", "content.js"],
+      "matches": [
+        "*://*.siloms.intraer/*"
+      ],
+      "js": [
+        "jspdf.umd.min.js",
+        "jspdf.plugin.autotable.min.js",
+        "obs-portal.js",
+        "content.js"
+      ],
       "run_at": "document_end",
       "all_frames": false
     }
