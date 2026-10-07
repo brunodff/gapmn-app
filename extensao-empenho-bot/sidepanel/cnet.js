@@ -15,10 +15,13 @@ const FORMULARIO = `${CNET}/empenho/buscacompra`;
  * fornecedor; sem ano, o único contrato do número desse fornecedor.
  * Devolve { indice } ou { erro, semNumero }.
  */
-export function escolherContrato(textos, { contrato, cnpj }) {
+export function escolherContrato(textos, { contrato, cnpj, credenciamento = false }) {
   const numRaw = /^(\d+)/.exec(contrato ?? '')?.[1] ?? '';
-  const n = parseInt(numRaw, 10);
+  // credenciamento: número do CNET = 2 + número com 4 dígitos (004 → 20004)
+  const n = credenciamento && numRaw ? 20000 + parseInt(numRaw, 10) : parseInt(numRaw, 10);
   const ano = /\/(\d{4})$/.exec(contrato ?? '')?.[1] ?? '';
+  const tipo = credenciamento ? 'credenciamento' : 'contrato';
+  const numTxt = credenciamento && !Number.isNaN(n) ? String(n) : numRaw;
   const c = String(cnpj ?? '').replace(/\D/g, '');
   const fmt = x => x.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   const info = textos.map((bruto, indice) => {
@@ -31,7 +34,7 @@ export function escolherContrato(textos, { contrato, cnpj }) {
       deOutro: cnpjs.length > 0 && !cnpjs.includes(c),
     };
   }).filter(x => x.ano);
-  if (!info.length) return { erro: `nenhum contrato nº ${numRaw} no CNET`, semNumero: true };
+  if (!info.length) return { erro: `nenhum ${tipo} nº ${numTxt} no CNET`, semNumero: true };
   const vistos = info.map(x => x.txt.slice(0, 60)).join(' | ');
   const doFornecedor = info.filter(x => x.doFornecedor);
   let alvo = ano ? doFornecedor.find(x => x.ano === ano) : null;
@@ -42,12 +45,12 @@ export function escolherContrato(textos, { contrato, cnpj }) {
   if (!alvo && !ano) {
     if (doFornecedor.length === 1) alvo = doFornecedor[0];
     else if (doFornecedor.length > 1) {
-      return { erro: `há ${doFornecedor.length} contratos nº ${numRaw} deste fornecedor (${doFornecedor.map(x => x.ano).join(', ')}) — informe o ano do contrato` };
+      return { erro: `há ${doFornecedor.length} ${tipo}s nº ${numTxt} deste fornecedor (${doFornecedor.map(x => x.ano).join(', ')}) — informe o ano do ${tipo}` };
     } else if (info.length === 1 && !info[0].deOutro) alvo = info[0];
   }
   if (alvo) return { indice: alvo.indice };
   return {
-    erro: `contrato ${ano ? `${numRaw}/${ano}` : `nº ${numRaw}`}${c.length === 14 ? ` do fornecedor ${fmt(c)}` : ''} não está no CNET (achei: ${vistos})`,
+    erro: `${tipo} ${ano ? `${numTxt}/${ano}` : `nº ${numTxt}`}${c.length === 14 ? ` do fornecedor ${fmt(c)}` : ''} não está no CNET (achei: ${vistos})`,
   };
 }
 
@@ -119,9 +122,11 @@ export async function conferirContratosNoCnet(pedidos) {
     for (const p of pedidos) {
       const numRaw = /^(\d+)/.exec(p.contrato ?? '')?.[1];
       if (!numRaw) continue;
-      // "028/20"; sem esse número na lista, "28/20"; credenciamento: "00019/2" (como a Etapa 1)
+      // "028/20"; sem esse número na lista, "28/20". Credenciamento: "2" + número com 4
+      // dígitos, com o ano se houver ("20004/2023"; "20004/2") — como a Etapa 1
       const n = parseInt(numRaw, 10);
-      const termos = [...new Set([p.credenciamento ? `${String(n).padStart(5, '0')}/2` : null, `${numRaw}/20`, `${n}/20`].filter(Boolean))];
+      const ano = /\/(\d{4})$/.exec(p.contrato ?? '')?.[1] ?? '';
+      const termos = p.credenciamento ? [`${20000 + n}/${ano || '2'}`] : [...new Set([`${numRaw}/20`, `${n}/20`])];
       for (const [i, termo] of termos.entries()) {
         const r = await buscar(termo);
         if (!r?.ok) { resultados.set(p.chave, { estado: 'nao-conferido', texto: r?.erro ?? 'sem resposta do CNET' }); break; }

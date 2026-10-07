@@ -100,7 +100,7 @@ export function problemasDaSolicitacao(sol) {
     if (!n) erro('Número do contrato não encontrado no PDF — informe em Contrato (ex: 028/2024) ou mude o Tipo para Compra');
     else if (!/^\d+\/\d{4}$/.test(c)) {
       aviso(sol.credenciamento
-        ? `Credenciamento nº ${n} sem o ano no PDF — o robô pesquisa ${String(parseInt(n, 10)).padStart(5, '0')}/2 no CNET e escolhe pelo CNPJ do fornecedor; se ele tiver mais de um credenciamento nº ${n}, informe o ano (ex: ${n}/2025)`
+        ? `Credenciamento nº ${n} sem o ano no PDF — o robô pesquisa ${20000 + parseInt(n, 10)}/2 no CNET e escolhe pelo CNPJ do fornecedor; se ele tiver mais de um credenciamento nº ${n}, informe o ano (ex: ${n}/2025)`
         : `Ano do contrato não encontrado no PDF (lido: ${c}) — o robô escolhe pelo CNPJ do fornecedor; se ele tiver mais de um contrato nº ${n}, informe o ano (ex: ${n}/2024)`);
     }
     const k = sol._cnetContrato;

@@ -894,9 +894,9 @@ function renderCamposEditable(sol, idx) {
     // Após o campo Contrato: a caixa "Credenciamento" e o texto bruto do PDF
     const afterRow = key === 'contrato'
       ? `</div><div${attrGrupo} style="font-size:10px;color:#94a3b8;margin:1px 0 4px;padding-left:2px;">
-           <label title="Pesquisa 00019/2 no CNET e escolhe o credenciamento pelo CNPJ do fornecedor" style="cursor:pointer;">
+           <label title="No CNET o credenciamento tem o número com 2 na frente (004/2023 → 20004/2023); o robô escolhe pelo CNPJ do fornecedor" style="cursor:pointer;">
              <input type="checkbox" class="rf-cred" data-idx="${idx}"${sol.credenciamento ? ' checked' : ''} style="vertical-align:middle;">
-             Credenciamento (pesquisa ${escHtml(String(parseInt(sol.contrato, 10) || 'NNN').padStart(5, '0'))}/2 e escolhe pelo CNPJ)
+             Credenciamento (pesquisa ${escHtml(parseInt(sol.contrato, 10) ? String(20000 + parseInt(sol.contrato, 10)) : '2NNNN')}/${escHtml(/\/(\d{4})$/.exec(String(sol.contrato ?? ''))?.[1] ?? '2')} e escolhe pelo CNPJ)
            </label>
          </div>${sol.contratoRaw ? `<div${attrGrupo} style="font-size:9px;color:#64748b;margin:1px 0 6px;padding-left:2px;">
            📄 PDF (original): <span style="color:#94a3b8;font-family:monospace;">${escHtml(sol.contratoRaw)}</span>

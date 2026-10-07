@@ -202,8 +202,11 @@ export async function step1Runner(payload) {
     // anos e fornecedores; escolhe por número + ano + CNPJ. Pegar "a primeira da
     // lista" abria o 028/2016 de outro fornecedor no lugar do 028/2024.
     const numRaw = /^(\d+)/.exec(contrato ?? '')?.[1] ?? ''; // mantém zeros à esquerda: "034"
-    const num = parseInt(numRaw, 10);
+    // Credenciamento: no CNET o número é "2" + o número com 4 dígitos (004/2023 → 20004/2023)
+    const num = credenciamento && numRaw ? 20000 + parseInt(numRaw, 10) : parseInt(numRaw, 10);
     const ano = /\/(\d{4})$/.exec(contrato ?? '')?.[1] ?? '';
+    const tipo = credenciamento ? 'credenciamento' : 'contrato';
+    const numTxt = credenciamento && !Number.isNaN(num) ? String(num) : numRaw;
     const cnpj = String(fornecedorCnpj ?? '').replace(/\D/g, '');
     const fmtCnpj = c => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
     const escolherContrato = opts => {
@@ -218,7 +221,7 @@ export async function step1Runner(payload) {
         };
       }).filter(x => x.ano);
       const vistos = info.map(x => x.txt.slice(0, 60)).join(' | ') || 'nenhum com esse número';
-      if (!info.length) return { erro: `nenhum contrato nº ${numRaw} na lista do CNET`, semNumero: true };
+      if (!info.length) return { erro: `nenhum ${tipo} nº ${numTxt} na lista do CNET`, semNumero: true };
       const doFornecedor = info.filter(x => x.doFornecedor);
       // 1) número + ano + fornecedor
       let alvo = ano ? doFornecedor.find(x => x.ano === ano) : null;
@@ -231,22 +234,20 @@ export async function step1Runner(payload) {
       if (!alvo && !ano) {
         if (doFornecedor.length === 1) alvo = doFornecedor[0];
         else if (doFornecedor.length > 1) {
-          return { erro: `há ${doFornecedor.length} contratos nº ${numRaw} deste fornecedor (${doFornecedor.map(x => x.ano).join(', ')}) — informe o ano do contrato na revisão` };
+          return { erro: `há ${doFornecedor.length} ${tipo}s nº ${numTxt} deste fornecedor (${doFornecedor.map(x => x.ano).join(', ')}) — informe o ano do ${tipo} na revisão` };
         } else if (info.length === 1 && !info[0].deOutro) alvo = info[0];
       }
       if (alvo) return alvo.o;
       return {
-        erro: `contrato ${ano ? `${numRaw}/${ano}` : `nº ${numRaw}`}${cnpj.length === 14 ? ` do fornecedor ${fmtCnpj(cnpj)}` : ''} não está na lista do CNET (achei: ${vistos})`,
+        erro: `${tipo} ${ano ? `${numTxt}/${ano}` : `nº ${numTxt}`}${cnpj.length === 14 ? ` do fornecedor ${fmtCnpj(cnpj)}` : ''} não está na lista do CNET (achei: ${vistos})`,
       };
     };
     // "028/20"; sem esse número na lista, tenta sem os zeros ("28/20"). Credenciamento:
-    // no CNET o número tem 5 dígitos — "00019/2" traz os credenciamentos desse número
-    // (um por credenciado) e o CNPJ do fornecedor escolhe o certo
-    const termos = [...new Set([
-      credenciamento && !Number.isNaN(num) ? `${String(num).padStart(5, '0')}/2` : null,
-      numRaw ? numRaw + '/20' : contrato,
-      Number.isNaN(num) ? null : `${num}/20`,
-    ].filter(Boolean))];
+    // "20004/2023" (ou "20004/2" sem o ano) traz os credenciamentos desse número — um por
+    // credenciado — e o CNPJ do fornecedor escolhe o certo
+    const termos = credenciamento && !Number.isNaN(num)
+      ? [`${num}/${ano || '2'}`]
+      : [...new Set([numRaw ? numRaw + '/20' : contrato, Number.isNaN(num) ? null : `${num}/20`].filter(Boolean))];
     let rc = null;
     for (const termo of termos) {
       rc = await setSelect2Ajax('#select2_ajax_id', termo, numRaw ? escolherContrato : (fornecedorCnpj || null));
