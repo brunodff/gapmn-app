@@ -836,6 +836,28 @@ async function runStep4(tabId, payload) {
   // Sem isto, crédito na página 2 levava a cadastrar uma célula orçamentária duplicada
   await maximizarTabelas(tabId, 4);
 
+  // Antes de marcar a linha, atualiza o crédito dela (⟳): o valor guardado no CNET
+  // pode estar velho e barrar um empenho que cabe no crédito real
+  await logVisivel('[Etapa 4] Atualizando o crédito da linha (⟳)…', 'info');
+  const nav = waitForNavigation(tabId, 30000).then(() => true, () => false);
+  const at = await comLimite(execInPage(tabId, step4Runner, [payload, 'atualizar', valorSolicitadoDe(payload)]), 35000);
+  if (!at || at.navegando) {
+    // O botão recarregou a página (ou o script caiu): espera a tela voltar
+    const aba = await chrome.tabs.get(tabId).catch(() => null);
+    const navegou = aba?.status === 'loading' || at?.navegando ? await nav : await Promise.race([nav, delay(1500).then(() => false)]);
+    if (navegou) {
+      await delay(800);
+      await maximizarTabelas(tabId, 4);
+      await logVisivel('[Etapa 4] Crédito da linha atualizado (o CNET recarregou a página)', 'info');
+    } else {
+      await logVisivel('⚠ [Etapa 4] Não consegui confirmar a atualização do crédito — seguindo com o valor da tela', 'warn');
+    }
+  } else if (at.semLinha) {
+    await logVisivel('[Etapa 4] A linha de crédito ainda não existe no CNET — cadastrando a célula orçamentária', 'info');
+  } else {
+    for (const m of at.msgs ?? []) await logVisivel(`${m.level === 'warn' ? '⚠ ' : ''}[Etapa 4] ${m.msg}`, m.level);
+  }
+
   const result = await execInPage(tabId, step4Runner, [payload]);
 
   for (const f of result?.feitos ?? []) await logVisivel(`[Etapa 4] ${f}`, 'info');

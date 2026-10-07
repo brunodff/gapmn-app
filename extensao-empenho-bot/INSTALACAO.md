@@ -79,6 +79,16 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Crédito atualizado na Etapa 4 (versão 2.8.11)
+
+- Antes de marcar a linha de crédito, o robô clica o botão de atualizar (⟳, coluna Ações) **da
+  linha da solicitação** e espera o CNET terminar — o "Valor" guardado pode estar velho, para mais
+  ou para menos, e barrar um empenho que cabe no crédito real.
+- O log mostra o crédito antes → depois ("Crédito da linha atualizado: R$ 500,00 → R$ 2.750,40") e
+  avisa se, mesmo atualizado, o crédito for menor que a solicitação.
+- Se o CNET der erro na atualização (SIAFI fora do ar) ou não responder, o robô avisa no log e segue
+  com o valor da tela. Avisos de confirmação/sucesso do CNET são confirmados sozinhos.
+
 ## Documentos no subprocesso (versão 2.8.10)
 
 - Na janela "Inclusão de Documento em Subprocesso" o robô preenche **Nome do Documento**
