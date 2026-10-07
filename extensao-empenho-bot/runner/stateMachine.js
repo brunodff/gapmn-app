@@ -572,11 +572,41 @@ async function runEmpenhoStep(s) {
       // "Próxima" clicado não prova avanço: com um campo inválido o CNET fica na
       // mesma tela e a etapa seguinte rodaria na tela errada, também "com sucesso".
       if (antes && !antes.bloqueada) {
-        const depois = await impressaoDaPagina(tabId);
+        let depois = await impressaoDaPagina(tabId);
+        const naMesmaTela = d => !d.bloqueada && d.caminho === antes.caminho && d.titulo === antes.titulo;
+        // Ficou na mesma tela sem erro do CNET: o aviso de arredondamento pode ter voltado,
+        // ou o clique não pegou — trata o aviso ou clica "Próxima" mais uma vez
+        if (naMesmaTela(depois) && !depois.erros?.length) {
+          const r2 = await handleRoundingModal(tabId);
+          if (r2?.handled) {
+            await logVisivel(textoArredondamento(r2, faltaDoArredondamento(r2, payload.itensEmpenho, valorSolicitadoDe(payload)), 'reforço irrisório'), 'warn');
+            const degrau = await concluirArredondamento(tabId, r2);
+            const st = await getState();
+            await setState({ arredondado: true, degrauArredondamento: Math.round(((st.degrauArredondamento ?? 0) + degrau) * 100) / 100 || null });
+          } else {
+            await logVisivel(`⚠ [Etapa ${step}] A página não avançou — clicando "Próxima Etapa" mais uma vez…`, 'warn');
+            const nav = waitForNavigation(tabId, 25000).then(() => true, () => false);
+            await execInPage(tabId, () => {
+              const b = document.querySelector('button.submeter') ||
+                Array.from(document.querySelectorAll('button, a.btn')).find(x => /pr[óo]xima/i.test(x.textContent ?? ''));
+              b?.click();
+              return !!b;
+            }).catch(() => null);
+            if (await esperarNavegacaoOuAviso(tabId, 25000, nav) === 'aviso') {
+              const r3 = await handleRoundingModal(tabId);
+              if (r3?.handled) {
+                const degrau = await concluirArredondamento(tabId, r3);
+                const st = await getState();
+                await setState({ arredondado: true, degrauArredondamento: Math.round(((st.degrauArredondamento ?? 0) + degrau) * 100) / 100 || null });
+              }
+            } else await delay(800);
+          }
+          depois = await impressaoDaPagina(tabId);
+        }
         const parada = depois.bloqueada
           ? 'a página está bloqueada por um aviso (alert) do CNET'
-          : (depois.caminho === antes.caminho && depois.titulo === antes.titulo)
-            ? `a página não avançou${depois.erros?.length ? ` — CNET: ${depois.erros.join(' | ').replace(/[.\s]+$/, '')}` : ''}`
+          : naMesmaTela(depois)
+            ? `a página não avançou${depois.erros?.length ? ` — CNET: ${depois.erros.join(' | ').replace(/[.\s]+$/, '')}` : ' (nem tentando de novo; sem mensagem do CNET na tela)'}`
             : null;
         if (parada) return pularSolicitacao(tabId, step, `cliquei em "Próxima", mas ${parada}`);
       }
@@ -1109,13 +1139,29 @@ function clicarBotaoEtapa8(fonte) {
     .find(b => re.test(String(b.textContent || b.value || '').replace(/\s+/g, ' ')));
   if (!btn) return { ok: false, error: `botão não encontrado (${fonte})` };
   if (btn.disabled || btn.classList.contains('disabled')) return { ok: false, desabilitado: true, error: 'botão desabilitado' };
-  // confirm()/alert() nativos travariam a página até alguém responder: aceitam sozinhos
+  // confirm()/alert() nativos travariam a página até alguém responder: aceitam sozinhos,
+  // mas o texto fica guardado (um erro do CNET aparece no relatório em vez de sumir)
   const conf = window.confirm, al = window.alert;
-  window.confirm = () => true;
-  window.alert = () => {};
-  setTimeout(() => { window.confirm = conf; window.alert = al; }, 5000);
+  window.__gapmnAvisos = [];
+  window.confirm = m => { window.__gapmnAvisos.push(String(m ?? '')); return true; };
+  window.alert = m => { window.__gapmnAvisos.push(String(m ?? '')); };
+  setTimeout(() => { window.confirm = conf; window.alert = al; }, 60000);
   btn.click();
   return { ok: true };
+}
+
+// Avisos que o CNET mostrou depois do clique: alert/confirm guardados e mensagens de
+// erro visíveis na tela (SweetAlert, toast, alerta)
+function lerAvisosEmissao() {
+  const visivel = e => e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0;
+  const tela = Array.from(document.querySelectorAll('.swal2-html-container, .swal2-title, .toast-message, .alert-danger, .alert-warning, .invalid-feedback'))
+    .filter(visivel).map(e => e.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const emitir = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"]'))
+    .find(b => /Emitir\s+Empenho/i.test(String(b.textContent || b.value || '')));
+  return {
+    avisos: [...new Set([...(window.__gapmnAvisos ?? []), ...tela])].filter(t => !/^deseja|confirma/i.test(t)).slice(0, 4),
+    emitirHabilitado: !!emitir && !emitir.disabled && !emitir.classList.contains('disabled'),
+  };
 }
 
 // Aceita a confirmação em modal (SweetAlert / Bootstrap), se aparecer
@@ -1160,8 +1206,13 @@ async function runStep8(tabId, payload, dryRun) {
   const esperado = valorSolicitadoDe(payload);
   const naTela = numBR(tela.valor);
   await setState({ valorNaTela: naTela });
-  if (naTela !== null && esperado > 0 && Math.abs(naTela - esperado) > Math.max(1, esperado * 0.005)) {
-    motivos.push(`valor na tela R$ ${fmtR$(naTela)} ≠ solicitado R$ ${fmtR$(esperado)}`);
+  // Com o aviso de arredondamento tratado ("Corrigir agora"), a tela fica até um degrau
+  // abaixo (ex.: R$ 178,50 de R$ 179,52) — a diferença vira o reforço irrisório
+  const st8 = await getState();
+  const folgaArred = st8.arredondado && naTela !== null && naTela < esperado ? (st8.degrauArredondamento ?? LIMITE_IRRISORIO) + 0.01 : 0;
+  if (naTela !== null && esperado > 0 && Math.abs(naTela - esperado) > Math.max(1, esperado * 0.005, folgaArred)) {
+    motivos.push(`valor na tela R$ ${fmtR$(naTela)} ≠ solicitado R$ ${fmtR$(esperado)}`
+      + (naTela < esperado ? ' (o CNET pode ter limitado ao saldo do item/contrato, ou um item não foi preenchido — confira a minuta)' : ''));
   }
   // Sem ler o valor não há conferência: pede confirmação em vez de emitir no escuro
   if (naTela === null) motivos.push('não consegui ler o Valor Total na tela');
@@ -1243,11 +1294,26 @@ async function emitirEFinalizar(tabId, payload) {
     if (!r?.ok) return { ok: false, url, error: `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}` };
   }
 
-  // O SIAFI devolve o número depois ("EM PROCESSAMENTO"): relê a minuta por ~1,5 min
+  // O SIAFI devolve o número depois ("EM PROCESSAMENTO"): relê a minuta por ~1,5 min.
+  // Sem nenhuma mudança (situação ainda "EM ANDAMENTO", botão ativo, sem aviso de erro),
+  // o clique não pegou: clica Emitir mais uma vez.
   let ne = null, situacao = antes.situacao, mensagem = null, erro = false;
   const ignoradas = new Set();
+  const avisosCnet = [];
+  let tentouDeNovo = false;
   for (let i = 1; i <= 12 && !ne && !erro; i++) {
     await delay(4000);
+    if (i === 1 || i === 7) {
+      const a = await comLimite(execInPage(tabId, lerAvisosEmissao), 4000);
+      for (const t of a?.avisos ?? []) if (!avisosCnet.includes(t)) avisosCnet.push(t);
+      if (avisosCnet.length) await logVisivel(`⚠ [Etapa 8] O CNET avisou: ${avisosCnet.join(' | ').slice(0, 300)}`, 'warn');
+      if (i === 7 && !tentouDeNovo && !avisosCnet.length && a?.emitirHabilitado && !RX_JA_ENVIADO.test(situacao ?? '')) {
+        tentouDeNovo = true;
+        await logVisivel('⚠ [Etapa 8] O CNET não registrou o "Emitir" (situação ainda ' + (situacao || '—') + ') — clicando de novo…', 'warn');
+        await clicarEConfirmar(tabId, 'Emitir\\s+Empenho');
+        continue;
+      }
+    }
     const r = i % 2 === 0
       ? await recarregarMinuta(tabId, url)
       : await execInPage(tabId, lerEtapa8).catch(() => null);
@@ -1271,7 +1337,8 @@ async function emitirEFinalizar(tabId, payload) {
   const status = ne ? 'emitido' : erro ? 'erro' : 'pendente';
   // Sem número e sem situação de envio, a emissão não aconteceu: não finaliza
   if (status === 'pendente' && !RX_JA_ENVIADO.test(situacao ?? '')) {
-    return { ok: false, url, talvezEmitido: true, error: `cliquei em Emitir, mas o CNET não mostrou a emissão (situação: ${situacao || '—'}) — confira a minuta antes de empenhar de novo` };
+    return { ok: false, url, talvezEmitido: true, error: `cliquei em Emitir${tentouDeNovo ? ' (duas vezes)' : ''}, mas o CNET não mostrou a emissão (situação: ${situacao || '—'})`
+      + (avisosCnet.length ? ` — o CNET avisou: ${avisosCnet.join(' | ').slice(0, 300)}` : '') + ' — confira a minuta antes de empenhar de novo' };
   }
 
   // Finaliza a minuta (não quando o SIAFI recusou: ela precisa ser corrigida)
