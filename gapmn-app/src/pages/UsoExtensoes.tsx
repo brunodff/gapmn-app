@@ -158,6 +158,62 @@ function EquipesPainel() {
   );
 }
 
+interface Sugestao { id: string; mensagem: string; tipo: string | null; versao_extensao: string | null; created_at: string }
+
+// "OB-SILOMS 2.5" → extensão de OB; 2.x → robô de empenhos; 1.x → Painel ComprasNet
+function extensaoDaVersao(v: string | null) {
+  const s = (v ?? "").trim();
+  if (/^OB-SILOMS/i.test(s)) return { nome: "Extensão de OB", versao: s.replace(/^OB-SILOMS\s*/i, "") };
+  if (/^2\./.test(s)) return { nome: "Robô de Empenhos", versao: s };
+  if (/^1\./.test(s)) return { nome: "Painel ComprasNet", versao: s };
+  return { nome: "Extensão", versao: s || "?" };
+}
+
+const COR_TIPO: Record<string, string> = {
+  bug: "bg-red-50 text-red-700 border-red-200",
+  "sugestão": "bg-indigo-50 text-indigo-700 border-indigo-200",
+  elogio: "bg-emerald-50 text-emerald-700 border-emerald-200",
+};
+
+// Sugestões enviadas pelo botão 💬 das extensões. Só o perfil DEV lê (policy
+// "dev le pelo app"); antes elas eram lidas na própria extensão com a chave pública.
+function SugestoesExtensoes() {
+  const [itens, setItens] = useState<Sugestao[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from("feedback_extensao").select("id, mensagem, tipo, versao_extensao, created_at")
+      .order("created_at", { ascending: false }).limit(200)
+      .then(({ data, error }) => { if (error) setErro(error.message); else setItens((data as Sugestao[]) ?? []); });
+  }, []);
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold text-slate-800">Sugestões das extensões</h2>
+      {erro && <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm p-3">Não consegui carregar as sugestões: {erro}</div>}
+      {itens && itens.length === 0 && <p className="text-sm text-slate-400">Nenhuma sugestão ainda.</p>}
+      {itens && itens.length > 0 && (
+        <ul className="space-y-2">
+          {itens.map(s => {
+            const ext = extensaoDaVersao(s.versao_extensao);
+            const tipo = s.tipo ?? "outro";
+            return (
+              <li key={s.id} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
+                <div className="flex flex-wrap items-center gap-2 mb-1.5 text-xs">
+                  <span className={`px-2 py-0.5 rounded-full border font-semibold ${COR_TIPO[tipo] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}>{tipo}</span>
+                  <span className="font-medium text-slate-700">{ext.nome}</span>
+                  <span className="text-slate-400">v{ext.versao} · {new Date(s.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
+                </div>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{s.mensagem}</p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function UsoExtensoes() {
   const [dados, setDados] = useState<ResumoExtensao[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -200,6 +256,8 @@ export default function UsoExtensoes() {
         )}
 
         <EquipesPainel />
+
+        <SugestoesExtensoes />
 
         {dados?.map(e => {
           const versaoAtual = Object.keys(e.versoes ?? {}).filter(v => v !== "?").sort(compararVersoes).pop();
