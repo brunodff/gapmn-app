@@ -79,6 +79,15 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Unidade da compra e listas longas (versão 2.8.12)
+
+- Etapa 1: com o CNET lento, a busca da unidade (120630) mostrava "Pesquisando…" e o robô clicava
+  nisso — ficava "Unidade da compra 120630 não selecionada". Agora espera a unidade aparecer na
+  lista (até 15 s), tenta até 3 vezes e, se já estiver selecionada, não mexe.
+- Etapas 2 a 5: além de escolher o maior "N por página", o robô põe **todas as linhas** numa
+  página só e limpa uma pesquisa que tenha ficado guardada. Antes, numa compra com mais itens que
+  a maior opção (ex.: 50), os itens da página 2 davam "Item … não está na lista desta compra".
+
 ## Crédito atualizado na Etapa 4 (versão 2.8.11)
 
 - Antes de marcar a linha de crédito, o robô clica o botão de atualizar (⟳, coluna Ações) **da

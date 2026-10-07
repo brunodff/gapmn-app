@@ -29,6 +29,20 @@ export async function step1Runner(payload) {
     const si = document.querySelector('.select2-search__field, .select2-container--open input[type="search"]');
     if (!si) return { ok: false, error: 'campo busca não encontrado' };
 
+    // "Pesquisando…", "Digite mais caracteres" e "Nenhum resultado" também são <li> da
+    // lista — no select2 4.0 sem a classe --disabled. Antes contavam como resultado: com
+    // o CNET lento, o robô clicava no "Pesquisando…" e a unidade ficava vazia.
+    const opcaoReal = o => !o.matches('.loading-results, .select2-results__option--loading, .select2-results__message, ' +
+      '.select2-results__option--disabled, [aria-disabled="true"], [role="alert"]');
+    const opcoes = () => Array.from(document.querySelectorAll('.select2-results__option')).filter(opcaoReal);
+    const carregando = () => !!document.querySelector('.select2-results__option.loading-results, .select2-results__option--loading');
+    // match pode ser texto direto OU CNPJ (14 dígitos) — compara sem formatação
+    const matchDigits = typeof match === 'string' ? match.replace(/\D/g, '') : '';
+    const casaTexto = o => {
+      const txt = o.textContent ?? '';
+      return matchDigits.length >= 11 ? txt.replace(/\D/g, '').includes(matchDigits) : txt.includes(match);
+    };
+
     // Limpa e digita o termo para disparar a busca AJAX
     si.value = '';
     si.dispatchEvent(new Event('input', { bubbles: true }));
@@ -36,44 +50,45 @@ export async function step1Runner(payload) {
     si.value = term;
     si.dispatchEvent(new Event('input', { bubbles: true }));
     si.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    const digitou = Date.now();
 
-    // Aguarda resultados carregarem (loading desaparecer)
-    const found = await new Promise(res => {
-      let w = 0;
-      const p = setInterval(() => {
-        w += 300;
-        const loading = document.querySelectorAll('.select2-results__option--loading');
-        const ready  = document.querySelectorAll('.select2-results__option:not(.select2-results__option--loading):not(.select2-results__option--disabled)');
-        if ((loading.length === 0 && ready.length > 0) || w > 10000) { clearInterval(p); res(ready.length > 0); }
-      }, 300);
-    });
-    if (!found) return { ok: false, error: `sem resultados para "${term}"` };
+    // Espera a resposta da busca (até 15 s). Com texto a procurar: até a opção certa
+    // aparecer. Sem ele: até a lista parar de mudar — durante o "delay" do AJAX a lista
+    // da busca anterior continua na tela.
+    let opts = [], assinatura = '', estavel = 0;
+    for (let w = 0; w < 15000; w += 300) {
+      await new Promise(r => setTimeout(r, 300));
+      opts = opcoes();
+      if (carregando()) { estavel = 0; continue; }
+      if (typeof match === 'string' && match) {
+        if (opts.some(casaTexto)) break;
+        continue;
+      }
+      const a = opts.map(o => o.textContent).join('|');
+      estavel = a === assinatura ? estavel + 1 : 0;
+      assinatura = a;
+      const semResultado = !opts.length && !!document.querySelector('.select2-results__message');
+      if (estavel >= 2 && Date.now() - digitou > (semResultado ? 2500 : 1200)) break;
+    }
+    if (!opts.length) { $el.select2('close'); return { ok: false, error: `sem resultados para "${term}"` }; }
 
-    await new Promise(r => setTimeout(r, 300));
-
-    // Seleciona a opção correta (match) ou a primeira disponível
-    // match pode ser texto direto OU CNPJ (14 dígitos) — compara sem formatação
-    const opts = document.querySelectorAll('.select2-results__option:not(.select2-results__option--loading):not(.select2-results__option--disabled)');
     let target = null;
     // match função: ela escolhe (ou devolve { erro }); nunca cai na "primeira da lista"
     if (typeof match === 'function') {
-      const r = match(Array.from(opts));
+      const r = match(opts);
       if (!r || r.erro) { $el.select2('close'); return { ok: false, error: r?.erro ?? 'nenhuma opção corresponde', semNumero: !!r?.semNumero }; }
       target = r;
     } else if (match) {
-      const matchDigits = match.replace(/\D/g, '');
-      const useCnpj = matchDigits.length >= 11; // CNPJ tem 14 dígitos
-      for (const o of opts) {
-        const txt = o.textContent ?? '';
-        if (useCnpj
-          ? txt.replace(/\D/g, '').includes(matchDigits)   // comparação por dígitos
-          : txt.includes(match)) {                           // comparação textual normal
-          target = o; break;
-        }
+      // Texto a procurar que não veio: erro com o que a busca trouxe (nunca "a primeira")
+      target = opts.find(casaTexto);
+      if (!target) {
+        $el.select2('close');
+        const veio = opts.slice(0, 4).map(o => (o.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 50)).join(' | ');
+        return { ok: false, error: `a busca por "${term}" não trouxe "${match}" (veio: ${veio})` };
       }
+    } else {
+      target = opts[0];
     }
-    if (!target) target = opts[0];
-    if (!target) return { ok: false, error: 'nenhuma opção disponível após busca' };
 
     // select2 v4 precisa de mousedown+mouseup+click para registrar a seleção
     target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
@@ -188,13 +203,26 @@ export async function step1Runner(payload) {
     }
 
     // Unidade da compra: seguir com a unidade errada empenharia na UASG errada,
-    // então só avança se a unidade estiver de fato selecionada.
-    const ru = await setSelect2Ajax('#select2_ajax_unidade_origem_id', unidadeCompra, unidadeCompra);
-    const $u = (window.jQuery || window.$)?.('#select2_ajax_unidade_origem_id');
-    const unidadeSel = ($u?.select2?.('data') ?? []).map(d => d.text ?? '').join(' ')
-      || $u?.find?.('option:selected')?.text?.() || '';
-    if (!unidadeSel.includes(unidadeCompra)) {
-      return { ok: false, step: 1, error: `Unidade da compra ${unidadeCompra} não selecionada${ru.ok ? '' : ': ' + ru.error}` };
+    // então só avança se a unidade estiver de fato selecionada. Já selecionada (o CNET
+    // lembra a última), não mexe; a busca pode demorar: até 3 tentativas.
+    const unidadeSel = () => {
+      const $u = (window.jQuery || window.$)?.('#select2_ajax_unidade_origem_id');
+      let txt = '';
+      try { txt = ($u?.select2?.('data') ?? []).map(d => d.text ?? '').join(' '); } catch (_) { /* sem select2 */ }
+      return txt || $u?.find?.('option:selected')?.text?.() || '';
+    };
+    let ru = { ok: true }, tentativas = 0;
+    while (!unidadeSel().includes(unidadeCompra) && tentativas < 3) {
+      if (tentativas++) {
+        try { (window.jQuery || window.$)('#select2_ajax_unidade_origem_id').select2('close'); } catch (_) { /* já fechado */ }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      ru = await setSelect2Ajax('#select2_ajax_unidade_origem_id', unidadeCompra, unidadeCompra);
+    }
+    if (!unidadeSel().includes(unidadeCompra)) {
+      const atual = unidadeSel().replace(/\s+/g, ' ').trim();
+      return { ok: false, step: 1, error: `Unidade da compra ${unidadeCompra} não selecionada após ${tentativas} tentativa(s)` +
+        `${ru.ok ? '' : ': ' + ru.error}${atual ? ` (ficou "${atual.slice(0, 60)}")` : ''}` };
     }
     await hd();
   } else if (contrato) {

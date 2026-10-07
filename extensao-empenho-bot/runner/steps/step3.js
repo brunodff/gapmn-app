@@ -45,6 +45,22 @@ export async function step3Runner(itens, tipoOrigem) {
     return { ok: false, error: `Itens não carregaram em 20s — verifique a página (checkboxes vistos: ${vistos})` };
   }
 
+  // Ainda em mais de uma página (a tabela carregou depois do ajuste, ou o seletor não
+  // tem "Todos"): pela API do DataTables mostra todas as linhas antes de procurar
+  const paginada = () => !!document.querySelector('.dataTables_paginate .next:not(.disabled)');
+  if (paginada()) {
+    const $ = window.jQuery || window.$;
+    try {
+      for (const t of $.fn.dataTable.tables()) {
+        const api = $(t).DataTable();
+        if (api.page.info().pages > 1) api.page.len(-1).draw();
+      }
+    } catch (_) { /* sem a API */ }
+    for (let t = 0; t < 10000 && paginada(); t += 500) await dorme(500);
+    await dorme(600);
+    caixas = caixasDeItem();
+  }
+
   const linhas = caixas.map(cb => ({ cb, num: numeroDoItem(cb.closest('tr')) }));
   const disponiveis = linhas.map(l => (Number.isNaN(l.num) ? '?' : String(l.num).padStart(5, '0')));
   const clicar = cb => { if (!cb.checked) cb.click(); };
@@ -64,9 +80,12 @@ export async function step3Runner(itens, tipoOrigem) {
     if (tipoOrigem === 'compra' && faltando.length) {
       // Numa compra há itens de outros empenhos na mesma lista: marcar "todos"
       // como fallback empenharia itens que não são desta solicitação.
+      const info = (document.querySelector('.dataTables_info')?.textContent ?? '').replace(/\s+/g, ' ').trim();
       return {
         ok: false,
-        error: `Item ${faltando.join(', ')} não está na lista desta compra. Itens disponíveis: ${disponiveis.join(', ')}. ` +
+        error: `Item ${faltando.join(', ')} não está na lista desta compra para este fornecedor` +
+               (paginada() ? ' (a lista do CNET continua em mais de uma página)' : ' (sem saldo, de outro fornecedor ou N.Item errado)') +
+               `. Itens disponíveis: ${disponiveis.join(', ')}${info ? ` — ${info}` : ''}. ` +
                `Aborte, corrija o "N.Item" na revisão e inicie de novo.`,
       };
     }
