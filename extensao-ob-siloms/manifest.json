@@ -13,7 +13,8 @@
     "*://*.siloms.intraer/*",
     "https://fychrtyyqbzlfbzbvzqp.supabase.co/*",
     "https://docs.google.com/*",
-    "https://*.googleusercontent.com/*"
+    "https://*.googleusercontent.com/*",
+    "https://script.google.com/*"
   ],
   "background": {
     "service_worker": "background.js",
