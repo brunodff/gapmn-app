@@ -53,27 +53,38 @@ function sortearResponsavel() {
 async function carregarItens() {
   const d = await chrome.storage.local.get([REGISTRO_KEY, CONFIG_KEY]);
   config = { ...PADRAO, ...(d[CONFIG_KEY] ?? {}) };
-  // Empenhada = NE emitida ou em processamento; a mais recente de cada solicitação
+  // Todas as solicitações do registro — empenhadas e também as não empenhadas (o
+  // subprocesso pode ser aberto mesmo sem NE). De cada solicitação vale o melhor
+  // registro (emitida > em processamento > conferir > não empenhada) e, no empate, o
+  // mais recente.
+  const PRIORIDADE = { emitido: 4, pendente: 3, conferir: 2, falhou: 1 };
   const porSol = new Map();
   for (const r of d[REGISTRO_KEY] ?? []) {
-    if (!r.solicitacao || !['emitido', 'pendente'].includes(r.status ?? 'conferir')) continue;
-    porSol.set(r.solicitacao, r);
+    const st = r.status ?? 'conferir';
+    if (!r.solicitacao || !PRIORIDADE[st]) continue;
+    const atual = porSol.get(r.solicitacao);
+    if (!atual || PRIORIDADE[st] >= PRIORIDADE[atual.status ?? 'conferir']) porSol.set(r.solicitacao, r);
   }
   const lista = [...porSol.values()].sort((a, b) => String(b.data).localeCompare(String(a.data)));
   const antigos = itens;
   itens = lista.map(r => {
     const ja = antigos.find(i => i.numero === r.solicitacao);
-    const ne = r.status === 'emitido' ? r.ne : 'NE em processamento';
+    const st = r.status ?? 'conferir';
+    const empenhada = st === 'emitido' || st === 'pendente';
+    const ne = st === 'emitido' ? r.ne : st === 'pendente' ? 'NE em processamento' : st === 'falhou' ? 'não empenhada' : 'conferir no CNET';
+    const neReal = st === 'emitido' && /^\d{4}NE\d{6}$/.test(String(r.ne ?? '')) ? r.ne : '';
     // Nome editado à mão fica; o padrão acompanha a NE (que chega depois da emissão)
-    const padrao = nomePadrao(r.solicitacao, r.ugCred, ne);
+    const padrao = nomePadrao(r.solicitacao, r.ugCred, neReal);
     return {
-      id: r.id, numero: r.solicitacao, ne,
+      id: r.id, numero: r.solicitacao, ne, neReal, empenhada,
+      motivo: empenhada ? '' : String(r.motivo ?? '').replace(/\s+/g, ' ').slice(0, 110),
       fornecedor: r.fornecedor ?? '', cnpj: String(r.cnpj ?? '').replace(/\D/g, ''),
       pag: ja?.pag ?? r.pag ?? '', nome: ja && ja.nome !== ja.padrao ? ja.nome : padrao, padrao,
       subprocesso: r.subprocesso ?? '', data: r.data,
-      // Acabou de ganhar subprocesso: desmarca (outro clique em Criar duplicaria)
+      // Acabou de ganhar subprocesso: desmarca (outro clique em Criar duplicaria).
+      // Não empenhada vem desmarcada: só vai se a pessoa marcar.
       marcado: r.subprocesso && !ja?.subprocesso ? false
-        : ja ? ja.marcado : (!r.subprocesso && Date.now() - new Date(r.data).getTime() < DIAS_PADRAO * 86400000),
+        : ja ? ja.marcado : (empenhada && !r.subprocesso && Date.now() - new Date(r.data).getTime() < DIAS_PADRAO * 86400000),
     };
   });
   const guardados = await pdfsGuardados(itens.flatMap(i => [chaveSolicitacao(i.numero), chaveSicaf(i.cnpj)]));
@@ -86,14 +97,15 @@ async function carregarItens() {
 function renderLista() {
   const box = el('sp-lista');
   if (!itens.length) {
-    box.innerHTML = '<div class="sp-vazio">Nenhuma solicitação empenhada registrada. Os empenhos gerados pelo robô aparecem aqui.</div>';
+    box.innerHTML = '<div class="sp-vazio">Nenhuma solicitação registrada. As solicitações processadas pelo robô (empenhadas ou não) aparecem aqui.</div>';
     renderResumo();
     return;
   }
   box.innerHTML = itens.map((i, k) => `
     <div class="sp-item${i.marcado ? '' : ' sp-off'}" data-k="${k}">
       <label class="sp-l1"><input type="checkbox" class="sp-chk" ${i.marcado ? 'checked' : ''} ${rodando ? 'disabled' : ''}>
-        <b>${esc(i.numero)}</b> → ${esc(i.ne)}<span class="sp-forn">${esc(i.fornecedor)}</span></label>
+        <b>${esc(i.numero)}</b> → ${i.empenhada ? esc(i.ne) : `<span class="sp-nao-emp">${esc(i.ne)}</span>`}<span class="sp-forn">${esc(i.fornecedor)}</span></label>
+      ${!i.empenhada ? `<div class="sp-aviso">${i.motivo ? `motivo: ${esc(i.motivo)} — ` : ''}marque se quiser abrir o subprocesso mesmo assim</div>` : ''}
       ${i.subprocesso ? `<div class="sp-aviso">já tem subprocesso ${esc(i.subprocesso)} — marque só se quiser criar outro</div>` : ''}
       <div class="sp-campos">
         <label>PAG <input class="sp-pag form-input" value="${esc(i.pag)}" placeholder="não veio no PDF" ${rodando ? 'disabled' : ''}></label>
@@ -192,7 +204,7 @@ async function criar() {
   if (!abaSiloms) { alert(el('sp-siloms').textContent); return; }
 
   const fila = sel.map(i => ({
-    numero: i.numero, nome: i.nome.trim(), pag: i.pag.trim(), ne: i.ne, responsavel: sortearResponsavel(),
+    numero: i.numero, nome: i.nome.trim(), pag: i.pag.trim(), ne: i.neReal, responsavel: sortearResponsavel(),
     docs: [
       { tipo: 'sol', rotulo: 'solicitação', chave: chaveSolicitacao(i.numero), disponivel: i.temSol,
         arquivo: `Solicitacao_de_Empenho_${i.numero}.pdf`, assunto: `Solicitação de Empenho ${i.numero}` },
@@ -261,7 +273,9 @@ async function mostrarResultado(r) {
   const d = await chrome.storage.local.get(REGISTRO_KEY);
   const criados = new Map(r.results.filter(x => !String(x.docNr).startsWith('ERRO')).map(x => [x.numero, x]));
   if (criados.size) {
-    const lista = (d[REGISTRO_KEY] ?? []).map(reg => criados.has(reg.solicitacao) && ['emitido', 'pendente'].includes(reg.status)
+    // Todos os registros da solicitação (também os de não empenhada: a lista avisa
+    // "já tem subprocesso" e não deixa criar outro sem querer)
+    const lista = (d[REGISTRO_KEY] ?? []).map(reg => criados.has(reg.solicitacao)
       ? { ...reg, subprocesso: criados.get(reg.solicitacao).docNr,
           subprocessoDocs: (criados.get(reg.solicitacao).docs ?? []).map(x => `${ROTULO_DOC[x.tipo] ?? x.tipo}: ${x.status}`).join(', ') }
       : reg);

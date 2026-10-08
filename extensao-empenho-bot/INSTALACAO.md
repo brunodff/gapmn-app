@@ -79,6 +79,13 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Subprocesso também para não empenhadas (versão 2.8.17)
+
+- A tela "Subprocessos no SILOMS" lista também as solicitações **não empenhadas** (e as "conferir
+  no CNET"), com o motivo. Vêm **desmarcadas**: marque as que devem ganhar subprocesso mesmo assim.
+- O nome sai sem a NE ("Solicitação de Empenho 26S1630 - HAMN"); a solicitação e o SICAF são
+  inseridos normalmente. Se a mesma solicitação falhou e depois foi empenhada, vale a empenhada.
+
 ## Mais rápido entre as telas (versão 2.8.16)
 
 - Depois de cada "Próxima", o robô segue assim que a **tela nova estiver montada**, em vez de
