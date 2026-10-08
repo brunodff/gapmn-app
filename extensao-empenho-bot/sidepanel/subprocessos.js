@@ -32,9 +32,11 @@ const esc = s => ctx.escHtml(String(s ?? ''));
 
 const SIGLA_POR_UG = Object.fromEntries(Object.entries(UG_POR_UNIDADE).map(([sigla, ug]) => [ug, sigla]));
 
-function nomePadrao(numero, ugCred) {
+// "Solicitação de Empenho 26S1603 - HAMN - 2026NE001547" (a NE só depois de emitida)
+function nomePadrao(numero, ugCred, ne) {
   const sigla = SIGLA_POR_UG[String(ugCred ?? '').trim()] ?? String(ugCred ?? '').trim();
-  return `Solicitação de Empenho ${numero}${sigla ? ` - ${sigla}` : ''}`;
+  const nota = /^\d{4}NE\d{6}$/.test(String(ne ?? '').trim()) ? String(ne).trim() : '';
+  return `Solicitação de Empenho ${numero}${sigla ? ` - ${sigla}` : ''}${nota ? ` - ${nota}` : ''}`;
 }
 
 function sortearResponsavel() {
@@ -61,10 +63,13 @@ async function carregarItens() {
   const antigos = itens;
   itens = lista.map(r => {
     const ja = antigos.find(i => i.numero === r.solicitacao);
+    const ne = r.status === 'emitido' ? r.ne : 'NE em processamento';
+    // Nome editado à mão fica; o padrão acompanha a NE (que chega depois da emissão)
+    const padrao = nomePadrao(r.solicitacao, r.ugCred, ne);
     return {
-      id: r.id, numero: r.solicitacao, ne: r.status === 'emitido' ? r.ne : 'NE em processamento',
+      id: r.id, numero: r.solicitacao, ne,
       fornecedor: r.fornecedor ?? '', cnpj: String(r.cnpj ?? '').replace(/\D/g, ''),
-      pag: ja?.pag ?? r.pag ?? '', nome: ja?.nome ?? nomePadrao(r.solicitacao, r.ugCred),
+      pag: ja?.pag ?? r.pag ?? '', nome: ja && ja.nome !== ja.padrao ? ja.nome : padrao, padrao,
       subprocesso: r.subprocesso ?? '', data: r.data,
       // Acabou de ganhar subprocesso: desmarca (outro clique em Criar duplicaria)
       marcado: r.subprocesso && !ja?.subprocesso ? false

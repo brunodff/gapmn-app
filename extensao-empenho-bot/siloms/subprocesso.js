@@ -549,6 +549,11 @@ async function execFormPage(state, item) {
       if (!inputs[ii].readOnly && !inputs[ii].disabled) { nomeEl = inputs[ii]; break outer; }
     }
   }
+  // Campo com limite de tamanho: encurta o começo para a NE do fim não ser cortada
+  if (nomeEl && nomeEl.maxLength > 0 && nomeVal.length > nomeEl.maxLength) {
+    nomeVal = nomeVal.replace(/^Solicita[çc][ãa]o de Empenho/i, 'Sol. Empenho');
+    if (nomeVal.length > nomeEl.maxLength) log('  ⚠ Nome maior que o campo (' + nomeEl.maxLength + ' letras) — o SILOMS pode cortar o fim', 'warn');
+  }
   if (nomeEl) { fill(nomeEl, nomeVal); await delay(200); }
   else log('  ⚠ Campo Nome não encontrado', 'warn');
 

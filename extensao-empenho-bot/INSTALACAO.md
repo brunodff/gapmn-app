@@ -79,6 +79,14 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Nome do subprocesso com a NE (versão 2.8.14)
+
+- O nome e o assunto do subprocesso levam a NE emitida no fim:
+  "Solicitação de Empenho 26S1603 - HAMN - 2026NE001547". Com a NE ainda em processamento, sai
+  sem ela. Nome editado à mão no painel continua como foi digitado.
+- Se o campo Nome do SILOMS tiver limite de tamanho, o começo vira "Sol. Empenho" para a NE não
+  ser cortada.
+
 ## CNET lento (versão 2.8.13)
 
 - Com o CNET sobrecarregado, o robô **não desiste em 20 s**: espera a próxima tela e as tabelas
