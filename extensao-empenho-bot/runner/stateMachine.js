@@ -871,14 +871,24 @@ async function runStep2(tabId, payload) {
   await maximizarTabelas(tabId, 2);
   const cnpjRaw = (payload.fornecedorCnpj ?? '').replace(/\D/g, '');
 
-  const result = await execInPage(tabId, (cnpj) => {
+  const escolherFornecedor = () => execInPage(tabId, (cnpj, tipoOrigem) => {
     // Todos os botões "Selecionar este fornecedor" (attr selecionar ou title)
     const btns = Array.from(document.querySelectorAll(
-      'a[selecionar], a[title*="Selecionar"], a[href*="/empenho/item/"]'
+      'a[selecionar], a[title*="elecionar"], button[title*="elecionar"], a[href*="/empenho/item/"]'
     ));
     if (!btns.length) {
-      const debug = Array.from(document.querySelectorAll('a.btn')).map(a => `"${a.title}"[${a.href}]`).join(' | ');
-      return { ok: false, error: `Nenhum botão de seleção encontrado. Links: ${debug}` };
+      // Diz o porquê: lista vazia do CNET ("Nenhum registro encontrado") ou tela sem a lista
+      const vazio = (document.querySelector('td.dataTables_empty')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      const avisos = Array.from(document.querySelectorAll('.alert, .callout, .swal2-html-container, .invalid-feedback'))
+        .map(e => e.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 2).join(' | ');
+      const linhas = document.querySelectorAll('table tbody tr').length;
+      const oQue = tipoOrigem === 'compra' ? 'esta compra' : 'este contrato';
+      return {
+        ok: false, semBotoes: true,
+        error: vazio && !/carregando|processando/i.test(vazio)
+          ? `O CNET não listou nenhum fornecedor para ${oQue} ("${vazio}") — confira no CNET se ${oQue} tem fornecedor com saldo e vigência${avisos ? `. CNET: ${avisos}` : ''}`
+          : `A lista de fornecedores não trouxe o botão "Selecionar" (${linhas} linha(s) na tabela${avisos ? `; CNET: ${avisos}` : ''}) — confira a tela do CNET`,
+      };
     }
 
     // Localiza a linha do CNPJ correto
@@ -910,7 +920,22 @@ async function runStep2(tabId, payload) {
     }
     target.click();
     return { ok: true };
-  }, [cnpjRaw]);
+  }, [cnpjRaw, payload.tipoOrigem]);
+
+  let result = await escolherFornecedor();
+  // Lista sem nenhum botão: recarrega a tela uma vez (a busca pode ter se perdido com
+  // o CNET lento) antes de desistir
+  if (result?.semBotoes) {
+    await logVisivel('⚠ [Etapa 2] A lista de fornecedores veio sem fornecedor — recarregando a tela do CNET…', 'warn');
+    const aba = await chrome.tabs.get(tabId).catch(() => null);
+    const nav = waitForNavigation(tabId, 60000).then(() => true, () => false);
+    try { if (aba?.url) await chrome.tabs.update(tabId, { url: aba.url }); } catch { /* segue */ }
+    await nav;
+    await esperarAbaCarregar(tabId, 2);
+    await esperarTabela(tabId, 2, 'fornecedores', 'os fornecedores');
+    await maximizarTabelas(tabId, 2);
+    result = await escolherFornecedor();
+  }
 
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 2' };
   await appendLog(`[Etapa 2] Navegando para ${result.href ?? 'item'}…`, 'info');
@@ -928,6 +953,17 @@ async function runStep3(tabId, payload) {
   const result = await execInPage(tabId, step3Runner, [itensEmpenho, payload.tipoOrigem]);
 
   if (!result?.ok) return { ok: false, error: result?.error ?? 'Erro na Etapa 3' };
+  // Item do contrato achado pelo valor unitário/descrição: o nº vai para a Etapa 5
+  if (result.escolhas?.length) {
+    const itens = itensEmpenho.map(it => ({ ...it }));
+    for (const e of result.escolhas) {
+      itens[e.indice].numeroItem = e.numero;
+      await logVisivel(`[Etapa 3] Item do contrato ${e.numero} escolhido ${e.motivo}: ${e.desc}` +
+        (e.unit > 0 ? ` (unit. R$ ${fmtR$(e.unit)})` : '') + (e.pdf ? ` — o PDF dizia ${e.pdf}` : ''), 'info');
+    }
+    const st = await getState();
+    await setState({ payload: { ...st.payload, itensEmpenho: itens } });
+  }
   await appendLog('[Etapa 3] Itens selecionados ✓', 'info');
   return { ok: true };
 }

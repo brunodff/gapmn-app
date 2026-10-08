@@ -61,7 +61,33 @@ export async function step3Runner(itens, tipoOrigem) {
     caixas = caixasDeItem();
   }
 
-  const linhas = caixas.map(cb => ({ cb, num: numeroDoItem(cb.closest('tr')) }));
+  // Coluna pelo cabeçalho da tabela da linha (Descrição, Valor Unit.)
+  function coluna(tr, re) {
+    const ths = Array.from(tr.closest('table')?.querySelectorAll('thead th') ?? []);
+    const i = ths.findIndex(th => re.test((th.textContent ?? '').replace(/\s+/g, ' ').trim()));
+    return i >= 0 && tr.cells[i] ? (tr.cells[i].textContent ?? '').replace(/\s+/g, ' ').trim() : '';
+  }
+  // "1.234,56" / "1234,56" / "110.2000" → número
+  const num = s => {
+    const t = String(s ?? '').replace(/[^\d.,-]/g, '');
+    if (!t) return NaN;
+    return t.includes(',') ? parseFloat(t.replace(/\./g, '').replace(',', '.')) : parseFloat(t);
+  };
+  const palavras = s => new Set(String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    .split(/[^A-Z0-9]+/).filter(w => w.length >= 3 && !/^(COM|PARA|DOS|DAS|QUE|POR|TIPO|UNID|UNIDADE|SERVICO|SERVICOS|MATERIAL)$/.test(w)));
+  // Quanto as descrições se parecem (0–1), pela menor: a do PDF costuma vir cortada
+  const parecida = (a, b) => {
+    const A = palavras(a), B = palavras(b);
+    if (!A.size || !B.size) return 0;
+    let comum = 0;
+    A.forEach(w => { if (B.has(w)) comum++; });
+    return comum / Math.min(A.size, B.size);
+  };
+
+  const linhas = caixas.map(cb => {
+    const tr = cb.closest('tr');
+    return { cb, num: numeroDoItem(tr), desc: coluna(tr, /^Descri/i), unit: num(coluna(tr, /^Valor\s*Unit/i)) };
+  });
   const disponiveis = linhas.map(l => (Number.isNaN(l.num) ? '?' : String(l.num).padStart(5, '0')));
   const clicar = cb => { if (!cb.checked) cb.click(); };
   const selecionarTodos = () => {
@@ -89,7 +115,56 @@ export async function step3Runner(itens, tipoOrigem) {
                `Aborte, corrija o "N.Item" na revisão e inicie de novo.`,
       };
     }
-    if (!marcados) selecionarTodos();   // contrato: numeração não bateu → todos
+    // CONTRATO: item da solicitação sem N.Item (ou com um nº que o contrato não tem) →
+    // acha o item do contrato pelo valor unitário e, sem ele, pela descrição. Marcar
+    // todos deixava a Etapa 5 sem saber em qual item pôr o valor.
+    const escolhas = [], duvidas = [];
+    if (tipoOrigem !== 'compra') {
+      const usados = new Set(linhas.filter(l => l.cb.checked));
+      itens.forEach((it, i) => {
+        const alvo = soDigitos(it.numeroItem);
+        if (!Number.isNaN(alvo) && linhas.some(l => l.num === alvo)) return;     // já marcado pelo nº
+        const livres = linhas.filter(l => !usados.has(l));
+        const unitSol = num(it.valorUnit);
+        let escolhida = null, motivo = '';
+        const porUnit = unitSol > 0 ? livres.filter(l => Math.abs(l.unit - unitSol) < 0.005) : [];
+        const melhorDesc = lista => {
+          const r = lista.map(l => ({ l, s: parecida(it.descricao, l.desc) })).sort((a, b) => b.s - a.s);
+          return r.length && r[0].s >= 0.6 && (r.length === 1 || r[0].s - r[1].s >= 0.2) ? r[0].l : null;
+        };
+        if (porUnit.length === 1) { escolhida = porUnit[0]; motivo = 'pelo valor unitário'; }
+        else if (porUnit.length > 1) { escolhida = melhorDesc(porUnit); motivo = 'pelo valor unitário e pela descrição'; }
+        else if (it.descricao) { escolhida = melhorDesc(livres); motivo = 'pela descrição'; }
+        if (!escolhida && linhas.length === 1 && itens.length === 1) { escolhida = linhas[0]; motivo = 'é o único item do contrato'; }
+        if (escolhida) {
+          clicar(escolhida.cb);
+          usados.add(escolhida);
+          marcados++;
+          escolhas.push({ indice: i, numero: String(escolhida.num).padStart(5, '0'), motivo, desc: escolhida.desc.slice(0, 60),
+                          unit: escolhida.unit, pdf: String(it.numeroItem ?? '').trim() });
+        } else {
+          duvidas.push(it);
+        }
+      });
+      if (duvidas.length) {
+        const lista = linhas.map(l => `${Number.isNaN(l.num) ? '?' : String(l.num).padStart(5, '0')} — ${l.desc.slice(0, 45) || 'sem descrição'}` +
+          (l.unit > 0 ? ` (unit. R$ ${l.unit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : '')).join('; ');
+        return {
+          ok: false,
+          error: `Não consegui saber qual item do contrato empenhar para ${duvidas.map(d => `"${String(d.descricao || 'item sem descrição').slice(0, 40)}"` +
+            (num(d.valorUnit) > 0 ? ` (unit. R$ ${d.valorUnit})` : '')).join(', ')}. Itens do contrato no CNET: ${lista}. Informe o N.Item na revisão.`,
+        };
+      }
+    }
+    if (!marcados) selecionarTodos();   // contrato sem itens na solicitação → todos
+    if (escolhas.length) {
+      await dorme(400);
+      const btnE = document.querySelector('button.submeter') || document.querySelector('button.btn-success') ||
+        Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
+      if (!btnE) return { ok: false, error: 'Botão "Próxima Etapa" não encontrado na Etapa 3' };
+      btnE.click();
+      return { ok: true, escolhas };
+    }
   } else {
     selecionarTodos();
   }

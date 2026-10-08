@@ -436,6 +436,9 @@ async function processarArquivos(files) {
             valorFmt: it.valorTotal ?? '',
             subelemento: it.subelemento ?? '',
             quantidade: it.quant ?? '',  // coluna QUANT — é o que o robô digita numa compra
+            // Contrato sem N.Item: a Etapa 3 acha o item do contrato por estes dois
+            valorUnit: it.valorUnit ?? '',
+            descricao: it.descricao ?? '',
           }));
         }
       }

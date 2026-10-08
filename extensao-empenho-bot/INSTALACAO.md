@@ -79,6 +79,18 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Item do contrato e lista de fornecedores (versão 2.8.15)
+
+- Contrato com solicitação sem N.Item (ou com um N.Item que o contrato não tem): na Etapa 3 o robô
+  escolhe o item do contrato pelo **valor unitário** e, sem ele, pela **descrição** (o log diz qual
+  e por quê). Antes marcava todos e a Etapa 5 parava com "há 2 itens marcados no CNET".
+- Sem como decidir com segurança, para na Etapa 3 listando os itens do contrato (nº, descrição e
+  valor unitário) para você informar o N.Item na revisão.
+- Solicitações carregadas antes da 2.8.15 não têm o valor unitário/descrição guardados: carregue o
+  PDF de novo para o robô poder escolher sozinho.
+- Etapa 2 sem nenhum fornecedor na lista: recarrega a tela uma vez; se continuar vazia, diz se o
+  CNET respondeu "Nenhum registro encontrado" (sem fornecedor com saldo) ou se a tela não carregou.
+
 ## Nome do subprocesso com a NE (versão 2.8.14)
 
 - O nome e o assunto do subprocesso levam a NE emitida no fim:
