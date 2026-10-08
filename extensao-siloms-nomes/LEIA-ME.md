@@ -30,11 +30,14 @@ lista de documentos).
    e clique em **Carregar sem compactação** → escolha a pasta.
 3. Recarregue a página do SILOMS (F5).
 
-**Firefox**
-- Sem assinatura da Mozilla, o Firefox só instala de forma temporária: `about:debugging` →
-  **Este Firefox** → **Carregar extensão temporária** → escolha o `manifest.json` de dentro do
-  `siloms-nomes-<versão>-firefox.zip` descompactado. Some ao fechar o Firefox — para instalar de
-  vez, a versão assinada (AMO) precisa ser publicada.
+**Firefox** (versão 140 ou mais nova)
+- Com o `.xpi` assinado pela Mozilla: abra o arquivo no Firefox (arraste para a janela) →
+  **Adicionar**. Fica instalada de vez.
+- Assinar (uma vez por versão): em https://addons.mozilla.org/developers/ → **Enviar uma nova
+  extensão** → **Por conta própria** (não aparece na loja) → envie `siloms-nomes-<versão>-firefox.zip`.
+  A validação é automática; em alguns minutos o `.xpi` assinado fica disponível para baixar.
+- Sem assinatura, só dá para carregar como temporária (`about:debugging` → **Este Firefox** →
+  **Carregar extensão temporária**), e ela some ao fechar o Firefox.
 
 ## Gerar os pacotes
 
