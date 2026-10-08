@@ -107,6 +107,9 @@
     // não herdar o nome de um clique anterior
     var nome = nomeDaLinha(l);
     try { console.debug('[SILOMS — Nome dos Documentos]', nome || '(sem nome: lista não reconhecida)', l.cab.map(function (c) { return c.t; })); } catch (_) {}
-    try { api.runtime.sendMessage({ tipo: 'SILOMS_NOME_DOC', nome: nome }); } catch (_) { /* extensão recarregada: recarregue a página */ }
+    try {
+      api.runtime.sendMessage({ tipo: 'SILOMS_NOME_DOC', nome: nome,
+        colunas: l.cab.map(function (c) { return c.t; }).filter(Boolean).slice(0, 8).join(', ') });
+    } catch (_) { /* extensão recarregada: recarregue a página */ }
   }, true);
 })();

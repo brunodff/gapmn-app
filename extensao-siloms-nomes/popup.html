@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>SILOMS — Nome dos Documentos</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; width: 400px; font: 12px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: #f8fafc; color: #0f172a; }
+    header { padding: 10px 12px; background: #1e40af; color: #fff; }
+    header b { font-size: 13px; }
+    header span { opacity: .8; margin-left: 6px; }
+    main { padding: 8px 12px 12px; }
+    p { margin: 0 0 8px; color: #475569; }
+    ul { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; }
+    li { padding: 6px 0; border-bottom: 1px solid #e2e8f0; word-break: break-word; }
+    li time { color: #64748b; margin-right: 6px; font-variant-numeric: tabular-nums; }
+    li.renomeado { color: #166534; }
+    li.download, li.arquivo { color: #92400e; }
+    .vazio { color: #64748b; font-style: italic; }
+    button { margin-top: 8px; font: inherit; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0f172a; color: #e2e8f0; }
+      p, .vazio, li time { color: #94a3b8; }
+      li { border-color: #1e293b; }
+      li.renomeado { color: #4ade80; }
+      li.download, li.arquivo { color: #fbbf24; }
+      button { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+    }
+  </style>
+</head>
+<body>
+  <header><b>SILOMS — Nome dos Documentos</b><span id="versao"></span></header>
+  <main>
+    <p>O que a extensão viu agora há pouco (o mais recente em cima). Se um arquivo não
+      saiu com o nome certo, mande um print desta tela.</p>
+    <ul id="eventos"><li class="vazio">Nada ainda — clique em um documento no SILOMS.</li></ul>
+    <button id="limpar">Limpar</button>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

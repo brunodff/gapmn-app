@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SILOMS — Nome dos Documentos",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Salva os documentos baixados do SILOMS com o assunto do documento no nome do arquivo, em vez de \"DOCUMENTO - 1\".",
   "icons": {
     "16": "icons/icon-16.png",
@@ -47,6 +47,14 @@
     },
     "gecko_android": {
       "strict_min_version": "142.0"
+    }
+  },
+  "action": {
+    "default_title": "SILOMS — Nome dos Documentos",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
     }
   }
 }
