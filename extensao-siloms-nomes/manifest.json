@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SILOMS — Nome dos Documentos",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Salva os documentos baixados do SILOMS com o assunto do documento no nome do arquivo, em vez de \"DOCUMENTO - 1\".",
   "icons": {
     "16": "icons/icon-16.png",

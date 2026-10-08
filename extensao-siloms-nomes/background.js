@@ -43,8 +43,13 @@ function comEstado(fn) {
 }
 
 api.runtime.onMessage.addListener(function (m) {
-  if (!m || m.tipo !== 'SILOMS_NOME_DOC' || !m.nome) return;
-  comEstado(function (e) { e.pendentes.push({ nome: String(m.nome).slice(0, 150), ts: Date.now() }); });
+  if (!m || m.tipo !== 'SILOMS_NOME_DOC') return;
+  comEstado(function (e) {
+    // Clique numa lista que o content script não soube nomear: zera a fila, para o
+    // próximo arquivo não herdar o nome de um clique anterior
+    if (!m.nome) { e.pendentes = []; return; }
+    e.pendentes.push({ nome: String(m.nome).slice(0, 150), ts: Date.now() });
+  });
 });
 
 // ── Utilitários ───────────────────────────────────────────────────────────────
