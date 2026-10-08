@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GAPMN Empenho Bot",
-  "version": "2.8.15",
+  "version": "2.8.16",
   "description": "Coleta solicitações de empenho no SILOMS, automatiza a emissão no Contratos.gov.br e cria os subprocessos no SILOMS com a solicitação e a declaração do SICAF.",
 
   "permissions": [

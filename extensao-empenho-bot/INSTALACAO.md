@@ -79,6 +79,17 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Mais rápido entre as telas (versão 2.8.16)
+
+- Depois de cada "Próxima", o robô segue assim que a **tela nova estiver montada**, em vez de
+  esperar a aba terminar de carregar tudo (imagens e scripts de fora do CNET às vezes seguravam a
+  aba "carregando" por 30–50 s com a tela já pronta). Teste: de 40 s para menos de 1 s.
+- "Próxima" que não leva a outra tela (campo inválido) é percebido em ~10 s (antes 25 s).
+- "Ampliar a tabela" espera no máximo 1,5 s pelo seletor "N por página" (antes até 8 s por etapa,
+  mesmo em telas sem o seletor).
+- Depois de "Corrigir agora" (arredondamento), o robô só clica "Próxima" se ainda estiver na tela
+  do aviso — com a aba demorando a carregar, antes podia clicar na tela seguinte e pular a Etapa 6.
+
 ## Item do contrato e lista de fornecedores (versão 2.8.15)
 
 - Contrato com solicitação sem N.Item (ou com um N.Item que o contrato não tem): na Etapa 3 o robô

@@ -6,12 +6,14 @@
  * Executada no mundo MAIN da página via chrome.scripting — precisa ser
  * autocontida (a função é serializada).
  */
-export async function maximizarTabelasRunner() {
+export async function maximizarTabelasRunner(esperaMs = 8000) {
   const dorme = ms => new Promise(r => setTimeout(r, ms));
 
   // O seletor "N resultados por página" só existe depois que o DataTables inicializa
+  // (quem já esperou a tabela carregar passa uma espera curta: tela sem seletor não
+  // segura a etapa por 8 s)
   let seletores = [];
-  for (let t = 0; t < 8000; t += 300) {
+  for (let t = 0; t < esperaMs; t += 300) {
     seletores = Array.from(document.querySelectorAll('select[name$="_length"]'));
     if (seletores.length) break;
     await dorme(300);
