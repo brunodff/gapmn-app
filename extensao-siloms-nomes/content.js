@@ -81,7 +81,10 @@
     var sol = valor(l, ['solicitacao', 'solicitacao de empenho', 'nr solicitacao', 'n solicitacao', 'numero da solicitacao']);
     if (/^\d{2}[A-Z]\d{3,6}$/i.test(sol)) {
       var ug = valor(l, ['ug cred', 'ug credito', 'ug solicitante', 'unidade solicitante']);
-      return limpa('Solicitação de Empenho ' + sol.toUpperCase() + (ug ? ' - ' + ug : ''));
+      // 26S… = solicitação de empenho; 26M… = solicitação de anulação/reforço
+      var letra = sol.charAt(2).toUpperCase();
+      var tipoSol = letra === 'S' ? 'Solicitação de Empenho' : letra === 'M' ? 'Solicitação de Anulação-Reforço' : 'Solicitação';
+      return limpa(tipoSol + ' ' + sol.toUpperCase() + (ug ? ' - ' + ug : ''));
     }
 
     var doc = valor(l, ['documento', 'nome do documento', 'nome', 'arquivo']);

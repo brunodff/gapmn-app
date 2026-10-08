@@ -5,8 +5,10 @@
  * O content script avisa o assunto do documento clicado ("pendente", vale 60 s). O
  * próximo arquivo que o SILOMS mandar recebe esse nome:
  *   Chrome  — downloads.onDeterminingFilename troca o nome do download; a resposta do
- *             SILOMS (webRequest, só observando) liga o endereço do arquivo ao nome,
- *             para valer também ao salvar depois a partir do visualizador de PDF.
+ *             SILOMS (webRequest, só observando) liga o endereço do arquivo e a ABA em
+ *             que ele abriu ao nome, para valer também ao salvar depois pelo
+ *             visualizador de PDF (o nome da aba que está na tela). Sem saber de qual
+ *             documento é, não renomeia — nome errado é pior que "documento".
  *   Firefox — webRequest bloqueante reescreve o Content-Disposition da resposta
  *             (o Firefox não tem onDeterminingFilename).
  * O que acontece fica registrado (últimos 25 eventos) para o painel da extensão.
@@ -14,8 +16,7 @@
 
 var api = typeof browser !== 'undefined' ? browser : chrome;
 var FIREFOX = !!(api.runtime && api.runtime.getBrowserInfo);
-var JANELA_MS = 60000;                 // clique → arquivo
-var VISUALIZADOR_MS = 30 * 60000;      // PDF aberto na aba → "salvar" depois
+var JANELA_MS = 120000;                // clique → arquivo (relatório do SILOMS pode demorar)
 var FILTRO = { urls: ['*://*.siloms.intraer/*'] };
 // Visualizador de PDF do Chrome: o "salvar" dele pode vir com o endereço do próprio
 // visualizador em vez do endereço do SILOMS
@@ -26,12 +27,12 @@ var VISUALIZADOR = /^(blob:)?chrome-extension:\/\/mhjfbmdgcfjbbpaeojofohoefgiehj
 // clique e o arquivo
 
 async function lerEstado() {
-  var d = await api.storage.session.get(['pendentes', 'porUrl', 'ultimo', 'eventos']);
+  var d = await api.storage.session.get(['pendentes', 'porUrl', 'porAba', 'eventos']);
   var agora = Date.now();
   return {
     pendentes: (d.pendentes || []).filter(function (p) { return agora - p.ts < JANELA_MS; }),
     porUrl: d.porUrl || {},
-    ultimo: d.ultimo || null,
+    porAba: d.porAba || {},       // aba em que um arquivo do SILOMS abriu → nome
     eventos: d.eventos || [],
   };
 }
@@ -39,7 +40,7 @@ function gravarEstado(e) {
   // Guarda só os 50 endereços e os 25 eventos mais recentes
   var urls = Object.keys(e.porUrl);
   if (urls.length > 50) urls.slice(0, urls.length - 50).forEach(function (u) { delete e.porUrl[u]; });
-  return api.storage.session.set({ pendentes: e.pendentes, porUrl: e.porUrl, ultimo: e.ultimo, eventos: e.eventos.slice(-25) });
+  return api.storage.session.set({ pendentes: e.pendentes, porUrl: e.porUrl, porAba: e.porAba, eventos: e.eventos.slice(-25) });
 }
 // Fila simples para não perder atualizações quando dois eventos chegam juntos
 var trava = Promise.resolve();
@@ -50,7 +51,10 @@ function comEstado(fn) {
 }
 function evento(e, tipo, texto) { e.eventos.push({ t: Date.now(), tipo: tipo, texto: String(texto).slice(0, 220) }); }
 function curta(u) { return String(u || '').replace(/^https?:\/\/[^/]+/, '').slice(0, 70) || '(sem endereço)'; }
-function dar(e, url, nome) { if (url) e.porUrl[url] = nome; e.ultimo = { nome: nome, ts: Date.now() }; }
+function dar(e, url, nome, aba) {
+  if (url) e.porUrl[url] = nome;
+  if (aba >= 0) e.porAba[aba] = nome;
+}
 
 api.runtime.onMessage.addListener(function (m) {
   if (!m || m.tipo !== 'SILOMS_NOME_DOC') return;
@@ -131,17 +135,37 @@ if (FIREFOX) {
   // o onDeterminingFilename abaixo
   api.webRequest.onHeadersReceived.addListener(function (det) {
     if (!ehArquivo(det.responseHeaders)) return;
+    // Aba em que o arquivo abre (PDF na tela): só para documento da aba inteira
+    var aba = det.type === 'main_frame' ? det.tabId : -1;
     comEstado(function (e) {
       // O clique mais recente vale, mesmo que o endereço já tenha sido baixado antes
       if (e.pendentes.length) {
         var nome = e.pendentes.shift().nome;
-        dar(e, det.url, nome);
+        dar(e, det.url, nome, aba);
         evento(e, 'arquivo', 'Arquivo do SILOMS (' + curta(det.url) + ') vai se chamar "' + nome + '"');
-      } else if (!e.porUrl[det.url]) {
+      } else if (e.porUrl[det.url]) {
+        if (aba >= 0) e.porAba[aba] = e.porUrl[det.url];
+      } else {
+        if (aba >= 0) delete e.porAba[aba];   // a aba agora mostra outro arquivo, sem nome
         evento(e, 'arquivo', 'Arquivo do SILOMS sem clique antes (' + curta(det.url) + '): fica com o nome do SILOMS');
       }
     });
   }, FILTRO, ['responseHeaders']);
+
+  // PDF gerado pela página (blob:https://…siloms.intraer/…) aberto numa aba: liga a aba
+  // ao clique pendente na hora em que ela abre
+  api.tabs.onUpdated.addListener(function (aba, mud) {
+    if (!/^blob:https?:\/\/[^/]*\.siloms\.intraer/i.test(mud.url || '')) return;
+    comEstado(function (e) {
+      if (!e.pendentes.length) return;
+      var nome = e.pendentes.shift().nome;
+      dar(e, mud.url, nome, aba);
+      evento(e, 'arquivo', 'PDF do SILOMS aberto numa aba vai se chamar "' + nome + '"');
+    });
+  });
+  api.tabs.onRemoved.addListener(function (aba) {
+    comEstado(function (e) { delete e.porAba[aba]; });
+  });
 
   // Arquivo do SILOMS: endereço do SILOMS (inclusive blob:https://…siloms.intraer/…,
   // gerado na página), baixado a partir de uma página do SILOMS ou salvo pelo
@@ -152,17 +176,21 @@ if (FIREFOX) {
     var visualizador = VISUALIZADOR.test(item.url || '') || VISUALIZADOR.test(item.referrer || '');
     if (!siloms && !visualizador) { suggest(); return; }
     var original = String(item.filename || '').split(/[\\/]/).pop();
-    comEstado(function (e) {
-      var nome = e.porUrl[item.url] || e.porUrl[item.finalUrl] || (siloms && e.pendentes.length ? e.pendentes.shift().nome : '');
-      // Salvo pelo visualizador sem o endereço do SILOMS: o último documento aberto
-      if (!nome && visualizador && e.ultimo && Date.now() - e.ultimo.ts < VISUALIZADOR_MS) nome = e.ultimo.nome;
+    // Aba que está na tela (quem salva pelo visualizador de PDF está olhando para ela)
+    var abaNaTela = api.tabs.query({ active: true, lastFocusedWindow: true }).then(function (t) { return t[0] ? t[0].id : -1; }, function () { return -1; });
+    comEstado(async function (e) {
+      var aba = await abaNaTela;
+      // Visualizador de PDF: o endereço é o do próprio visualizador (igual para todas as
+      // abas) — vale só o nome da aba que está na tela
+      var nome = visualizador && !siloms ? e.porAba[aba]
+        : e.porUrl[item.url] || e.porUrl[item.finalUrl] || (e.pendentes.length ? e.pendentes.shift().nome : '');
       if (!nome) {
         evento(e, 'download', 'Download "' + (original || curta(item.url)) + '" não renomeado: nenhum clique do SILOMS antes' +
           (visualizador ? ' (salvo pelo visualizador de PDF)' : ''));
         suggest();
         return;
       }
-      dar(e, item.url, nome);
+      if (siloms && item.url) e.porUrl[item.url] = nome;
       var arquivo = nome + extensao(original, item.mime);
       evento(e, 'renomeado', '"' + (original || curta(item.url)) + '" → "' + arquivo + '"' + (visualizador ? ' (visualizador de PDF)' : ''));
       suggest({ filename: arquivo, conflictAction: 'uniquify' });
