@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "GAP-MN — Processos ao Vivo",
+  "short_name": "Processos ao Vivo",
+  "version": "1.0.0",
+  "description": "Para a SLIC do GAP-MN: com a Área de Trabalho do ComprasNet aberta, manda para o app a fase de cada processo, a ação pendente, os participantes e quem está ganhando cada item.",
+  "permissions": ["storage", "scripting", "alarms", "tabs"],
+  "host_permissions": [
+    "https://cnetmobile.estaleiro.serpro.gov.br/*",
+    "https://fychrtyyqbzlfbzbvzqp.supabase.co/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "GAP-MN — Processos ao Vivo",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png" }
+  },
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+}

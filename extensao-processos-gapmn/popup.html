@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>GAP-MN — Processos ao Vivo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 340px; font: 12.5px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: #0b1324; color: #e2e8f0; }
+    header { padding: 12px 14px 10px; border-bottom: 1px solid #1e293b; }
+    h1 { margin: 0; font-size: 14px; }
+    .sub { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+    main { padding: 12px 14px; display: grid; gap: 10px; }
+    .caixa { border: 1px solid #1e293b; border-radius: 10px; padding: 10px; background: #0f1a30; }
+    label { display: block; font-size: 11px; color: #94a3b8; margin: 6px 0 3px; }
+    input, select { width: 100%; padding: 7px 8px; border-radius: 7px; border: 1px solid #334155; background: #0b1324; color: #e2e8f0; font: inherit; }
+    button { font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 10px; border: 1px solid #0ea5e9; background: #0369a1; color: #fff; font-weight: 600; }
+    button.sec { background: transparent; border-color: #334155; color: #cbd5e1; font-weight: 500; }
+    button:disabled { opacity: .55; cursor: default; }
+    .linha { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+    .ok { color: #4ade80; } .erro { color: #f87171; } .aviso { color: #fbbf24; } .mudo { color: #94a3b8; }
+    #log { max-height: 150px; overflow-y: auto; font: 11px/1.4 ui-monospace, Consolas, monospace; color: #94a3b8; white-space: pre-wrap; }
+    a { color: #38bdf8; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>GAP-MN — Processos ao Vivo</h1>
+    <div class="sub">Manda ao app a fase dos processos, a ação pendente, os participantes e quem está ganhando cada item (UASG 120630).</div>
+  </header>
+  <main>
+    <section id="entrar" class="caixa" hidden>
+      <div><b>Entre com seu login do app GAP-MN</b> (SLIC, ADMIN ou DEV).</div>
+      <label for="email">E-mail</label>
+      <input id="email" type="email" autocomplete="username">
+      <label for="senha">Senha</label>
+      <input id="senha" type="password" autocomplete="current-password">
+      <div style="margin-top:10px" class="linha">
+        <button id="btn-entrar">Entrar</button>
+        <span id="msg-entrar" class="erro"></span>
+      </div>
+    </section>
+
+    <section id="conectado" hidden>
+      <div class="caixa">
+        <div class="linha">
+          <span id="quem" class="ok"></span>
+          <button id="btn-sair" class="sec" style="padding:4px 8px">Sair</button>
+        </div>
+      </div>
+
+      <div class="caixa" style="margin-top:10px">
+        <div id="status" class="mudo">Ainda não enviou.</div>
+        <div id="resumo" class="mudo" style="margin-top:4px"></div>
+        <div style="margin-top:10px" class="linha">
+          <button id="btn-enviar">Enviar agora</button>
+          <a href="https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-area-trabalho-web/seguro/governo/area-trabalho" target="_blank">Abrir ComprasNet</a>
+        </div>
+        <label for="intervalo">Enviar sozinho, com a Área de Trabalho aberta, a cada</label>
+        <select id="intervalo">
+          <option value="1">1 hora</option>
+          <option value="2">2 horas</option>
+          <option value="3">3 horas</option>
+          <option value="6">6 horas</option>
+          <option value="12">12 horas</option>
+        </select>
+      </div>
+
+      <details class="caixa" style="margin-top:10px">
+        <summary class="mudo">O que aconteceu no último envio</summary>
+        <div id="log" style="margin-top:6px"></div>
+      </details>
+    </section>
+
+    <div class="mudo" style="font-size:10.5px">Os processos publicados (itens e vencedores) o app já busca sozinho no PNCP às 07:00 e 13:00 — esta extensão só completa com o que exige login no ComprasNet.</div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
