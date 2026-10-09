@@ -271,7 +271,8 @@ function filasDeDetalhes(lista, porChave, completo) {
     const recente = agora - pub < 400 * DIA;
     const mudou = p.data_atualizacao_pncp && Date.parse(p.data_atualizacao_pncp) > sync;
     if (!final && recente && (sync === 0 ? agora - pub < 120 * DIA : true)) {
-      pncp.push([(sync ? 2 : 3) + pub / 1e13, p]);
+      // Em andamento: relê se a última leitura tem mais de 2 h (07:00 e 13:00 pegam todos)
+      if (completo || agora - sync > 2 * 3600e3) pncp.push([(sync ? 2 : 3) + pub / 1e13, p]);
     } else if (completo || !sync || mudou) {
       dados.push([(sync ? 1 : 2) + pub / 1e13, p]);
     } else if (agora - sync > 30 * DIA) {
@@ -627,7 +628,8 @@ function situacaoDaCompra(p) {
   const s = String(p.situacao_api || "").toLowerCase();
   if (/revogad/.test(s)) return "Revogado";
   if (/anulad/.test(s)) return "Anulado";
-  if (/suspens/.test(s)) return "Suspenso";
+  // No sistema antigo (2019–2023) "suspenso" ficou parado para sempre: não é andamento
+  if (/suspens/.test(s) && p.fonte !== "LEGADO") return "Suspenso";
   return null;
 }
 
