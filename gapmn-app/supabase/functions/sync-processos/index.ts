@@ -641,6 +641,9 @@ function situacaoPorItens(p, itens) {
   const hom = itens.filter((it) => /homolog/.test(s(it))).length;
   const sem = itens.filter((it) => /desert|fracass|cancel|anulad|revogad/.test(s(it))).length;
   const and = itens.length - hom - sem;
+  // Antigos (2019–2023): itens parados em "Em análise"/"Encerrado" no sistema legado
+  // não estão em andamento
+  if (and > 0 && p.fonte === "LEGADO") return hom > 0 ? "Homologado" : "Concluído";
   if (and > 0) return hom > 0 ? "Homologado parcialmente" : "Em andamento";
   if (hom > 0) return "Homologado";
   if (itens.every((it) => /desert/.test(s(it)))) return "Deserto";
