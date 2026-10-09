@@ -216,16 +216,20 @@ export default function PainelContratos({ canManage = false }: { canManage?: boo
   const loadProcesso = useCallback(async (pag: string) => {
     if (!pag) { setProcesso(null); return; }
     setProcLoading(true);
-    const { data } = await supabase
+    // pag_nup do contrato = NUP do processo ("67292.002065/2021-65"); a situação vem da
+    // sincronização com o PNCP/Compras.gov.br (sync-processos)
+    const { data: lista } = await supabase
       .from("processos_licitatorios")
-      .select("id,numero_processo,modalidade,objeto,data_publicacao,status,processo_controle(status_livre,pag,om)")
-      .eq("numero_processo", pag)
-      .maybeSingle();
+      .select("id,numero_processo,modalidade,objeto,data_publicacao,status:situacao,processo_controle(status_livre,pag,om)")
+      .or(`processo_nup.eq."${pag}",numero_processo.eq."${pag}"`)
+      .order("data_publicacao", { ascending: false })
+      .limit(1);
+    const data = lista?.[0] ?? null;
     if (!data) {
       // fallback: search via processo_controle.pag
       const { data: pc } = await supabase
         .from("processo_controle")
-        .select("processo_licitatorio_id:processos_licitatorios(id,numero_processo,modalidade,objeto,data_publicacao,status,processo_controle(status_livre,pag,om))")
+        .select("processo_licitatorio_id:processos_licitatorios(id,numero_processo,modalidade,objeto,data_publicacao,status:situacao,processo_controle(status_livre,pag,om))")
         .eq("pag", pag)
         .maybeSingle();
       setProcesso((pc as unknown as { processo_licitatorio_id: ProcessoLic | null } | null)?.processo_licitatorio_id ?? null);
