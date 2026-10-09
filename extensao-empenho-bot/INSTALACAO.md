@@ -79,6 +79,15 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Sanção e impedimento só avisam (versão 2.8.18)
+
+- O robô **não impede mais** nenhum empenho por causa do fornecedor. Sanção, impedimento de licitar
+  ou certidão irregular (SICAF, CEIS/CNEP, Receita) aparecem como **aviso**: a revisão mostra o
+  motivo e, ao iniciar, uma janela pergunta — **OK empenha assim mesmo**, Cancelar volta.
+- Motivo: impedimento aplicado por município ou estado não alcança órgão federal (Lei 14.133,
+  art. 156) e quem sabe se vale para o GAP-MN é o usuário.
+- O aviso fica no log e na coluna de verificação do relatório.
+
 ## Subprocesso também para não empenhadas (versão 2.8.17)
 
 - A tela "Subprocessos no SILOMS" lista também as solicitações **não empenhadas** (e as "conferir

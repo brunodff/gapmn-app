@@ -550,7 +550,8 @@ function badgeFornecedor(sol) {
     return `<span class="rcf rcf-verificando">⏳ ${oQue}</span>`;
   }
   const icone = { ok: '✓', atencao: '⚠', bloqueio: '⛔' }[v.nivel] ?? '';
-  const titulo = v.nivel === 'ok' ? 'Fornecedor regular' : v.nivel === 'bloqueio' ? 'Fornecedor impedido' : 'Fornecedor — atenção';
+  const titulo = v.nivel === 'ok' ? 'Fornecedor regular'
+    : v.nivel === 'bloqueio' ? 'Fornecedor com sanção/impedimento — só aviso: confira se vale para o GAP-MN' : 'Fornecedor — atenção';
   const origem = s?.estado === 'ok'
     ? (s.origem === 'pdf' ? `SICAF: PDF emitido em ${s.emitidoEm || '?'}` : 'SICAF: consultado agora')
     : '';
@@ -1125,8 +1126,8 @@ function iniciarFila() {
     validas = validas.filter(s => !comErro.includes(s));
   }
 
-  // Fornecedor impedido (sanção, impedimento ou certidão federal vencida) não
-  // entra na fila; verificação em curso e certidão não conferida pedem confirmação
+  // Sanção, impedimento ou certidão vencida: só AVISA — quem decide é o usuário (um
+  // impedimento aplicado por município, por exemplo, não vale para órgão federal).
   // Anulação não confere fornecedor (só reduz o empenho)
   const conferidas = validas.filter(s => s.operacao !== 'anulacao');
   const veredito = new Map(conferidas.map(s => [s, vereditoFornecedor(s)]));
@@ -1135,10 +1136,9 @@ function iniciarFila() {
   const impedidas = conferidas.filter(s => veredito.get(s).nivel === 'bloqueio');
   if (impedidas.length) {
     const lista = impedidas.map(s => `• ${nome(s)}: ${veredito.get(s).resumo}`).join('\n');
-    if (!confirm(`Fornecedor impedido — estas solicitações NÃO serão empenhadas:\n\n${lista}\n\nOK: empenhar só as demais · Cancelar: voltar à revisão`)) return;
-    validas = validas.filter(s => !impedidas.includes(s));
-    if (!validas.length) return;
+    if (!confirm(`⚠ Aviso — fornecedor com sanção, impedimento ou certidão irregular:\n\n${lista}\n\nConfira se vale para o GAP-MN (ex.: impedimento aplicado por município ou estado não alcança órgão federal).\n\nOK: empenhar todas assim mesmo · Cancelar: voltar à revisão`)) return;
   }
+  const avisosFornecedor = impedidas.map(s => `⚠ ${nome(s)}: ${veredito.get(s).resumo} — empenhando por decisão do usuário`);
   const semCertidao = conferidas.filter(s => validas.includes(s) && veredito.get(s).nivel !== 'verificando' && s._sicaf?.estado !== 'ok');
   if (semCertidao.length) {
     const lista = semCertidao.map(s => `• ${nome(s)}`).join('\n');
@@ -1172,6 +1172,7 @@ function iniciarFila() {
   renderPayloadCard(payload);
 
   el('log').innerHTML = '';
+  for (const a of avisosFornecedor) appendLog(a, 'warn');
   setBadge('running');
   showScreen('automation');
 }
@@ -1890,18 +1891,13 @@ async function empenharSolicitacao(sol, mode) {
     el('status-badge-auto').style.display = 'none';
     showScreen('automation');
   } else {
-    // Fornecedor impedido: não inicia (o usuário decide no CNET)
+    // Sanção, impedimento ou certidão irregular: só AVISA — quem decide é o usuário
     const v = await verificarFornecedor(sol.fornecedorCNPJ);
-    if (v.nivel === 'bloqueio') {
-      alert(`Fornecedor impedido — empenho de ${sol.numero} não iniciado:\n\n${v.resumo}`);
-      return;
-    }
     // Certidões: só com o SICAF aberto (senão pede confirmação)
     const sicaf = (await abaDoSicaf().catch(() => null)) ? await conferirNoSicaf(sol.fornecedorCNPJ) : { estado: 'sem-aba' };
-    if (sicaf.estado === 'ok' && sicaf.nivel === 'bloqueio') {
-      alert(`Fornecedor irregular no SICAF — empenho de ${sol.numero} não iniciado:\n\n${sicaf.resumo}`);
-      return;
-    }
+    const avisos = [v.nivel === 'bloqueio' ? v.resumo : '', sicaf.estado === 'ok' && sicaf.nivel === 'bloqueio' ? sicaf.resumo : '']
+      .filter(Boolean).join('\n');
+    if (avisos && !confirm(`⚠ Aviso — ${sol.numero}: fornecedor com sanção, impedimento ou certidão irregular:\n\n${avisos}\n\nConfira se vale para o GAP-MN (ex.: impedimento aplicado por município ou estado não alcança órgão federal).\n\nOK: empenhar assim mesmo · Cancelar: não empenhar agora`)) return;
     if (sicaf.estado !== 'ok' && !confirm(`Certidões do fornecedor NÃO conferidas no SICAF (${textoSicafPendente(sicaf)}).\n\nEmpenhar ${sol.numero} assim mesmo?`)) return;
     // Envia payload para empenho CONTRATOSGOV
     const ordem = ['ok', 'atencao', 'bloqueio'];
@@ -1915,6 +1911,7 @@ async function empenharSolicitacao(sol, mode) {
     el('log').innerHTML = '';
     showScreen('automation');
     appendLog(`📋 Iniciando empenho CONTRATOSGOV para ${sol.numero}…`, 'info');
+    if (avisos) appendLog(`⚠ ${avisos.replace(/\n/g, ' · ')} — empenhando por decisão do usuário`, 'warn');
     enviar({ type: 'START_EMPENHO', payload });
   }
 }
