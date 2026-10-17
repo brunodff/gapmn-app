@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import PainelRP from "../components/PainelRP";
 import CnetRoboGapmn from "../components/CnetRoboGapmn";
 import PainelProcessos from "../components/PainelProcessos";
 import PainelExecucao from "../components/PainelExecucao";
+import PainelGovernanca from "../components/painelGovernanca";
 
 const BI_URL =
   "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
@@ -13,23 +14,30 @@ const GOV_URL =
   "https://app.powerbi.com/view?r=eyJrIjoiMGI0ZDUxZDAtOTQzOC00YmNiLTk1OTctYzA1NDk5MjkxMDNjIiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
 
 type Painel = "orcamentario" | "rp" | "processos" | "execucao" | "governanca";
+const PAINEIS: Painel[] = ["orcamentario", "rp", "processos", "execucao", "governanca"];
 
 export default function PaineisGerenciaisPage() {
   const nav = useNavigate();
-  const [painel, setPainel] = useState<Painel>("orcamentario");
+  // A aba fica na URL (?painel=governanca), para o painel poder ser compartilhado por link já filtrado.
+  const [params, setParams] = useSearchParams();
+  const painelUrl = params.get("painel") as Painel | null;
+  const painel: Painel = painelUrl && PAINEIS.includes(painelUrl) ? painelUrl : "orcamentario";
+  const setPainel = (p: Painel) => setParams(p === "orcamentario" ? {} : { painel: p });
   const [maximized, setMaximized] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
-  const [govKey,    setGovKey]    = useState(0);
   const [userSetor, setUserSetor] = useState<string | null>(null);
+  const [perfilCarregado, setPerfilCarregado] = useState(false);
 
   useEffect(() => {
     (async () => {
       const { data: sess } = await supabase.auth.getSession();
       const uid = sess.session?.user.id;
-      if (!uid) return;
-      const { data } = await supabase
-        .from("profiles").select("setor").eq("id", uid).maybeSingle();
-      setUserSetor((data as any)?.setor?.toUpperCase() ?? null);
+      if (uid) {
+        const { data } = await supabase
+          .from("profiles").select("setor").eq("id", uid).maybeSingle();
+        setUserSetor((data as any)?.setor?.toUpperCase() ?? null);
+      }
+      setPerfilCarregado(true);
     })();
   }, []);
 
@@ -66,15 +74,6 @@ export default function PaineisGerenciaisPage() {
                   ⛶ Maximizar
                 </button>
               </>
-            )}
-            {painel === "governanca" && isAdmin && (
-              <button
-                onClick={() => setGovKey((k) => k + 1)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                title="Recarregar painel"
-              >
-                ↺ Recarregar
-              </button>
             )}
             <button
               onClick={() => nav("/app")}
@@ -145,16 +144,12 @@ export default function PaineisGerenciaisPage() {
         )}
 
         {painel === "governanca" && (
-          isAdmin ? (
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <iframe
-                key={govKey}
-                title="Painel de Governança GAP-MN"
-                src={`${GOV_URL}&_k=${govKey}`}
-                className="h-[calc(100dvh-13rem)] w-full"
-                allowFullScreen
-              />
+          !perfilCarregado ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+              Carregando…
             </div>
+          ) : isAdmin ? (
+            <PainelGovernanca urlPowerBI={GOV_URL} />
           ) : (
             <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-sm text-red-700">
               🔒 Acesso restrito a administradores do sistema.

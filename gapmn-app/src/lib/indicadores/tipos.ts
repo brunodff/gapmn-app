@@ -1,0 +1,185 @@
+// Tipos do Painel de Governança (aba BD da planilha de indicadores).
+// Só tipos: nada aqui existe em tempo de execução.
+
+export type Direcao = "Maior é melhor" | "Menor é melhor" | "Monitoramento";
+export type TipoLinha = "Realizado" | "Planejado";
+
+/** Uma linha da aba BD: um indicador numa competência (formato longo). */
+export type LinhaBD = {
+  ID: string;
+  DIVISAO: string;
+  CATEGORIA: string;
+  INDICADOR: string;
+  UNIDADE: string;
+  FORMULA: string;
+  META_TXT: string | null;
+  META_NUM: number | null;
+  DIRECAO: Direcao;
+  TIPO: TipoLinha;
+  ANO: number;
+  MES_NUM: number;
+  MES: string;
+  /** Primeiro dia da competência, 'yyyy-MM-dd'. JAN-JUN/26 → 2026-06-01. */
+  DATA: string;
+  VALOR: number | null;
+  VAR1_NOME: string | null; VAR1_VALOR: number | null;
+  VAR2_NOME: string | null; VAR2_VALOR: number | null;
+  VAR3_NOME: string | null; VAR3_VALOR: number | null;
+};
+
+export type PayloadBD = {
+  ok: true;
+  gerado_em: string;
+  timezone?: string;
+  planilha?: string;
+  bd: LinhaBD[];
+  /** Segunda fase: ainda não usado. */
+  bd_integridade: unknown[];
+};
+
+export type Status =
+  | "Adequado"
+  | "Atenção"
+  | "Crítico"
+  | "Aguardando informação"
+  | "Sem dados no mês de referência"
+  | "Sem meta";
+
+export type Competencia = {
+  /** 'JUL/26' ou 'JAN-JUN/26'. */
+  label: string;
+  data: string;
+  ano: number;
+  mesNum: number;
+  mes: string;
+  /** true para competências como JAN-JUN (não são um mês). */
+  semestral: boolean;
+};
+
+export type Variavel = { nome: string; valor: number };
+
+/** Só para os IDs 16 e 22: sentido da variação entre o valor anterior e o atual. */
+export type Variacao = {
+  de: number;
+  para: number;
+  /** (para − de) ÷ de × 100; null quando o anterior é 0. */
+  percentual: number | null;
+  houveReducao: boolean;
+};
+
+export type Tendencia = {
+  /** Variação média por competência, na unidade do indicador: (último − primeiro) ÷ 2. */
+  media: number;
+  pontos: { label: string; valor: number }[];
+  /** Melhora ou piora conforme a direção do indicador; null quando não se aplica. */
+  sentido: "melhora" | "piora" | "estável" | null;
+};
+
+export type IndicadorPainel = {
+  id: string;
+  /** Sigla gravada na planilha. */
+  divisao: string;
+  /** Sigla exibida (ID 35 → COMSOC). */
+  divisaoExibida: string;
+  categoria: string;
+  /** Categoria sem o prefixo "N. ". */
+  categoriaExibida: string;
+  indicador: string;
+  unidade: string;
+  formula: string;
+  metaTxt: string | null;
+  metaNum: number | null;
+  direcao: Direcao;
+  valor: number | null;
+  /** Valor na competência anterior com dados (não somado, só para comparação). */
+  valorAnterior: number | null;
+  variaveis: Variavel[];
+  atingimento: number | null;
+  status: Status;
+  /** Pontos da nota (1 / 0,5 / 0); null quando o indicador não entra na nota. */
+  pontos: number | null;
+  /** Fora do ranking e dos cards: ID 35, EXTRAS e sem meta. */
+  foraDaNota: boolean;
+  variacao: Variacao | null;
+  tendencia: Tendencia | null;
+  /** Preenchido pela divisão (inclui "sem dados no mês", que é zero informado). */
+  preenchido: boolean;
+};
+
+export type ContagemStatus = Record<Status, number>;
+
+export type DivisaoPainel = {
+  sigla: string;
+  /** Indicadores avaliados (entram na nota). */
+  n: number;
+  pontos: number;
+  /** Limite inferior de Wilson; null quando n = 0. */
+  score: number | null;
+  posicao: number | null;
+  /** COMSOC: só acompanhamento, não é ranqueada. */
+  foraDoRanking: boolean;
+  contagem: ContagemStatus;
+  total: number;
+};
+
+export type ItemContagem = {
+  id: string;
+  indicador: string;
+  realizado: number | null;
+  planejado: number | null;
+  /** realizado ÷ planejado, quando planejado > 0. */
+  execucao: number | null;
+};
+
+export type GrupoContagem = {
+  categoria: string;
+  divisao: string;
+  /** true no Plano de Contratações Anual: planejado × realizado. */
+  emparelhado: boolean;
+  itens: ItemContagem[];
+  total: number | null;
+  totalPlanejado: number | null;
+};
+
+export type ResumoPainel = {
+  /** Σ pontos ÷ n, sobre os indicadores que entram na nota. */
+  saudeGeral: number | null;
+  n: number;
+  adequados: number;
+  atencao: number;
+  criticos: number;
+  aguardando: number;
+  semDados: number;
+  completude: {
+    preenchidos: number;
+    comResultado: number;
+    esperados: number;
+    percentual: number | null;
+  };
+};
+
+export type Painel = {
+  competencias: Competencia[];
+  competenciasComDados: Competencia[];
+  /** Referência global (D.1), independente de filtro. */
+  referenciaPadrao: Competencia | null;
+  /** Competência exibida: a padrão ou a escolhida no seletor. */
+  referencia: Competencia | null;
+  anterior: Competencia | null;
+  /** Indicadores com meta, já na ordem de D.7. */
+  indicadores: IndicadorPainel[];
+  /** Indicadores sem meta (fora de nota e ranking). */
+  monitoramento: IndicadorPainel[];
+  divisoes: DivisaoPainel[];
+  podio: DivisaoPainel[];
+  piores: IndicadorPainel[];
+  grupos: GrupoContagem[];
+  resumo: ResumoPainel;
+};
+
+export type Filtros = {
+  divisoes: string[];
+  categorias: string[];
+  status: Status[];
+  busca: string;
+};
