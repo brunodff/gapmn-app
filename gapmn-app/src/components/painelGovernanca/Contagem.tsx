@@ -38,7 +38,7 @@ function ItemPlanejado({ item }: { item: ItemContagem }) {
   );
 }
 
-function CartaoGrupo({ g, competencia, largo = false }: { g: GrupoContagem; competencia: string; largo?: boolean }) {
+export function CartaoGrupo({ g, competencia, largo = false }: { g: GrupoContagem; competencia: string; largo?: boolean }) {
   const total = g.emparelhado
     ? `${fmtNumero(g.total)} / ${fmtNumero(g.totalPlanejado)}${g.total !== null && g.totalPlanejado ? ` · ${fmtPercentual(g.total / g.totalPlanejado)}` : ""}`
     : fmtNumero(g.total);

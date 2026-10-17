@@ -4,12 +4,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CircleCheck, CircleX, ExternalLink, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react";
+import { CircleCheck, CircleX, ExternalLink, Maximize, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react";
 import { CORTE_ADEQUADO, CORTE_ATENCAO, calcularPainel } from "../../lib/indicadores/calculo.ts";
 import { gravarFiltros, lerFiltros, type EstadoFiltros } from "../../lib/indicadores/filtros.ts";
 import { buscarBD, ultimoGuardado, type ResultadoBD } from "../../lib/indicadores/fonte.ts";
-import { competenciaPorExtenso, fmtGeradoEm, fmtPercentual } from "../../lib/indicadores/formato.ts";
-import type { ResumoPainel } from "../../lib/indicadores/tipos.ts";
+import { competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtPontosPercentuais } from "../../lib/indicadores/formato.ts";
+import type { Painel } from "../../lib/indicadores/tipos.ts";
+import Apresentacao from "./Apresentacao";
 import { Esqueleto } from "./Comum";
 import Contagem from "./Contagem";
 import Indicadores from "./Indicadores";
@@ -32,8 +33,14 @@ function CardResumo({ rotulo, valor, sub, acento, Icone }: {
   );
 }
 
-function Cards({ r }: { r: ResumoPainel }) {
+function Cards({ painel }: { painel: Painel }) {
+  const r = painel.resumo;
   const c = r.completude;
+  const delta = r.saudeGeral !== null && painel.saudeAnterior !== null ? r.saudeGeral - painel.saudeAnterior : null;
+  const comparacao = [
+    painel.anterior ? `vs ${painel.anterior.label}: ${fmtPontosPercentuais(delta)}` : "",
+    `tendência 3M: ${fmtPontosPercentuais(painel.tendenciaSaude)}`,
+  ].filter(Boolean).join(" · ");
   const partes = [
     `${c.preenchidos} de ${c.esperados}`,
     c.comResultado ? `${c.comResultado} com resultado` : "",
@@ -42,7 +49,7 @@ function Cards({ r }: { r: ResumoPainel }) {
   ].filter(Boolean);
   return (
     <section className="pg-cards" aria-label="Resumo da competência">
-      <CardResumo rotulo="Saúde geral" valor={fmtPercentual(r.saudeGeral, 1)} sub={`dos pontos possíveis, sobre ${r.n} indicadores avaliados`} acento="#7FB8FF" />
+      <CardResumo rotulo="Saúde geral" valor={fmtPercentual(r.saudeGeral, 1)} sub={`${r.n} indicadores avaliados · ${comparacao}`} acento="#7FB8FF" />
       <CardResumo rotulo="Adequados" valor={String(r.adequados)} sub={`${r.adequados}/${r.n} avaliados`} acento="var(--ok)" Icone={CircleCheck} />
       <CardResumo rotulo="Atenção" valor={String(r.atencao)} sub={`entre ${fmtPercentual(CORTE_ATENCAO)} e ${fmtPercentual(CORTE_ADEQUADO - 0.01)} da meta`} acento="var(--atencao)" Icone={TriangleAlert} />
       <CardResumo rotulo="Críticos" valor={String(r.criticos)} sub={`abaixo de ${fmtPercentual(CORTE_ATENCAO)} da meta`} acento="var(--critico)" Icone={CircleX} />
@@ -77,10 +84,17 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
     [setSp],
   );
 
+  const [apresentando, setApresentando] = useState(false);
   const painel = useMemo(
-    () => (res ? calcularPainel(res.payload.bd, { competencia: filtros.competencia }) : null),
-    [res, filtros.competencia],
+    () => (res ? calcularPainel(res.payload.bd, { competencia: filtros.competencia, divisoes: filtros.divisoes }) : null),
+    [res, filtros.competencia, filtros.divisoes],
   );
+
+  const apresentar = () => {
+    // Pedido direto no clique: o Firefox só aceita tela cheia dentro do gesto do usuário.
+    void document.documentElement.requestFullscreen?.().catch(() => {});
+    setApresentando(true);
+  };
 
   if (!res || !painel) {
     if (carregando) return <Esqueleto />;
@@ -125,6 +139,9 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
             <RefreshCw size={14} className={carregando ? "pg-girando" : undefined} aria-hidden="true" />
             {carregando ? "Atualizando…" : "Atualizar agora"}
           </button>
+          <button type="button" className="pg-btn" onClick={apresentar} title="Modo apresentação em tela cheia (Esc sai)">
+            <Maximize size={14} aria-hidden="true" /> Tela cheia
+          </button>
           {urlPowerBI && (
             <a className="pg-btn pg-btn-texto" href={urlPowerBI} target="_blank" rel="noreferrer" title="Abrir a versão anterior no Power BI">
               Power BI <ExternalLink size={12} aria-hidden="true" />
@@ -139,12 +156,21 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
         <div className="pg-card pg-vazio">Nenhuma competência preenchida ainda.</div>
       ) : (
         <>
-          <Cards r={painel.resumo} />
+          {painel.filtroDivisoes.length > 0 && (
+            <div className="pg-sub">
+              Filtrado por {painel.filtroDivisoes.join(", ")}: todos os números abaixo são dessa seleção; a posição no ranking é a geral.
+            </div>
+          )}
+          <Cards painel={painel} />
 
           <div className="pg-principal">
             <div className="pg-card"><Indicadores painel={painel} filtros={filtros} aoMudar={mudar} /></div>
             <div className="pg-coluna">
-              <Podio podio={painel.podio} />
+              <Podio
+                podio={painel.podio}
+                filtradas={painel.filtroDivisoes.length ? painel.divisoes : undefined}
+                ranqueadas={painel.divisoesRanqueadas}
+              />
               <Piores piores={painel.piores} />
               <PorDivisao divisoes={painel.divisoes} />
             </div>
@@ -156,6 +182,16 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
             {painel.monitoramento.length > 0 && <Monitoramento itens={painel.monitoramento} />}
             <Legenda sozinha={painel.monitoramento.length === 0} />
           </div>
+
+          {apresentando && (
+            <Apresentacao
+              bd={res.payload.bd}
+              competencia={filtros.competencia}
+              inicio={filtros.divisoes.length === 1 ? filtros.divisoes[0] : null}
+              geradoEm={res.payload.gerado_em}
+              aoSair={() => setApresentando(false)}
+            />
+          )}
 
           {res.avisosDados.length > 0 && (
             <details className="pg-sub">

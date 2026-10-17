@@ -30,7 +30,8 @@ export function fmtNumero(v: number | null | undefined, maxCasas = 2): string {
 /** Fração → percentual pt-BR: 43 → '4.300%', 1.214 → '121%'. */
 export function fmtPercentual(fracao: number | null | undefined, casas = 0): string {
   if (fracao === null || fracao === undefined || !Number.isFinite(fracao)) return "—";
-  return fracao.toLocaleString("pt-BR", { style: "percent", maximumFractionDigits: casas });
+  // com casas > 0, fixas: saúde e nota sempre como "100,0%", "30,0%" (igual ao Power BI)
+  return fracao.toLocaleString("pt-BR", { style: "percent", minimumFractionDigits: casas, maximumFractionDigits: casas });
 }
 
 /**
@@ -113,4 +114,12 @@ export function fmtTendencia(t: Tendencia | null, unidade: string): string {
 export function fmtGeradoEm(iso: string | null | undefined): string {
   const m = (iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
   return m ? `${m[3]}/${m[2]} às ${m[4]}:${m[5]}` : "—";
+}
+
+/** Diferença entre duas frações em pontos percentuais: 0,1 → "+10,0 p.p.". */
+export function fmtPontosPercentuais(delta: number | null | undefined): string {
+  if (delta === null || delta === undefined || !Number.isFinite(delta)) return "—";
+  const v = delta * 100;
+  const sinal = v > 0.05 ? "+" : v < -0.05 ? "−" : "";
+  return `${sinal}${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} p.p.`;
 }

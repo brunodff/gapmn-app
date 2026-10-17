@@ -25,3 +25,15 @@ const PLURAIS: [Status, string, string][] = [
 export function textoContagem(c: ContagemStatus): string {
   return PLURAIS.filter(([s]) => c[s] > 0).map(([s, um, varios]) => `${c[s]} ${c[s] === 1 ? um : varios}`).join(" · ");
 }
+
+/** Nome por extenso das divisões (modo apresentação). */
+export const NOMES_DIVISOES: Record<string, string> = {
+  DRH: "Divisão de Recursos Humanos",
+  DIE: "Divisão de Infraestrutura",
+  DA: "Divisão Administrativa",
+  AJUR: "Assessoria Jurídica",
+  ASESO: "Assessoria de Serviços Sociais",
+  DOC: "Divisão de Obtenção e Contratos",
+  ACI: "Assessoria de Controle Interno",
+  COMSOC: "Comunicação Social",
+};

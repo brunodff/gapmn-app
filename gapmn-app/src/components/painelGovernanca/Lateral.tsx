@@ -4,7 +4,32 @@ import { VISUAL_STATUS, textoContagem } from "./visual";
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
-export function Podio({ podio }: { podio: DivisaoPainel[] }) {
+export function Podio({ podio, filtradas, ranqueadas }: {
+  podio: DivisaoPainel[];
+  /** Com filtro de divisão: as divisões filtradas, com a posição do ranking geral. */
+  filtradas?: DivisaoPainel[];
+  ranqueadas: number;
+}) {
+  if (filtradas) {
+    return (
+      <section className="pg-card" aria-label="Posição no ranking geral">
+        <div className="pg-secao-topo"><span className="pg-rotulo">Posição no ranking geral</span></div>
+        {filtradas.map((d) => (
+          <div className="pg-divisao" key={d.sigla}>
+            <div className="pg-pior-topo">
+              <span className="pg-degrau-sigla" style={{ fontSize: 20 }}>{d.sigla}</span>
+              <span className="pg-degrau-score">
+                {d.posicao ? `${d.posicao}º de ${ranqueadas}` : d.foraDoRanking ? "fora do ranking" : "sem posição"}
+              </span>
+            </div>
+            <div className="pg-sub">
+              {d.score !== null ? `nota ${fmtPercentual(d.score, 1)} · ${plural(d.n, "indicador avaliado", "indicadores avaliados")}` : d.foraDoRanking ? "acompanhamento" : "sem indicadores avaliáveis"}
+            </div>
+          </div>
+        ))}
+      </section>
+    );
+  }
   // Ordem visual: 2º, 1º, 3º (o 1º no centro, mais alto)
   const lugares = [podio[1], podio[0], podio[2]];
   return (

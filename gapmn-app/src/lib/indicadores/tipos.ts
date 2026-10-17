@@ -166,7 +166,15 @@ export type Painel = {
   /** Competência exibida: a padrão ou a escolhida no seletor. */
   referencia: Competencia | null;
   anterior: Competencia | null;
-  /** Indicadores com meta, já na ordem de D.7. */
+  /** Divisões filtradas (vazio = todas). O filtro vale para o painel inteiro. */
+  filtroDivisoes: string[];
+  /** Todas as divisões com indicador na competência (opções do filtro). */
+  siglasDivisoes: string[];
+  /** Quantas divisões têm posição no ranking geral. */
+  divisoesRanqueadas: number;
+  /** Indicadores com meta de todas as divisões (para "x de y"). */
+  totalIndicadores: number;
+  /** Indicadores com meta (já filtrados por divisão), na ordem de D.7. */
   indicadores: IndicadorPainel[];
   /** Indicadores sem meta (fora de nota e ranking). */
   monitoramento: IndicadorPainel[];
@@ -175,6 +183,12 @@ export type Painel = {
   piores: IndicadorPainel[];
   grupos: GrupoContagem[];
   resumo: ResumoPainel;
+  /** Saúde geral em cada competência com dado até a exibida (mesmo filtro de divisão). */
+  serieSaude: { label: string; data: string; saude: number | null }[];
+  /** Saúde na competência anterior com dados. */
+  saudeAnterior: number | null;
+  /** Variação média da saúde nos últimos 3 pontos, (último − primeiro) ÷ 2; null com menos de 3. */
+  tendenciaSaude: number | null;
 };
 
 export type Filtros = {

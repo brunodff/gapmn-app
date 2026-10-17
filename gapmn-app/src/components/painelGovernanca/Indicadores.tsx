@@ -30,17 +30,13 @@ function partesVariavel(nome: string): [string, string] {
   return i > 0 ? [nome.slice(0, i).trim(), nome.slice(i + 1).trim()] : [nome.trim(), ""];
 }
 
-function Tooltip({ ind, alvo, competencia }: { ind: IndicadorPainel; alvo: Alvo; competencia: string }) {
+/** Conteúdo do tooltip (também usado no detalhe do modo apresentação). */
+export function DetalheIndicador({ ind, competencia }: { ind: IndicadorPainel; competencia: string }) {
   const aguardando = ind.status === "Aguardando informação";
   const semDados = ind.status === "Sem dados no mês de referência";
   const t = ind.tendencia;
-  return createPortal(
-    <div
-      id="pg-tooltip"
-      role="tooltip"
-      className="pg-tokens pg-tooltip"
-      style={{ left: alvo.left, top: alvo.top, bottom: alvo.bottom, maxHeight: Math.max(160, alvo.maxHeight) }}
-    >
+  return (
+    <>
       <p className="pg-tt-nome">{ind.indicador}</p>
       <div className="pg-sub">{aguardando ? ind.categoriaExibida : `${ind.divisaoExibida} · ${ind.categoriaExibida}`}</div>
 
@@ -82,6 +78,19 @@ function Tooltip({ ind, alvo, competencia }: { ind: IndicadorPainel; alvo: Alvo;
           )}
         </>
       )}
+    </>
+  );
+}
+
+function Tooltip({ ind, alvo, competencia }: { ind: IndicadorPainel; alvo: Alvo; competencia: string }) {
+  return createPortal(
+    <div
+      id="pg-tooltip"
+      role="tooltip"
+      className="pg-tokens pg-tooltip"
+      style={{ left: alvo.left, top: alvo.top, bottom: alvo.bottom, maxHeight: Math.max(160, alvo.maxHeight) }}
+    >
+      <DetalheIndicador ind={ind} competencia={competencia} />
     </div>,
     document.body,
   );
@@ -143,10 +152,7 @@ export default function Indicadores({ painel, filtros, aoMudar }: {
   filtros: EstadoFiltros;
   aoMudar: (f: Partial<EstadoFiltros>) => void;
 }) {
-  const divisoes = useMemo(
-    () => painel.divisoes.map((d) => d.sigla).filter((s) => painel.indicadores.some((i) => i.divisaoExibida === s)),
-    [painel.divisoes, painel.indicadores],
-  );
+  const divisoes = painel.siglasDivisoes;
   const categorias = useMemo(() => {
     const vistas = new Map<string, number>();
     for (const i of painel.indicadores) if (!vistas.has(i.categoriaExibida)) vistas.set(i.categoriaExibida, parseInt(i.categoria, 10) || 99);
@@ -214,7 +220,7 @@ export default function Indicadores({ painel, filtros, aoMudar }: {
       <div className="pg-secao-topo">
         <span className="pg-rotulo">Desempenho por indicador</span>
         <span className="pg-sub">
-          {filtrado ? `${visiveis.length} de ${painel.indicadores.length} indicadores` : `${painel.indicadores.length} indicadores com meta`}
+          {filtrado ? `${visiveis.length} de ${painel.totalIndicadores} indicadores` : `${painel.totalIndicadores} indicadores com meta`}
         </span>
       </div>
 

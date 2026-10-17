@@ -444,11 +444,38 @@ export function resumir(inds: IndicadorPainel[]): ResumoPainel {
 
 // ── Painel completo ──────────────────────────────────────────────────────────
 
+export type OpcoesPainel = {
+  /** DATA ou rótulo da competência escolhida no seletor. */
+  competencia?: string | null;
+  /** Filtro de divisão: vale para o painel inteiro (cards, listas, contagem). */
+  divisoes?: string[];
+};
+
+function agruparPorId(bd: LinhaBD[]): Map<string, LinhaBD[]> {
+  const porId = new Map<string, LinhaBD[]>();
+  for (const l of bd) {
+    if (ehContagem(l)) continue;
+    const lista = porId.get(l.ID);
+    if (lista) lista.push(l); else porId.set(l.ID, [l]);
+  }
+  return porId;
+}
+
+function indicadoresEm(porId: Map<string, LinhaBD[]>, ref: Competencia, anterior: Competencia | null, comps: Competencia[]): IndicadorPainel[] {
+  const out: IndicadorPainel[] = [];
+  for (const linhas of porId.values()) {
+    const ind = montarIndicador(linhas, ref, anterior, comps);
+    if (ind) out.push(ind);
+  }
+  return out;
+}
+
 /**
- * Monta o painel. `competencia` (DATA ou rótulo) vem do seletor; se não tiver dados,
- * vale a referência padrão. Filtros de tela NÃO entram aqui: a referência é global.
+ * Monta o painel. A competência de referência é sempre global (D.1): o filtro de
+ * divisão muda cards, listas e contagem, mas nunca a competência nem a posição no
+ * ranking, que é calculada sobre todas as divisões.
  */
-export function calcularPainel(bd: LinhaBD[], opcoes: { competencia?: string | null } = {}): Painel {
+export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel {
   const competencias = montarCompetencias(bd);
   const comDados = competenciasComDados(bd);
   const referenciaPadrao = ultimo(comDados) ?? null;
@@ -456,35 +483,28 @@ export function calcularPainel(bd: LinhaBD[], opcoes: { competencia?: string | n
     ? comDados.find((c) => c.data === opcoes.competencia || c.label === opcoes.competencia)
     : undefined;
   const referencia = escolhida ?? referenciaPadrao;
+  const filtro = opcoes.divisoes ?? [];
+  const naDivisao = (sigla: string) => !filtro.length || filtro.includes(sigla);
 
   const vazio: Painel = {
     competencias, competenciasComDados: comDados, referenciaPadrao, referencia, anterior: null,
+    filtroDivisoes: filtro, siglasDivisoes: [], divisoesRanqueadas: 0, totalIndicadores: 0,
     indicadores: [], monitoramento: [], divisoes: [], podio: [], piores: [], grupos: [], resumo: resumir([]),
+    serieSaude: [], saudeAnterior: null, tendenciaSaude: null,
   };
   if (!referencia) return vazio;
 
   const anterior = ultimo(comDados.filter((c) => c.data < referencia.data)) ?? null;
+  const porId = agruparPorId(bd);
+  const todos = indicadoresEm(porId, referencia, anterior, competencias);
+  const sel = todos.filter((i) => naDivisao(i.divisaoExibida));
 
-  const porId = new Map<string, LinhaBD[]>();
-  for (const l of bd) {
-    if (ehContagem(l)) continue;
-    const lista = porId.get(l.ID);
-    if (lista) lista.push(l); else porId.set(l.ID, [l]);
-  }
+  const comMeta = ordenarIndicadores(sel.filter((i) => i.status !== "Sem meta"));
+  const monitoramento = sel.filter((i) => i.status === "Sem meta").sort(desempate);
 
-  const todos: IndicadorPainel[] = [];
-  for (const linhas of porId.values()) {
-    const ind = montarIndicador(linhas, referencia, anterior, competencias);
-    if (ind) todos.push(ind);
-  }
-
-  const comMeta = ordenarIndicadores(todos.filter((i) => i.status !== "Sem meta"));
-  const monitoramento = todos
-    .filter((i) => i.status === "Sem meta")
-    .sort(desempate);
-
-  const divisoes = ranquearDivisoes(todos);
-  const podio = divisoes
+  // Ranking sempre sobre todas as divisões; o filtro só escolhe quais aparecem.
+  const ranking = ranquearDivisoes(todos);
+  const podio = ranking
     .filter((d) => d.posicao !== null)
     .sort((a, b) => (a.posicao as number) - (b.posicao as number))
     .slice(0, 3);
@@ -495,19 +515,41 @@ export function calcularPainel(bd: LinhaBD[], opcoes: { competencia?: string | n
     .sort((a, b) => (a.atingimento as number) - (b.atingimento as number) || desempate(a, b))
     .slice(0, N_PIORES);
 
+  // Saúde nas competências com dado até a exibida (mesmo filtro), para "vs mês anterior" e 3M.
+  const serieSaude = comDados
+    .filter((c) => c.data <= referencia.data)
+    .map((c) => {
+      const ant = ultimo(comDados.filter((x) => x.data < c.data)) ?? null;
+      const inds = c.data === referencia.data ? sel : indicadoresEm(porId, c, ant, competencias).filter((i) => naDivisao(i.divisaoExibida));
+      return { label: c.label, data: c.data, saude: resumir(inds).saudeGeral };
+    });
+  const comSaude = serieSaude.filter((s) => s.saude !== null);
+  const saudeAnterior = anterior ? serieSaude.find((s) => s.data === anterior.data)?.saude ?? null : null;
+  const ult3 = comSaude.slice(-3);
+  const tendenciaSaude = ult3.length === 3 && ult3[2].data === referencia.data
+    ? ((ult3[2].saude as number) - (ult3[0].saude as number)) / 2
+    : null;
+
   return {
     competencias,
     competenciasComDados: comDados,
     referenciaPadrao,
     referencia,
     anterior,
+    filtroDivisoes: filtro,
+    siglasDivisoes: ranking.map((d) => d.sigla),
+    divisoesRanqueadas: ranking.filter((d) => d.posicao !== null).length,
+    totalIndicadores: todos.filter((i) => i.status !== "Sem meta").length,
     indicadores: comMeta,
     monitoramento,
-    divisoes,
+    divisoes: ranking.filter((d) => naDivisao(d.sigla)),
     podio,
     piores,
-    grupos: gruposDeContagem(bd, referencia.data),
-    resumo: resumir(todos),
+    grupos: gruposDeContagem(bd, referencia.data).filter((g) => naDivisao(g.divisao)),
+    resumo: resumir(sel),
+    serieSaude,
+    saudeAnterior,
+    tendenciaSaude,
   };
 }
 

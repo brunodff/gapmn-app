@@ -265,6 +265,48 @@ test("unidade no singular quando o valor é 1", () => {
   assert.equal(fmtValor(1, "Meses"), "1 mês");
 });
 
+test("filtro de divisão vale para o painel inteiro, menos referência e posição no ranking", () => {
+  const extra = (id: string, cat: string, div: string, valor: number) => linha("AGO/26", {
+    ID: id, CATEGORIA: cat, DIVISAO: div, UNIDADE: "Quantidade", DIRECAO: "Monitoramento", META_NUM: null, META_TXT: null, VALOR: valor,
+  });
+  const bd = [
+    ind("1", "DRH", 3, "AGO/26"), ind("2", "DRH", 0.1, "AGO/26"),
+    ...["10", "11", "12"].map((id) => ind(id, "DIE", 2, "AGO/26")),
+    ind("20", "DA", 0.75, "AGO/26"),
+    extra("36", "Pendências do e-Pessoal", "ACI", 2), extra("60", "Ressarcimento ao Erário", "AJUR", 0),
+  ];
+  const geral = calcularPainel(bd);
+  const da = calcularPainel(bd, { divisoes: ["DA"] });
+  assert.equal(da.referencia?.label, geral.referencia?.label);
+  assert.equal(da.resumo.n, 1);
+  assert.equal(da.resumo.atencao, 1);
+  assert.equal(da.resumo.saudeGeral, 0.5);
+  assert.deepEqual(da.indicadores.map((i) => i.id), ["20"]);
+  assert.deepEqual(da.piores.map((i) => i.id), ["20"]);
+  assert.deepEqual(da.divisoes.map((d) => d.sigla), ["DA"]);
+  assert.equal(da.divisoes[0].posicao, geral.divisoes.find((d) => d.sigla === "DA")!.posicao); // posição geral
+  assert.equal(da.grupos.length, 0);
+  assert.deepEqual(da.siglasDivisoes, geral.siglasDivisoes); // o seletor continua com todas
+  assert.equal(da.totalIndicadores, 6);
+  const aci = calcularPainel(bd, { divisoes: ["ACI"] });
+  assert.deepEqual(aci.grupos.map((g) => g.categoria), ["Pendências do e-Pessoal"]);
+});
+
+test("saúde: série por competência, comparação com o mês anterior e tendência 3M", () => {
+  const bd = [
+    ind("1", "DRH", 0.1, "JAN-JUN/26"), ind("2", "DRH", 0.1, "JAN-JUN/26"),   // 0%
+    ind("1", "DRH", 3, "JUL/26"), ind("2", "DRH", 0.1, "JUL/26"),             // 50%
+    ind("1", "DRH", 3, "AGO/26"), ind("2", "DRH", 3, "AGO/26"),               // 100%
+  ];
+  const p = calcularPainel(bd);
+  assert.deepEqual(p.serieSaude.map((s) => s.saude), [0, 0.5, 1]);
+  assert.equal(p.saudeAnterior, 0.5);
+  assert.equal(p.tendenciaSaude, 0.5);
+  const dois = calcularPainel(bd, { competencia: "JUL/26" });
+  assert.equal(dois.tendenciaSaude, null); // só 2 pontos até JUL/26
+  assert.equal(dois.saudeAnterior, 0);
+});
+
 test("filtros vão e voltam pela URL sem perder a aba do painel", () => {
   const sp = new URLSearchParams("painel=governanca");
   const gravado = gravarFiltros(sp, { divisoes: ["DRH", "DA"], status: ["Crítico", "Aguardando informação"], busca: " prazo ", competencia: "JUL/26" });
