@@ -307,6 +307,36 @@ test("saúde: série por competência, comparação com o mês anterior e tendê
   assert.equal(dois.saudeAnterior, 0);
 });
 
+test("mês anterior e histórico completo de cada indicador", () => {
+  // menor é melhor, meta 10: 12 (83%, atenção) → 9 (adequado) → vazio em SET (aguardando)
+  const bd = [
+    linha("JUL/26", { VALOR: 12, VAR1_NOME: "T = tempo", VAR1_VALOR: 120 }),
+    linha("AGO/26", { VALOR: 9 }),
+    linha("SET/26", { VALOR: null }),
+    linha("SET/26", { ID: "2", VALOR: 4 }), // outro indicador já preencheu SET: a referência vai para SET
+    linha("AGO/26", { ID: "2", VALOR: 5 }),
+  ];
+  const p = calcularPainel(bd);
+  assert.equal(p.referencia?.label, "SET/26");
+  const i1 = p.indicadores.find((i) => i.id === "1")!;
+  assert.equal(i1.status, "Aguardando informação");
+  assert.equal(i1.mesAnterior?.label, "AGO/26");
+  assert.equal(i1.mesAnterior?.valor, 9);
+  assert.equal(i1.mesAnterior?.status, "Adequado");
+  assert.deepEqual(i1.historico.map((h) => `${h.label}=${h.valor}:${h.status}`), [
+    "JUL/26=12:Atenção", "AGO/26=9:Adequado", "SET/26=null:Aguardando informação",
+  ]);
+  assert.equal(i1.historico[0].variaveis[0].valor, 120);
+  assert.equal(i1.comparacaoMesAnterior, null); // sem resultado em SET: não compara
+  const i2 = p.indicadores.find((i) => i.id === "2")!;
+  assert.equal(i2.comparacaoMesAnterior, "melhora"); // menor é melhor: 5 → 4
+  // escolhendo AGO/26, o mês anterior passa a ser JUL/26 e o histórico continua completo
+  const ago = calcularPainel(bd, { competencia: "AGO/26" }).indicadores.find((i) => i.id === "1")!;
+  assert.equal(ago.mesAnterior?.label, "JUL/26");
+  assert.equal(ago.comparacaoMesAnterior, "melhora");
+  assert.equal(ago.historico.length, 3);
+});
+
 test("filtros vão e voltam pela URL sem perder a aba do painel", () => {
   const sp = new URLSearchParams("painel=governanca");
   const gravado = gravarFiltros(sp, { divisoes: ["DRH", "DA"], status: ["Crítico", "Aguardando informação"], busca: " prazo ", competencia: "JUL/26" });

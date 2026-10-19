@@ -4,7 +4,7 @@
 
 import type {
   Competencia, ContagemStatus, Direcao, DivisaoPainel, Filtros, GrupoContagem, IndicadorPainel,
-  ItemContagem, LinhaBD, Painel, PayloadBD, ResumoPainel, Status, Tendencia, Variacao, Variavel,
+  ItemContagem, LinhaBD, Painel, PayloadBD, PontoHistorico, ResumoPainel, Status, Tendencia, Variacao, Variavel,
 } from "./tipos.ts";
 
 // ── Parâmetros (um lugar só) ─────────────────────────────────────────────────
@@ -350,7 +350,30 @@ function montarIndicador(
     variacao: variacaoDoIndicador(l),
     tendencia: tendencia3M(linhas, ref.data, comps),
     preenchido: status === "Sem meta" ? l.VALOR !== null : status !== "Aguardando informação",
+    mesAnterior: null,
+    comparacaoMesAnterior: null,
+    historico: [],
   };
+}
+
+/**
+ * Melhorou ou piorou em relação ao mês anterior, pela direção do indicador.
+ * IDs 16 e 22 comparam pelo atingimento (o VALOR deles é módulo e não diz o sentido).
+ */
+export function compararComAnterior(
+  atual: Pick<IndicadorPainel, "id" | "valor" | "atingimento" | "direcao">,
+  anterior: Pick<PontoHistorico, "valor" | "atingimento"> | null,
+): IndicadorPainel["comparacaoMesAnterior"] {
+  if (!anterior) return null;
+  if (IDS_VARIACAO.has(atual.id)) {
+    if (atual.atingimento === null || anterior.atingimento === null) return null;
+    const d = atual.atingimento - anterior.atingimento;
+    return Math.abs(d) < TOLERANCIA ? "igual" : d > 0 ? "melhora" : "piora";
+  }
+  if (atual.valor === null || anterior.valor === null || atual.direcao === "Monitoramento") return null;
+  const d = atual.valor - anterior.valor;
+  if (Math.abs(d) < TOLERANCIA) return "igual";
+  return (d > 0) === (atual.direcao === "Maior é melhor") ? "melhora" : "piora";
 }
 
 // ── D.8 / D.9 Divisões ───────────────────────────────────────────────────────
@@ -516,11 +539,25 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     .slice(0, N_PIORES);
 
   // Saúde nas competências com dado até a exibida (mesmo filtro), para "vs mês anterior" e 3M.
+  // Cada competência com dado calculada uma vez: serve ao histórico e à série de saúde.
+  const porCompetencia = new Map<string, IndicadorPainel[]>();
+  comDados.forEach((c, k) => {
+    porCompetencia.set(c.data, c.data === referencia.data ? todos : indicadoresEm(porId, c, comDados[k - 1] ?? null, competencias));
+  });
+  const indice = new Map([...porCompetencia].map(([data, inds]) => [data, new Map(inds.map((i) => [i.id, i]))]));
+  for (const ind of todos) {
+    ind.historico = comDados.flatMap((c) => {
+      const i = indice.get(c.data)?.get(ind.id);
+      return i ? [{ label: c.label, data: c.data, valor: i.valor, atingimento: i.atingimento, status: i.status, variaveis: i.variaveis }] : [];
+    });
+    ind.mesAnterior = anterior ? ind.historico.find((h) => h.data === anterior.data) ?? null : null;
+    ind.comparacaoMesAnterior = compararComAnterior(ind, ind.mesAnterior);
+  }
+
   const serieSaude = comDados
     .filter((c) => c.data <= referencia.data)
     .map((c) => {
-      const ant = ultimo(comDados.filter((x) => x.data < c.data)) ?? null;
-      const inds = c.data === referencia.data ? sel : indicadoresEm(porId, c, ant, competencias).filter((i) => naDivisao(i.divisaoExibida));
+      const inds = (porCompetencia.get(c.data) ?? []).filter((i) => naDivisao(i.divisaoExibida));
       return { label: c.label, data: c.data, saude: resumir(inds).saudeGeral };
     });
   const comSaude = serieSaude.filter((s) => s.saude !== null);

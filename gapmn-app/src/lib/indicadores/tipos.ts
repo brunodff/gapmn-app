@@ -104,6 +104,22 @@ export type IndicadorPainel = {
   tendencia: Tendencia | null;
   /** Preenchido pela divisão (inclui "sem dados no mês", que é zero informado). */
   preenchido: boolean;
+  /** O mesmo indicador na competência anterior com dados (ex.: AGO/26 quando a exibida é SET/26). */
+  mesAnterior: PontoHistorico | null;
+  /** Comparação do resultado com o mês anterior, conforme a direção; null quando não dá para comparar. */
+  comparacaoMesAnterior: "melhora" | "piora" | "igual" | null;
+  /** Todas as competências com dado, da mais antiga à mais recente. */
+  historico: PontoHistorico[];
+};
+
+/** O indicador numa competência, para o histórico. */
+export type PontoHistorico = {
+  label: string;
+  data: string;
+  valor: number | null;
+  atingimento: number | null;
+  status: Status;
+  variaveis: Variavel[];
 };
 
 export type ContagemStatus = Record<Status, number>;

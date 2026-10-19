@@ -1,6 +1,6 @@
 // Aparência dos status do Painel de Governança (ícone, cor e texto curto).
 import { CircleCheck, CircleMinus, CircleX, Clock, Eye, TriangleAlert, type LucideIcon } from "lucide-react";
-import type { ContagemStatus, Status } from "../../lib/indicadores/tipos.ts";
+import type { ContagemStatus, IndicadorPainel, Status } from "../../lib/indicadores/tipos.ts";
 
 /** Cor nunca é a única portadora de significado: cada status tem ícone e texto. */
 export const VISUAL_STATUS: Record<Status, { cor: string; texto: string; Icone: LucideIcon; curto: string }> = {
@@ -37,3 +37,20 @@ export const NOMES_DIVISOES: Record<string, string> = {
   ACI: "Assessoria de Controle Interno",
   COMSOC: "Comunicação Social",
 };
+
+const COMPARACAO = {
+  melhora: { texto: "melhor", cor: "var(--ok)" },
+  piora: { texto: "pior", cor: "var(--critico)" },
+  igual: { texto: "igual", cor: "var(--txt-2)" },
+} as const;
+
+/** Seta pelo movimento do número (↑ subiu, ↓ desceu), cor pelo sentido bom/ruim da direção. */
+export function setaMesAnterior(ind: IndicadorPainel): { seta: string; cor: string; texto: string } | null {
+  const c = ind.comparacaoMesAnterior, ant = ind.mesAnterior;
+  if (!c || !ant) return null;
+  const usaAtingimento = ind.id === "16" || ind.id === "22";
+  const a = usaAtingimento ? ind.atingimento : ind.valor;
+  const b = usaAtingimento ? ant.atingimento : ant.valor;
+  const seta = c === "igual" || a === null || b === null ? "=" : a > b ? "↑" : "↓";
+  return { seta, cor: COMPARACAO[c].cor, texto: `${COMPARACAO[c].texto} que ${ant.label}` };
+}

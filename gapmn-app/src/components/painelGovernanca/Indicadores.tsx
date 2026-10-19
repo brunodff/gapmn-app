@@ -3,19 +3,18 @@ import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 import { CORTE_ADEQUADO, STATUS, filtrarIndicadores } from "../../lib/indicadores/calculo.ts";
 import { temFiltro, type EstadoFiltros } from "../../lib/indicadores/filtros.ts";
-import {
-  competenciaPorExtenso, fmtNumero, fmtPercentual, fmtTendencia, fmtValor, fraseVariacao, larguraCss, metaExibida,
-} from "../../lib/indicadores/formato.ts";
+import { competenciaPorExtenso, fmtPercentual, fmtValor, larguraCss, metaExibida } from "../../lib/indicadores/formato.ts";
 import type { IndicadorPainel, Painel, Status } from "../../lib/indicadores/tipos.ts";
 import { MultiSelect, StatusChip } from "./Comum";
-import { VISUAL_STATUS } from "./visual";
+import { DetalheIndicador, FichaIndicador } from "./Detalhe";
+import { VISUAL_STATUS, setaMesAnterior } from "./visual";
 
-type Alvo = { id: string; fixado: boolean; x?: number; left: number; top?: number; bottom?: number; maxHeight: number };
+type Alvo = { id: string; x?: number; left: number; top?: number; bottom?: number; maxHeight: number };
 
 const SEM_BARRA: Status[] = ["Aguardando informação", "Sem dados no mês de referência"];
 
 /** Posição do tooltip junto da linha, sem sair da tela. */
-function posicao(el: HTMLElement, clientX?: number): Omit<Alvo, "id" | "fixado" | "x"> {
+function posicao(el: HTMLElement, clientX?: number): Omit<Alvo, "id" | "x"> {
   const r = el.getBoundingClientRect();
   const largura = Math.min(380, window.innerWidth - 24);
   const base = clientX ?? r.left + 48;
@@ -23,63 +22,6 @@ function posicao(el: HTMLElement, clientX?: number): Omit<Alvo, "id" | "fixado" 
   const abaixo = window.innerHeight - r.bottom;
   if (abaixo >= 320 || abaixo >= r.top) return { left, top: r.bottom + 6, maxHeight: abaixo - 18 };
   return { left, bottom: window.innerHeight - r.top + 6, maxHeight: r.top - 18 };
-}
-
-function partesVariavel(nome: string): [string, string] {
-  const i = nome.indexOf("=");
-  return i > 0 ? [nome.slice(0, i).trim(), nome.slice(i + 1).trim()] : [nome.trim(), ""];
-}
-
-/** Conteúdo do tooltip (também usado no detalhe do modo apresentação). */
-export function DetalheIndicador({ ind, competencia }: { ind: IndicadorPainel; competencia: string }) {
-  const aguardando = ind.status === "Aguardando informação";
-  const semDados = ind.status === "Sem dados no mês de referência";
-  const t = ind.tendencia;
-  return (
-    <>
-      <p className="pg-tt-nome">{ind.indicador}</p>
-      <div className="pg-sub">{aguardando ? ind.categoriaExibida : `${ind.divisaoExibida} · ${ind.categoriaExibida}`}</div>
-
-      {aguardando ? (
-        <p style={{ margin: "10px 0 0" }}>Informação ainda não registrada para esta competência.</p>
-      ) : (
-        <>
-          <dl className="pg-tt-grade">
-            <dt>Resultado</dt><dd>{fmtValor(ind.valor, ind.unidade)}</dd>
-            <dt>Meta</dt><dd>{metaExibida(ind.metaTxt, ind.metaNum, ind.unidade, ind.direcao)}</dd>
-            <dt>Atingimento</dt><dd>{fmtPercentual(ind.atingimento)}</dd>
-            <dt>Status</dt><dd><StatusChip status={ind.status} curto /></dd>
-            <dt>Tendência 3M</dt>
-            <dd style={{ gridColumn: "span 3" }}>
-              {fmtTendencia(t, ind.unidade)}{t?.sentido && t.sentido !== "estável" ? ` (${t.sentido})` : ""}
-            </dd>
-          </dl>
-          {semDados && <p style={{ margin: 0 }}>Não houve, nesta competência, o evento que serve de base para o cálculo.</p>}
-          {ind.variacao && <p style={{ margin: 0 }}>{fraseVariacao(ind.variacao.de, ind.variacao.para)}</p>}
-          {ind.formula && (
-            <div className="pg-tt-bloco">
-              <div className="pg-rotulo">Como é calculado</div>
-              <div className="pg-formula">{ind.formula}</div>
-            </div>
-          )}
-          {ind.variaveis.length > 0 && (
-            <div className="pg-tt-bloco">
-              <div className="pg-rotulo">Variáveis informadas ({competencia})</div>
-              {ind.variaveis.map((v) => {
-                const [simbolo, descricao] = partesVariavel(v.nome);
-                return (
-                  <div className="pg-var" key={v.nome}>
-                    <b>{simbolo} = {fmtNumero(v.valor)}</b>
-                    {descricao && <span>({descricao})</span>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-    </>
-  );
 }
 
 function Tooltip({ ind, alvo, competencia }: { ind: IndicadorPainel; alvo: Alvo; competencia: string }) {
@@ -90,21 +32,23 @@ function Tooltip({ ind, alvo, competencia }: { ind: IndicadorPainel; alvo: Alvo;
       className="pg-tokens pg-tooltip"
       style={{ left: alvo.left, top: alvo.top, bottom: alvo.bottom, maxHeight: Math.max(160, alvo.maxHeight) }}
     >
-      <DetalheIndicador ind={ind} competencia={competencia} />
+      <DetalheIndicador ind={ind} competencia={competencia} dica />
     </div>,
     document.body,
   );
 }
 
-function Linha({ ind, ativa, aoAbrir, aoFechar, aoAlternar }: {
+function Linha({ ind, ativa, aoAbrir, aoFechar, aoFicha }: {
   ind: IndicadorPainel;
   ativa: boolean;
   aoAbrir: (el: HTMLElement, x?: number) => void;
-  aoFechar: (forcar: boolean) => void;
-  aoAlternar: (el: HTMLElement, x?: number) => void;
+  aoFechar: () => void;
+  aoFicha: (teclado: boolean) => void;
 }) {
   const semBarra = SEM_BARRA.includes(ind.status);
   const v = VISUAL_STATUS[ind.status];
+  const ant = ind.mesAnterior;
+  const seta = setaMesAnterior(ind);
   return (
     <div
       className="pg-linha"
@@ -113,13 +57,13 @@ function Linha({ ind, ativa, aoAbrir, aoFechar, aoAlternar }: {
       data-ativa={ativa ? "1" : undefined}
       aria-describedby={ativa ? "pg-tooltip" : undefined}
       onMouseEnter={(e) => aoAbrir(e.currentTarget, e.clientX)}
-      onMouseLeave={() => aoFechar(false)}
+      onMouseLeave={aoFechar}
       onFocus={(e) => aoAbrir(e.currentTarget)}
-      onBlur={() => aoFechar(true)}
-      onClick={(e) => aoAlternar(e.currentTarget, e.clientX)}
+      onBlur={aoFechar}
+      onClick={() => aoFicha(false)}
       onKeyDown={(e) => {
-        if (e.key === "Escape") aoFechar(true);
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); aoAlternar(e.currentTarget); }
+        if (e.key === "Escape") aoFechar();
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); aoFicha(true); }
       }}
     >
       <div className="pg-linha-topo">
@@ -141,6 +85,12 @@ function Linha({ ind, ativa, aoAbrir, aoFechar, aoAlternar }: {
         )}
         {!semBarra && <span className="pg-ating" style={{ color: v.texto }}>{fmtPercentual(ind.atingimento)}</span>}
         <StatusChip status={ind.status} curto />
+        {ant && (
+          <span className="pg-ant" title={`Resultado em ${ant.label}: ${ant.status}${seta ? ` (atual ${seta.texto})` : ""}`}>
+            {seta && <b style={{ color: seta.cor }} aria-hidden="true">{seta.seta}</b>}
+            {ant.label}: <b>{fmtValor(ant.valor, ind.unidade)}</b>
+          </span>
+        )}
         <span className="pg-div">{ind.divisaoExibida}</span>
       </div>
     </div>
@@ -178,22 +128,14 @@ export default function Indicadores({ painel, filtros, aoMudar }: {
   const elAlvo = useRef<HTMLElement | null>(null);
   const definir = useCallback((a: Alvo | null) => { alvoRef.current = a; setAlvo(a); }, []);
 
+  const [ficha, setFicha] = useState<{ ind: IndicadorPainel; teclado: boolean } | null>(null);
   const abrir = useCallback((id: string, el: HTMLElement, x?: number) => {
-    const a = alvoRef.current;
-    if (a?.fixado && a.id !== id) return;
     elAlvo.current = el;
-    definir({ id, x, fixado: a?.id === id ? a.fixado : false, ...posicao(el, x) });
+    definir({ id, x, ...posicao(el, x) });
   }, [definir]);
-  const fechar = useCallback((forcar: boolean) => {
-    const a = alvoRef.current;
-    if (a && (forcar || !a.fixado)) definir(null);
-  }, [definir]);
-  const alternar = useCallback((id: string, el: HTMLElement, x?: number) => {
-    const a = alvoRef.current;
-    if (a && a.id === id && a.fixado) { definir(null); return; }
-    elAlvo.current = el;
-    definir({ id, x, fixado: true, ...posicao(el, x) });
-  }, [definir]);
+  const fechar = useCallback(() => { if (alvoRef.current) definir(null); }, [definir]);
+  const abrirFicha = useCallback((ind: IndicadorPainel, teclado: boolean) => { definir(null); setFicha({ ind, teclado }); }, [definir]);
+  const fecharFicha = useCallback(() => setFicha(null), []);
 
   // Na rolagem o tooltip acompanha a linha; só fecha quando a linha sai da tela.
   const aberto = alvo !== null;
@@ -221,6 +163,7 @@ export default function Indicadores({ painel, filtros, aoMudar }: {
         <span className="pg-rotulo">Desempenho por indicador</span>
         <span className="pg-sub">
           {filtrado ? `${visiveis.length} de ${painel.totalIndicadores} indicadores` : `${painel.totalIndicadores} indicadores com meta`}
+          {painel.anterior && ` · resultado de ${ref?.label} com ${painel.anterior.label} ao lado · clique para o histórico`}
         </span>
       </div>
 
@@ -275,13 +218,14 @@ export default function Indicadores({ painel, filtros, aoMudar }: {
               ativa={alvo?.id === ind.id}
               aoAbrir={(el, x) => abrir(ind.id, el, x)}
               aoFechar={fechar}
-              aoAlternar={(el, x) => alternar(ind.id, el, x)}
+              aoFicha={(teclado) => abrirFicha(ind, teclado)}
             />
           ))}
         </div>
       )}
 
-      {ativo && alvo && ref && <Tooltip ind={ativo} alvo={alvo} competencia={ref.label} />}
+      {ativo && alvo && ref && !ficha && <Tooltip ind={ativo} alvo={alvo} competencia={ref.label} />}
+      {ficha && ref && <FichaIndicador ind={ficha.ind} competencia={ref.label} aoFechar={fecharFicha} devolverFoco={ficha.teclado} />}
     </section>
   );
 }

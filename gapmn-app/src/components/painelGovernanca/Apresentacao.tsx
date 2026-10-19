@@ -11,7 +11,7 @@ import {
 } from "../../lib/indicadores/formato.ts";
 import type { IndicadorPainel, LinhaBD, Painel, Status } from "../../lib/indicadores/tipos.ts";
 import { CartaoGrupo } from "./Contagem";
-import { DetalheIndicador } from "./Indicadores";
+import { FichaIndicador } from "./Detalhe";
 import { NOMES_DIVISOES, VISUAL_STATUS, textoContagem } from "./visual";
 
 type Slide = { tipo: "geral" } | { tipo: "divisao"; sigla: string };
@@ -56,7 +56,7 @@ function Saude({ painel, posicao }: { painel: Painel; posicao?: string }) {
   );
 }
 
-function Colunas({ inds, aoAbrir }: { inds: IndicadorPainel[]; aoAbrir: (i: IndicadorPainel) => void }) {
+function Colunas({ inds, anterior, aoAbrir }: { inds: IndicadorPainel[]; anterior: string | null; aoAbrir: (i: IndicadorPainel) => void }) {
   const legenda: Status[] = ["Adequado", "Atenção", "Crítico", "Sem dados no mês de referência", "Aguardando informação"];
   return (
     <section className="pg-card pg-ap-grafico" aria-label="Indicadores da divisão">
@@ -65,7 +65,9 @@ function Colunas({ inds, aoAbrir }: { inds: IndicadorPainel[]; aoAbrir: (i: Indi
           const v = VISUAL_STATUS[s];
           return <span key={s}><v.Icone size={13} color={v.cor} aria-hidden="true" />{v.curto}</span>;
         })}
-        <span className="pg-ap-apagado">— — meta (100%) · toque na barra para ver o detalhe</span>
+        <span className="pg-ap-apagado">
+          — — meta (100%){anterior ? ` · barra fina e clara = ${anterior}` : ""} · toque na barra para ver o histórico
+        </span>
       </div>
       <div className="pg-ap-colunas" style={{ gridTemplateColumns: `repeat(${inds.length}, minmax(0, 1fr))` }}>
         {inds.map((ind) => {
@@ -73,10 +75,19 @@ function Colunas({ inds, aoAbrir }: { inds: IndicadorPainel[]; aoAbrir: (i: Indi
           const v = VISUAL_STATUS[ind.status];
           const altura = larguraCss(ind.atingimento);
           const seta = ind.tendencia?.sentido ? SETA[ind.tendencia.sentido] : "";
+          const ant = ind.mesAnterior;
+          const antTemBarra = ant && !SEM_BARRA.includes(ant.status) && ant.atingimento !== null;
           return (
             <button key={ind.id} type="button" className="pg-ap-col" onClick={() => aoAbrir(ind)} title={ind.indicador}>
               <span className="pg-ap-col-area">
                 <span className="pg-ap-col-meta" style={{ bottom: larguraCss(CORTE_ADEQUADO) }} aria-hidden="true" />
+                {antTemBarra && (
+                  <span
+                    className="pg-ap-col-ant"
+                    style={{ height: larguraCss(ant.atingimento), background: VISUAL_STATUS[ant.status].cor }}
+                    title={`${ant.label}: ${fmtPercentual(ant.atingimento)}`}
+                  />
+                )}
                 {semBarra ? (
                   <>
                     <span className="pg-ap-col-traco" style={{ background: v.cor }} />
@@ -193,6 +204,7 @@ export default function Apresentacao({ bd, competencia, inicio, geradoEm, aoSair
   }, [geral]);
   const [atual, setAtual] = useState(() => Math.max(0, slides.findIndex((s) => s.tipo === "divisao" && s.sigla === inicio)));
   const [detalhe, setDetalhe] = useState<IndicadorPainel | null>(null);
+  const fecharDetalhe = useCallback(() => setDetalhe(null), []);
   const ref = useRef<HTMLDivElement>(null);
   const entrouEmTelaCheia = useRef(false);
 
@@ -265,7 +277,7 @@ export default function Apresentacao({ bd, competencia, inicio, geradoEm, aoSair
               posicao={divInfo?.posicao ? `${divInfo.posicao}º de ${painelDiv.divisoesRanqueadas} no ranking` : divInfo?.foraDoRanking ? "fora do ranking (acompanhamento)" : undefined}
             />}
             <div className="pg-ap-corpo">
-              {painelDiv.indicadores.length > 0 && <Colunas inds={painelDiv.indicadores} aoAbrir={setDetalhe} />}
+              {painelDiv.indicadores.length > 0 && <Colunas inds={painelDiv.indicadores} anterior={painelDiv.anterior?.label ?? null} aoAbrir={setDetalhe} />}
               {painelDiv.grupos.map((g) => (
                 <div key={g.categoria} className={painelDiv.indicadores.length ? "pg-ap-grupo" : "pg-ap-grupo pg-ap-grupo-largo"}>
                   <CartaoGrupo g={g} competencia={ref_?.label ?? ""} largo={!painelDiv.indicadores.length && g.itens.length > 6} />
@@ -297,14 +309,7 @@ export default function Apresentacao({ bd, competencia, inicio, geradoEm, aoSair
         <button type="button" className="pg-btn" onClick={sair}><X size={14} aria-hidden="true" /> Sair</button>
       </footer>
 
-      {detalhe && ref_ && (
-        <div className="pg-ap-detalhe" onClick={() => setDetalhe(null)}>
-          <div className="pg-ap-detalhe-card" role="dialog" aria-label={detalhe.indicador} onClick={(e) => e.stopPropagation()}>
-            <DetalheIndicador ind={detalhe} competencia={ref_.label} />
-            <button type="button" className="pg-btn" style={{ marginTop: 12 }} onClick={() => setDetalhe(null)}>Fechar</button>
-          </div>
-        </div>
-      )}
+      {detalhe && ref_ && <FichaIndicador ind={detalhe} competencia={ref_.label} aoFechar={fecharDetalhe} />}
     </div>,
     document.body,
   );
