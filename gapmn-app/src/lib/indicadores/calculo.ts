@@ -3,7 +3,7 @@
 // Cada regra tem o "porquê" ao lado, porque todas nasceram de um erro real.
 
 import type {
-  Competencia, ContagemStatus, Direcao, DivisaoPainel, Filtros, GrupoContagem, IndicadorPainel,
+  Competencia, ContagemStatus, Direcao, DivisaoPainel, FichaCatalogo, Filtros, GrupoContagem, IndicadorPainel,
   ItemContagem, LinhaBD, Painel, PayloadBD, PontoHistorico, ResumoPainel, Status, Tendencia, Variacao, Variavel,
 } from "./tipos.ts";
 
@@ -121,6 +121,27 @@ export function normalizarLinhas(bruto: unknown[]): { linhas: LinhaBD[]; avisos:
   return { linhas, avisos };
 }
 
+/** Aba CATALOGO (uma linha por ID) → ficha técnica por ID. Linhas sem ID são ignoradas. */
+export function normalizarCatalogo(bruto: unknown): Record<string, FichaCatalogo> {
+  const out: Record<string, FichaCatalogo> = {};
+  if (!Array.isArray(bruto)) return out;
+  const txt = (v: unknown) => (v === null || v === undefined || String(v).trim() === "" ? null : String(v).trim());
+  for (const item of bruto) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    const id = txt(r.ID)?.replace(",", ".");
+    if (!id) continue;
+    out[id] = {
+      objetivo: txt(r.OBJETIVO),
+      origem: txt(r.ORIGEM_DADOS),
+      periodicidade: txt(r.PERIODICIDADE),
+      unidade: txt(r.UNIDADE_CATALOGO),
+      meta: txt(r.META_CATALOGO),
+    };
+  }
+  return out;
+}
+
 /** Valida a resposta do endpoint e devolve o payload com as linhas normalizadas. */
 export function prepararPayload(json: unknown): { payload: PayloadBD; avisos: string[] } {
   const j = json as Partial<PayloadBD> & { erro?: string };
@@ -136,6 +157,7 @@ export function prepararPayload(json: unknown): { payload: PayloadBD; avisos: st
       planilha: j.planilha,
       bd: linhas,
       bd_integridade: Array.isArray(j.bd_integridade) ? j.bd_integridade : [],
+      catalogo: Array.isArray(j.catalogo) ? normalizarCatalogo(j.catalogo) : (j.catalogo && typeof j.catalogo === "object" ? j.catalogo : {}),
     },
     avisos,
   };
@@ -353,6 +375,7 @@ function montarIndicador(
     mesAnterior: null,
     comparacaoMesAnterior: null,
     historico: [],
+    catalogo: null,
   };
 }
 
@@ -472,6 +495,8 @@ export type OpcoesPainel = {
   competencia?: string | null;
   /** Filtro de divisão: vale para o painel inteiro (cards, listas, contagem). */
   divisoes?: string[];
+  /** Ficha técnica por ID (aba CATALOGO); só informativa, não entra em cálculo. */
+  catalogo?: Record<string, FichaCatalogo>;
 };
 
 function agruparPorId(bd: LinhaBD[]): Map<string, LinhaBD[]> {
@@ -552,6 +577,7 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     });
     ind.mesAnterior = anterior ? ind.historico.find((h) => h.data === anterior.data) ?? null : null;
     ind.comparacaoMesAnterior = compararComAnterior(ind, ind.mesAnterior);
+    ind.catalogo = opcoes.catalogo?.[ind.id] ?? null;
   }
 
   const serieSaude = comDados

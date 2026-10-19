@@ -54,6 +54,10 @@ export function Legenda({ sozinha }: { sozinha: boolean }) {
         </li>
         <li>Eventos Promovidos para o Efetivo (COMSOC) e os grupos de contagem são acompanhamento: ficam fora da nota.</li>
         <li>Nas variações mensais (indicadores 16 e 22), o resultado conta quando há redução em relação ao mês anterior.</li>
+        <li>
+          Os indicadores são instrumento de gestão, não de fiscalização ou punição: cada resultado deve ser lido com a
+          tendência e o contexto do período (Catálogo de Indicadores de Desempenho, perguntas 2 e 28).
+        </li>
       </ul>
     </section>
   );

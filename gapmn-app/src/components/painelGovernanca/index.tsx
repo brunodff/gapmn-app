@@ -102,7 +102,7 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
 
   const [apresentando, setApresentando] = useState(false);
   const painel = useMemo(
-    () => (res ? calcularPainel(res.payload.bd, { competencia: filtros.competencia, divisoes: filtros.divisoes }) : null),
+    () => (res ? calcularPainel(res.payload.bd, { competencia: filtros.competencia, divisoes: filtros.divisoes, catalogo: res.payload.catalogo }) : null),
     [res, filtros.competencia, filtros.divisoes],
   );
 
@@ -202,6 +202,7 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
           {apresentando && (
             <Apresentacao
               bd={res.payload.bd}
+              catalogo={res.payload.catalogo}
               competencia={filtros.competencia}
               inicio={filtros.divisoes.length === 1 ? filtros.divisoes[0] : null}
               geradoEm={res.payload.gerado_em}

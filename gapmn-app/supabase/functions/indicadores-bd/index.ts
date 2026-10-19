@@ -64,6 +64,10 @@ async function buscarPlanilha(url: string, token: string) {
     bd: j.bd,
     // Segunda fase: ainda não usada pelo painel.
     bd_integridade: [],
+    // Ficha técnica por indicador (aba CATALOGO); vazia enquanto a aba não existir.
+    catalogo: Array.isArray(j.catalogo)
+      ? j.catalogo.map((r: any) => (r && r.ID !== null && r.ID !== undefined ? { ...r, ID: String(r.ID) } : r))
+      : [],
   };
 }
 

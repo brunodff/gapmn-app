@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  calcularAtingimento, calcularPainel, calcularStatus, compararId, competenciaReferencia,
+  calcularAtingimento, calcularPainel, calcularStatus, compararId, competenciaReferencia, prepararPayload,
   filtrarIndicadores, montarCompetencias, normalizarLinhas, scoreWilson,
 } from "./calculo.ts";
 import {
@@ -335,6 +335,29 @@ test("mês anterior e histórico completo de cada indicador", () => {
   assert.equal(ago.mesAnterior?.label, "JUL/26");
   assert.equal(ago.comparacaoMesAnterior, "melhora");
   assert.equal(ago.historico.length, 3);
+});
+
+test("catálogo: ficha técnica por ID, só informativa", () => {
+  const { payload } = prepararPayload({
+    ok: true, gerado_em: "2026-10-19T10:00:00",
+    bd: [linha("JUL/26", { VALOR: 5 }), linha("JUL/26", { ID: "17.1", VALOR: 10 })],
+    catalogo: [
+      { ID: 1, OBJETIVO: "Acompanhar a celeridade.", ORIGEM_DADOS: "Sistema X", PERIODICIDADE: "Mensal", META_CATALOGO: "10 dias úteis", UNIDADE_CATALOGO: "" },
+      { ID: "17,1", OBJETIVO: "Prevenir prazos.", META_CATALOGO: "30 dias corridos (PATD)" },
+      { OBJETIVO: "sem ID, ignorada" },
+    ],
+  });
+  assert.deepEqual(Object.keys(payload.catalogo).sort(), ["1", "17.1"]);
+  assert.equal(payload.catalogo["1"].unidade, null);
+  const com = calcularPainel(payload.bd, { catalogo: payload.catalogo });
+  const sem = calcularPainel(payload.bd);
+  const i1 = com.indicadores.find((i) => i.id === "1")!;
+  assert.equal(i1.catalogo?.objetivo, "Acompanhar a celeridade.");
+  assert.equal(com.indicadores.find((i) => i.id === "17.1")?.catalogo?.meta, "30 dias corridos (PATD)");
+  assert.equal(sem.indicadores[0].catalogo, null);
+  assert.deepEqual(com.indicadores.map((i) => i.atingimento), sem.indicadores.map((i) => i.atingimento)); // não muda conta
+  // payload antigo, sem a aba CATALOGO
+  assert.deepEqual(prepararPayload({ ok: true, bd: [] }).payload.catalogo, {});
 });
 
 test("filtros vão e voltam pela URL sem perder a aba do painel", () => {

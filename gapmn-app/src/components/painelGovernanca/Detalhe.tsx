@@ -44,6 +44,7 @@ export function DetalheIndicador({ ind, competencia, dica = false }: { ind: Indi
     <>
       <p className="pg-tt-nome">{ind.indicador}</p>
       <div className="pg-sub">{aguardando ? ind.categoriaExibida : `${ind.divisaoExibida} · ${ind.categoriaExibida}`}</div>
+      {ind.catalogo?.objetivo && <p className="pg-objetivo">{ind.catalogo.objetivo}</p>}
 
       {aguardando ? (
         <>
@@ -162,6 +163,18 @@ export function FichaIndicador({ ind, competencia, aoFechar, devolverFoco = fals
           <button type="button" className="pg-ap-icone" onClick={aoFechar} aria-label="Fechar"><X size={20} /></button>
         </div>
         <DetalheIndicador ind={ind} competencia={competencia} />
+
+        {ind.catalogo && (
+          <div className="pg-tt-bloco">
+            <div className="pg-rotulo">Ficha técnica (Catálogo de Indicadores)</div>
+            <dl className="pg-tt-grade pg-ficha-tecnica">
+              {ind.catalogo.origem && <><dt>Origem dos dados</dt><dd>{ind.catalogo.origem}</dd></>}
+              {ind.catalogo.periodicidade && <><dt>Periodicidade</dt><dd>{ind.catalogo.periodicidade}</dd></>}
+              {ind.catalogo.meta && <><dt>Meta no catálogo</dt><dd>{ind.catalogo.meta}</dd></>}
+              {ind.catalogo.unidade && <><dt>Unidade no catálogo</dt><dd>{ind.catalogo.unidade}</dd></>}
+            </dl>
+          </div>
+        )}
 
         {ind.historico.length > 0 && (
           <div className="pg-tt-bloco">

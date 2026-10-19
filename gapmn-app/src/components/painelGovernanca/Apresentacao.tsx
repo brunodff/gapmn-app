@@ -9,7 +9,7 @@ import { CORTE_ADEQUADO, CORTE_ATENCAO, ORDEM_DIVISOES, calcularPainel } from ".
 import {
   competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtPontosPercentuais, larguraCss,
 } from "../../lib/indicadores/formato.ts";
-import type { IndicadorPainel, LinhaBD, Painel, Status } from "../../lib/indicadores/tipos.ts";
+import type { FichaCatalogo, IndicadorPainel, LinhaBD, Painel, Status } from "../../lib/indicadores/tipos.ts";
 import { CartaoGrupo } from "./Contagem";
 import { FichaIndicador } from "./Detalhe";
 import { NOMES_DIVISOES, VISUAL_STATUS, textoContagem } from "./visual";
@@ -187,14 +187,15 @@ function VisaoGeral({ painel, irPara }: { painel: Painel; irPara: (sigla: string
   );
 }
 
-export default function Apresentacao({ bd, competencia, inicio, geradoEm, aoSair }: {
+export default function Apresentacao({ bd, catalogo, competencia, inicio, geradoEm, aoSair }: {
   bd: LinhaBD[];
+  catalogo: Record<string, FichaCatalogo>;
   competencia: string | null;
   inicio: string | null;
   geradoEm: string;
   aoSair: () => void;
 }) {
-  const geral = useMemo(() => calcularPainel(bd, { competencia }), [bd, competencia]);
+  const geral = useMemo(() => calcularPainel(bd, { competencia, catalogo }), [bd, competencia, catalogo]);
   const slides = useMemo<Slide[]>(() => {
     const siglas = [...geral.siglasDivisoes];
     for (const g of geral.grupos) if (!siglas.includes(g.divisao)) siglas.push(g.divisao);
@@ -210,8 +211,8 @@ export default function Apresentacao({ bd, competencia, inicio, geradoEm, aoSair
 
   const slide = slides[Math.min(atual, slides.length - 1)];
   const painelDiv = useMemo(
-    () => (slide.tipo === "divisao" ? calcularPainel(bd, { competencia, divisoes: [slide.sigla] }) : null),
-    [bd, competencia, slide],
+    () => (slide.tipo === "divisao" ? calcularPainel(bd, { competencia, divisoes: [slide.sigla], catalogo }) : null),
+    [bd, competencia, slide, catalogo],
   );
 
   const sair = useCallback(() => {

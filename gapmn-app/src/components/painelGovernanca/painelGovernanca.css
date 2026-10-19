@@ -551,3 +551,8 @@
 .pg-hist td { padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); vertical-align: top; font-variant-numeric: tabular-nums; }
 .pg-hist tr[data-atual="1"] td { background: rgba(255, 255, 255, 0.05); }
 .pg-hist-marca { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--card-borda); font-size: 10px; color: var(--txt-2); }
+
+/* objetivo do indicador (catálogo) e ficha técnica */
+.pg-objetivo { margin: 6px 0 0; font-size: 12px; font-style: italic; color: var(--txt-2); line-height: 1.4; }
+.pg-ficha-tecnica { grid-template-columns: auto minmax(0, 1fr); }
+.pg-ficha-tecnica dd { font-weight: 500; }

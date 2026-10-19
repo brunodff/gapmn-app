@@ -35,6 +35,17 @@ export type PayloadBD = {
   bd: LinhaBD[];
   /** Segunda fase: ainda não usado. */
   bd_integridade: unknown[];
+  /** Ficha técnica por ID (aba CATALOGO da planilha); vazio se a aba não existir. */
+  catalogo: Record<string, FichaCatalogo>;
+};
+
+/** Ficha técnica do Catálogo de Indicadores de Desempenho (aba CATALOGO). */
+export type FichaCatalogo = {
+  objetivo: string | null;
+  origem: string | null;
+  periodicidade: string | null;
+  unidade: string | null;
+  meta: string | null;
 };
 
 export type Status =
@@ -110,6 +121,8 @@ export type IndicadorPainel = {
   comparacaoMesAnterior: "melhora" | "piora" | "igual" | null;
   /** Todas as competências com dado, da mais antiga à mais recente. */
   historico: PontoHistorico[];
+  /** Ficha técnica do catálogo (objetivo, origem dos dados…), quando a planilha tiver a aba CATALOGO. */
+  catalogo: FichaCatalogo | null;
 };
 
 /** O indicador numa competência, para o histórico. */
