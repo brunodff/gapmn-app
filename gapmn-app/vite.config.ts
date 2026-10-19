@@ -30,4 +30,10 @@ export default defineConfig({
   // Desativa a cópia padrão do publicDir (evita erro com public/.git no Windows)
   publicDir: false,
   plugins: [react(), copyPublicWithoutGit()],
+  // O alias também precisa estar aqui: o `tsc -b` do build regenera o vite.config.js a partir deste arquivo
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
 })
