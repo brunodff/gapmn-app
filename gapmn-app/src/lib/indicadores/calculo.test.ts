@@ -11,6 +11,7 @@ import {
 import {
   competenciaPorExtenso, fmtPercentual, fmtValor, fraseVariacao, larguraCss, metaExibida,
 } from "./formato.ts";
+import { CATALOGO_PADRAO, catalogoEfetivo } from "./catalogo.ts";
 import { gravarFiltros, lerFiltros } from "./filtros.ts";
 import type { LinhaBD } from "./tipos.ts";
 
@@ -358,6 +359,21 @@ test("catálogo: ficha técnica por ID, só informativa", () => {
   assert.deepEqual(com.indicadores.map((i) => i.atingimento), sem.indicadores.map((i) => i.atingimento)); // não muda conta
   // payload antigo, sem a aba CATALOGO
   assert.deepEqual(prepararPayload({ ok: true, bd: [] }).payload.catalogo, {});
+});
+
+test("catálogo no código: 39 fichas completas e a planilha tem prioridade", () => {
+  const ids = Object.keys(CATALOGO_PADRAO).sort(compararId);
+  const esperados = [...Array.from({ length: 35 }, (_, i) => String(i + 1)).filter((x) => x !== "17" && x !== "24"),
+    "17.1", "17.2", "17.3", "24.1", "24.2", "24.3"].sort(compararId);
+  assert.deepEqual(ids, esperados);
+  for (const [id, f] of Object.entries(CATALOGO_PADRAO)) {
+    assert.ok(f.objetivo && f.origem && f.periodicidade && f.meta, `ficha ${id} incompleta`);
+  }
+  assert.equal(CATALOGO_PADRAO["16"].meta, "Tendência decrescente (Valor negativo)");
+  const efetivo = catalogoEfetivo({ "1": { objetivo: "Novo objetivo", origem: null, periodicidade: null, unidade: null, meta: null } });
+  assert.equal(efetivo["1"].objetivo, "Novo objetivo");                 // a planilha sobrepõe
+  assert.equal(efetivo["1"].origem, CATALOGO_PADRAO["1"].origem);       // campo vazio mantém o do código
+  assert.equal(catalogoEfetivo(undefined)["35"].meta, "Mín. 1 evento por mês");
 });
 
 test("filtros vão e voltam pela URL sem perder a aba do painel", () => {

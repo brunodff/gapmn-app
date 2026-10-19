@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { CORTE_ADEQUADO } from "../../lib/indicadores/calculo.ts";
+import { VERSAO_CATALOGO } from "../../lib/indicadores/catalogo.ts";
 import {
   fmtNumero, fmtPercentual, fmtTendencia, fmtValor, fraseVariacao, larguraCss, metaExibida,
 } from "../../lib/indicadores/formato.ts";
@@ -166,7 +167,7 @@ export function FichaIndicador({ ind, competencia, aoFechar, devolverFoco = fals
 
         {ind.catalogo && (
           <div className="pg-tt-bloco">
-            <div className="pg-rotulo">Ficha técnica (Catálogo de Indicadores)</div>
+            <div className="pg-rotulo">Ficha técnica (Catálogo de Indicadores, {VERSAO_CATALOGO})</div>
             <dl className="pg-tt-grade pg-ficha-tecnica">
               {ind.catalogo.origem && <><dt>Origem dos dados</dt><dd>{ind.catalogo.origem}</dd></>}
               {ind.catalogo.periodicidade && <><dt>Periodicidade</dt><dd>{ind.catalogo.periodicidade}</dd></>}

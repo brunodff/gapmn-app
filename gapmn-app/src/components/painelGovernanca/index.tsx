@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CircleCheck, CircleX, ExternalLink, Maximize, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react";
 import { CORTE_ADEQUADO, CORTE_ATENCAO, calcularPainel } from "../../lib/indicadores/calculo.ts";
+import { catalogoEfetivo } from "../../lib/indicadores/catalogo.ts";
 import { gravarFiltros, lerFiltros, type EstadoFiltros } from "../../lib/indicadores/filtros.ts";
 import { buscarBD, ultimoGuardado, type ResultadoBD } from "../../lib/indicadores/fonte.ts";
 import { competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtPontosPercentuais } from "../../lib/indicadores/formato.ts";
@@ -101,9 +102,11 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
   );
 
   const [apresentando, setApresentando] = useState(false);
+  // Catálogo do código, sobreposto pela aba CATALOGO da planilha quando ela existir.
+  const catalogo = useMemo(() => catalogoEfetivo(res?.payload.catalogo), [res]);
   const painel = useMemo(
-    () => (res ? calcularPainel(res.payload.bd, { competencia: filtros.competencia, divisoes: filtros.divisoes, catalogo: res.payload.catalogo }) : null),
-    [res, filtros.competencia, filtros.divisoes],
+    () => (res ? calcularPainel(res.payload.bd, { competencia: filtros.competencia, divisoes: filtros.divisoes, catalogo }) : null),
+    [res, filtros.competencia, filtros.divisoes, catalogo],
   );
 
   const apresentar = () => {
@@ -202,7 +205,7 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
           {apresentando && (
             <Apresentacao
               bd={res.payload.bd}
-              catalogo={res.payload.catalogo}
+              catalogo={catalogo}
               competencia={filtros.competencia}
               inicio={filtros.divisoes.length === 1 ? filtros.divisoes[0] : null}
               geradoEm={res.payload.gerado_em}
