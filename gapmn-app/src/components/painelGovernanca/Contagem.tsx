@@ -6,7 +6,7 @@ import type { GrupoContagem, ItemContagem } from "../../lib/indicadores/tipos.ts
 
 function Quantidade({ v }: { v: number | null }) {
   if (v === null) return <span className="pg-item-qtd" data-zero="1" title="Informação ainda não registrada">—</span>;
-  return <span className="pg-item-qtd" data-zero={v === 0 ? "1" : undefined}>{fmtNumero(v)}</span>;
+  return <span className="pg-item-qtd" data-zero={v === 0 ? "1" : undefined} data-positivo={v > 0 ? "1" : undefined}>{fmtNumero(v)}</span>;
 }
 
 function ItemSimples({ item }: { item: ItemContagem }) {
@@ -46,7 +46,7 @@ export function CartaoGrupo({ g, competencia, largo = false }: { g: GrupoContage
     <section className="pg-card" aria-label={g.categoria}>
       <div className="pg-secao-topo">
         <span className="pg-rotulo">{g.categoria} · {g.divisao}</span>
-        <span className="pg-num" style={{ fontWeight: 800, fontSize: 15 }} title={g.emparelhado ? "Realizado / planejado" : "Total"}>
+        <span className="pg-num pg-grupo-total" title={g.emparelhado ? "Realizado / planejado" : "Total"}>
           {total}
         </span>
       </div>
