@@ -2,7 +2,7 @@
 // Lê a aba BD pela Edge Function `indicadores-bd`; as regras ficam em lib/indicadores/calculo.ts.
 // Aqui só se busca, guarda o estado da tela (filtros na URL) e desenha.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CircleCheck, CircleX, ExternalLink, Maximize, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react";
 import { CORTE_ADEQUADO, CORTE_ATENCAO, calcularPainel } from "../../lib/indicadores/calculo.ts";
@@ -17,6 +17,8 @@ import Indicadores from "./Indicadores";
 import { Piores, Podio, PorDivisao } from "./Lateral";
 import { Legenda, Monitoramento } from "./Rodape";
 import "./painelGovernanca.css";
+
+const ATUALIZAR_A_CADA_MS = 3 * 60_000;
 
 function CardResumo({ rotulo, valor, sub, acento, Icone }: {
   rotulo: string; valor: string; sub: string; acento: string; Icone?: LucideIcon;
@@ -65,7 +67,9 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
+  const ultimaBusca = useRef(0);
   const carregar = useCallback(async (forcar: boolean) => {
+    ultimaBusca.current = Date.now();
     setCarregando(true);
     try {
       setRes(await buscarBD(forcar));
@@ -78,6 +82,18 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
   }, []);
 
   useEffect(() => { void carregar(false); }, [carregar]);
+
+  // Acompanha a planilha sozinho enquanto o painel está aberto (inclusive no modo
+  // apresentação): relê a cada 3 min e quando a aba volta a ficar visível. A função
+  // guarda a leitura por 5 min, então uma mudança aparece em até ~8 min; o botão
+  // "Atualizar agora" força a leitura na hora.
+  useEffect(() => {
+    const visivel = () => document.visibilityState === "visible";
+    const id = window.setInterval(() => { if (visivel()) void carregar(false); }, ATUALIZAR_A_CADA_MS);
+    const aoVoltar = () => { if (visivel() && Date.now() - ultimaBusca.current > ATUALIZAR_A_CADA_MS) void carregar(false); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => { window.clearInterval(id); document.removeEventListener("visibilitychange", aoVoltar); };
+  }, [carregar]);
 
   const mudar = useCallback(
     (f: Partial<EstadoFiltros>) => setSp((atual) => gravarFiltros(atual, f), { replace: true }),
