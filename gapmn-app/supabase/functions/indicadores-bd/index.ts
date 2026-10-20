@@ -11,7 +11,8 @@
  *
  * Acesso: usuário logado com setor ADMIN ou DEV (a mesma regra da aba).
  * Corpo opcional: { "forcar": true } ignora o cache (botão "Atualizar agora").
- * Cache: 5 minutos em memória. Se a planilha falhar e houver cache, devolve o cache
+ * Cache: 1 minuto em memória (o doGet regera a BD quando alguém editou a planilha). Se a
+ * planilha falhar e houver cache, devolve o cache
  * com um aviso; o painel nunca recebe zeros no lugar de dado.
  */
 
@@ -22,7 +23,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const CACHE_MS = 5 * 60_000;
+const CACHE_MS = 60_000;
 const SETORES = ["ADMIN", "DEV"];
 
 let cache: { payload: any; em: number } | null = null;
@@ -46,7 +47,7 @@ function limpar(s: unknown, url: string, token: string) {
 async function buscarPlanilha(url: string, token: string) {
   const res = await fetch(`${url}?token=${encodeURIComponent(token)}`, {
     redirect: "follow",
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(60_000), // o doGet pode regerar a BD antes de responder
   });
   if (!res.ok) throw new Error(`a planilha respondeu HTTP ${res.status}`);
   let j: any;

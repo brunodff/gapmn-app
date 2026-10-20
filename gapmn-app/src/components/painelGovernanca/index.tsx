@@ -19,7 +19,7 @@ import { Piores, Podio, PorDivisao } from "./Lateral";
 import { Legenda, Monitoramento } from "./Rodape";
 import "./painelGovernanca.css";
 
-const ATUALIZAR_A_CADA_MS = 3 * 60_000;
+const ATUALIZAR_A_CADA_MS = 60_000;
 
 function CardResumo({ rotulo, valor, sub, acento, Icone }: {
   rotulo: string; valor: string; sub: string; acento: string; Icone?: LucideIcon;
@@ -85,8 +85,8 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
   useEffect(() => { void carregar(false); }, [carregar]);
 
   // Acompanha a planilha sozinho enquanto o painel está aberto (inclusive no modo
-  // apresentação): relê a cada 3 min e quando a aba volta a ficar visível. A função
-  // guarda a leitura por 5 min, então uma mudança aparece em até ~8 min; o botão
+  // apresentação): relê a cada 1 min e quando a aba volta a ficar visível. A função
+  // guarda a leitura por 1 min, então uma mudança aparece em até ~2 min; o botão
   // "Atualizar agora" força a leitura na hora.
   useEffect(() => {
     const visivel = () => document.visibilityState === "visible";
