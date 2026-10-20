@@ -137,19 +137,6 @@ export type PontoHistorico = {
 
 export type ContagemStatus = Record<Status, number>;
 
-export type DivisaoPainel = {
-  sigla: string;
-  /** Indicadores avaliados (entram na nota). */
-  n: number;
-  pontos: number;
-  /** Limite inferior de Wilson; null quando n = 0. */
-  score: number | null;
-  posicao: number | null;
-  /** COMSOC: só acompanhamento, não é ranqueada. */
-  foraDoRanking: boolean;
-  contagem: ContagemStatus;
-  total: number;
-};
 
 export type ItemContagem = {
   id: string;
@@ -199,17 +186,15 @@ export type Painel = {
   filtroDivisoes: string[];
   /** Todas as divisões com indicador na competência (opções do filtro). */
   siglasDivisoes: string[];
-  /** Quantas divisões têm posição no ranking geral. */
-  divisoesRanqueadas: number;
   /** Indicadores com meta de todas as divisões (para "x de y"). */
   totalIndicadores: number;
   /** Indicadores com meta (já filtrados por divisão), na ordem de D.7. */
   indicadores: IndicadorPainel[];
   /** Indicadores sem meta (fora de nota e ranking). */
   monitoramento: IndicadorPainel[];
-  divisoes: DivisaoPainel[];
-  podio: DivisaoPainel[];
   piores: IndicadorPainel[];
+  /** Indicadores que mais melhoraram o atingimento em relação ao mês anterior. */
+  avancos: IndicadorPainel[];
   grupos: GrupoContagem[];
   resumo: ResumoPainel;
   /** Saúde geral em cada competência com dado até a exibida (mesmo filtro de divisão). */

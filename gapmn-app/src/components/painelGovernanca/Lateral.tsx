@@ -1,58 +1,52 @@
-import { fmtPercentual, fmtValor, larguraCss, metaExibida } from "../../lib/indicadores/formato.ts";
-import type { DivisaoPainel, IndicadorPainel } from "../../lib/indicadores/tipos.ts";
-import { VISUAL_STATUS, textoContagem } from "./visual";
+import { fmtPercentual, fmtPontosPercentuais, fmtValor, larguraCss, metaExibida } from "../../lib/indicadores/formato.ts";
+import type { IndicadorPainel, Painel } from "../../lib/indicadores/tipos.ts";
+import { VISUAL_STATUS } from "./visual";
 
-const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+// Coluna da direita. Sem ranking entre divisões (decisão de 20/10/2026): o painel mostra a
+// evolução da organização e os indicadores que pedem atenção ou que mais avançaram.
 
-export function Podio({ podio, filtradas, ranqueadas }: {
-  podio: DivisaoPainel[];
-  /** Com filtro de divisão: as divisões filtradas, com a posição do ranking geral. */
-  filtradas?: DivisaoPainel[];
-  ranqueadas: number;
-}) {
-  if (filtradas) {
-    return (
-      <section className="pg-card" aria-label="Posição no ranking geral">
-        <div className="pg-secao-topo"><span className="pg-rotulo">Posição no ranking geral</span></div>
-        {filtradas.map((d) => (
-          <div className="pg-divisao" key={d.sigla}>
-            <div className="pg-pior-topo">
-              <span className="pg-degrau-sigla" style={{ fontSize: 20 }}>{d.sigla}</span>
-              <span className="pg-degrau-score">
-                {d.posicao ? `${d.posicao}º de ${ranqueadas}` : d.foraDoRanking ? "fora do ranking" : "sem posição"}
-              </span>
-            </div>
-            <div className="pg-sub">
-              {d.score !== null ? `nota ${fmtPercentual(d.score, 1)} · ${plural(d.n, "indicador avaliado", "indicadores avaliados")}` : d.foraDoRanking ? "acompanhamento" : "sem indicadores avaliáveis"}
-            </div>
-          </div>
-        ))}
-      </section>
-    );
-  }
-  // Ordem visual: 2º, 1º, 3º (o 1º no centro, mais alto)
-  const lugares = [podio[1], podio[0], podio[2]];
+/** Saúde geral em cada competência (respeita o filtro de divisão do painel). */
+export function EvolucaoSaude({ painel, maximo = 6 }: { painel: Painel; maximo?: number }) {
+  const serie = painel.serieSaude.slice(-maximo);
+  const r = painel.resumo;
+  const delta = r.saudeGeral !== null && painel.saudeAnterior !== null ? r.saudeGeral - painel.saudeAnterior : null;
+  const escopo = painel.filtroDivisoes.length ? painel.filtroDivisoes.join(", ") : "todas as divisões";
   return (
-    <section className="pg-card" aria-label="Pódio das divisões">
-      <div className="pg-secao-topo"><span className="pg-rotulo">Pódio das divisões</span></div>
-      {podio.length === 0 ? (
-        <div className="pg-vazio">Nenhuma divisão com indicadores avaliáveis nesta competência.</div>
+    <section className="pg-card pg-evolucao" aria-label="Evolução da saúde geral">
+      <div className="pg-secao-topo">
+        <span className="pg-rotulo">Evolução da saúde geral</span>
+        <span className="pg-sub">{escopo}</span>
+      </div>
+      {serie.length === 0 ? (
+        <div className="pg-vazio">Sem competências com dado.</div>
       ) : (
-        <ol className="pg-podio" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {lugares.map((d, i) =>
-            d ? (
-              <li key={d.sigla} className="pg-degrau" data-pos={d.posicao ?? undefined}>
-                <div className="pg-degrau-pos">{d.posicao}º</div>
-                <div className="pg-degrau-sigla">{d.sigla}</div>
-                <div className="pg-degrau-score">{fmtPercentual(d.score, 1)}</div>
-                <div className="pg-sub">{plural(d.n, "indicador avaliado", "indicadores avaliados")}</div>
-              </li>
-            ) : (
-              <li key={`vazio-${i}`} aria-hidden="true" />
-            ),
-          )}
-        </ol>
+        <div className="pg-evo-graf" style={{ gridTemplateColumns: `repeat(${serie.length}, minmax(0, 1fr))` }}>
+          {serie.map((s) => {
+            const atual = s.data === painel.referencia?.data;
+            return (
+              <div className="pg-evo-col" key={s.data} data-atual={atual ? "1" : undefined}>
+                <div className="pg-evo-area">
+                  {s.saude === null ? (
+                    <span className="pg-hist-traco" style={{ background: "var(--neutro)" }} title="Sem indicadores avaliáveis" />
+                  ) : (
+                    <>
+                      <span className="pg-evo-barra" style={{ height: larguraCss(s.saude, 1) }} />
+                      <span className="pg-evo-rot" style={{ bottom: `calc(${larguraCss(s.saude, 1)} + 3px)` }}>
+                        {fmtPercentual(s.saude, 1)}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="pg-evo-comp">{s.label}</div>
+              </div>
+            );
+          })}
+        </div>
       )}
+      <div className="pg-sub">
+        {painel.anterior && <>vs {painel.anterior.label}: <b>{fmtPontosPercentuais(delta)}</b> · </>}
+        tendência 3M: <b>{fmtPontosPercentuais(painel.tendenciaSaude)}</b>
+      </div>
     </section>
   );
 }
@@ -74,7 +68,7 @@ export function Piores({ piores }: { piores: IndicadorPainel[] }) {
               <div className="pg-pior-topo">
                 <span className="pg-pior-nome">{i.id} · {i.indicador}</span>
                 <span className="pg-num" style={{ color: v.texto, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap" }}>
-                  <v.Icone size={12} color={v.cor} aria-hidden="true" style={{ verticalAlign: "-1px", marginRight: 3 }} />
+                  <v.Icone size={12} color={v.cor} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "-1px", marginRight: 3 }} />
                   {fmtPercentual(i.atingimento)}
                 </span>
               </div>
@@ -89,36 +83,36 @@ export function Piores({ piores }: { piores: IndicadorPainel[] }) {
   );
 }
 
-export function PorDivisao({ divisoes }: { divisoes: DivisaoPainel[] }) {
+/** Indicadores que mais melhoraram o atingimento em relação à competência anterior. */
+export function Avancos({ avancos, anterior }: { avancos: IndicadorPainel[]; anterior: string | null }) {
   return (
-    <section className="pg-card" aria-label="Nota por divisão">
+    <section className="pg-card" aria-label="Maiores avanços">
       <div className="pg-secao-topo">
-        <span className="pg-rotulo">Por divisão</span>
-        <span className="pg-sub">nota (Wilson, 95%)</span>
+        <span className="pg-rotulo">Maiores avanços</span>
+        {anterior && <span className="pg-sub">em relação a {anterior}</span>}
       </div>
-      {divisoes.map((d) => (
-        <div className="pg-divisao" key={d.sigla}>
-          <div className="pg-divisao-linha">
-            <span className="pg-divisao-sigla">{d.sigla}</span>
-            {d.score !== null ? (
-              <>
-                <span className="pg-trilha" aria-hidden="true">
-                  <span className="pg-barra" style={{ width: larguraCss(d.score, 1), background: "#7FB8FF" }} />
-                </span>
-                <span className="pg-num" style={{ fontWeight: 800, fontSize: 13, textAlign: "right" }}>{fmtPercentual(d.score, 1)}</span>
-                <span className="pg-divisao-pos">{d.posicao}º</span>
-              </>
-            ) : (
-              <span className="pg-sub" style={{ gridColumn: "span 3" }}>
-                {d.foraDoRanking ? "Acompanhamento, fora do ranking" : "Sem indicadores avaliáveis"}
-              </span>
-            )}
-          </div>
-          <div className="pg-sub" style={{ marginTop: 3 }}>
-            {d.n > 0 && `${plural(d.n, "avaliado", "avaliados")} · `}{textoContagem(d.contagem) || "sem indicadores nesta competência"}
-          </div>
+      {avancos.length === 0 ? (
+        <div className="pg-vazio">
+          {anterior ? `Nenhum indicador subiu de atingimento em relação a ${anterior}.` : "Sem competência anterior para comparar."}
         </div>
-      ))}
+      ) : (
+        avancos.map((i) => {
+          const v = VISUAL_STATUS[i.status];
+          return (
+            <div className="pg-pior" key={i.id}>
+              <div className="pg-pior-topo">
+                <span className="pg-pior-nome">{i.id} · {i.indicador}</span>
+                <span className="pg-num" style={{ color: "var(--ok)", fontWeight: 800, fontSize: 13, whiteSpace: "nowrap" }}>
+                  ↑ {fmtPercentual(i.mesAnterior?.atingimento)} → {fmtPercentual(i.atingimento)}
+                </span>
+              </div>
+              <div className="pg-sub">
+                {i.divisaoExibida} · {fmtValor(i.valor, i.unidade)} · <span style={{ color: v.texto }}>{v.curto}</span>
+              </div>
+            </div>
+          );
+        })
+      )}
     </section>
   );
 }

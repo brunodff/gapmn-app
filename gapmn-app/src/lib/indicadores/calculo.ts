@@ -3,7 +3,7 @@
 // Cada regra tem o "porquê" ao lado, porque todas nasceram de um erro real.
 
 import type {
-  Competencia, ContagemStatus, Direcao, DivisaoPainel, FichaCatalogo, Filtros, GrupoContagem, IndicadorPainel,
+  Competencia, ContagemStatus, Direcao, FichaCatalogo, Filtros, GrupoContagem, IndicadorPainel,
   ItemContagem, LinhaBD, Painel, PayloadBD, PontoHistorico, ResumoPainel, Status, Tendencia, Variacao, Variavel,
 } from "./tipos.ts";
 
@@ -12,7 +12,8 @@ import type {
 export const CORTE_ADEQUADO = 1.0;
 export const CORTE_ATENCAO = 0.7;
 export const N_PIORES = 5;
-export const Z_WILSON = 1.96;
+/** Quantos indicadores aparecem em "Maiores avanços". */
+export const N_AVANCOS = 5;
 export const UNIDADE_CONTAGEM = "Quantidade";
 /** Variação mensal (16 e 22): o desejável é a redução; o sentido vem de VAR1 × VAR2. */
 export const IDS_VARIACAO = new Set(["16", "22"]);
@@ -62,8 +63,11 @@ function ultimo<T>(lista: T[]): T | undefined {
   return lista[lista.length - 1];
 }
 
-function contagemVazia(): ContagemStatus {
-  return Object.fromEntries(STATUS.map((s) => [s, 0])) as ContagemStatus;
+/** Quantos indicadores em cada status. */
+export function contarStatus(inds: Pick<IndicadorPainel, "status">[]): ContagemStatus {
+  const c = Object.fromEntries(STATUS.map((s) => [s, 0])) as ContagemStatus;
+  for (const i of inds) c[i.status]++;
+  return c;
 }
 
 // ── Normalização do payload ──────────────────────────────────────────────────
@@ -261,24 +265,15 @@ export function calcularStatus(l: LinhaBD | undefined, atingimento: number | nul
   return "Crítico";
 }
 
-// ── D.8 Pontos e Wilson ──────────────────────────────────────────────────────
+// ── D.8 Pontos (saúde) ───────────────────────────────────────────────────────
+// Decisão de 20/10/2026: sem ranking entre divisões (o limite de Wilson punia quem tem
+// poucos indicadores por desenho do catálogo, e o painel não deve expor divisões).
 
 export function pontosDoStatus(s: Status): number | null {
   if (s === "Adequado") return 1;
   if (s === "Atenção") return 0.5;
   if (s === "Crítico") return 0;
   return null;
-}
-
-/**
- * Limite inferior de Wilson (95%). Média simples foi rejeitada: 1 indicador adequado
- * (100%) não pode ficar à frente de 9 adequados em 10.
- */
-export function scoreWilson(pontos: number, n: number, z = Z_WILSON): number | null {
-  if (n <= 0) return null;
-  const p = pontos / n;
-  const z2 = z * z;
-  return (p + z2 / (2 * n) - z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / (1 + z2 / n);
 }
 
 // ── D.10 Tendência 3M ────────────────────────────────────────────────────────
@@ -399,32 +394,6 @@ export function compararComAnterior(
   return (d > 0) === (atual.direcao === "Maior é melhor") ? "melhora" : "piora";
 }
 
-// ── D.8 / D.9 Divisões ───────────────────────────────────────────────────────
-
-export function ranquearDivisoes(inds: IndicadorPainel[]): DivisaoPainel[] {
-  const siglas = [...new Set(inds.map((i) => i.divisaoExibida))]
-    .sort((a, b) => indiceDivisao(a) - indiceDivisao(b) || a.localeCompare(b));
-  const divs: DivisaoPainel[] = siglas.map((sigla) => {
-    const daDiv = inds.filter((i) => i.divisaoExibida === sigla);
-    const avaliados = daDiv.filter((i) => i.pontos !== null);
-    const pontos = avaliados.reduce((s, i) => s + (i.pontos as number), 0);
-    const contagem = contagemVazia();
-    for (const i of daDiv) contagem[i.status]++;
-    const foraDoRanking = sigla === "COMSOC";
-    const n = avaliados.length;
-    return {
-      sigla, n, pontos,
-      score: foraDoRanking ? null : scoreWilson(pontos, n),
-      posicao: null, foraDoRanking, contagem, total: daDiv.length,
-    };
-  });
-  divs
-    .filter((d) => d.score !== null)
-    .sort((a, b) => (b.score as number) - (a.score as number) || b.n - a.n || indiceDivisao(a.sigla) - indiceDivisao(b.sigla))
-    .forEach((d, i) => { d.posicao = i + 1; });
-  return divs;
-}
-
 // ── D.3 Grupos de contagem ───────────────────────────────────────────────────
 
 export function gruposDeContagem(bd: LinhaBD[], data: string): GrupoContagem[] {
@@ -536,8 +505,8 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
 
   const vazio: Painel = {
     competencias, competenciasComDados: comDados, referenciaPadrao, referencia, anterior: null,
-    filtroDivisoes: filtro, siglasDivisoes: [], divisoesRanqueadas: 0, totalIndicadores: 0,
-    indicadores: [], monitoramento: [], divisoes: [], podio: [], piores: [], grupos: [], resumo: resumir([]),
+    filtroDivisoes: filtro, siglasDivisoes: [], totalIndicadores: 0,
+    indicadores: [], monitoramento: [], piores: [], avancos: [], grupos: [], resumo: resumir([]),
     serieSaude: [], saudeAnterior: null, tendenciaSaude: null,
   };
   if (!referencia) return vazio;
@@ -550,12 +519,9 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
   const comMeta = ordenarIndicadores(sel.filter((i) => i.status !== "Sem meta"));
   const monitoramento = sel.filter((i) => i.status === "Sem meta").sort(desempate);
 
-  // Ranking sempre sobre todas as divisões; o filtro só escolhe quais aparecem.
-  const ranking = ranquearDivisoes(todos);
-  const podio = ranking
-    .filter((d) => d.posicao !== null)
-    .sort((a, b) => (a.posicao as number) - (b.posicao as number))
-    .slice(0, 3);
+  // Divisões presentes na competência (opções do filtro), na ordem canônica.
+  const siglas = [...new Set(todos.map((i) => i.divisaoExibida))]
+    .sort((a, b) => indiceDivisao(a) - indiceDivisao(b) || a.localeCompare(b));
 
   // Atenção prioritária: piores com meta, só entre Crítico e Atenção.
   const piores = comMeta
@@ -580,6 +546,17 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     ind.catalogo = opcoes.catalogo?.[ind.id] ?? null;
   }
 
+  // Maiores avanços: quem mais subiu de atingimento em relação ao mês anterior.
+  // O atingimento é limitado a 150% só para comparar (senão 1.500% → 4.000% dominaria a lista).
+  const lim = (x: number) => Math.min(x, 1.5);
+  const avancos = comMeta
+    .filter((i) => i.atingimento !== null && i.mesAnterior?.atingimento !== null && i.mesAnterior?.atingimento !== undefined)
+    .map((i) => ({ i, d: lim(i.atingimento as number) - lim(i.mesAnterior!.atingimento as number) }))
+    .filter((x) => x.d > TOLERANCIA)
+    .sort((a, b) => b.d - a.d || desempate(a.i, b.i))
+    .slice(0, N_AVANCOS)
+    .map((x) => x.i);
+
   const serieSaude = comDados
     .filter((c) => c.data <= referencia.data)
     .map((c) => {
@@ -600,14 +577,12 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     referencia,
     anterior,
     filtroDivisoes: filtro,
-    siglasDivisoes: ranking.map((d) => d.sigla),
-    divisoesRanqueadas: ranking.filter((d) => d.posicao !== null).length,
+    siglasDivisoes: siglas,
     totalIndicadores: todos.filter((i) => i.status !== "Sem meta").length,
     indicadores: comMeta,
     monitoramento,
-    divisoes: ranking.filter((d) => naDivisao(d.sigla)),
-    podio,
     piores,
+    avancos,
     grupos: gruposDeContagem(bd, referencia.data).filter((g) => naDivisao(g.divisao)),
     resumo: resumir(sel),
     serieSaude,

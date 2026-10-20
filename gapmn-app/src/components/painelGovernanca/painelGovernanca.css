@@ -247,33 +247,12 @@
 
 /* ── Coluna da direita (E.7) ───────────────────────────────────────────────── */
 
-.pg-podio { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 8px; align-items: end; }
-.pg-degrau {
-  text-align: center;
-  padding: 12px 6px;
-  border-radius: var(--card-raio);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--card-borda);
-  transition: transform 0.5s;
-  min-width: 0;
-}
-.pg-degrau:hover { transform: translateY(-4px); }
-.pg-degrau[data-pos="1"] { padding-top: 22px; padding-bottom: 16px; background: rgba(148, 254, 146, 0.07); border-color: rgba(148, 254, 146, 0.25); }
-.pg-degrau-pos { font-size: 11px; font-weight: 700; color: var(--txt-2); }
-.pg-degrau-sigla { font-size: 20px; font-weight: 800; margin: 2px 0; }
-.pg-degrau[data-pos="1"] .pg-degrau-sigla { font-size: 24px; }
-.pg-degrau-score { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
 .pg-pior { padding: 8px 0; }
 .pg-pior + .pg-pior { border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .pg-pior-topo { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .pg-pior-nome { font-size: 12px; font-weight: 600; min-width: 0; }
 
-.pg-divisao { padding: 8px 0; }
-.pg-divisao + .pg-divisao { border-top: 1px solid rgba(255, 255, 255, 0.06); }
-.pg-divisao-linha { display: grid; grid-template-columns: 58px minmax(0, 1fr) 56px 28px; gap: 8px; align-items: center; }
-.pg-divisao-sigla { font-size: 13px; font-weight: 800; }
-.pg-divisao-pos { font-size: 11px; color: var(--txt-2); text-align: right; }
 
 /* ── Grupos de contagem (E.8) ──────────────────────────────────────────────── */
 
@@ -309,7 +288,6 @@
 @keyframes pg-brilho { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .pg-degrau, .pg-esqueleto, .pg-girando { transition: none; animation: none; }
 }
 
 /* ── Larguras menores (pela largura do painel, não da janela) ────────────────── */
@@ -399,32 +377,7 @@
 .pg-ap-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(8px, 1vw, 16px); }
 .pg-ap-numero { font-size: clamp(24px, 3.2vw, 52px); font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .pg-ap-meio { min-height: 0; display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: clamp(8px, 1vw, 16px); }
-.pg-ap-dir { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: clamp(8px, 1.6vh, 16px); }
-.pg-ap-ranking { display: flex; flex-direction: column; min-height: 0; }
-.pg-ap-rank {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 2.6em 4.2em minmax(0, 1fr) 4.6em;
-  grid-template-rows: auto auto;
-  column-gap: 12px;
-  align-items: center;
-  padding: 2px 6px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  min-height: 0;
-}
-.pg-ap-rank + .pg-ap-rank { border-top: 1px solid rgba(255, 255, 255, 0.06); }
-.pg-ap-rank:hover { background: var(--realce); }
-.pg-ap-rank .pg-trilha { height: clamp(8px, 1.3vh, 14px); }
-.pg-ap-rank-pos { color: var(--txt-2); font-weight: 700; }
-.pg-ap-rank-sigla { font-weight: 800; font-size: 1.15em; }
-.pg-ap-rank-score { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
-.pg-ap-rank-cont { grid-column: 3 / 5; font-size: 0.82em; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-ap-dir { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(8px, 1.6vh, 16px); }
 .pg-ap-piores { min-height: 0; }
 .pg-ap .pg-pior { padding: clamp(3px, 0.8vh, 8px) 0; }
 .pg-ap .pg-pior-nome { font-size: 0.92em; }
@@ -556,3 +509,20 @@
 .pg-objetivo { margin: 6px 0 0; font-size: 12px; font-style: italic; color: var(--txt-2); line-height: 1.4; }
 .pg-ficha-tecnica { grid-template-columns: auto minmax(0, 1fr); }
 .pg-ficha-tecnica dd { font-weight: 500; }
+
+/* ── Evolução da saúde geral (no lugar do ranking) ─────────────────────────── */
+.pg-evo-graf { display: grid; gap: 8px; height: 132px; margin: 4px 0 8px; }
+.pg-evo-col { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 4px; min-width: 0; }
+.pg-evo-area { position: relative; margin-top: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.15); }
+.pg-evo-barra { position: absolute; left: 18%; right: 18%; bottom: 0; min-height: 2px; border-radius: 3px 3px 0 0; background: rgba(127, 184, 255, 0.55); }
+.pg-evo-col[data-atual="1"] .pg-evo-barra { background: #7FB8FF; }
+.pg-evo-rot { position: absolute; left: 0; right: 0; text-align: center; font-size: 10.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pg-evo-comp { text-align: center; font-size: 10.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-evo-col[data-atual="1"] .pg-evo-comp { color: var(--txt-1); font-weight: 700; }
+/* na apresentação o gráfico ocupa a altura disponível */
+.pg-ap .pg-evolucao { display: flex; flex-direction: column; min-height: 0; }
+.pg-ap .pg-evo-graf { flex: 1; height: auto; min-height: 0; }
+.pg-ap .pg-evo-rot, .pg-ap .pg-evo-comp { font-size: clamp(12px, 0.95vw, 18px); }
+/* nos slides, cada item das listas da direita ocupa uma linha só (cabe em 1366×768) */
+.pg-ap .pg-ap-dir .pg-pior-nome { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-ap .pg-ap-dir .pg-pior .pg-sub { display: none; }

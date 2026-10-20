@@ -5,13 +5,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, House, X } from "lucide-react";
-import { CORTE_ADEQUADO, CORTE_ATENCAO, ORDEM_DIVISOES, calcularPainel } from "../../lib/indicadores/calculo.ts";
+import { CORTE_ADEQUADO, CORTE_ATENCAO, ORDEM_DIVISOES, calcularPainel, contarStatus } from "../../lib/indicadores/calculo.ts";
 import {
   competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtPontosPercentuais, larguraCss,
 } from "../../lib/indicadores/formato.ts";
 import type { FichaCatalogo, IndicadorPainel, LinhaBD, Painel, Status } from "../../lib/indicadores/tipos.ts";
 import { CartaoGrupo } from "./Contagem";
 import { FichaIndicador } from "./Detalhe";
+import { Avancos, EvolucaoSaude } from "./Lateral";
 import { NOMES_DIVISOES, VISUAL_STATUS, textoContagem } from "./visual";
 
 type Slide = { tipo: "geral" } | { tipo: "divisao"; sigla: string };
@@ -26,14 +27,12 @@ function statusDaSaude(s: number | null): Status | null {
   return "Crítico";
 }
 
-function Saude({ painel, posicao }: { painel: Painel; posicao?: string }) {
+function Saude({ painel }: { painel: Painel }) {
   const s = painel.resumo.saudeGeral;
   const st = statusDaSaude(s);
   const v = st ? VISUAL_STATUS[st] : null;
   const delta = s !== null && painel.saudeAnterior !== null ? s - painel.saudeAnterior : null;
-  const contagem = textoContagem(
-    painel.indicadores.reduce((c, i) => ({ ...c, [i.status]: (c[i.status] ?? 0) + 1 }), {} as Record<Status, number>),
-  );
+  const contagem = textoContagem(contarStatus(painel.indicadores));
   return (
     <section className="pg-ap-saude" aria-label="Saúde geral dos indicadores">
       <div className="pg-ap-saude-topo">
@@ -49,7 +48,6 @@ function Saude({ painel, posicao }: { painel: Painel; posicao?: string }) {
       <div className="pg-ap-saude-rodape">
         {painel.anterior && <span>vs {painel.anterior.label}: <b>{fmtPontosPercentuais(delta)}</b></span>}
         <span>tendência 3M: <b>{fmtPontosPercentuais(painel.tendenciaSaude)}</b></span>
-        {posicao && <span>{posicao}</span>}
         {contagem && <span className="pg-ap-apagado">{contagem}</span>}
       </div>
     </section>
@@ -113,11 +111,10 @@ function Colunas({ inds, anterior, aoAbrir }: { inds: IndicadorPainel[]; anterio
   );
 }
 
-function VisaoGeral({ painel, irPara }: { painel: Painel; irPara: (sigla: string) => void }) {
+function VisaoGeral({ painel }: { painel: Painel }) {
   const r = painel.resumo;
   const c = r.completude;
   const delta = r.saudeGeral !== null && painel.saudeAnterior !== null ? r.saudeGeral - painel.saudeAnterior : null;
-  const lugares = [painel.podio[1], painel.podio[0], painel.podio[2]];
   const cards: [string, string, string, string][] = [
     ["Saúde geral", fmtPercentual(r.saudeGeral, 1), `vs ${painel.anterior?.label ?? "—"}: ${fmtPontosPercentuais(delta)} · 3M: ${fmtPontosPercentuais(painel.tendenciaSaude)}`, "#7FB8FF"],
     ["Adequados", String(r.adequados), `${r.adequados}/${r.n} avaliados`, "var(--ok)"],
@@ -137,36 +134,8 @@ function VisaoGeral({ painel, irPara }: { painel: Painel; irPara: (sigla: string
         ))}
       </div>
       <div className="pg-ap-meio">
-        <section className="pg-card pg-ap-ranking" aria-label="Nota por divisão">
-          <div className="pg-secao-topo">
-            <span className="pg-rotulo">Nota por divisão</span>
-            <span className="pg-sub">Wilson 95% · clique para abrir a divisão</span>
-          </div>
-          {[...painel.divisoes].sort((a, b) => (a.posicao ?? 99) - (b.posicao ?? 99)).map((d) => (
-            <button key={d.sigla} type="button" className="pg-ap-rank" onClick={() => irPara(d.sigla)}>
-              <span className="pg-ap-rank-pos">{d.posicao ? `${d.posicao}º` : "—"}</span>
-              <span className="pg-ap-rank-sigla">{d.sigla}</span>
-              <span className="pg-trilha" aria-hidden="true">
-                {d.score !== null && <span className="pg-barra" style={{ width: larguraCss(d.score, 1), background: "#7FB8FF" }} />}
-              </span>
-              <span className="pg-ap-rank-score">{d.score !== null ? fmtPercentual(d.score, 1) : d.foraDoRanking ? "fora" : "—"}</span>
-              <span className="pg-ap-rank-cont">{textoContagem(d.contagem)}</span>
-            </button>
-          ))}
-        </section>
+        <EvolucaoSaude painel={painel} maximo={12} />
         <div className="pg-ap-dir">
-          <section className="pg-card" aria-label="Pódio">
-            <div className="pg-secao-topo"><span className="pg-rotulo">Pódio das divisões</span></div>
-            <ol className="pg-podio" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {lugares.map((d, i) => d ? (
-                <li key={d.sigla} className="pg-degrau" data-pos={d.posicao ?? undefined}>
-                  <div className="pg-degrau-pos">{d.posicao}º</div>
-                  <div className="pg-degrau-sigla">{d.sigla}</div>
-                  <div className="pg-degrau-score">{fmtPercentual(d.score, 1)}</div>
-                </li>
-              ) : <li key={`v${i}`} aria-hidden="true" />)}
-            </ol>
-          </section>
           <section className="pg-card pg-ap-piores" aria-label="Atenção prioritária">
             <div className="pg-secao-topo"><span className="pg-rotulo">Atenção prioritária</span></div>
             {painel.piores.map((i) => {
@@ -181,6 +150,7 @@ function VisaoGeral({ painel, irPara }: { painel: Painel; irPara: (sigla: string
               );
             })}
           </section>
+          <Avancos avancos={painel.avancos} anterior={painel.anterior?.label ?? null} />
         </div>
       </div>
     </div>
@@ -246,8 +216,6 @@ export default function Apresentacao({ bd, catalogo, competencia, inicio, gerado
   }, [atual, detalhe, ir, sair, slides.length]);
 
   const ref_ = geral.referencia;
-  const irPara = (sigla: string) => ir(slides.findIndex((s) => s.tipo === "divisao" && s.sigla === sigla));
-  const divInfo = painelDiv && slide.tipo === "divisao" ? painelDiv.divisoes.find((d) => d.sigla === slide.sigla) : undefined;
 
   return createPortal(
     <div ref={ref} className="pg-tokens pg-ap" role="dialog" aria-modal="true" aria-label="Painel de Governança — modo apresentação" tabIndex={-1}>
@@ -270,13 +238,10 @@ export default function Apresentacao({ bd, catalogo, competencia, inicio, gerado
 
       <main className="pg-ap-conteudo">
         {slide.tipo === "geral" ? (
-          <VisaoGeral painel={geral} irPara={irPara} />
+          <VisaoGeral painel={geral} />
         ) : painelDiv && (
           <div className="pg-ap-div" style={painelDiv.indicadores.length ? undefined : { gridTemplateRows: "minmax(0, 1fr)" }}>
-            {painelDiv.indicadores.length > 0 && <Saude
-              painel={painelDiv}
-              posicao={divInfo?.posicao ? `${divInfo.posicao}º de ${painelDiv.divisoesRanqueadas} no ranking` : divInfo?.foraDoRanking ? "fora do ranking (acompanhamento)" : undefined}
-            />}
+            {painelDiv.indicadores.length > 0 && <Saude painel={painelDiv} />}
             <div className="pg-ap-corpo">
               {painelDiv.indicadores.length > 0 && <Colunas inds={painelDiv.indicadores} anterior={painelDiv.anterior?.label ?? null} aoAbrir={setDetalhe} />}
               {painelDiv.grupos.map((g) => (

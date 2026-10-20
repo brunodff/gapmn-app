@@ -49,8 +49,8 @@ export function Legenda({ sozinha }: { sozinha: boolean }) {
       <ul className="pg-notas">
         <li>A barra vai até 150% da meta; o traço vertical marca 100%. O percentual mostrado é o real, sem teto.</li>
         <li>
-          Nota da divisão: limite inferior de Wilson (95%) sobre os pontos de cada indicador (adequado 1, atenção 0,5,
-          crítico 0). Divisões com poucos indicadores avaliados não ficam à frente só por isso.
+          Saúde geral: média dos pontos dos indicadores com meta (adequado 1, atenção 0,5, crítico 0). As divisões não
+          são comparadas entre si: cada uma é vista pela própria evolução.
         </li>
         <li>Eventos Promovidos para o Efetivo (COMSOC) e os grupos de contagem são acompanhamento: ficam fora da nota.</li>
         <li>Nas variações mensais (indicadores 16 e 22), o resultado conta quando há redução em relação ao mês anterior.</li>

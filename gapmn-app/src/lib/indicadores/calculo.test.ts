@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 
 import {
   calcularAtingimento, calcularPainel, calcularStatus, compararId, competenciaReferencia, prepararPayload,
-  filtrarIndicadores, montarCompetencias, normalizarLinhas, scoreWilson,
+  filtrarIndicadores, montarCompetencias, normalizarLinhas,
 } from "./calculo.ts";
 import {
   competenciaPorExtenso, fmtPercentual, fmtValor, fraseVariacao, larguraCss, metaExibida,
@@ -117,45 +117,46 @@ test("VALOR vazio: sem variáveis → Aguardando; VAR2 = 0 → Sem dados no mês
   assert.equal(calcularStatus(linha("JUL/26", { VAR2_VALOR: 50 }), null), "Aguardando informação");
 });
 
-// 9
-test("Wilson: 1 adequado fica atrás de 9 adequados em 10", () => {
+// 9 e 10 (refeitos em 20/10/2026): sem ranking entre divisões
+test("sem ranking: a ASESO com 1 indicador adequado tem saúde de 100%, sem posição nem nota de Wilson", () => {
   const bd = [
-    ind("1", "DRH", 5),
-    ...Array.from({ length: 9 }, (_, i) => ind(String(10 + i), "DIE", 2)),
-    ind("19", "DIE", 0.1),
+    ind("19", "ASESO", 5),                                              // 1 de 1 adequado
+    ...Array.from({ length: 9 }, (_, i) => ind(String(101 + i), "DIE", 2)), // 9 adequados (IDs neutros)
+    ind("110", "DIE", 0.1),                                             // 1 crítico
   ];
-  const { divisoes, podio } = calcularPainel(bd);
-  const drh = divisoes.find((d) => d.sigla === "DRH")!, die = divisoes.find((d) => d.sigla === "DIE")!;
-  assert.equal(die.posicao, 1);
-  assert.equal(drh.posicao, 2);
-  assert.ok((die.score as number) > (drh.score as number));
-  assert.equal(podio[0].sigla, "DIE");
-  assert.ok(Math.abs((scoreWilson(1, 1) as number) - 0.2065) < 0.001);
-});
-
-// 10
-test("divisão com n = 0 não recebe posição", () => {
-  const bd = [ind("1", "DRH", 5), linha("JUL/26", { ID: "2", DIVISAO: "DA" })];
-  const da = calcularPainel(bd).divisoes.find((d) => d.sigla === "DA")!;
-  assert.equal(da.n, 0);
-  assert.equal(da.score, null);
-  assert.equal(da.posicao, null);
+  const aseso = calcularPainel(bd, { divisoes: ["ASESO"] });
+  const die = calcularPainel(bd, { divisoes: ["DIE"] });
+  assert.equal(aseso.resumo.saudeGeral, 1);
+  assert.equal(die.resumo.saudeGeral, 0.9);
+  const p = calcularPainel(bd) as unknown as Record<string, unknown>;
+  assert.equal(p.podio, undefined);
+  assert.equal(p.divisoes, undefined);
 });
 
 // 11
-test("ID 35 aparece como COMSOC e não entra na nota de ASESO", () => {
+test("ID 35 aparece como COMSOC e não entra na saúde de ASESO", () => {
   const bd = [ind("19", "ASESO", 0.5), ind("35", "ASESO", 4)];
   const p = calcularPainel(bd);
   const i35 = p.indicadores.find((i) => i.id === "35")!;
   assert.equal(i35.divisaoExibida, "COMSOC");
   assert.equal(i35.pontos, null);
-  const aseso = p.divisoes.find((d) => d.sigla === "ASESO")!;
-  assert.equal(aseso.n, 1);
-  assert.equal(aseso.pontos, 0);
-  const comsoc = p.divisoes.find((d) => d.sigla === "COMSOC")!;
-  assert.equal(comsoc.foraDoRanking, true);
-  assert.equal(comsoc.posicao, null);
   assert.equal(p.resumo.n, 1); // o card de saúde geral também não conta o 35
+  assert.equal(calcularPainel(bd, { divisoes: ["ASESO"] }).resumo.saudeGeral, 0);
+  assert.deepEqual(p.siglasDivisoes, ["ASESO", "COMSOC"]);
+});
+
+test("maiores avanços: quem mais subiu de atingimento em relação ao mês anterior", () => {
+  const par = (id: string, jul: number, ago: number) => [ind(id, "DRH", jul, "JUL/26"), ind(id, "DRH", ago, "AGO/26")];
+  const bd = [
+    ...par("1", 0.5, 0.9),   // +40 p.p.
+    ...par("2", 0.2, 1.2),   // +100 p.p.
+    ...par("3", 15, 40),     // 1.500% → 4.000%: limitado a 150% nos dois → não conta como avanço
+    ...par("4", 1, 0.8),     // piorou
+    ind("5", "DRH", 0.9, "AGO/26"), // sem mês anterior
+  ];
+  const p = calcularPainel(bd);
+  assert.deepEqual(p.avancos.map((i) => i.id), ["2", "1"]);
+  assert.equal(calcularPainel(bd, { competencia: "JUL/26" }).avancos.length, 0); // JUL não tem anterior
 });
 
 // 12
@@ -266,7 +267,7 @@ test("unidade no singular quando o valor é 1", () => {
   assert.equal(fmtValor(1, "Meses"), "1 mês");
 });
 
-test("filtro de divisão vale para o painel inteiro, menos referência e posição no ranking", () => {
+test("filtro de divisão vale para o painel inteiro, menos a competência de referência", () => {
   const extra = (id: string, cat: string, div: string, valor: number) => linha("AGO/26", {
     ID: id, CATEGORIA: cat, DIVISAO: div, UNIDADE: "Quantidade", DIRECAO: "Monitoramento", META_NUM: null, META_TXT: null, VALOR: valor,
   });
@@ -284,8 +285,6 @@ test("filtro de divisão vale para o painel inteiro, menos referência e posiç�
   assert.equal(da.resumo.saudeGeral, 0.5);
   assert.deepEqual(da.indicadores.map((i) => i.id), ["20"]);
   assert.deepEqual(da.piores.map((i) => i.id), ["20"]);
-  assert.deepEqual(da.divisoes.map((d) => d.sigla), ["DA"]);
-  assert.equal(da.divisoes[0].posicao, geral.divisoes.find((d) => d.sigla === "DA")!.posicao); // posição geral
   assert.equal(da.grupos.length, 0);
   assert.deepEqual(da.siglasDivisoes, geral.siglasDivisoes); // o seletor continua com todas
   assert.equal(da.totalIndicadores, 6);

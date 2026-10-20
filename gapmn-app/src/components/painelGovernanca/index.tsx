@@ -15,7 +15,7 @@ import Apresentacao from "./Apresentacao";
 import { Esqueleto } from "./Comum";
 import Contagem from "./Contagem";
 import Indicadores from "./Indicadores";
-import { Piores, Podio, PorDivisao } from "./Lateral";
+import { Avancos, EvolucaoSaude, Piores } from "./Lateral";
 import { Legenda, Monitoramento } from "./Rodape";
 import "./painelGovernanca.css";
 
@@ -52,7 +52,7 @@ function Cards({ painel }: { painel: Painel }) {
   ].filter(Boolean);
   return (
     <section className="pg-cards" aria-label="Resumo da competência">
-      <CardResumo rotulo="Saúde geral" valor={fmtPercentual(r.saudeGeral, 1)} sub={`${r.n} indicadores avaliados · ${comparacao}`} acento="#7FB8FF" />
+      <CardResumo rotulo="Saúde geral" valor={fmtPercentual(r.saudeGeral, 1)} sub={`${r.n} ${r.n === 1 ? "indicador avaliado" : "indicadores avaliados"} · ${comparacao}`} acento="#7FB8FF" />
       <CardResumo rotulo="Adequados" valor={String(r.adequados)} sub={`${r.adequados}/${r.n} avaliados`} acento="var(--ok)" Icone={CircleCheck} />
       <CardResumo rotulo="Atenção" valor={String(r.atencao)} sub={`entre ${fmtPercentual(CORTE_ATENCAO)} e ${fmtPercentual(CORTE_ADEQUADO - 0.01)} da meta`} acento="var(--atencao)" Icone={TriangleAlert} />
       <CardResumo rotulo="Críticos" valor={String(r.criticos)} sub={`abaixo de ${fmtPercentual(CORTE_ATENCAO)} da meta`} acento="var(--critico)" Icone={CircleX} />
@@ -177,7 +177,7 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
         <>
           {painel.filtroDivisoes.length > 0 && (
             <div className="pg-sub">
-              Filtrado por {painel.filtroDivisoes.join(", ")}: todos os números abaixo são dessa seleção; a posição no ranking é a geral.
+              Filtrado por {painel.filtroDivisoes.join(", ")}: todos os números abaixo são dessa seleção.
             </div>
           )}
           <Cards painel={painel} />
@@ -185,13 +185,9 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
           <div className="pg-principal">
             <div className="pg-card"><Indicadores painel={painel} filtros={filtros} aoMudar={mudar} /></div>
             <div className="pg-coluna">
-              <Podio
-                podio={painel.podio}
-                filtradas={painel.filtroDivisoes.length ? painel.divisoes : undefined}
-                ranqueadas={painel.divisoesRanqueadas}
-              />
+              <EvolucaoSaude painel={painel} />
               <Piores piores={painel.piores} />
-              <PorDivisao divisoes={painel.divisoes} />
+              <Avancos avancos={painel.avancos} anterior={painel.anterior?.label ?? null} />
             </div>
           </div>
 
