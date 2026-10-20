@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import PainelRP from "../components/PainelRP";
@@ -6,9 +6,7 @@ import CnetRoboGapmn from "../components/CnetRoboGapmn";
 import PainelProcessos from "../components/PainelProcessos";
 import PainelExecucao from "../components/PainelExecucao";
 import PainelGovernanca from "../components/painelGovernanca";
-
-const BI_URL =
-  "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
+import PainelOrcamentario from "../components/painelOrcamentario";
 
 const GOV_URL =
   "https://app.powerbi.com/view?r=eyJrIjoiMGI0ZDUxZDAtOTQzOC00YmNiLTk1OTctYzA1NDk5MjkxMDNjIiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
@@ -23,8 +21,6 @@ export default function PaineisGerenciaisPage() {
   const painelUrl = params.get("painel") as Painel | null;
   const painel: Painel = painelUrl && PAINEIS.includes(painelUrl) ? painelUrl : "orcamentario";
   const setPainel = (p: Painel) => setParams(p === "orcamentario" ? {} : { painel: p });
-  const [maximized, setMaximized] = useState(false);
-  const [iframeKey, setIframeKey] = useState(0);
   const [userSetor, setUserSetor] = useState<string | null>(null);
   const [perfilCarregado, setPerfilCarregado] = useState(false);
 
@@ -43,9 +39,6 @@ export default function PaineisGerenciaisPage() {
 
   const isAdmin = userSetor === "ADMIN" || userSetor === "DEV";
 
-  const reload = useCallback(() => setIframeKey((k) => k + 1), []);
-  const src = `${BI_URL}&_k=${iframeKey}`;
-
   return (
     <>
       <div className="flex flex-col gap-3">
@@ -57,24 +50,6 @@ export default function PaineisGerenciaisPage() {
             <p className="text-xs text-slate-500">GAP-MN e subordinadas</p>
           </div>
           <div className="flex items-center gap-2">
-            {painel === "orcamentario" && (
-              <>
-                <button
-                  onClick={reload}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                  title="Recarregar painel"
-                >
-                  ↺ Recarregar
-                </button>
-                <button
-                  onClick={() => setMaximized(true)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                  title="Maximizar painel"
-                >
-                  ⛶ Maximizar
-                </button>
-              </>
-            )}
             <button
               onClick={() => nav("/app")}
               className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
@@ -120,15 +95,7 @@ export default function PaineisGerenciaisPage() {
 
         {/* ── Conteúdo ── */}
         {painel === "orcamentario" && (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <iframe
-              key={iframeKey}
-              title="Painel Orçamentário GAP-MN"
-              src={src}
-              className="h-[calc(100dvh-13rem)] w-full"
-              allowFullScreen
-            />
-          </div>
+          <PainelOrcamentario />
         )}
 
         {painel === "rp" && (
@@ -157,38 +124,6 @@ export default function PaineisGerenciaisPage() {
           )
         )}
       </div>
-
-      {/* ── Overlay maximizado (só Orçamentário) ── */}
-      {maximized && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-white">
-          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
-            <span className="text-sm font-semibold text-slate-800">
-              Painel Orçamentário — GAP-MN
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={reload}
-                className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                ↺ Recarregar
-              </button>
-              <button
-                onClick={() => setMaximized(false)}
-                className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                ✕ Restaurar
-              </button>
-            </div>
-          </div>
-          <iframe
-            key={`max-${iframeKey}`}
-            title="Painel Orçamentário GAP-MN Maximizado"
-            src={src}
-            className="flex-1 w-full"
-            allowFullScreen
-          />
-        </div>
-      )}
     </>
   );
 }

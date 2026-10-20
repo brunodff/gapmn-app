@@ -14,6 +14,7 @@ import PainelRP from "../components/PainelRP";
 import PainelProcessos from "../components/PainelProcessos";
 import PainelExecucao from "../components/PainelExecucao";
 import PainelGovernancaBD from "../components/painelGovernanca";
+import PainelOrcamentarioBD from "../components/painelOrcamentario";
 import FerramentasGestao from "./FerramentasGestao";
 // OrdensBancarias removido
 import PainelAnalytics from "../components/PainelAnalytics";
@@ -42,7 +43,6 @@ const T = {
 const SW  = "268px";
 const SWC = "62px";
 
-const BI_URL  = "https://app.powerbi.com/view?r=eyJrIjoiYjJiZWE0NWItZTJkNS00ZjMzLThhYTQtOTNkODhhOGQ3MzM1IiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
 const GOV_URL = "https://app.powerbi.com/view?r=eyJrIjoiMGI0ZDUxZDAtOTQzOC00YmNiLTk1OTctYzA1NDk5MjkxMDNjIiwidCI6IjNhMzY0ZGI2LTg2NmEtNDRkOS1iMzY5LWM1ODk1OWQ0NDhmOCJ9";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -1081,52 +1081,11 @@ function AdminUsersPanel() {
 }
 
 
-// ── BI Painel wrapper ─────────────────────────────────────────────────────────
+// ── Painel Orçamentário ───────────────────────────────────────────────────────
+// Aba Crédito do Power BI refeita no app: lê as planilhas direto e se atualiza sozinha.
 function PainelOrcamentario() {
-  const [key, setKey] = useState(0);
-  const [max, setMax] = useState(false);
-  const src = `${BI_URL}&_k=${key}`;
-  return (
-    <>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, justifyContent: "flex-end" }}>
-        <button onClick={() => setKey(k => k + 1)}
-          style={{ background: T.surf, border: `1px solid ${T.bdr}`, borderRadius: 8,
-            padding: "6px 14px", color: T.txt, fontSize: 12, cursor: "pointer", fontFamily: T.font }}>
-          ↺ Recarregar
-        </button>
-        <button onClick={() => setMax(true)}
-          style={{ background: T.surf, border: `1px solid ${T.bdr}`, borderRadius: 8,
-            padding: "6px 14px", color: T.txt, fontSize: 12, cursor: "pointer", fontFamily: T.font }}>
-          ⛶ Maximizar
-        </button>
-      </div>
-      <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${T.bdr}` }}>
-        <iframe key={key} src={src} title="Painel Orçamentário GAP-MN"
-          style={{ width: "100%", height: "calc(100dvh - 14rem)", display: "block" }}
-          allowFullScreen />
-      </div>
-      {max && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", background: "#fff" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "8px 16px", borderBottom: "1px solid #e2e8f0", background: "#fff" }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Painel Orçamentário — GAP-MN</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setKey(k => k + 1)}
-                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
-                  padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>↺ Recarregar</button>
-              <button onClick={() => setMax(false)}
-                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
-                  padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>✕ Restaurar</button>
-            </div>
-          </div>
-          <iframe src={`${BI_URL}&_k=${key}-max`} title="Painel Orçamentário Maximizado"
-            style={{ flex: 1, width: "100%", display: "block" }} allowFullScreen />
-        </div>
-      )}
-    </>
-  );
+  return <PainelOrcamentarioBD />;
 }
-
 
 // ── Painel de Governança (ADMIN/DEV only) ────────────────────────────────────
 // Página própria do app: lê a aba BD da planilha de indicadores pela Edge Function
