@@ -47,7 +47,7 @@ export function Legenda({ sozinha }: { sozinha: boolean }) {
         })}
       </div>
       <ul className="pg-notas">
-        <li>A barra vai até 150% da meta; o traço vertical marca 100%. O percentual mostrado é o real, sem teto.</li>
+        <li>O número de cada indicador é o resultado dele. A barra mostra a distância da meta: o traço vertical é a meta e a barra vai até uma vez e meia ela.</li>
         <li>
           Saúde geral: média dos pontos dos indicadores com meta (adequado 1, atenção 0,5, crítico 0). As divisões não
           são comparadas entre si: cada uma é vista pela própria evolução.

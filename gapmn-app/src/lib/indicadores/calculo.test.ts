@@ -9,7 +9,7 @@ import {
   filtrarIndicadores, montarCompetencias, normalizarLinhas,
 } from "./calculo.ts";
 import {
-  competenciaPorExtenso, fmtPercentual, fmtValor, fraseVariacao, larguraCss, metaExibida,
+  competenciaPorExtenso, fmtPercentual, fmtTendencia, fmtValor, fmtVariacaoPct, fraseVariacao, larguraCss, metaExibida,
 } from "./formato.ts";
 import { CATALOGO_PADRAO, catalogoEfetivo } from "./catalogo.ts";
 import { gravarFiltros, lerFiltros } from "./filtros.ts";
@@ -145,7 +145,7 @@ test("ID 35 aparece como COMSOC e não entra na saúde de ASESO", () => {
   assert.deepEqual(p.siglasDivisoes, ["ASESO", "COMSOC"]);
 });
 
-test("maiores avanços: quem mais subiu de atingimento em relação ao mês anterior", () => {
+test("progressos: quem mais se aproximou da meta (ou passou dela) em relação ao mês anterior", () => {
   const par = (id: string, jul: number, ago: number) => [ind(id, "DRH", jul, "JUL/26"), ind(id, "DRH", ago, "AGO/26")];
   const bd = [
     ...par("1", 0.5, 0.9),   // +40 p.p.
@@ -401,4 +401,13 @@ test("sem nenhuma competência com dado: painel vazio, sem zeros fingindo dado",
   assert.equal(p.referencia, null);
   assert.equal(p.indicadores.length, 0);
   assert.equal(p.resumo.saudeGeral, null);
+});
+
+test("variação da saúde e tendência em %, não em pontos percentuais (p.p.)", () => {
+  assert.equal(fmtVariacaoPct(0.1), "+10,0%");
+  assert.equal(fmtVariacaoPct(-0.125), "−12,5%");
+  assert.equal(fmtVariacaoPct(0), "0,0%");
+  assert.equal(fmtVariacaoPct(null), "—");
+  assert.equal(fmtTendencia({ media: 2.5, pontos: [], sentido: "melhora" }, "Percentual (%)"), "+2,5% por competência");
+  assert.equal(fmtTendencia({ media: -1, pontos: [], sentido: "melhora" }, "Dias úteis"), "−1 dias úteis por competência");
 });

@@ -197,14 +197,17 @@
   white-space: nowrap;
 }
 .pg-valor { font-size: 13px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pg-meta { font-size: 12px; font-weight: 400; color: var(--txt-2); margin-left: 4px; }
+.pg-meta {
+  display: inline-block; margin-left: 4px; padding: 1px 8px; border: 1px solid rgba(127, 184, 255, 0.35); border-radius: 6px;
+  font-size: 12px; font-weight: 600; color: #cfe3ff; background: rgba(127, 184, 255, 0.08);
+}
 
 .pg-linha-base { display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 38px; }
 .pg-trilha { position: relative; flex: 1; min-width: 60px; height: 10px; border-radius: 5px; background: var(--trilha); }
 .pg-barra { position: absolute; left: 0; top: 0; bottom: 0; min-width: 2px; border-radius: 5px; }
 .pg-marca-meta { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: rgba(242, 247, 255, 0.55); }
 .pg-tracejado { flex: 1; min-width: 60px; height: 0; border-top: 2px dashed var(--neutro); }
-.pg-ating { width: 58px; text-align: right; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pg-ating { min-width: 58px; text-align: right; font-size: 13px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pg-status { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .pg-div { width: 54px; text-align: right; font-size: 11px; font-weight: 700; color: var(--txt-2); }
 .pg-vazio { padding: 24px 8px; text-align: center; font-size: 13px; color: var(--txt-2); }
@@ -414,7 +417,7 @@
   font: inherit;
   cursor: pointer;
 }
-.pg-ap-col-area { position: relative; min-height: 0; margin-top: 2em; border-bottom: 1px solid rgba(255, 255, 255, 0.15); }
+.pg-ap-col-area { position: relative; min-height: 0; margin-top: 3em; border-bottom: 1px solid rgba(255, 255, 255, 0.15); }
 .pg-ap-col-barra { position: absolute; left: 10%; right: 32%; bottom: 0; min-height: 2px; border-radius: 4px 4px 0 0; transition: filter 0.2s; }
 /* mês anterior: barra fina e clara ao lado da atual */
 .pg-ap-col-ant { position: absolute; left: 72%; right: 10%; bottom: 0; min-height: 2px; border-radius: 3px 3px 0 0; opacity: 0.38; }
@@ -422,7 +425,8 @@
 .pg-ap-col:focus-visible { outline: 2px solid rgba(148, 254, 146, 0.6); outline-offset: 2px; border-radius: 6px; }
 .pg-ap-col-traco { position: absolute; left: 10%; right: 32%; bottom: 0; height: 4px; border-radius: 2px; }
 .pg-ap-col-meta { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(242, 247, 255, 0.35); }
-.pg-ap-col-rotulo { position: absolute; left: 0; right: 22%; text-align: center; font-size: 0.85em; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pg-ap-col-rotulo { position: absolute; left: 0; right: 22%; text-align: center; font-size: 0.85em; font-weight: 700; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pg-ap-col-rotulo small { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 0.8em; font-weight: 600; color: var(--txt-2); }
 .pg-ap-col-nome {
   text-align: center;
   font-size: clamp(11px, 0.9vw, 16px);
@@ -526,3 +530,10 @@
 /* nos slides, cada item das listas da direita ocupa uma linha só (cabe em 1366×768) */
 .pg-ap .pg-ap-dir .pg-pior-nome { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pg-ap .pg-ap-dir .pg-pior .pg-sub { display: none; }
+
+/* Meta em destaque no tooltip e na ficha (pedido de 20/10/2026) */
+.pg-tt-grade dt.pg-tt-meta-rot { align-self: center; color: #7fb8ff; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.pg-tt-meta {
+  display: inline-block; padding: 3px 12px; border: 1px solid rgba(127, 184, 255, 0.6); border-radius: 7px;
+  background: rgba(127, 184, 255, 0.16); color: #e3efff; font-size: 15px; font-weight: 800; letter-spacing: 0.01em;
+}

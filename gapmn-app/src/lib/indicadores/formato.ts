@@ -106,7 +106,7 @@ export function fmtTendencia(t: Tendencia | null, unidade: string): string {
   const sinal = t.media > 0 ? "+" : t.media < 0 ? "−" : "";
   const u = unidadeCurta(unidade);
   const n = fmtNumero(Math.abs(t.media));
-  const corpo = !u ? n : u === "%" ? `${n} p.p.` : u === "×" ? `${n}×` : `${n} ${u}`;
+  const corpo = !u ? n : u === "%" || u === "×" ? `${n}${u}` : `${n} ${u}`;
   return `${sinal}${corpo} por competência`;
 }
 
@@ -116,10 +116,13 @@ export function fmtGeradoEm(iso: string | null | undefined): string {
   return m ? `${m[3]}/${m[2]} às ${m[4]}:${m[5]}` : "—";
 }
 
-/** Diferença entre duas frações em pontos percentuais: 0,1 → "+10,0 p.p.". */
-export function fmtPontosPercentuais(delta: number | null | undefined): string {
+/**
+ * Quanto um percentual subiu ou desceu, já em %: a saúde foi de 60% para 70% → "+10,0%".
+ * (Antes saía em pontos percentuais, "p.p."; trocado a pedido em 20/10/2026.)
+ */
+export function fmtVariacaoPct(delta: number | null | undefined): string {
   if (delta === null || delta === undefined || !Number.isFinite(delta)) return "—";
   const v = delta * 100;
   const sinal = v > 0.05 ? "+" : v < -0.05 ? "−" : "";
-  return `${sinal}${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} p.p.`;
+  return `${sinal}${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }

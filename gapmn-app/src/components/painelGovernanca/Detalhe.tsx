@@ -7,7 +7,7 @@ import { X } from "lucide-react";
 import { CORTE_ADEQUADO } from "../../lib/indicadores/calculo.ts";
 import { VERSAO_CATALOGO } from "../../lib/indicadores/catalogo.ts";
 import {
-  fmtNumero, fmtPercentual, fmtTendencia, fmtValor, fraseVariacao, larguraCss, metaExibida,
+  fmtNumero, fmtTendencia, fmtValor, fraseVariacao, larguraCss, metaExibida,
 } from "../../lib/indicadores/formato.ts";
 import type { IndicadorPainel, PontoHistorico, Status } from "../../lib/indicadores/tipos.ts";
 import { StatusChip } from "./Comum";
@@ -28,8 +28,7 @@ function MesAnterior({ ind }: { ind: IndicadorPainel }) {
     <>
       <dt>Mês anterior</dt>
       <dd style={{ gridColumn: "span 3" }}>
-        {ant.label}: {fmtValor(ant.valor, ind.unidade)}
-        {ant.atingimento !== null && ` · ${fmtPercentual(ant.atingimento)}`} · <StatusChip status={ant.status} curto />
+        {ant.label}: {fmtValor(ant.valor, ind.unidade)} · <StatusChip status={ant.status} curto />
         {s && <span style={{ color: s.cor, marginLeft: 6 }}>{s.seta} {s.texto}</span>}
       </dd>
     </>
@@ -55,9 +54,9 @@ export function DetalheIndicador({ ind, competencia, dica = false }: { ind: Indi
       ) : (
         <>
           <dl className="pg-tt-grade">
+            <dt className="pg-tt-meta-rot">Meta</dt>
+            <dd style={{ gridColumn: "span 3" }}><span className="pg-tt-meta">{metaExibida(ind.metaTxt, ind.metaNum, ind.unidade, ind.direcao)}</span></dd>
             <dt>Resultado</dt><dd>{fmtValor(ind.valor, ind.unidade)}</dd>
-            <dt>Meta</dt><dd>{metaExibida(ind.metaTxt, ind.metaNum, ind.unidade, ind.direcao)}</dd>
-            <dt>Atingimento</dt><dd>{fmtPercentual(ind.atingimento)}</dd>
             <dt>Status</dt><dd><StatusChip status={ind.status} curto /></dd>
             <MesAnterior ind={ind} />
             <dt>Tendência 3M</dt>
@@ -94,7 +93,7 @@ export function DetalheIndicador({ ind, competencia, dica = false }: { ind: Indi
   );
 }
 
-function GraficoHistorico({ historico, competencia }: { historico: PontoHistorico[]; competencia: string }) {
+function GraficoHistorico({ historico, competencia, unidade }: { historico: PontoHistorico[]; competencia: string; unidade: string }) {
   return (
     <div className="pg-hist-graf" style={{ gridTemplateColumns: `repeat(${historico.length}, minmax(0, 1fr))` }} aria-hidden="true">
       {historico.map((h) => {
@@ -110,7 +109,7 @@ function GraficoHistorico({ historico, competencia }: { historico: PontoHistoric
               ) : (
                 <>
                   <span className="pg-hist-barra" style={{ height: altura, background: v.cor }} />
-                  <span className="pg-hist-rot" style={{ bottom: `calc(${altura} + 3px)` }}>{fmtPercentual(h.atingimento)}</span>
+                  <span className="pg-hist-rot" style={{ bottom: `calc(${altura} + 3px)` }}>{fmtValor(h.valor, unidade)}</span>
                 </>
               )}
             </div>
@@ -179,12 +178,12 @@ export function FichaIndicador({ ind, competencia, aoFechar, devolverFoco = fals
 
         {ind.historico.length > 0 && (
           <div className="pg-tt-bloco">
-            <div className="pg-rotulo">Histórico (atingimento da meta por competência)</div>
-            <GraficoHistorico historico={ind.historico} competencia={competencia} />
+            <div className="pg-rotulo">Histórico (resultado por competência; a altura da barra mostra a distância da meta)</div>
+            <GraficoHistorico historico={ind.historico} competencia={competencia} unidade={ind.unidade} />
             <div className="pg-hist-tabela">
               <table className="pg-hist">
                 <thead>
-                  <tr><th>Competência</th><th>Resultado</th><th>Atingimento</th><th>Status</th><th>Variáveis</th></tr>
+                  <tr><th>Competência</th><th>Resultado</th><th>Status</th><th>Variáveis</th></tr>
                 </thead>
                 <tbody>
                   {linhas.map((h) => (
@@ -195,7 +194,6 @@ export function FichaIndicador({ ind, competencia, aoFechar, devolverFoco = fals
                         {ind.mesAnterior?.data === h.data && <span className="pg-hist-marca">mês anterior</span>}
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>{fmtValor(h.valor, ind.unidade)}</td>
-                      <td>{fmtPercentual(h.atingimento)}</td>
                       <td><StatusChip status={h.status} curto /></td>
                       <td className="pg-sub">{h.variaveis.map((v) => `${partesVariavel(v.nome)[0]} = ${fmtNumero(v.valor)}`).join(" · ") || "—"}</td>
                     </tr>

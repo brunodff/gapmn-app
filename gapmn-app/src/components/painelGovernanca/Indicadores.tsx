@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 import { CORTE_ADEQUADO, STATUS, filtrarIndicadores } from "../../lib/indicadores/calculo.ts";
 import { temFiltro, type EstadoFiltros } from "../../lib/indicadores/filtros.ts";
-import { competenciaPorExtenso, fmtPercentual, fmtValor, larguraCss, metaExibida } from "../../lib/indicadores/formato.ts";
+import { competenciaPorExtenso, fmtValor, larguraCss, metaExibida } from "../../lib/indicadores/formato.ts";
 import type { IndicadorPainel, Painel, Status } from "../../lib/indicadores/tipos.ts";
 import { MultiSelect, StatusChip } from "./Comum";
 import { DetalheIndicador, FichaIndicador } from "./Detalhe";
@@ -70,8 +70,7 @@ function Linha({ ind, ativa, aoAbrir, aoFechar, aoFicha }: {
         <span className="pg-id">{ind.id}</span>
         <span className="pg-nome" title={ind.indicador}>{ind.indicador}</span>
         <span className="pg-valor">
-          {fmtValor(ind.valor, ind.unidade)}
-          <span className="pg-meta">(meta: {metaExibida(ind.metaTxt, ind.metaNum, ind.unidade, ind.direcao)})</span>
+          <span className="pg-meta">meta {metaExibida(ind.metaTxt, ind.metaNum, ind.unidade, ind.direcao)}</span>
         </span>
       </div>
       <div className="pg-linha-base">
@@ -83,7 +82,7 @@ function Linha({ ind, ativa, aoAbrir, aoFechar, aoFicha }: {
             <span className="pg-marca-meta" style={{ left: larguraCss(CORTE_ADEQUADO) }} />
           </span>
         )}
-        {!semBarra && <span className="pg-ating" style={{ color: v.texto }}>{fmtPercentual(ind.atingimento)}</span>}
+        {!semBarra && <span className="pg-ating" style={{ color: v.texto }}>{fmtValor(ind.valor, ind.unidade)}</span>}
         <StatusChip status={ind.status} curto />
         {ant && (
           <span className="pg-ant" title={`Resultado em ${ant.label}: ${ant.status}${seta ? ` (atual ${seta.texto})` : ""}`}>

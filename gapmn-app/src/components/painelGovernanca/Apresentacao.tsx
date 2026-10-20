@@ -7,12 +7,12 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, House, X } from "lucide-react";
 import { CORTE_ADEQUADO, CORTE_ATENCAO, ORDEM_DIVISOES, calcularPainel, contarStatus } from "../../lib/indicadores/calculo.ts";
 import {
-  competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtPontosPercentuais, larguraCss,
+  competenciaPorExtenso, fmtGeradoEm, fmtNumero, fmtPercentual, fmtValor, fmtVariacaoPct, larguraCss, metaExibida, unidadeCurta,
 } from "../../lib/indicadores/formato.ts";
 import type { FichaCatalogo, IndicadorPainel, LinhaBD, Painel, Status } from "../../lib/indicadores/tipos.ts";
 import { CartaoGrupo } from "./Contagem";
 import { FichaIndicador } from "./Detalhe";
-import { Avancos, EvolucaoSaude } from "./Lateral";
+import { EvolucaoSaude, Progressos } from "./Lateral";
 import { NOMES_DIVISOES, VISUAL_STATUS, textoContagem } from "./visual";
 
 type Slide = { tipo: "geral" } | { tipo: "divisao"; sigla: string };
@@ -46,12 +46,19 @@ function Saude({ painel }: { painel: Painel }) {
         {s !== null && <span style={{ width: larguraCss(s, 1), background: v?.cor }} />}
       </div>
       <div className="pg-ap-saude-rodape">
-        {painel.anterior && <span>vs {painel.anterior.label}: <b>{fmtPontosPercentuais(delta)}</b></span>}
-        <span>tendência 3M: <b>{fmtPontosPercentuais(painel.tendenciaSaude)}</b></span>
+        {painel.anterior && <span>vs {painel.anterior.label}: <b>{fmtVariacaoPct(delta)}</b></span>}
+        <span>tendência 3M: <b>{fmtVariacaoPct(painel.tendenciaSaude)}</b></span>
         {contagem && <span className="pg-ap-apagado">{contagem}</span>}
       </div>
     </section>
   );
+}
+
+/** Resultado em cima da coluna: número na 1ª linha e a unidade embaixo (unidades longas não cabem numa linha só). */
+function RotuloValor({ valor, unidade, seta }: { valor: number | null; unidade: string; seta: string }) {
+  const u = valor === null ? "" : unidadeCurta(unidade, valor);
+  if (!u || u === "%" || u === "×") return <>{fmtValor(valor, unidade)} {seta}</>;
+  return <>{fmtNumero(valor)} {seta}<small>{u}</small></>;
 }
 
 function Colunas({ inds, anterior, aoAbrir }: { inds: IndicadorPainel[]; anterior: string | null; aoAbrir: (i: IndicadorPainel) => void }) {
@@ -64,7 +71,7 @@ function Colunas({ inds, anterior, aoAbrir }: { inds: IndicadorPainel[]; anterio
           return <span key={s}><v.Icone size={13} color={v.cor} aria-hidden="true" />{v.curto}</span>;
         })}
         <span className="pg-ap-apagado">
-          — — meta (100%){anterior ? ` · barra fina e clara = ${anterior}` : ""} · toque na barra para ver o histórico
+          altura da barra = distância da meta (— — meta) · número = resultado do indicador{anterior ? ` · barra fina e clara = ${anterior}` : ""} · toque na barra para ver o histórico
         </span>
       </div>
       <div className="pg-ap-colunas" style={{ gridTemplateColumns: `repeat(${inds.length}, minmax(0, 1fr))` }}>
@@ -76,14 +83,15 @@ function Colunas({ inds, anterior, aoAbrir }: { inds: IndicadorPainel[]; anterio
           const ant = ind.mesAnterior;
           const antTemBarra = ant && !SEM_BARRA.includes(ant.status) && ant.atingimento !== null;
           return (
-            <button key={ind.id} type="button" className="pg-ap-col" onClick={() => aoAbrir(ind)} title={ind.indicador}>
+            <button key={ind.id} type="button" className="pg-ap-col" onClick={() => aoAbrir(ind)}
+              title={`${ind.indicador} — meta ${metaExibida(ind.metaTxt, ind.metaNum, ind.unidade, ind.direcao)}`}>
               <span className="pg-ap-col-area">
                 <span className="pg-ap-col-meta" style={{ bottom: larguraCss(CORTE_ADEQUADO) }} aria-hidden="true" />
                 {antTemBarra && (
                   <span
                     className="pg-ap-col-ant"
                     style={{ height: larguraCss(ant.atingimento), background: VISUAL_STATUS[ant.status].cor }}
-                    title={`${ant.label}: ${fmtPercentual(ant.atingimento)}`}
+                    title={`${ant.label}: ${fmtValor(ant.valor, ind.unidade)}`}
                   />
                 )}
                 {semBarra ? (
@@ -97,7 +105,7 @@ function Colunas({ inds, anterior, aoAbrir }: { inds: IndicadorPainel[]; anterio
                   <>
                     <span className="pg-ap-col-barra" style={{ height: altura, background: v.cor }} />
                     <span className="pg-ap-col-rotulo" style={{ bottom: `calc(${altura} + 6px)` }}>
-                      {fmtPercentual(ind.atingimento)} {seta}
+                      <RotuloValor valor={ind.valor} unidade={ind.unidade} seta={seta} />
                     </span>
                   </>
                 )}
@@ -116,7 +124,7 @@ function VisaoGeral({ painel }: { painel: Painel }) {
   const c = r.completude;
   const delta = r.saudeGeral !== null && painel.saudeAnterior !== null ? r.saudeGeral - painel.saudeAnterior : null;
   const cards: [string, string, string, string][] = [
-    ["Saúde geral", fmtPercentual(r.saudeGeral, 1), `vs ${painel.anterior?.label ?? "—"}: ${fmtPontosPercentuais(delta)} · 3M: ${fmtPontosPercentuais(painel.tendenciaSaude)}`, "#7FB8FF"],
+    ["Saúde geral", fmtPercentual(r.saudeGeral, 1), `vs ${painel.anterior?.label ?? "—"}: ${fmtVariacaoPct(delta)} · 3M: ${fmtVariacaoPct(painel.tendenciaSaude)}`, "#7FB8FF"],
     ["Adequados", String(r.adequados), `${r.adequados}/${r.n} avaliados`, "var(--ok)"],
     ["Atenção", String(r.atencao), `entre ${fmtPercentual(CORTE_ATENCAO)} e ${fmtPercentual(CORTE_ADEQUADO - 0.01)} da meta`, "var(--atencao)"],
     ["Críticos", String(r.criticos), `abaixo de ${fmtPercentual(CORTE_ATENCAO)} da meta`, "var(--critico)"],
@@ -144,13 +152,13 @@ function VisaoGeral({ painel }: { painel: Painel }) {
                 <div className="pg-pior" key={i.id}>
                   <div className="pg-pior-topo">
                     <span className="pg-pior-nome">{i.divisaoExibida} · {i.indicador}</span>
-                    <span className="pg-num" style={{ color: v.texto, fontWeight: 800, whiteSpace: "nowrap" }}>{fmtPercentual(i.atingimento)}</span>
+                    <span className="pg-num" style={{ color: v.texto, fontWeight: 800, whiteSpace: "nowrap" }}>{fmtValor(i.valor, i.unidade)}</span>
                   </div>
                 </div>
               );
             })}
           </section>
-          <Avancos avancos={painel.avancos} anterior={painel.anterior?.label ?? null} />
+          <Progressos progressos={painel.avancos} anterior={painel.anterior?.label ?? null} />
         </div>
       </div>
     </div>

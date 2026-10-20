@@ -9,13 +9,13 @@ import { CORTE_ADEQUADO, CORTE_ATENCAO, calcularPainel } from "../../lib/indicad
 import { catalogoEfetivo } from "../../lib/indicadores/catalogo.ts";
 import { gravarFiltros, lerFiltros, type EstadoFiltros } from "../../lib/indicadores/filtros.ts";
 import { buscarBD, ultimoGuardado, type ResultadoBD } from "../../lib/indicadores/fonte.ts";
-import { competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtPontosPercentuais } from "../../lib/indicadores/formato.ts";
+import { competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtVariacaoPct } from "../../lib/indicadores/formato.ts";
 import type { Painel } from "../../lib/indicadores/tipos.ts";
 import Apresentacao from "./Apresentacao";
 import { Esqueleto } from "./Comum";
 import Contagem from "./Contagem";
 import Indicadores from "./Indicadores";
-import { Avancos, EvolucaoSaude, Piores } from "./Lateral";
+import { EvolucaoSaude, Piores, Progressos } from "./Lateral";
 import { Legenda, Monitoramento } from "./Rodape";
 import "./painelGovernanca.css";
 
@@ -41,8 +41,8 @@ function Cards({ painel }: { painel: Painel }) {
   const c = r.completude;
   const delta = r.saudeGeral !== null && painel.saudeAnterior !== null ? r.saudeGeral - painel.saudeAnterior : null;
   const comparacao = [
-    painel.anterior ? `vs ${painel.anterior.label}: ${fmtPontosPercentuais(delta)}` : "",
-    `tendência 3M: ${fmtPontosPercentuais(painel.tendenciaSaude)}`,
+    painel.anterior ? `vs ${painel.anterior.label}: ${fmtVariacaoPct(delta)}` : "",
+    `tendência 3M: ${fmtVariacaoPct(painel.tendenciaSaude)}`,
   ].filter(Boolean).join(" · ");
   const partes = [
     `${c.preenchidos} de ${c.esperados}`,
@@ -187,7 +187,7 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
             <div className="pg-coluna">
               <EvolucaoSaude painel={painel} />
               <Piores piores={painel.piores} />
-              <Avancos avancos={painel.avancos} anterior={painel.anterior?.label ?? null} />
+              <Progressos progressos={painel.avancos} anterior={painel.anterior?.label ?? null} />
             </div>
           </div>
 
