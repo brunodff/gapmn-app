@@ -22,7 +22,7 @@ export type ResultadoOrcamento = {
   lidoEm: string;
 };
 
-const CHAVE = "gapmn_orcamento_credito_v1";
+const CHAVE = "gapmn_orcamento_credito_v2";
 const TEMPO_LIMITE_MS = 45_000;
 
 async function baixar(url: string, sinal: AbortSignal): Promise<string[][]> {

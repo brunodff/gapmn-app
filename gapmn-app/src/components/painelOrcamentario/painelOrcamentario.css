@@ -258,3 +258,25 @@
 .po-dica tbody tr:nth-child(even) td { background: #0b2236; }
 .po-dica tfoot td { border-top: 1px solid rgba(255, 255, 255, 0.35); font-weight: 700; }
 .po-dica .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.po-idade { white-space: nowrap; }
+.po-idade b { display: block; font-weight: 700; }
+.po-idade small { display: block; font-size: 10px; color: var(--po-cinza); }
+.po-idade[data-faixa="novo"] b { color: var(--po-verde); }
+.po-idade[data-faixa="medio"] b { color: #ffd27a; }
+.po-idade[data-faixa="antigo"] b { color: var(--po-vermelho); }
+.po-dica-nota { margin: 6px 4px 2px; font-size: 10.5px; line-height: 1.4; color: var(--po-cinza); }
+.po-dica-nota b { color: #fff; }
+.po-so-estreito { display: none; }
+/* No celular a coluna OM sai (é a mesma em todas as linhas) para caber a idade. */
+@media (max-width: 560px) {
+  .po-dica .po-col-om { display: none; }
+  .po-dica .po-so-estreito { display: inline; }
+  .po-dica table { font-size: 10px; }
+  .po-dica th, .po-dica td { padding: 4px 3px; }
+  .po-dica th { font-size: 10px; }
+  .po-dica td { overflow-wrap: break-word; }
+  .po-dica .po-nd { white-space: nowrap; }
+  .po-idade { white-space: normal; }
+  .po-idade b { white-space: nowrap; }
+  .po-idade small { font-size: 9px; }
+}

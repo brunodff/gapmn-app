@@ -79,7 +79,7 @@ export function lerRecebido(linhas: string[][]): LinhaRecebido[] {
     if (valor === null || !data) continue;
     const ugNome = txt(l[cUG + 1]);
     saida.push({
-      data, ugNome, sigla: siglaDe(ugNome, REGRAS_RECEBIDO),
+      data, ug: txt(l[cUG]), ugNome, sigla: siglaDe(ugNome, REGRAS_RECEBIDO),
       nd: txt(l[cND]), ndNome: txt(l[cND + 1]), pi: txt(l[cPI]), piNome: txt(l[cPI + 1]), valor,
     });
   }
@@ -144,7 +144,7 @@ export function lerDisponivel(linhas: string[][]): LinhaDisponivel[] {
     const ugNome = txt(l[6]);
     saida.push({
       ptres: txt(l[0]), pi: txt(l[1]), piNome: txt(l[2]), nd: txt(l[3]), ndNome: txt(l[4]),
-      ugNome, sigla: siglaDe(ugNome, REGRAS_DISPONIVEL), valor,
+      ug: txt(l[5]), ugNome, sigla: siglaDe(ugNome, REGRAS_DISPONIVEL), valor,
     });
   }
   return saida;

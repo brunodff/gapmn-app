@@ -1,31 +1,49 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { fmtDiaMes, fmtMoeda } from "../../lib/orcamento/formato.ts";
-import type { UnidadeDisponivel } from "../../lib/orcamento/tipos.ts";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { fmtData, fmtDiaMes, fmtDias, fmtMoeda } from "../../lib/orcamento/formato.ts";
+import type { IdadeCredito, UnidadeDisponivel } from "../../lib/orcamento/tipos.ts";
 import { Logo } from "./Graficos";
 
-type Ativo = { unidade: UnidadeDisponivel; caixa: DOMRect };
+type Ativo = { unidade: UnidadeDisponivel; linha: HTMLElement };
+
+/** Cor da idade: até 30 dias, até 90 dias, acima disso. */
+const faixaDaIdade = (dias: number) => (dias <= 30 ? "novo" : dias <= 90 ? "medio" : "antigo");
+
+function CelulaIdade({ idade }: { idade: IdadeCredito | null }) {
+  if (!idade) return <td className="po-idade">—</td>;
+  return (
+    <td className="po-idade" data-faixa={faixaDaIdade(idade.dias)}>
+      <b>{idade.parcial ? "≥ " : ""}{fmtDias(idade.dias)}</b>
+      <small>{fmtData(idade.desde)}{idade.ultimo !== idade.desde ? ` · último ${fmtDiaMes(idade.ultimo)}` : ""}</small>
+    </td>
+  );
+}
 
 /**
  * "Crédito Disponível por Unidade": lista do BI (posição, logo, sigla, saldo e a linha verde),
- * com o tooltip da tabela OM | descrição | PI | ND | Disp ao passar o mouse, focar ou tocar.
+ * com o tooltip da tabela OM | descrição | PI | ND | Disp | chegou há, ao passar o mouse, focar ou tocar.
  */
-export default function Disponivel({ unidades, total, ultimoDia }: {
+export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
   unidades: UnidadeDisponivel[];
   total: number;
   ultimoDia: string | null;
+  /** Data de referência da idade do crédito. */
+  hoje: string;
 }) {
   const [ativo, setAtivo] = useState<Ativo | null>(null);
   const dicaRef = useRef<HTMLDivElement>(null);
 
-  const abrir = (unidade: UnidadeDisponivel, el: HTMLElement) => setAtivo({ unidade, caixa: el.getBoundingClientRect() });
+  const abrir = (unidade: UnidadeDisponivel, linha: HTMLElement) => setAtivo({ unidade, linha });
   const fechar = () => setAtivo(null);
 
   // A posição só é conhecida depois de medir o tooltip: à esquerda da linha; sem espaço, embaixo.
-  useLayoutEffect(() => {
+  // Devolve false quando a linha saiu da tela (aí o tooltip fecha).
+  const posicionar = useCallback((): boolean => {
     const el = dicaRef.current;
-    if (!el || !ativo) return;
+    if (!el || !ativo) return true;
+    const r = ativo.linha.getBoundingClientRect();
+    const m = 10, vw = window.innerWidth, vh = window.innerHeight;
+    if (r.bottom < 0 || r.top > vh || !ativo.linha.isConnected) return false;
     const { width: w, height: h } = el.getBoundingClientRect();
-    const r = ativo.caixa, m = 10, vw = window.innerWidth, vh = window.innerHeight;
     let left = r.left - w - m;
     let top = r.top + r.height / 2 - h / 2;
     if (left < m) {
@@ -37,21 +55,30 @@ export default function Disponivel({ unidades, total, ultimoDia }: {
     el.style.left = `${Math.max(m, left)}px`;
     el.style.top = `${top}px`;
     el.style.visibility = "visible";
+    return true;
   }, [ativo]);
+
+  useLayoutEffect(() => { posicionar(); }, [posicionar]);
 
   useEffect(() => {
     if (!ativo) return;
     const tecla = (e: KeyboardEvent) => { if (e.key === "Escape") fechar(); };
-    // A caixa medida fica errada ao rolar a página; o tooltip fecha e reabre no próximo movimento.
-    window.addEventListener("keydown", tecla);
-    window.addEventListener("scroll", fechar, true);
-    window.addEventListener("resize", fechar);
-    return () => {
-      window.removeEventListener("keydown", tecla);
-      window.removeEventListener("scroll", fechar, true);
-      window.removeEventListener("resize", fechar);
+    // Ao rolar (inclusive a rolagem que o celular faz até a linha tocada) o tooltip acompanha a linha.
+    let quadro = 0;
+    const acompanhar = () => {
+      cancelAnimationFrame(quadro);
+      quadro = requestAnimationFrame(() => { if (!posicionar()) fechar(); });
     };
-  }, [ativo]);
+    window.addEventListener("keydown", tecla);
+    window.addEventListener("scroll", acompanhar, true);
+    window.addEventListener("resize", acompanhar);
+    return () => {
+      cancelAnimationFrame(quadro);
+      window.removeEventListener("keydown", tecla);
+      window.removeEventListener("scroll", acompanhar, true);
+      window.removeEventListener("resize", acompanhar);
+    };
+  }, [ativo, posicionar]);
 
   return (
     <aside className="po-direita" aria-label="Crédito disponível por unidade">
@@ -101,23 +128,39 @@ export default function Disponivel({ unidades, total, ultimoDia }: {
         <div ref={dicaRef} className="po-dica" role="tooltip" style={{ visibility: "hidden", left: 0, top: 0 }}>
           <table>
             <thead>
-              <tr><th>OM</th><th>DESCRIÇÃO</th><th>PI</th><th>ND</th><th className="num">Disp</th></tr>
+              <tr><th className="po-col-om">OM</th><th>DESCRIÇÃO</th><th>PI</th><th className="po-nd">ND</th><th className="num">Disp</th><th>CHEGOU HÁ</th></tr>
             </thead>
             <tbody>
               {ativo.unidade.linhas.map((l, i) => (
                 <tr key={i}>
-                  <td>{ativo.unidade.sigla}</td>
+                  <td className="po-col-om">{ativo.unidade.sigla}</td>
                   <td>{l.ndNome}</td>
                   <td>{l.piNome || l.pi}</td>
-                  <td>{l.nd}</td>
+                  <td className="po-nd">{l.nd}</td>
                   <td className="num">{fmtMoeda(l.valor)}</td>
+                  <CelulaIdade idade={l.idade} />
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr><td colSpan={4}>Total</td><td className="num">{fmtMoeda(ativo.unidade.valor)}</td></tr>
+              <tr>
+                <td className="po-col-om">Total</td>
+                <td><span className="po-so-estreito">Total</span></td>
+                <td />
+                <td />
+                <td className="num">{fmtMoeda(ativo.unidade.valor)}</td>
+                {ativo.unidade.idadeMaxima === null ? <td className="po-idade">—</td> : (
+                  <td className="po-idade" data-faixa={faixaDaIdade(ativo.unidade.idadeMaxima)}>
+                    <b>{fmtDias(ativo.unidade.idadeMaxima)}</b><small>o mais antigo</small>
+                  </td>
+                )}
+              </tr>
             </tfoot>
           </table>
+          <p className="po-dica-nota">
+            <b>Chegou há:</b> tempo, até hoje ({fmtData(hoje)}), desde o crédito mais antigo que ainda forma o saldo
+            (os empenhos gastam primeiro o crédito mais antigo). Verde até 30 dias, amarelo até 90, vermelho acima disso.
+          </p>
         </div>
       )}
     </aside>

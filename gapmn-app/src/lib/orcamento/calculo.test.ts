@@ -4,14 +4,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SEM_SIGLA, montarPainel } from "./calculo.ts";
-import { fmtCompacto, fmtData, fmtMoeda, fmtPct } from "./formato.ts";
+import { SEM_SIGLA, creditosPorLinha, hojeEmManaus, idadeDoSaldo, montarPainel } from "./calculo.ts";
+import { fmtCompacto, fmtData, fmtDias, fmtMoeda, fmtPct } from "./formato.ts";
 import { dataBR, lerDisponivel, lerEmpenhos, lerRecebido, numeroBR, parseCSV } from "./leitura.ts";
 import type { DadosOrcamento, Empenho, LinhaDisponivel, LinhaRecebido } from "./tipos.ts";
 import { REGRAS_DISPONIVEL, REGRAS_RECEBIDO, siglaDe } from "./unidades.ts";
 
 const rec = (p: Partial<LinhaRecebido>): LinhaRecebido => ({
-  data: "2026-03-10", ugNome: "", sigla: null, nd: "339030", ndNome: "MATERIAL DE CONSUMO",
+  data: "2026-03-10", ug: "", ugNome: "", sigla: null, nd: "339030", ndNome: "MATERIAL DE CONSUMO",
   pi: "PI001", piNome: "PI TESTE", valor: 0, ...p,
 });
 const emp = (p: Partial<Empenho>): Empenho => ({
@@ -19,7 +19,7 @@ const emp = (p: Partial<Empenho>): Empenho => ({
 });
 const disp = (p: Partial<LinhaDisponivel>): LinhaDisponivel => ({
   ptres: "1", pi: "PI001", piNome: "PI TESTE", nd: "339030", ndNome: "MATERIAL DE CONSUMO",
-  ugNome: "", sigla: null, valor: 0, ...p,
+  ug: "", ugNome: "", sigla: null, valor: 0, ...p,
 });
 
 test("números no formato brasileiro, inclusive milhar sem decimais e negativos", () => {
@@ -65,7 +65,7 @@ test("crédito recebido: cabeçalho na 3ª linha, preenchimento para baixo e lin
   const l = lerRecebido(parseCSV(csv));
   assert.equal(l.length, 3);
   assert.deepEqual(l[1], {
-    data: "2026-03-05", ugNome: "BASE AEREA DE MANAUS", sigla: "BAMN", nd: "339039", ndNome: "OUTROS SERVICOS, PJ",
+    data: "2026-03-05", ug: "111", ugNome: "BASE AEREA DE MANAUS", sigla: "BAMN", nd: "339039", ndNome: "OUTROS SERVICOS, PJ",
     pi: "PI01", piNome: "VIDA VEG", valor: 2000,
   });
   assert.equal(l[2].data, "2026-04-09");
@@ -108,6 +108,7 @@ test("crédito disponível: preenche as 7 primeiras colunas e ignora linha de to
   const l = lerDisponivel(parseCSV(csv));
   assert.equal(l.length, 2);
   assert.equal(l[1].ugNome, "BASE AEREA DE MANAUS");
+  assert.equal(l[1].ug, "111");
   assert.equal(l[1].sigla, "BAMN");
   assert.equal(l[1].piNome, "VIDA VEG");
   assert.equal(l[1].nd, "339039");
@@ -203,4 +204,49 @@ test("formatos do BI", () => {
   assert.equal(fmtMoeda(1207459.84), "R$ 1.207.459,84");
   assert.equal(fmtMoeda(-5), "-R$ 5,00");
   assert.equal(fmtData("2026-10-19"), "19/10/2026");
+});
+
+test("há quanto tempo chegou: o saldo é a parte mais nova do crédito (empenho gasta o mais antigo)", () => {
+  const creditos = [
+    rec({ data: "2026-09-18", valor: 50 }),
+    rec({ data: "2026-04-05", valor: 300 }),
+    rec({ data: "2026-03-10", valor: 1000 }),
+  ];
+  const hoje = "2026-10-20";
+  assert.deepEqual(idadeDoSaldo(40, creditos, hoje), { desde: "2026-09-18", dias: 32, ultimo: "2026-09-18", parcial: false });
+  assert.deepEqual(idadeDoSaldo(200, creditos, hoje), { desde: "2026-04-05", dias: 198, ultimo: "2026-09-18", parcial: false });
+  assert.deepEqual(idadeDoSaldo(350, creditos, hoje)?.desde, "2026-04-05", "saldo igual à soma fecha no crédito exato");
+  assert.deepEqual(idadeDoSaldo(2000, creditos, hoje), { desde: "2026-03-10", dias: 224, ultimo: "2026-09-18", parcial: true });
+  assert.equal(idadeDoSaldo(0, creditos, hoje), null, "sem saldo não tem idade");
+  assert.equal(idadeDoSaldo(10, undefined, hoje), null, "sem crédito correspondente");
+});
+
+test("idade no tooltip: liga saldo e crédito por UG, PI e ND; ignora devolução e outra ND", () => {
+  const d: DadosOrcamento = {
+    recebido: [
+      rec({ data: "2026-03-09", ug: "120001", pi: "PI01", nd: "449051", valor: 1000000 }),
+      rec({ data: "2026-10-01", ug: "120001", pi: "PI01", nd: "449051", valor: -500 }),
+      rec({ data: "2026-10-16", ug: "120001", pi: "PI01", nd: "339030", valor: 100 }),
+      rec({ data: "2026-10-16", ug: "120002", pi: "PI01", nd: "449051", valor: 100 }),
+    ],
+    empenhos: [],
+    disponivel: [
+      disp({ ug: "120001", sigla: "BAMN", pi: "PI01", nd: "449051", valor: 1000000 }),
+      disp({ ug: "120001", sigla: "BAMN", pi: "PI09", nd: "449051", valor: 5 }),
+    ],
+  };
+  const u = montarPainel(d, { om: null, nd: null }, "2026-10-20").disponivel[0];
+  assert.equal(u.linhas[0].idade?.desde, "2026-03-09");
+  assert.equal(u.linhas[0].idade?.dias, 225);
+  assert.equal(u.linhas[1].idade, null, "PI sem crédito na planilha fica sem idade");
+  assert.equal(u.idadeMaxima, 225);
+  assert.equal(creditosPorLinha(d.recebido).get("120001|PI01|449051")?.length, 1, "devolução (negativa) não conta");
+});
+
+test("hoje é a data de Manaus e os dias vêm por extenso", () => {
+  assert.equal(hojeEmManaus(new Date("2026-10-21T03:30:00Z")), "2026-10-20");
+  assert.equal(hojeEmManaus(new Date("2026-10-21T04:30:00Z")), "2026-10-21");
+  assert.equal(fmtDias(0), "hoje");
+  assert.equal(fmtDias(1), "1 dia");
+  assert.equal(fmtDias(1225), "1.225 dias");
 });

@@ -183,7 +183,7 @@ export default function PainelOrcamentario() {
           </div>
         </div>
 
-        <Disponivel unidades={painel.disponivel} total={painel.totalDisponivel} ultimoDia={painel.atualizadoEm} />
+        <Disponivel unidades={painel.disponivel} total={painel.totalDisponivel} ultimoDia={painel.atualizadoEm} hoje={painel.hoje} />
       </div>
     </div>
   );

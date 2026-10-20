@@ -19,6 +19,9 @@ export const fmtPct = (v: number | null, casas = 2) =>
 /** "2026-10-19" → "19/10/2026" */
 export const fmtData = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—");
 
+/** 0 → "hoje"; 1 → "1 dia"; 225 → "225 dias" */
+export const fmtDias = (n: number) => (n <= 0 ? "hoje" : n === 1 ? "1 dia" : `${n.toLocaleString("pt-BR")} dias`);
+
 /** "2026-10-19" → "19/10" */
 export const fmtDiaMes = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
 
