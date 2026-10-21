@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test src/lib/indicadores/calculo.test.ts src/lib/orcamento/calculo.test.ts src/lib/execucao/painel.test.ts"
+    "test": "node --test src/lib/indicadores/calculo.test.ts src/lib/orcamento/calculo.test.ts src/lib/execucao/painel.test.ts src/lib/execucao/pta.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",

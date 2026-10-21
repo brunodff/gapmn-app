@@ -5,6 +5,8 @@ import {
   Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis,
 } from "recharts";
 import MultiSelectPI from "./MultiSelectPI";
+import PtaMinuta from "./PtaMinuta";
+import { supabase } from "../lib/supabase";
 import { CATEGORIAS, categoria as catDe, type CategoriaId } from "../lib/execucao/categorias.ts";
 import { fmtCNPJ, type ItemEmpenho, type NotaEmpenho } from "../lib/execucao/empenhos.ts";
 import { buscarExecucao, type DadosExecucao } from "../lib/execucao/fonte.ts";
@@ -162,6 +164,27 @@ export default function PainelExecucao() {
   const [limite, setLimite] = useState(30);
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
   const [telaCheia, setTelaCheia] = useState(false);
+  const [setor, setSetor] = useState<string | null>(null);
+  const [aba, setAba] = useState<"execucao" | "pta">("execucao");
+
+  // setor do usuário: a minuta do PTA só aparece para ADMIN e DEV (o banco também só entrega a eles)
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const { data: s } = await supabase.auth.getSession();
+      const uid = s.session?.user.id;
+      if (!uid) return;
+      const { data } = await supabase.from("profiles").select("setor").eq("id", uid).maybeSingle();
+      if (vivo) setSetor(((data as { setor?: string } | null)?.setor ?? "").toUpperCase() || null);
+    })().catch(() => {});
+    return () => { vivo = false; };
+  }, []);
+  const podeVerPta = setor === "ADMIN" || setor === "DEV";
+  // o PTA é feito para o ano seguinte ao dos empenhos (DCA 11-1, item 3.5.3)
+  const anoPTA = useMemo(() => {
+    const ultima = (dados?.nes ?? []).reduce((m, n) => (n.emissao > m ? n.emissao : m), "");
+    return (Number(ultima.slice(0, 4)) || new Date().getFullYear()) + 1;
+  }, [dados]);
   const caixa = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(async () => {
@@ -300,6 +323,22 @@ export default function PainelExecucao() {
       {dados.avisos.map((a) => (
         <div key={a} role="status" style={{ fontSize: 11, color: DK.amber, border: `1px solid ${DK.amber}44`, background: `${DK.amber}10`, borderRadius: 10, padding: "6px 10px" }}>{a}</div>
       ))}
+
+      {/* ── Abas: a minuta do PTA só aparece para ADMIN e DEV ── */}
+      {podeVerPta && (
+        <div role="tablist" aria-label="Conteúdo do painel" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {([["execucao", `Execução ${anoPTA - 1}`], ["pta", `Minuta do PTA ${anoPTA}`]] as const).map(([id, rotulo]) => (
+            <button key={id} type="button" role="tab" aria-selected={aba === id} onClick={() => setAba(id)}
+              style={{ ...estiloBotao, background: aba === id ? `${DK.cyan}22` : "transparent", borderColor: aba === id ? DK.cyan : DK.cardBorder, color: aba === id ? DK.cyan : DK.text, padding: "7px 14px", fontSize: 12 }}>
+              {rotulo}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {aba === "pta" && podeVerPta ? (
+        <PtaMinuta nes={dados.nes} vinculos={vinculos} setor={setor ?? ""} ano={anoPTA} />
+      ) : (<>
 
       {/* ── Filtros ── */}
       <div style={{ background: DK.card, border: `1px solid ${DK.cardBorder}`, borderRadius: 14, padding: "10px 12px", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8 }}>
@@ -532,6 +571,7 @@ export default function PainelExecucao() {
           </button>
         )}
       </Cartao>
+      </>)}
     </div>
   );
 }
