@@ -1,7 +1,9 @@
-// Minuta do PTA dentro do Painel de Execução (só ADMIN e DEV): capítulo VII, Composição Orçamentária,
-// gerado com os empenhos do ano no painel. O DEV edita e salva; ADMIN e DEV comentam artigo por artigo.
+// Minuta do PTA dentro do Painel de Execução (só ADMIN e DEV): o documento Word completo (PtaWord) e o
+// capítulo VII, Composição Orçamentária, gerado com os empenhos do ano no painel. O DEV edita e salva;
+// ADMIN e DEV comentam artigo por artigo.
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import PtaWord from "./PtaWord";
 import type { NotaEmpenho } from "../lib/execucao/empenhos.ts";
 import type { Vinculo } from "../lib/execucao/painel.ts";
 import {
@@ -187,6 +189,8 @@ export default function PtaMinuta({ nes, vinculos, setor, ano }: Props) {
 
   return (
     <div style={{ display: "grid", gap: 12, color: C.texto }}>
+      <PtaWord ano={ano} setor={setor} minuta={{ atual: minuta, sujo }} onMinuta={(m) => { setMinuta(m); setRascunho(null); }} />
+
       {/* cabeçalho */}
       <section style={{ background: C.card, border: `1px solid ${C.borda}`, borderRadius: 14, padding: "14px 16px", display: "grid", gap: 8 }}>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 10, alignItems: "center" }}>

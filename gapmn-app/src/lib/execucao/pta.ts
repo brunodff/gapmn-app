@@ -251,7 +251,7 @@ export function gerarComposicao(
   const pontos = [
     `Base: empenhos de ${anoBase} da UG ${ug} no Painel de Execução, emitidos até ${recorte ? `${recorte.slice(8, 10)}/${recorte.slice(5, 7)}/${recorte.slice(0, 4)}` : "—"}. Valor proposto = empenhado em ${anoBase}, sem anualização nem reajuste.`,
     "Ação orçamentária: o painel não traz a ação. Confirmar a de cada artigo pelo PI.",
-    "Códigos de tarefa provisórios: setor sugerido pelo costume do PTA anterior; renumerar a sequência depois dos caps. V e VI (DCA 11-1, Anexo G, item VI).",
+    "Códigos de tarefa: setor sugerido pelo costume do PTA anterior; o sequencial definitivo sai ao levar a minuta para o Word, continuando a numeração dos caps. V e VI (DCA 11-1, Anexo G, item VI).",
   ];
   if (listaExcl.length) pontos.push(`Fora do capítulo, para decidir: ${listaExcl.map((e) => `${e.nd} ${e.ndNome.toLowerCase()} (${fmt(e.valor)})`).join("; ")}.`);
   if (venc) pontos.push(`${venc} tarefa(s) de contrato que vence até o fim de ${opcoes.ano}: prever prorrogação ou nova contratação.`);

@@ -30,9 +30,21 @@ export type Comentario = {
   resolvido_em: string | null;
 };
 
+export type ArquivoPTA = {
+  id: string;
+  ano: number;
+  caminho: string;
+  nome: string;
+  tamanho: number | null;
+  origem: "modelo" | "enviado" | "cap7";
+  observacao: string | null;
+  enviado_nome: string | null;
+  enviado_em: string;
+};
+
 const msg = (e: { message?: string } | null) => {
   const m = e?.message ?? "";
-  if (/relation .* does not exist|could not find the table/i.test(m)) return "A minuta ainda não está habilitada no banco (falta aplicar a migração).";
+  if (/relation .* does not exist|could not find the table|bucket not found/i.test(m)) return "A minuta ainda não está habilitada no banco (falta aplicar a migração).";
   if (/row-level security|permission denied|42501/i.test(m)) return "Seu perfil não tem permissão para isso.";
   return m || "Erro ao falar com o banco.";
 };
@@ -94,4 +106,37 @@ export async function apagarComentario(id: string): Promise<void> {
   const { data, error } = await supabase.from("pta_comentarios").delete().eq("id", id).select("id");
   if (error) throw new Error(msg(error));
   if (!data?.length) throw new Error("Só quem escreveu pode apagar o comentário.");
+}
+
+// ── Documento Word (.docx) da minuta: depósito privado "pta-docs" + tabela pta_arquivos ───────
+// (migração 20261021_pta_word). Cada envio é uma versão nova; nada é sobrescrito nem apagado.
+
+const DEPOSITO = "pta-docs";
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const COLUNAS_ARQ = "id,ano,caminho,nome,tamanho,origem,observacao,enviado_nome,enviado_em";
+
+export async function listarArquivos(ano: number): Promise<ArquivoPTA[]> {
+  const { data, error } = await supabase.from("pta_arquivos").select(COLUNAS_ARQ)
+    .eq("ano", ano).order("enviado_em", { ascending: false });
+  if (error) throw new Error(msg(error));
+  return (data as ArquivoPTA[]) ?? [];
+}
+
+export async function baixarArquivo(caminho: string): Promise<Uint8Array> {
+  const { data, error } = await supabase.storage.from(DEPOSITO).download(caminho);
+  if (error || !data) throw new Error(msg(error) || "Não consegui baixar o arquivo.");
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+/** Guarda o .docx como versão nova do ano. */
+export async function enviarArquivo(ano: number, bytes: Uint8Array, nome: string, origem: "enviado" | "cap7", observacao: string): Promise<ArquivoPTA> {
+  const carimbo = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+  const caminho = `${ano}/${carimbo}-${Math.random().toString(36).slice(2, 8)}.docx`;
+  const up = await supabase.storage.from(DEPOSITO).upload(caminho, bytes, { contentType: DOCX, upsert: false });
+  if (up.error) throw new Error(msg(up.error));
+  const { data, error } = await supabase.from("pta_arquivos")
+    .insert({ ano, caminho, nome: nome.slice(0, 200), tamanho: bytes.length, origem, observacao: observacao.trim().slice(0, 1000) || null })
+    .select(COLUNAS_ARQ).single();
+  if (error) throw new Error(msg(error));
+  return data as ArquivoPTA;
 }

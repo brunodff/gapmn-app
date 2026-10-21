@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test src/lib/indicadores/calculo.test.ts src/lib/orcamento/calculo.test.ts src/lib/execucao/painel.test.ts src/lib/execucao/pta.test.ts"
+    "test": "node --test src/lib/indicadores/calculo.test.ts src/lib/orcamento/calculo.test.ts src/lib/execucao/painel.test.ts src/lib/execucao/pta.test.ts src/lib/execucao/ptaWord.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",
@@ -16,6 +16,7 @@
     "@tsparticles/react": "^4.1.1",
     "@tsparticles/slim": "^4.1.1",
     "clsx": "^2.1.1",
+    "fflate": "^0.8.3",
     "framer-motion": "^12.40.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
