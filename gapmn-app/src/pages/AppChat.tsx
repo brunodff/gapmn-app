@@ -140,7 +140,7 @@ function getCeliaResponse(text: string, kpis: KPIs): string {
 
   // ── Painéis — visão geral ──────────────────────────────────────────────────
   if (/quais painel|todos.*painel|painel.*disponiv|lista.*painel|menu.*painel/.test(q))
-    return "Há 5 painéis em Painéis Gerenciais:\n• 💰 Painel Orçamentário — Power BI com execução total da OM\n• 📊 Painel de Empenhos — NEs por OM, gap de SEs sem NE e taxa de atendimento\n• 📋 Painel de RP — Restos a Pagar por UGR com vínculo a contratos\n• 🤖 Painel de Processos — propostas CNET com economia calculada\n• 📈 Painel de Execução — SIAFI: a liquidar, liquidado e pago por unidade";
+    return "Há 5 painéis em Painéis Gerenciais:\n• 💰 Painel Orçamentário — Power BI com execução total da OM\n• 📊 Painel de Empenhos — NEs por OM, gap de SEs sem NE e taxa de atendimento\n• 📋 Painel de RP — Restos a Pagar por UGR com vínculo a contratos\n• 🤖 Painel de Processos — propostas CNET com economia calculada\n• 📈 Painel de Execução — empenhos de 2026 por item, categoria do objeto e contrato";
 
   // ── Painel Orçamentário (Power BI) ────────────────────────────────────────
   if (/painel.*orcament|orcament.*painel|power.?bi|bi.*embed/.test(q))
@@ -160,7 +160,7 @@ function getCeliaResponse(text: string, kpis: KPIs): string {
 
   // ── Painel de Execução ────────────────────────────────────────────────────
   if (/painel.*execuc|execuc.*painel|siafi.*painel|a.?liquidar|liquidado.*pagar|pago.*siafi/.test(q))
-    return "O Painel de Execução lê a planilha SIAFI (Google Sheets) e exibe por OM:\n• NEs a liquidar, liquidado/a pagar e pago (em R$)\n• Top empresas favorecidas (alternável entre gráfico e tabela)\n• Detalhamento de NEs por unidade com cabeçalhos customizados\n• Atualização automática de hora em hora entre 8h e 18h\nAcesse: Painéis Gerenciais → Painel de Execução.";
+    return "O Painel de Execução mostra os empenhos de 2026 item por item (Tesouro Gerencial):\n• Empenhado, a liquidar, liquidado a pagar e pago\n• Empenhado por categoria do objeto (engenharia, saúde, alimentação, informática...) e por mês\n• Objetos e contratos mais empenhados (o contrato é achado pelo PAG da NE)\n• Unidades e fornecedores, com filtros e busca por objeto, NE, PAG ou contrato\n• Exportação dos itens filtrados para Excel\nAcesse: Painéis Gerenciais → Painel de Execução.";
 
   // ── Empenhos ──────────────────────────────────────────────────────────────
   if (/quantos empenh|total.*empenh|empenh.*total|numero.*empenh/.test(q))
