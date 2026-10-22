@@ -225,7 +225,10 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
           <div className="pg-principal">
             <div className="pg-card"><Indicadores painel={painel} filtros={filtros} aoMudar={mudar} /></div>
             <div className="pg-coluna">
-              <EvolucaoSaude painel={painel} />
+              <EvolucaoSaude
+                painel={painel}
+                aoEscolher={(label) => mudar({ competencia: label === painel.referenciaPadrao?.label ? null : label })}
+              />
               <Piores piores={painel.piores} />
               <Progressos progressos={painel.avancos} anterior={painel.anterior?.label ?? null} />
             </div>

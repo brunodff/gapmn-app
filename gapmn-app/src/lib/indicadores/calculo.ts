@@ -512,7 +512,7 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     competencias, competenciasComDados: comDados, referenciaPadrao, referencia, anterior: null,
     filtroDivisoes: filtro, siglasDivisoes: [], totalIndicadores: 0,
     indicadores: [], monitoramento: [], piores: [], avancos: [], grupos: [], resumo: resumir([]),
-    serieSaude: [], saudeAnterior: null, tendenciaSaude: null,
+    serieSaude: [], serieSaudeCompleta: [], saudeAnterior: null, tendenciaSaude: null,
   };
   if (!referencia) return vazio;
 
@@ -544,7 +544,7 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
   for (const ind of todos) {
     ind.historico = comDados.flatMap((c) => {
       const i = indice.get(c.data)?.get(ind.id);
-      return i ? [{ label: c.label, data: c.data, valor: i.valor, atingimento: i.atingimento, status: i.status, variaveis: i.variaveis }] : [];
+      return i ? [{ label: c.label, data: c.data, valor: i.valor, atingimento: i.atingimento, status: i.status, variaveis: i.variaveis, comentario: i.comentario }] : [];
     });
     ind.mesAnterior = anterior ? ind.historico.find((h) => h.data === anterior.data) ?? null : null;
     ind.comparacaoMesAnterior = compararComAnterior(ind, ind.mesAnterior);
@@ -562,12 +562,12 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     .slice(0, N_AVANCOS)
     .map((x) => x.i);
 
-  const serieSaude = comDados
-    .filter((c) => c.data <= referencia.data)
-    .map((c) => {
-      const inds = (porCompetencia.get(c.data) ?? []).filter((i) => naDivisao(i.divisaoExibida));
-      return { label: c.label, data: c.data, saude: resumir(inds).saudeGeral };
-    });
+  // Série completa para o gráfico clicável (dá para ir a um mês depois do exibido); as contas usam só até ele.
+  const serieSaudeCompleta = comDados.map((c) => {
+    const inds = (porCompetencia.get(c.data) ?? []).filter((i) => naDivisao(i.divisaoExibida));
+    return { label: c.label, data: c.data, saude: resumir(inds).saudeGeral };
+  });
+  const serieSaude = serieSaudeCompleta.filter((s) => s.data <= referencia.data);
   const comSaude = serieSaude.filter((s) => s.saude !== null);
   const saudeAnterior = anterior ? serieSaude.find((s) => s.data === anterior.data)?.saude ?? null : null;
   const ult3 = comSaude.slice(-3);
@@ -591,6 +591,7 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     grupos: gruposDeContagem(bd, referencia.data).filter((g) => naDivisao(g.divisao)),
     resumo: resumir(sel),
     serieSaude,
+    serieSaudeCompleta,
     saudeAnterior,
     tendenciaSaude,
   };

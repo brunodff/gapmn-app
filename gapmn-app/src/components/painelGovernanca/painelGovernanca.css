@@ -577,3 +577,18 @@
 .pg-vista + .pg-vista { border-left: 1px solid var(--card-borda); }
 .pg-vista[aria-selected="true"] { background: rgba(148, 254, 146, 0.14); color: var(--txt-1); font-weight: 600; }
 .pg-vista:focus-visible { outline: 2px solid rgba(148, 254, 146, 0.6); outline-offset: -2px; }
+
+/* Justificativa da divisão em destaque (ficha e tooltip), na cor do status */
+.pg-just { margin: 10px 0 4px; padding: 8px 10px 9px; border: 1px solid var(--cor-just); border-left-width: 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.06); }
+.pg-just-tit { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--cor-just); }
+.pg-just-texto { margin: 5px 0 0; font-size: 14px; line-height: 1.45; color: var(--txt-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pg-just[data-dica] .pg-just-texto { font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.pg-hist-just td { padding-top: 0; font-size: 12px; font-style: italic; color: var(--txt-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pg-hist-just svg { display: inline-block; vertical-align: -2px; margin-right: 4px; }
+.pg-tem-just { flex: none; display: inline-flex; align-items: center; color: var(--atencao); }
+
+/* Barras da evolução da saúde: clicar leva o painel para aquele mês */
+button.pg-evo-col { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+button.pg-evo-col:hover { background: var(--realce); }
+button.pg-evo-col:hover .pg-evo-barra { background: #7FB8FF; }
+button.pg-evo-col:focus-visible { outline: 2px solid rgba(148, 254, 146, 0.6); outline-offset: 1px; }

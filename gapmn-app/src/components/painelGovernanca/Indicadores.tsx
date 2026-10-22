@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Search } from "lucide-react";
+import { MessageSquare, Search } from "lucide-react";
 import { CORTE_ADEQUADO, STATUS, filtrarIndicadores } from "../../lib/indicadores/calculo.ts";
 import { temFiltro, type EstadoFiltros } from "../../lib/indicadores/filtros.ts";
 import { competenciaPorExtenso, fmtValor, larguraCss, metaExibida } from "../../lib/indicadores/formato.ts";
@@ -69,6 +69,11 @@ function Linha({ ind, ativa, aoAbrir, aoFechar, aoFicha }: {
       <div className="pg-linha-topo">
         <span className="pg-id">{ind.id}</span>
         <span className="pg-nome" title={ind.indicador}>{ind.indicador}</span>
+        {ind.comentario && (
+          <span className="pg-tem-just" title="A divisão justificou o resultado: clique para ler">
+            <MessageSquare size={13} aria-label="tem justificativa da divisão" />
+          </span>
+        )}
         <span className="pg-valor">
           <span className="pg-meta">meta {metaExibida(ind.metaTxt, ind.metaNum, ind.unidade, ind.direcao)}</span>
         </span>

@@ -9,9 +9,19 @@ import { VISUAL_STATUS, setaMesAnterior } from "./visual";
 
 const meta = (i: IndicadorPainel) => metaExibida(i.metaTxt, i.metaNum, i.unidade, i.direcao);
 
-/** Saúde geral em cada competência (respeita o filtro de divisão do painel). */
-export function EvolucaoSaude({ painel, maximo = 6 }: { painel: Painel; maximo?: number }) {
-  const serie = painel.serieSaude.slice(-maximo);
+/**
+ * Saúde geral em cada competência (respeita o filtro de divisão do painel).
+ * Com `aoEscolher`, cada barra é um botão que leva o painel para aquela competência.
+ */
+export function EvolucaoSaude({ painel, maximo = 6, aoEscolher }: {
+  painel: Painel; maximo?: number; aoEscolher?: (label: string) => void;
+}) {
+  // Clicável: todos os meses com dado, numa janela que sempre inclui o exibido. Sem clique
+  // (apresentação): só até o mês exibido.
+  const completa = painel.serieSaudeCompleta;
+  const i = completa.findIndex((s) => s.data === painel.referencia?.data);
+  const inicio = Math.max(0, Math.min(i, completa.length - maximo));
+  const serie = aoEscolher ? completa.slice(inicio, inicio + maximo) : painel.serieSaude.slice(-maximo);
   const r = painel.resumo;
   const delta = r.saudeGeral !== null && painel.saudeAnterior !== null ? r.saudeGeral - painel.saudeAnterior : null;
   const escopo = painel.filtroDivisoes.length ? painel.filtroDivisoes.join(", ") : "todas as divisões";
@@ -27,8 +37,13 @@ export function EvolucaoSaude({ painel, maximo = 6 }: { painel: Painel; maximo?:
         <div className="pg-evo-graf" style={{ gridTemplateColumns: `repeat(${serie.length}, minmax(0, 1fr))` }}>
           {serie.map((s) => {
             const atual = s.data === painel.referencia?.data;
+            const Coluna = aoEscolher ? "button" : "div";
             return (
-              <div className="pg-evo-col" key={s.data} data-atual={atual ? "1" : undefined}>
+              <Coluna className="pg-evo-col" key={s.data} data-atual={atual ? "1" : undefined}
+                {...(aoEscolher ? {
+                  type: "button" as const, onClick: () => aoEscolher(s.label), "aria-pressed": atual,
+                  title: atual ? `${s.label} é a competência exibida` : `Ver o painel de ${s.label}`,
+                } : {})}>
                 <div className="pg-evo-area">
                   {s.saude === null ? (
                     <span className="pg-hist-traco" style={{ background: "var(--neutro)" }} title="Sem indicadores avaliáveis" />
@@ -42,7 +57,7 @@ export function EvolucaoSaude({ painel, maximo = 6 }: { painel: Painel; maximo?:
                   )}
                 </div>
                 <div className="pg-evo-comp">{s.label}</div>
-              </div>
+              </Coluna>
             );
           })}
         </div>
@@ -50,6 +65,7 @@ export function EvolucaoSaude({ painel, maximo = 6 }: { painel: Painel; maximo?:
       <div className="pg-sub">
         {painel.anterior && <>vs {painel.anterior.label}: <b>{fmtVariacaoPct(delta)}</b> · </>}
         tendência 3M: <b>{fmtVariacaoPct(painel.tendenciaSaude)}</b>
+        {aoEscolher && serie.length > 1 && <> · clique numa barra para ver aquele mês</>}
       </div>
     </section>
   );

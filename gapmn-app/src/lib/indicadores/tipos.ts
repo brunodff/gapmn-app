@@ -154,6 +154,8 @@ export type PontoHistorico = {
   atingimento: number | null;
   status: Status;
   variaveis: Variavel[];
+  /** Justificativa que a divisão escreveu na coleta daquele mês. */
+  comentario?: string | null;
 };
 
 export type ContagemStatus = Record<Status, number>;
@@ -220,6 +222,8 @@ export type Painel = {
   resumo: ResumoPainel;
   /** Saúde geral em cada competência com dado até a exibida (mesmo filtro de divisão). */
   serieSaude: { label: string; data: string; saude: number | null }[];
+  /** Saúde em todas as competências com dado, inclusive depois da exibida (gráfico clicável). */
+  serieSaudeCompleta: { label: string; data: string; saude: number | null }[];
   /** Saúde na competência anterior com dados. */
   saudeAnterior: number | null;
   /** Variação média da saúde nos últimos 3 pontos, (último − primeiro) ÷ 2; null com menos de 3. */

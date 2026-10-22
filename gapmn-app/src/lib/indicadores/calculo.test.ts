@@ -304,6 +304,9 @@ test("saúde: série por competência, comparação com o mês anterior e tendê
   assert.equal(p.tendenciaSaude, 0.5);
   const dois = calcularPainel(bd, { competencia: "JUL/26" });
   assert.equal(dois.tendenciaSaude, null); // só 2 pontos até JUL/26
+  // o gráfico clicável continua mostrando os meses depois do exibido, para dar para voltar
+  assert.deepEqual(dois.serieSaude.map((s) => s.label), ["JAN-JUN/26", "JUL/26"]);
+  assert.deepEqual(dois.serieSaudeCompleta.map((s) => [s.label, s.saude]), [["JAN-JUN/26", 0], ["JUL/26", 0.5], ["AGO/26", 1]]);
   assert.equal(dois.saudeAnterior, 0);
 });
 

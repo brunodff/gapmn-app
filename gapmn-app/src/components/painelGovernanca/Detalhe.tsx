@@ -1,9 +1,9 @@
 // Detalhe do indicador: conteúdo do tooltip e a ficha com o histórico completo
 // (aberta ao clicar no indicador, no painel e no modo apresentação).
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { MessageSquare, X } from "lucide-react";
 import { CORTE_ADEQUADO } from "../../lib/indicadores/calculo.ts";
 import { VERSAO_CATALOGO } from "../../lib/indicadores/catalogo.ts";
 import {
@@ -35,6 +35,21 @@ function MesAnterior({ ind }: { ind: IndicadorPainel }) {
   );
 }
 
+/** Justificativa da divisão em destaque, na cor do status (no tooltip, cortada em 4 linhas). */
+function Justificativa({ ind, competencia, dica }: { ind: IndicadorPainel; competencia: string; dica: boolean }) {
+  if (!ind.comentario) return null;
+  const cor = VISUAL_STATUS[ind.status]?.cor ?? "var(--atencao)";
+  return (
+    <div className="pg-just" style={{ ["--cor-just" as string]: cor }} data-dica={dica ? "1" : undefined}>
+      <div className="pg-just-tit">
+        <MessageSquare size={14} aria-hidden="true" />
+        Justificativa da divisão · {competencia}{ind.temAnexo ? " · com comprovante" : ""}
+      </div>
+      <p className="pg-just-texto">{ind.comentario}</p>
+    </div>
+  );
+}
+
 /** Conteúdo do tooltip e do topo da ficha. */
 export function DetalheIndicador({ ind, competencia, dica = false }: { ind: IndicadorPainel; competencia: string; dica?: boolean }) {
   const aguardando = ind.status === "Aguardando informação";
@@ -44,6 +59,7 @@ export function DetalheIndicador({ ind, competencia, dica = false }: { ind: Indi
     <>
       <p className="pg-tt-nome">{ind.indicador}</p>
       <div className="pg-sub">{aguardando ? ind.categoriaExibida : `${ind.divisaoExibida} · ${ind.categoriaExibida}`}</div>
+      <Justificativa ind={ind} competencia={competencia} dica={dica} />
       {ind.catalogo?.objetivo && <p className="pg-objetivo">{ind.catalogo.objetivo}</p>}
 
       {aguardando ? (
@@ -72,12 +88,6 @@ export function DetalheIndicador({ ind, competencia, dica = false }: { ind: Indi
               <div className="pg-formula">{ind.formula}</div>
             </div>
           )}
-          {ind.comentario && (
-            <div className="pg-tt-bloco">
-              <div className="pg-rotulo">Justificativa da divisão</div>
-              <p className="pg-justificativa">{ind.comentario}</p>
-            </div>
-          )}
           {ind.variaveis.length > 0 && (
             <div className="pg-tt-bloco">
               <div className="pg-rotulo">Variáveis informadas ({competencia}){ind.temAnexo ? " · com comprovante" : ""}</div>
@@ -94,7 +104,11 @@ export function DetalheIndicador({ ind, competencia, dica = false }: { ind: Indi
           )}
         </>
       )}
-      {dica && ind.historico.length > 1 && <p className="pg-sub" style={{ margin: "10px 0 0" }}>Clique para ver o histórico completo.</p>}
+      {dica && (ind.comentario || ind.historico.length > 1) && (
+        <p className="pg-sub" style={{ margin: "10px 0 0" }}>
+          {ind.comentario ? "Clique para ler a justificativa inteira e o histórico." : "Clique para ver o histórico completo."}
+        </p>
+      )}
     </>
   );
 }
@@ -193,16 +207,23 @@ export function FichaIndicador({ ind, competencia, aoFechar, devolverFoco = fals
                 </thead>
                 <tbody>
                   {linhas.map((h) => (
-                    <tr key={h.data} data-atual={h.label === competencia ? "1" : undefined}>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {h.label}
-                        {h.label === competencia && <span className="pg-hist-marca">exibida</span>}
-                        {ind.mesAnterior?.data === h.data && <span className="pg-hist-marca">mês anterior</span>}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>{fmtValor(h.valor, ind.unidade)}</td>
-                      <td><StatusChip status={h.status} curto /></td>
-                      <td className="pg-sub">{h.variaveis.map((v) => `${partesVariavel(v.nome)[0]} = ${fmtNumero(v.valor)}`).join(" · ") || "—"}</td>
-                    </tr>
+                    <Fragment key={h.data}>
+                      <tr data-atual={h.label === competencia ? "1" : undefined}>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {h.label}
+                          {h.label === competencia && <span className="pg-hist-marca">exibida</span>}
+                          {ind.mesAnterior?.data === h.data && <span className="pg-hist-marca">mês anterior</span>}
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>{fmtValor(h.valor, ind.unidade)}</td>
+                        <td><StatusChip status={h.status} curto /></td>
+                        <td className="pg-sub">{h.variaveis.map((v) => `${partesVariavel(v.nome)[0]} = ${fmtNumero(v.valor)}`).join(" · ") || "—"}</td>
+                      </tr>
+                      {h.comentario && (
+                        <tr className="pg-hist-just" data-atual={h.label === competencia ? "1" : undefined}>
+                          <td colSpan={4}><MessageSquare size={12} aria-hidden="true" /> Justificativa: “{h.comentario}”</td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
