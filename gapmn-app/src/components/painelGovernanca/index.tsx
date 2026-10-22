@@ -1,10 +1,13 @@
 // Painel de Governança — GAP-MN (aba dos Painéis Gerenciais, só ADMIN/DEV).
-// Lê a aba BD pela Edge Function `indicadores-bd`; as regras ficam em lib/indicadores/calculo.ts.
-// Aqui só se busca, guarda o estado da tela (filtros na URL) e desenha.
+// Lê os indicadores do banco do app (função gov_bd, alimentada pela coleta mensal); as regras ficam
+// em lib/indicadores/calculo.ts. Aqui só se busca, guarda o estado da tela (filtros na URL) e desenha.
+// A vista "Coleta mensal" (?vista=coleta) abre e acompanha o formulário das divisões.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CircleCheck, CircleX, ExternalLink, Maximize, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react";
+import {
+  CircleCheck, CircleX, ClipboardList, ExternalLink, LayoutDashboard, Maximize, RefreshCw, TriangleAlert, type LucideIcon,
+} from "lucide-react";
 import { CORTE_ADEQUADO, CORTE_ATENCAO, calcularPainel } from "../../lib/indicadores/calculo.ts";
 import { catalogoEfetivo } from "../../lib/indicadores/catalogo.ts";
 import { gravarFiltros, lerFiltros, type EstadoFiltros } from "../../lib/indicadores/filtros.ts";
@@ -12,8 +15,10 @@ import { buscarBD, ultimoGuardado, type ResultadoBD } from "../../lib/indicadore
 import { competenciaPorExtenso, fmtGeradoEm, fmtPercentual, fmtVariacaoPct } from "../../lib/indicadores/formato.ts";
 import type { Painel } from "../../lib/indicadores/tipos.ts";
 import Apresentacao from "./Apresentacao";
+import ColetaAdmin from "./ColetaAdmin";
 import { Esqueleto } from "./Comum";
 import Contagem from "./Contagem";
+import ContratosEssenciais from "./ContratosEssenciais";
 import Indicadores from "./Indicadores";
 import { EvolucaoSaude, Piores, Progressos } from "./Lateral";
 import { Legenda, Monitoramento } from "./Rodape";
@@ -69,11 +74,11 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
   const [erro, setErro] = useState<string | null>(null);
 
   const ultimaBusca = useRef(0);
-  const carregar = useCallback(async (forcar: boolean) => {
+  const carregar = useCallback(async () => {
     ultimaBusca.current = Date.now();
     setCarregando(true);
     try {
-      setRes(await buscarBD(forcar));
+      setRes(await buscarBD());
       setErro(null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e));
@@ -82,16 +87,15 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
     }
   }, []);
 
-  useEffect(() => { void carregar(false); }, [carregar]);
+  useEffect(() => { void carregar(); }, [carregar]);
 
-  // Acompanha a planilha sozinho enquanto o painel está aberto (inclusive no modo
-  // apresentação): relê a cada 1 min e quando a aba volta a ficar visível. A função
-  // guarda a leitura por 1 min, então uma mudança aparece em até ~2 min; o botão
-  // "Atualizar agora" força a leitura na hora.
+  // Acompanha o banco sozinho enquanto o painel está aberto (inclusive no modo apresentação):
+  // relê a cada 1 min e quando a aba volta a ficar visível, então o que as divisões salvam no
+  // formulário aparece em até 1 min; o botão "Atualizar agora" lê na hora.
   useEffect(() => {
     const visivel = () => document.visibilityState === "visible";
-    const id = window.setInterval(() => { if (visivel()) void carregar(false); }, ATUALIZAR_A_CADA_MS);
-    const aoVoltar = () => { if (visivel() && Date.now() - ultimaBusca.current > ATUALIZAR_A_CADA_MS) void carregar(false); };
+    const id = window.setInterval(() => { if (visivel()) void carregar(); }, ATUALIZAR_A_CADA_MS);
+    const aoVoltar = () => { if (visivel() && Date.now() - ultimaBusca.current > ATUALIZAR_A_CADA_MS) void carregar(); };
     document.addEventListener("visibilitychange", aoVoltar);
     return () => { window.clearInterval(id); document.removeEventListener("visibilitychange", aoVoltar); };
   }, [carregar]);
@@ -100,6 +104,13 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
     (f: Partial<EstadoFiltros>) => setSp((atual) => gravarFiltros(atual, f), { replace: true }),
     [setSp],
   );
+
+  const vista = sp.get("vista") === "coleta" ? "coleta" : "painel";
+  const trocarVista = (v: "painel" | "coleta") => setSp((atual) => {
+    const out = new URLSearchParams(atual);
+    if (v === "coleta") out.set("vista", "coleta"); else out.delete("vista");
+    return out;
+  }, { replace: true });
 
   const [apresentando, setApresentando] = useState(false);
   // Catálogo do código, sobreposto pela aba CATALOGO da planilha quando ela existir.
@@ -115,15 +126,43 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
     setApresentando(true);
   };
 
+  const abas = (
+    <div className="pg-vistas" role="tablist" aria-label="Vista">
+      <button type="button" role="tab" aria-selected={vista === "painel"} className="pg-vista" onClick={() => trocarVista("painel")}>
+        <LayoutDashboard size={14} aria-hidden="true" /> Painel
+      </button>
+      <button type="button" role="tab" aria-selected={vista === "coleta"} className="pg-vista" onClick={() => trocarVista("coleta")}>
+        <ClipboardList size={14} aria-hidden="true" /> Coleta mensal
+      </button>
+    </div>
+  );
+
+  if (vista === "coleta") {
+    return (
+      <div className="pg-tokens pg">
+        <header className="pg-cabecalho">
+          <div className="pg-cab-esq"><h3 className="pg-titulo">PAINEL DE GOVERNANÇA — GAP-MN</h3></div>
+          <div className="pg-cab-dir">{abas}</div>
+        </header>
+        <ColetaAdmin />
+      </div>
+    );
+  }
+
   if (!res || !painel) {
     if (carregando) return <Esqueleto />;
     return (
       <div className="pg-tokens pg">
         <div className="pg-card" role="alert" style={{ textAlign: "center", padding: 32 }}>
           <p style={{ margin: "0 0 12px", fontWeight: 600 }}>{erro ?? "Não foi possível carregar os indicadores agora."}</p>
-          <button type="button" className="pg-btn" onClick={() => void carregar(true)}>
-            <RefreshCw size={14} aria-hidden="true" /> Tentar de novo
-          </button>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            <button type="button" className="pg-btn" onClick={() => void carregar()}>
+              <RefreshCw size={14} aria-hidden="true" /> Tentar de novo
+            </button>
+            <button type="button" className="pg-btn" onClick={() => trocarVista("coleta")}>
+              <ClipboardList size={14} aria-hidden="true" /> Coleta mensal
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -153,8 +192,9 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
           )}
         </div>
         <div className="pg-cab-dir">
+          {abas}
           <span className="pg-sub">Dados de {fmtGeradoEm(res.payload.gerado_em)}</span>
-          <button type="button" className="pg-btn" onClick={() => void carregar(true)} disabled={carregando}>
+          <button type="button" className="pg-btn" onClick={() => void carregar()} disabled={carregando}>
             <RefreshCw size={14} className={carregando ? "pg-girando" : undefined} aria-hidden="true" />
             {carregando ? "Atualizando…" : "Atualizar agora"}
           </button>
@@ -193,6 +233,10 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
 
           <Contagem grupos={painel.grupos} competencia={ref.label} />
 
+          {(painel.filtroDivisoes.length === 0 || painel.filtroDivisoes.includes("DOC")) && (
+            <ContratosEssenciais contratos={res.payload.contratos ?? []} referencia={ref} />
+          )}
+
           <div className="pg-rodape">
             {painel.monitoramento.length > 0 && <Monitoramento itens={painel.monitoramento} />}
             <Legenda sozinha={painel.monitoramento.length === 0} />
@@ -211,7 +255,7 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
 
           {res.avisosDados.length > 0 && (
             <details className="pg-sub">
-              <summary>{res.avisosDados.length} aviso(s) de formato na planilha</summary>
+              <summary>{res.avisosDados.length} aviso(s) de formato nos dados</summary>
               <ul>{res.avisosDados.slice(0, 30).map((a) => <li key={a}>{a}</li>)}</ul>
             </details>
           )}

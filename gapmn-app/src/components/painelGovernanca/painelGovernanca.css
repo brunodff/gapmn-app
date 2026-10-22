@@ -537,3 +537,43 @@
   display: inline-block; padding: 3px 12px; border: 1px solid rgba(127, 184, 255, 0.6); border-radius: 7px;
   background: rgba(127, 184, 255, 0.16); color: #e3efff; font-size: 15px; font-weight: 800; letter-spacing: 0.01em;
 }
+
+/* Contratos e atas essenciais (checklist da DOC) */
+.pg-ctr-contagem { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.pg-ctr-chip { display: inline-block; border: 1px solid; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.pg-ctr-rolagem { overflow-x: auto; }
+.pg-ctr-tabela { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 12.5px; }
+.pg-ctr-tabela th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--txt-2); padding: 6px 8px; border-bottom: 1px solid var(--card-borda); }
+.pg-ctr-tabela td { padding: 7px 8px; border-bottom: 1px solid var(--trilha); vertical-align: top; }
+.pg-ctr-servico { font-weight: 600; min-width: 200px; }
+.pg-ctr-nup { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--txt-2); }
+.pg-ctr-prov { color: var(--txt-2); min-width: 260px; }
+.pg-justificativa { margin: 2px 0 0; white-space: pre-wrap; }
+
+/* Coleta mensal (ADMIN e DEV) */
+.pg-coleta { display: grid; gap: 16px; }
+.pg-coleta-aberta { display: grid; gap: 8px; margin-top: 4px; }
+.pg-coleta-link { display: block; padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.25); color: var(--txt-1); font-size: 12.5px; overflow-wrap: anywhere; user-select: all; }
+.pg-coleta-botoes, .pg-coleta-abrir { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.pg-coleta-abrir { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--card-borda); }
+.pg-coleta-campo { display: grid; gap: 4px; }
+.pg-btn-forte { background: rgba(148, 254, 146, 0.16); border-color: rgba(148, 254, 146, 0.5); color: var(--ok); }
+.pg-btn-perigo { color: var(--critico); border-color: rgba(254, 146, 146, 0.45); }
+.pg-coleta-aviso { margin-top: 10px; font-size: 13px; color: var(--ok); }
+.pg-coleta-erro { color: var(--critico); }
+.pg-coleta-tabela { min-width: 680px; }
+.pg-coleta-div { cursor: pointer; }
+.pg-coleta-div:hover td, .pg-coleta-div:focus td { background: var(--realce); }
+.pg-coleta-detalhe { background: rgba(0, 0, 0, 0.18); }
+.pg-coleta-lista { display: grid; gap: 8px; padding: 4px 2px; }
+.pg-coleta-item { border-bottom: 1px solid var(--trilha); padding-bottom: 6px; }
+.pg-coleta-item-cab { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.pg-coleta-valor { margin: 3px 0 0 12px; font-size: 12.5px; }
+.pg-coleta-hist { margin: 4px 0 0 12px; padding-left: 16px; font-size: 12px; color: var(--txt-2); }
+
+/* Troca entre o painel e a coleta mensal */
+.pg-vistas { display: inline-flex; border: 1px solid var(--card-borda); border-radius: 8px; overflow: hidden; }
+.pg-vista { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: transparent; border: 0; color: var(--txt-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.pg-vista + .pg-vista { border-left: 1px solid var(--card-borda); }
+.pg-vista[aria-selected="true"] { background: rgba(148, 254, 146, 0.14); color: var(--txt-1); font-weight: 600; }
+.pg-vista:focus-visible { outline: 2px solid rgba(148, 254, 146, 0.6); outline-offset: -2px; }

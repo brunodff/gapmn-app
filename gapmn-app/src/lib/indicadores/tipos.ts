@@ -25,6 +25,22 @@ export type LinhaBD = {
   VAR1_NOME: string | null; VAR1_VALOR: number | null;
   VAR2_NOME: string | null; VAR2_VALOR: number | null;
   VAR3_NOME: string | null; VAR3_VALOR: number | null;
+  /** Justificativa da divisão (coleta pelo formulário do app). */
+  COMENTARIO?: string | null;
+  /** A divisão anexou comprovante. */
+  TEM_ANEXO?: boolean;
+};
+
+/** Contrato ou ata essencial informado pela DOC (checklist da coleta mensal). */
+export type ContratoPainel = {
+  competencia: string;
+  ordem: number;
+  servico: string;
+  nup: string | null;
+  termino: string | null;
+  status: "Seguro" | "Atenção" | "Crítico" | null;
+  providencias: string | null;
+  atualizado_em: string | null;
 };
 
 export type PayloadBD = {
@@ -37,6 +53,8 @@ export type PayloadBD = {
   bd_integridade: unknown[];
   /** Ficha técnica por ID (aba CATALOGO da planilha); vazio se a aba não existir. */
   catalogo: Record<string, FichaCatalogo>;
+  /** Contratos e atas essenciais da DOC, por competência (vem do banco do app). */
+  contratos?: ContratoPainel[];
 };
 
 /** Ficha técnica do Catálogo de Indicadores de Desempenho (aba CATALOGO). */
@@ -123,6 +141,9 @@ export type IndicadorPainel = {
   historico: PontoHistorico[];
   /** Ficha técnica do catálogo (objetivo, origem dos dados…), quando a planilha tiver a aba CATALOGO. */
   catalogo: FichaCatalogo | null;
+  /** Justificativa da divisão para o resultado da competência. */
+  comentario?: string | null;
+  temAnexo?: boolean;
 };
 
 /** O indicador numa competência, para o histórico. */

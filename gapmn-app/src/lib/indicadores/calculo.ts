@@ -111,6 +111,8 @@ export function normalizarLinhas(bruto: unknown[]): { linhas: LinhaBD[]; avisos:
       const v = r[c];
       o[c] = v === null || v === undefined || v === "" ? null : String(v);
     }
+    if (typeof r.COMENTARIO === "string" && r.COMENTARIO.trim()) o.COMENTARIO = r.COMENTARIO.trim();
+    if (r.TEM_ANEXO === true) o.TEM_ANEXO = true;
     for (const c of CAMPOS_NUMERICOS) {
       const n = paraNumero(r[c]);
       if (n === undefined) {
@@ -162,6 +164,7 @@ export function prepararPayload(json: unknown): { payload: PayloadBD; avisos: st
       bd: linhas,
       bd_integridade: Array.isArray(j.bd_integridade) ? j.bd_integridade : [],
       catalogo: Array.isArray(j.catalogo) ? normalizarCatalogo(j.catalogo) : (j.catalogo && typeof j.catalogo === "object" ? j.catalogo : {}),
+      contratos: Array.isArray(j.contratos) ? j.contratos : [],
     },
     avisos,
   };
@@ -371,6 +374,8 @@ function montarIndicador(
     comparacaoMesAnterior: null,
     historico: [],
     catalogo: null,
+    comentario: l.COMENTARIO ?? null,
+    temAnexo: !!l.TEM_ANEXO,
   };
 }
 

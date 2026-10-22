@@ -72,9 +72,15 @@ export function DetalheIndicador({ ind, competencia, dica = false }: { ind: Indi
               <div className="pg-formula">{ind.formula}</div>
             </div>
           )}
+          {ind.comentario && (
+            <div className="pg-tt-bloco">
+              <div className="pg-rotulo">Justificativa da divisão</div>
+              <p className="pg-justificativa">{ind.comentario}</p>
+            </div>
+          )}
           {ind.variaveis.length > 0 && (
             <div className="pg-tt-bloco">
-              <div className="pg-rotulo">Variáveis informadas ({competencia})</div>
+              <div className="pg-rotulo">Variáveis informadas ({competencia}){ind.temAnexo ? " · com comprovante" : ""}</div>
               {ind.variaveis.map((v) => {
                 const [simbolo, descricao] = partesVariavel(v.nome);
                 return (
