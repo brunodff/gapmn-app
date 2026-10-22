@@ -13,6 +13,7 @@ import CnetBot from "./pages/CnetBot";
 import AptPage from "./pages/AptPage";
 import PaineisExternos from "./pages/PaineisExternos";
 import LandingPage from "./pages/LandingPage";
+import PainelOrcamentarioPublico from "./pages/PainelOrcamentarioPublico";
 import RequireAuth from "./routes/RequireAuth";
 import RequireDev from "./routes/RequireDev";
 import ManualSite from "./components/ManualSite";
@@ -35,7 +36,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const [showManual, setShowManual] = useState(false);
   const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/ferramentas") || loc.pathname.startsWith("/ordens-bancarias");
-  if (loc.pathname.startsWith("/cnet") || loc.pathname.startsWith("/app") || loc.pathname.startsWith("/paineis-externos") || loc.pathname.startsWith("/empenho-automatico")) return <>{children}</>;
+  if (loc.pathname.startsWith("/cnet") || loc.pathname.startsWith("/app") || loc.pathname.startsWith("/paineis-externos") || loc.pathname.startsWith("/empenho-automatico") || loc.pathname.startsWith("/painel-orcamentario")) return <>{children}</>;
 
   // Login/signup: componente controla o próprio layout
   if (loc.pathname === "/" || loc.pathname === "/login") {
@@ -152,6 +153,8 @@ export default function App() {
           <Route path="/cnet" element={<CnetBot />} />
           <Route path="/apt"  element={<AptPage />} />
           <Route path="/paineis-externos" element={<PaineisExternos />} />
+          {/* aberta, sem login: Painel Orçamentário para a página do GAP-MN na INTRAER */}
+          <Route path="/painel-orcamentario" element={<PainelOrcamentarioPublico />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
