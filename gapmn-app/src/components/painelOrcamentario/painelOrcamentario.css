@@ -214,7 +214,7 @@
   display: grid; grid-template-columns: 28px 26px minmax(0, 1fr) 1px minmax(0, 1.35fr); align-items: center; gap: 8px;
   min-height: 64px; padding: 8px 10px 8px 8px;
   border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px;
-  background: rgba(20, 34, 61, 0.55); cursor: default; transition: background 0.5s;
+  background: rgba(20, 34, 61, 0.55); cursor: pointer; transition: background 0.5s; position: relative;
 }
 .po-disp-item:hover, .po-disp-item[data-ativo] { background: rgba(20, 34, 61, 0.95); }
 .po-rank {
@@ -250,7 +250,7 @@
   position: fixed; z-index: 60; width: min(640px, calc(100vw - 20px)); max-height: calc(100vh - 20px); overflow: auto;
   padding: 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px;
   background: var(--po-escuro); color: #fff; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
-  pointer-events: auto; overscroll-behavior: contain;
+  pointer-events: none;
 }
 .po-dica table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .po-dica th { padding: 6px; border-bottom: 1px solid #000; font-size: 11.5px; font-weight: 700; text-align: left; }
@@ -286,3 +286,21 @@
   .po-idade b { white-space: nowrap; }
   .po-idade small { font-size: 9px; }
 }
+
+/* Tooltip do disponível: o mouse mostra (prévia, não interativa); o clique na unidade fixa */
+.po-dica[data-fixo] { pointer-events: auto; overscroll-behavior: contain; border-color: rgba(148, 254, 146, 0.55); }
+.po-dica-acoes { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.po-dica-fixar, .po-dica-fixado {
+  display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 2px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; white-space: nowrap;
+}
+.po-dica-fixar { border: 1px dashed rgba(148, 254, 146, 0.6); color: var(--po-verde); }
+.po-dica-fixado { background: var(--po-verde); color: var(--po-escuro); }
+.po-direita-dica {
+  display: flex; align-items: center; justify-content: center; gap: 6px; margin: -2px 0 0; padding: 5px 8px;
+  border: 1px dashed rgba(148, 254, 146, 0.45); border-radius: 8px; font-size: 11px; line-height: 1.3; text-align: center; color: #dbe7f3;
+}
+.po-direita-dica svg { flex: none; color: var(--po-verde); }
+.po-direita-dica b { color: var(--po-verde); }
+.po-disp-item[data-fixo] { border-color: var(--po-verde); background: rgba(20, 34, 61, 0.95); box-shadow: 0 0 0 1px rgba(148, 254, 146, 0.35); }
+.po-disp-pino { position: absolute; top: 5px; right: 6px; color: var(--po-verde); }

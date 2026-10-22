@@ -140,6 +140,7 @@ export default function PainelOrcamentario() {
             </p>
             <p className="po-info">
               Passe o mouse numa unidade em <i>Crédito Disponível</i> para ver o saldo por PI e ND.
+              <b> Clique na unidade para fixar</b> o detalhe e rolar.
             </p>
           </div>
           <div className="po-lat-rodape">
