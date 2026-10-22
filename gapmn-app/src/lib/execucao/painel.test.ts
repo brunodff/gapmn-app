@@ -161,6 +161,18 @@ test("liquidação e pagamento proporcionais quando só parte dos itens entra", 
   assert.equal(r.semSituacao, 3);
 });
 
+test("filtro 'só com saldo a liquidar': fica só a NE com saldo; sem linha na situação, fica de fora", () => {
+  const fin = new Map<string, Financeiro>([
+    ["2026NE000001", { aLiquidar: 30, liquidadoPagar: 0, pago: 100 }],
+    ["2026NE000002", { aLiquidar: 0, liquidadoPagar: 500, pago: 500 }],
+  ]);
+  const v = vincular(nes, [], []);
+  const so = filtrar(nes, { ...FILTROS_VAZIOS, soALiquidar: true }, v, fin);
+  assert.deepEqual(so.map((r) => r.nota.ne), ["2026NE000001"]);
+  assert.equal(filtrar(nes, { ...FILTROS_VAZIOS, soALiquidar: true }, v).length, 0, "sem a planilha de situação, nenhuma");
+  assert.equal(filtrar(nes, FILTROS_VAZIOS, v, fin).length, 4, "desligado, não muda nada");
+});
+
 test("planilha de situação: soma as linhas da mesma NE pelo número curto", () => {
   const m = financeiroPorNE([
     { nota_empenho: "2026NE000001", a_liquidar: 10, liquidado_pagar: 1, pago: 5 },

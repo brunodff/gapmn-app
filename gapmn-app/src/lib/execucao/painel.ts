@@ -90,16 +90,21 @@ export type Filtros = {
   contrato: string; // id do contrato
   fornecedor: string; // CNPJ
   soComContrato: boolean;
+  /** Só as NEs que ainda têm saldo a liquidar (pela planilha de situação; NE sem linha nela fica de fora). */
+  soALiquidar: boolean;
 };
 
 export const FILTROS_VAZIOS: Filtros = {
-  busca: "", om: "", categoria: "", natureza: "", pis: new Set(), mes: "", contrato: "", fornecedor: "", soComContrato: false,
+  busca: "", om: "", categoria: "", natureza: "", pis: new Set(), mes: "", contrato: "", fornecedor: "", soComContrato: false, soALiquidar: false,
 };
 
 /** NE recortada pelos filtros: só os itens que passaram e o valor deles. */
 export type Recorte = { nota: NotaEmpenho; itens: ItemEmpenho[]; valor: number; parcial: boolean };
 
-export function filtrar(nes: readonly NotaEmpenho[], f: Filtros, vinculos: ReadonlyMap<string, Vinculo>): Recorte[] {
+export function filtrar(
+  nes: readonly NotaEmpenho[], f: Filtros, vinculos: ReadonlyMap<string, Vinculo>,
+  fin: ReadonlyMap<string, Financeiro> = new Map(),
+): Recorte[] {
   const busca = normalizar(f.busca);
   const out: Recorte[] = [];
   for (const n of nes) {
@@ -111,6 +116,7 @@ export function filtrar(nes: readonly NotaEmpenho[], f: Filtros, vinculos: Reado
     const v = vinculos.get(n.ne);
     if (f.contrato && v?.contrato?.id !== f.contrato) continue;
     if (f.soComContrato && !v?.contrato) continue;
+    if (f.soALiquidar && !((fin.get(n.ne)?.aLiquidar ?? 0) > 0.005)) continue;
 
     let itens = n.itens;
     if (f.categoria) itens = itens.filter((i) => i.categoria === f.categoria);

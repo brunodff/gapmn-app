@@ -153,7 +153,7 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
-type Ordem = "valor" | "emissao" | "ne";
+type Ordem = "valor" | "aLiquidar" | "liquidadoPagar" | "emissao" | "ne";
 
 export default function PainelExecucao() {
   const [dados, setDados] = useState<DadosExecucao | null>(null);
@@ -217,8 +217,8 @@ export default function PainelExecucao() {
   };
 
   const vinculos = useMemo(() => (dados ? vincular(dados.nes, dados.contratos, dados.processos) : new Map<string, Vinculo>()), [dados]);
-  const recortes = useMemo(() => (dados ? filtrar(dados.nes, f, vinculos) : []), [dados, f, vinculos]);
   const fin = useMemo(() => dados?.financeiro ?? new Map<string, Financeiro>(), [dados]);
+  const recortes = useMemo(() => (dados ? filtrar(dados.nes, f, vinculos, fin) : []), [dados, f, vinculos, fin]);
   const resumo = useMemo(() => resumir(recortes, fin, vinculos), [recortes, fin, vinculos]);
   const categorias = useMemo(() => porCategoria(recortes), [recortes]);
   const meses = useMemo(() => porMes(recortes), [recortes]);
@@ -250,10 +250,12 @@ export default function PainelExecucao() {
   const ordenados = useMemo(() => {
     const a = [...recortes];
     if (ordem === "valor") a.sort((x, y) => y.valor - x.valor);
+    else if (ordem === "aLiquidar") a.sort((x, y) => financeiroDo(y, fin).aLiquidar - financeiroDo(x, fin).aLiquidar || y.valor - x.valor);
+    else if (ordem === "liquidadoPagar") a.sort((x, y) => financeiroDo(y, fin).liquidadoPagar - financeiroDo(x, fin).liquidadoPagar || y.valor - x.valor);
     else if (ordem === "emissao") a.sort((x, y) => y.nota.emissao.localeCompare(x.nota.emissao) || y.valor - x.valor);
     else a.sort((x, y) => x.nota.ne.localeCompare(y.nota.ne));
     return a;
-  }, [recortes, ordem]);
+  }, [recortes, ordem, fin]);
 
   useEffect(() => setLimite(30), [f, ordem]);
 
@@ -371,6 +373,11 @@ export default function PainelExecucao() {
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: DK.text, cursor: "pointer" }}>
             <input type="checkbox" checked={f.soComContrato} onChange={(e) => mudar({ soComContrato: e.target.checked })} />
             Só com contrato
+          </label>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: DK.text, cursor: "pointer" }}
+            title="Só as NEs que ainda têm valor a liquidar (pela planilha de situação de empenhos)">
+            <input type="checkbox" checked={f.soALiquidar} onChange={(e) => mudar({ soALiquidar: e.target.checked })} />
+            Só com saldo a liquidar
           </label>
           {temFiltro && (
             <button type="button" onClick={() => setF(FILTROS_VAZIOS)}
@@ -495,13 +502,15 @@ export default function PainelExecucao() {
         extra={
           <select value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)} style={estiloSelect} aria-label="Ordenar">
             <option value="valor">Maior valor</option>
+            <option value="aLiquidar">Maior a liquidar</option>
+            <option value="liquidadoPagar">Maior liquidado a pagar</option>
             <option value="emissao">Mais recentes</option>
             <option value="ne">Número da NE</option>
           </select>
         }
       >
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: 860, borderCollapse: "collapse", fontSize: 12 }}>
+          <table style={{ width: "100%", minWidth: 1080, borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${DK.dim}`, color: DK.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 <th style={{ textAlign: "left", padding: "6px 8px" }}>NE</th>
@@ -510,6 +519,8 @@ export default function PainelExecucao() {
                 <th style={{ textAlign: "left", padding: "6px 8px" }}>Fornecedor</th>
                 <th style={{ textAlign: "left", padding: "6px 8px" }}>Contrato / PAG</th>
                 <th style={{ textAlign: "right", padding: "6px 8px" }}>Empenhado</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }}>A liquidar</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }}>Liquidado a pagar</th>
                 <th style={{ textAlign: "right", padding: "6px 8px" }}>Pago</th>
               </tr>
             </thead>
@@ -548,13 +559,13 @@ export default function PainelExecucao() {
                           : <span style={{ color: DK.muted, fontFamily: "monospace", fontSize: 11 }}>{n.pag || "—"}</span>}
                       </td>
                       <td style={{ padding: "8px", verticalAlign: "top", textAlign: "right", fontFamily: "monospace", whiteSpace: "nowrap" }}>{fmtMoeda(r.valor)}</td>
-                      <td style={{ padding: "8px", verticalAlign: "top", textAlign: "right", fontFamily: "monospace", whiteSpace: "nowrap", color: DK.green }}>
-                        {fin.has(n.ne) ? fmtMoeda(fr.pago) : "—"}
-                      </td>
+                      <CelulaFinanceira tem={fin.has(n.ne)} valor={fr.aLiquidar} cor={DK.amber} />
+                      <CelulaFinanceira tem={fin.has(n.ne)} valor={fr.liquidadoPagar} cor={DK.teal} />
+                      <CelulaFinanceira tem={fin.has(n.ne)} valor={fr.pago} cor={DK.green} />
                     </tr>
                     {aberta && (
                       <tr style={{ borderBottom: `1px solid ${DK.grid}`, background: `${DK.cyan}08` }}>
-                        <td colSpan={7} style={{ padding: "4px 12px 14px" }}>
+                        <td colSpan={9} style={{ padding: "4px 12px 14px" }}>
                           <DetalheNE nota={n} itens={n.itens} recorte={r} vinculo={v} financeiro={fin.get(n.ne) ?? null} />
                         </td>
                       </tr>
@@ -573,6 +584,17 @@ export default function PainelExecucao() {
       </Cartao>
       </>)}
     </div>
+  );
+}
+
+/** Valor de liquidação/pagamento da NE na tabela: zero fica apagado; sem linha na planilha de situação, "—". */
+function CelulaFinanceira({ tem, valor, cor }: { tem: boolean; valor: number; cor: string }) {
+  const zero = Math.abs(valor) < 0.005;
+  return (
+    <td style={{ padding: "8px", verticalAlign: "top", textAlign: "right", fontFamily: "monospace", whiteSpace: "nowrap", color: !tem || zero ? DK.muted : cor }}
+      title={tem ? undefined : "NE sem linha na planilha de situação de empenhos"}>
+      {tem ? fmtMoeda(zero ? 0 : valor) : "—"}
+    </td>
   );
 }
 
