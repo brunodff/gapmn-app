@@ -52,6 +52,10 @@ export function dataBR(v: unknown): string | null {
 
 const txt = (v: unknown) => String(v ?? "").trim();
 
+/** A observação do SIAFI traz caracteres de controle soltos (U+008D, U+008E, quebra de linha): viram espaço. */
+const semControle = (s: string) =>
+  [...s].map((c) => { const k = c.charCodeAt(0); return k < 32 || (k >= 127 && k < 160) ? " " : c; }).join("").replace(/\s+/g, " ").trim();
+
 /**
  * Crédito recebido (aba "Dados" da planilha de movimentação; no BI, tabela "Dados (2)").
  * Cabeçalho: RO - Doc Web, Emissão - Dia, Emitente - UG, (nome), UG Responsável, (nome),
@@ -82,8 +86,7 @@ export function lerRecebido(linhas: string[][]): LinhaRecebido[] {
     if (valor === null || !data) continue;
     const ugNome = txt(l[cUG + 1]);
     saida.push({
-      // a observação do SIAFI traz caracteres de controle soltos (U+008D, U+008E, quebra de linha): viram espaço
-      nc: cNC < 0 ? "" : txt(l[cNC]), obs: cObs < 0 ? "" : txt(l[cObs]).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim(),
+      nc: cNC < 0 ? "" : txt(l[cNC]), obs: cObs < 0 ? "" : semControle(txt(l[cObs])),
       data, ug: txt(l[cUG]), ugNome, sigla: siglaDe(ugNome, REGRAS_RECEBIDO),
       nd: txt(l[cND]), ndNome: txt(l[cND + 1]), pi: txt(l[cPI]), piNome: txt(l[cPI + 1]), valor,
     });
