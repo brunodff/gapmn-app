@@ -116,7 +116,9 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
   // Catálogo do código, sobreposto pela aba CATALOGO da planilha quando ela existir.
   const catalogo = useMemo(() => catalogoEfetivo(res?.payload.catalogo), [res]);
   const painel = useMemo(
-    () => (res ? calcularPainel(res.payload.bd, { competencia: filtros.competencia, divisoes: filtros.divisoes, catalogo }) : null),
+    () => (res ? calcularPainel(res.payload.bd, {
+      competencia: filtros.competencia, divisoes: filtros.divisoes, catalogo, emColeta: res.payload.coleta_aberta,
+    }) : null),
     [res, filtros.competencia, filtros.divisoes, catalogo],
   );
 
@@ -250,6 +252,7 @@ export default function PainelGovernanca({ urlPowerBI }: { urlPowerBI?: string }
               bd={res.payload.bd}
               catalogo={catalogo}
               competencia={filtros.competencia}
+              emColeta={res.payload.coleta_aberta ?? null}
               inicio={filtros.divisoes.length === 1 ? filtros.divisoes[0] : null}
               geradoEm={res.payload.gerado_em}
               aoSair={() => setApresentando(false)}

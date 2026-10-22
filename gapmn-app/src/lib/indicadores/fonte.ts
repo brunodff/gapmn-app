@@ -60,11 +60,18 @@ export function ultimoGuardado(): ResultadoBD | null {
   return g ? { ...g, aviso: null, avisosDados: [] } : null;
 }
 
+/** Competência com a coleta aberta ('AAAA-MM-01'), para o painel não abrir nela por padrão. Falha → null. */
+async function coletaAberta(): Promise<string | null> {
+  const { data, error } = await supabase.from("gov_competencias").select("codigo").eq("aberta", true).limit(1);
+  if (error || !data?.length) return null;
+  return `${(data[0] as { codigo: string }).codigo}-01`;
+}
+
 export async function buscarBD(): Promise<ResultadoBD> {
   try {
-    const { data, error } = await supabase.rpc("gov_bd");
+    const [{ data, error }, aberta] = await Promise.all([supabase.rpc("gov_bd"), coletaAberta()]);
     if (error) throw new Error(mensagemDoErro(error.message ?? ""));
-    const { payload, avisos } = prepararPayload(data);
+    const { payload, avisos } = prepararPayload({ ...(data as object), coleta_aberta: aberta });
     const buscadoEm = new Date().toISOString();
     guardar(payload, buscadoEm);
     return { payload, buscadoEm, aviso: null, avisosDados: avisos };

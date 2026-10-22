@@ -292,6 +292,29 @@ test("filtro de divisão vale para o painel inteiro, menos a competência de ref
   assert.deepEqual(aci.grupos.map((g) => g.categoria), ["Pendências do e-Pessoal"]);
 });
 
+test("coleta aberta: o painel abre no último mês fechado; o mês em coleta continua escolhível", () => {
+  const bd = [
+    ind("1", "DRH", 3, "JUL/26"), ind("2", "DRH", 3, "JUL/26"),
+    ind("1", "DRH", 3, "AGO/26"), ind("2", "DRH", 0.1, "AGO/26"),
+    ind("1", "DRH", 3, "SET/26"),                                   // SET/26 em coleta: só 1 de 2
+  ];
+  const semColeta = calcularPainel(bd);
+  assert.equal(semColeta.referencia?.label, "SET/26");
+  const set = linha("SET/26").DATA;
+  const p = calcularPainel(bd, { emColeta: set });
+  assert.equal(p.referenciaPadrao?.label, "AGO/26");
+  assert.equal(p.referencia?.label, "AGO/26");
+  assert.equal(p.competenciaEmColeta?.label, "SET/26");
+  assert.deepEqual(p.serieSaudeCompleta.map((s) => s.label), ["JUL/26", "AGO/26", "SET/26"], "o mês em coleta aparece no gráfico");
+  const escolhida = calcularPainel(bd, { emColeta: set, competencia: "SET/26" });
+  assert.equal(escolhida.referencia?.label, "SET/26");
+  assert.equal(escolhida.anterior?.label, "AGO/26");
+  // coleta aberta num mês sem nenhum resultado ainda: nada muda
+  assert.equal(calcularPainel(bd, { emColeta: "2026-10-01" }).referencia?.label, "SET/26");
+  // reabrir um mês antigo para correção não tira o último da posição de padrão
+  assert.equal(calcularPainel(bd, { emColeta: linha("JUL/26").DATA }).referencia?.label, "SET/26");
+});
+
 test("saúde: série por competência, comparação com o mês anterior e tendência 3M", () => {
   const bd = [
     ind("1", "DRH", 0.1, "JAN-JUN/26"), ind("2", "DRH", 0.1, "JAN-JUN/26"),   // 0%

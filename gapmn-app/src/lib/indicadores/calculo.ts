@@ -165,6 +165,7 @@ export function prepararPayload(json: unknown): { payload: PayloadBD; avisos: st
       bd_integridade: Array.isArray(j.bd_integridade) ? j.bd_integridade : [],
       catalogo: Array.isArray(j.catalogo) ? normalizarCatalogo(j.catalogo) : (j.catalogo && typeof j.catalogo === "object" ? j.catalogo : {}),
       contratos: Array.isArray(j.contratos) ? j.contratos : [],
+      coleta_aberta: typeof j.coleta_aberta === "string" ? j.coleta_aberta : null,
     },
     avisos,
   };
@@ -471,6 +472,8 @@ export type OpcoesPainel = {
   divisoes?: string[];
   /** Ficha técnica por ID (aba CATALOGO); só informativa, não entra em cálculo. */
   catalogo?: Record<string, FichaCatalogo>;
+  /** DATA da competência com a coleta aberta: continua escolhível, mas não vira a padrão. */
+  emColeta?: string | null;
 };
 
 function agruparPorId(bd: LinhaBD[]): Map<string, LinhaBD[]> {
@@ -500,7 +503,10 @@ function indicadoresEm(porId: Map<string, LinhaBD[]>, ref: Competencia, anterior
 export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel {
   const competencias = montarCompetencias(bd);
   const comDados = competenciasComDados(bd);
-  const referenciaPadrao = ultimo(comDados) ?? null;
+  // Enquanto a coleta do mês está aberta, o painel abre no último mês fechado (decisão de 22/10/2026):
+  // um único número salvo não faz a tela de todos pular para um mês incompleto.
+  const competenciaEmColeta = opcoes.emColeta ? comDados.find((c) => c.data === opcoes.emColeta) ?? null : null;
+  const referenciaPadrao = ultimo(comDados.filter((c) => c !== competenciaEmColeta)) ?? ultimo(comDados) ?? null;
   const escolhida = opcoes.competencia
     ? comDados.find((c) => c.data === opcoes.competencia || c.label === opcoes.competencia)
     : undefined;
@@ -509,7 +515,7 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
   const naDivisao = (sigla: string) => !filtro.length || filtro.includes(sigla);
 
   const vazio: Painel = {
-    competencias, competenciasComDados: comDados, referenciaPadrao, referencia, anterior: null,
+    competencias, competenciasComDados: comDados, referenciaPadrao, competenciaEmColeta, referencia, anterior: null,
     filtroDivisoes: filtro, siglasDivisoes: [], totalIndicadores: 0,
     indicadores: [], monitoramento: [], piores: [], avancos: [], grupos: [], resumo: resumir([]),
     serieSaude: [], serieSaudeCompleta: [], saudeAnterior: null, tendenciaSaude: null,
@@ -579,6 +585,7 @@ export function calcularPainel(bd: LinhaBD[], opcoes: OpcoesPainel = {}): Painel
     competencias,
     competenciasComDados: comDados,
     referenciaPadrao,
+    competenciaEmColeta,
     referencia,
     anterior,
     filtroDivisoes: filtro,

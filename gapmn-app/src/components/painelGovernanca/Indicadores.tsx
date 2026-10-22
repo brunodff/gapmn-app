@@ -189,7 +189,7 @@ export default function Indicadores({ painel, filtros, aoMudar }: {
         >
           {[...painel.competenciasComDados].reverse().map((c) => (
             <option key={c.data} value={c.label} title={competenciaPorExtenso(c.label)}>
-              Competência: {c.label}{c.data === painel.referenciaPadrao?.data ? " (padrão)" : ""}
+              Competência: {c.label}{c.data === painel.referenciaPadrao?.data ? " (padrão)" : c.data === painel.competenciaEmColeta?.data ? " (em coleta)" : ""}
             </option>
           ))}
         </select>

@@ -55,6 +55,8 @@ export type PayloadBD = {
   catalogo: Record<string, FichaCatalogo>;
   /** Contratos e atas essenciais da DOC, por competência (vem do banco do app). */
   contratos?: ContratoPainel[];
+  /** Competência com a coleta mensal aberta (DATA 'AAAA-MM-01'); o painel não abre nela por padrão. */
+  coleta_aberta?: string | null;
 };
 
 /** Ficha técnica do Catálogo de Indicadores de Desempenho (aba CATALOGO). */
@@ -200,8 +202,10 @@ export type ResumoPainel = {
 export type Painel = {
   competencias: Competencia[];
   competenciasComDados: Competencia[];
-  /** Referência global (D.1), independente de filtro. */
+  /** Referência global (D.1), independente de filtro: a última com dado, pulando a que está em coleta. */
   referenciaPadrao: Competencia | null;
+  /** Competência com a coleta aberta, se já tiver algum resultado (aparece marcada "em coleta"). */
+  competenciaEmColeta: Competencia | null;
   /** Competência exibida: a padrão ou a escolhida no seletor. */
   referencia: Competencia | null;
   anterior: Competencia | null;

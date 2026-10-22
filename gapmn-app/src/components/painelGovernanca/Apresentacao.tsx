@@ -165,15 +165,17 @@ function VisaoGeral({ painel }: { painel: Painel }) {
   );
 }
 
-export default function Apresentacao({ bd, catalogo, competencia, inicio, geradoEm, aoSair }: {
+export default function Apresentacao({ bd, catalogo, competencia, emColeta = null, inicio, geradoEm, aoSair }: {
   bd: LinhaBD[];
   catalogo: Record<string, FichaCatalogo>;
   competencia: string | null;
+  /** Competência com a coleta aberta: a apresentação também não abre nela por padrão. */
+  emColeta?: string | null;
   inicio: string | null;
   geradoEm: string;
   aoSair: () => void;
 }) {
-  const geral = useMemo(() => calcularPainel(bd, { competencia, catalogo }), [bd, competencia, catalogo]);
+  const geral = useMemo(() => calcularPainel(bd, { competencia, catalogo, emColeta }), [bd, competencia, catalogo, emColeta]);
   const slides = useMemo<Slide[]>(() => {
     const siglas = [...geral.siglasDivisoes];
     for (const g of geral.grupos) if (!siglas.includes(g.divisao)) siglas.push(g.divisao);
@@ -189,8 +191,8 @@ export default function Apresentacao({ bd, catalogo, competencia, inicio, gerado
 
   const slide = slides[Math.min(atual, slides.length - 1)];
   const painelDiv = useMemo(
-    () => (slide.tipo === "divisao" ? calcularPainel(bd, { competencia, divisoes: [slide.sigla], catalogo }) : null),
-    [bd, competencia, slide, catalogo],
+    () => (slide.tipo === "divisao" ? calcularPainel(bd, { competencia, divisoes: [slide.sigla], catalogo, emColeta }) : null),
+    [bd, competencia, slide, catalogo, emColeta],
   );
 
   const sair = useCallback(() => {

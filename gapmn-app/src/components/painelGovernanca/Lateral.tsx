@@ -34,15 +34,17 @@ export function EvolucaoSaude({ painel, maximo = 6, aoEscolher }: {
       {serie.length === 0 ? (
         <div className="pg-vazio">Sem competências com dado.</div>
       ) : (
-        <div className="pg-evo-graf" style={{ gridTemplateColumns: `repeat(${serie.length}, minmax(0, 1fr))` }}>
+        <div className="pg-evo-graf" style={{ gridTemplateColumns: `repeat(${serie.length}, minmax(0, 1fr))` }}
+          data-tem-coleta={serie.some((s) => s.data === painel.competenciaEmColeta?.data) ? "1" : undefined}>
           {serie.map((s) => {
             const atual = s.data === painel.referencia?.data;
+            const coleta = s.data === painel.competenciaEmColeta?.data;
             const Coluna = aoEscolher ? "button" : "div";
             return (
-              <Coluna className="pg-evo-col" key={s.data} data-atual={atual ? "1" : undefined}
+              <Coluna className="pg-evo-col" key={s.data} data-atual={atual ? "1" : undefined} data-coleta={coleta ? "1" : undefined}
                 {...(aoEscolher ? {
                   type: "button" as const, onClick: () => aoEscolher(s.label), "aria-pressed": atual,
-                  title: atual ? `${s.label} é a competência exibida` : `Ver o painel de ${s.label}`,
+                  title: `${atual ? `${s.label} é a competência exibida` : `Ver o painel de ${s.label}`}${coleta ? " (coleta em andamento: dados parciais)" : ""}`,
                 } : {})}>
                 <div className="pg-evo-area">
                   {s.saude === null ? (
@@ -56,7 +58,7 @@ export function EvolucaoSaude({ painel, maximo = 6, aoEscolher }: {
                     </>
                   )}
                 </div>
-                <div className="pg-evo-comp">{s.label}</div>
+                <div className="pg-evo-comp">{s.label}{coleta && <span className="pg-evo-coleta">em coleta</span>}</div>
               </Coluna>
             );
           })}
