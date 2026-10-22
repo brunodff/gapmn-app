@@ -28,3 +28,6 @@ export const fmtDiaMes = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${i
 /** Hora local "08:15" de um instante ISO. */
 export const fmtHora = (iso: string) =>
   new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Manaus" });
+
+/** Número curto da nota de crédito: "120002000012026NC011361" → "2026NC011361". */
+export const fmtNC = (nc: string) => /(\d{4}NC\d+)$/i.exec(nc.trim())?.[1].toUpperCase() ?? nc.trim();

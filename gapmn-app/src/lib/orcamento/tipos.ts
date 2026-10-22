@@ -2,6 +2,10 @@
 
 /** Um lançamento de crédito recebido (planilha "Dados (2)" do Power BI). */
 export type LinhaRecebido = {
+  /** Número da nota de crédito ("RO - Doc Web", ex.: 120002000012026NC011361). */
+  nc: string;
+  /** Descrição da nota de crédito ("Doc - Observação"). */
+  obs: string;
   /** Data de emissão (AAAA-MM-DD). */
   data: string;
   /** Código da UG responsável. */
@@ -53,7 +57,25 @@ export type IdadeCredito = {
   parcial: boolean;
 };
 
-export type LinhaSaldo = LinhaDisponivel & { idade: IdadeCredito | null };
+/** Uma nota de crédito recebida (as linhas da mesma nota na mesma UG, PI e ND somadas). */
+export type NotaCredito = {
+  nc: string;
+  data: string;
+  valor: number;
+  obs: string;
+  pi: string;
+  piNome: string;
+  nd: string;
+};
+
+/** Nota de crédito que ainda forma um saldo; `noSaldo` é a parte dela que sobra (a mais antiga pode já estar em parte empenhada). */
+export type NotaNoSaldo = NotaCredito & { noSaldo: number };
+
+export type LinhaSaldo = LinhaDisponivel & {
+  idade: IdadeCredito | null;
+  /** Notas de crédito que formam o saldo, da mais nova para a mais antiga. */
+  notas: NotaNoSaldo[];
+};
 
 export type DadosOrcamento = {
   recebido: LinhaRecebido[];
@@ -79,6 +101,8 @@ export type UnidadeDisponivel = {
   valor: number;
   /** Crédito recebido pela unidade no último dia com lançamento (null = nenhum). */
   recebidoUltimoDia: number | null;
+  /** Notas de crédito desse último dia (explicam a linha verde), da maior para a menor. */
+  notasUltimoDia: NotaCredito[];
   linhas: LinhaSaldo[];
   /** Idade do crédito mais antigo parado na unidade (dias), para o rodapé do tooltip. */
   idadeMaxima: number | null;

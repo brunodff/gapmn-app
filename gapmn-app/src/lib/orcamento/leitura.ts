@@ -55,7 +55,8 @@ const txt = (v: unknown) => String(v ?? "").trim();
 /**
  * Crédito recebido (aba "Dados" da planilha de movimentação; no BI, tabela "Dados (2)").
  * Cabeçalho: RO - Doc Web, Emissão - Dia, Emitente - UG, (nome), UG Responsável, (nome),
- * Esfera, (nome), Ação Governo, (nome), PI, (nome), PTRES, Natureza Despesa, (nome), …, Movim. Líquido.
+ * Esfera, (nome), Ação Governo, (nome), PI, (nome), PTRES, Natureza Despesa, (nome), …, Doc - Observação,
+ * Movim. Líquido. "RO - Doc Web" é o número da nota de crédito, e a observação, a descrição dela.
  */
 export function lerRecebido(linhas: string[][]): LinhaRecebido[] {
   const iCab = linhas.findIndex((l) => l.some((c) => /emiss/i.test(c)));
@@ -64,6 +65,8 @@ export function lerRecebido(linhas: string[][]): LinhaRecebido[] {
   const col = (rx: RegExp) => cab.findIndex((c) => rx.test(c));
   const cData = col(/emiss/i), cUG = col(/^UG Respons/i), cPI = col(/^PI$/i), cND = col(/^Natureza/i), cValor = col(/^Movim/i);
   const cAcao = col(/^A[çc][ãa]o Governo/i);
+  // número e descrição da nota de crédito: opcionais (sem eles o painel funciona, só sem a descrição)
+  const cNC = col(/Doc Web/i), cObs = col(/Observa/i);
   if ([cData, cUG, cPI, cND, cValor].some((c) => c < 0)) {
     throw new ErroFormato("Planilha de crédito recebido com colunas diferentes das esperadas.");
   }
@@ -79,6 +82,8 @@ export function lerRecebido(linhas: string[][]): LinhaRecebido[] {
     if (valor === null || !data) continue;
     const ugNome = txt(l[cUG + 1]);
     saida.push({
+      // a observação do SIAFI traz caracteres de controle soltos (U+008D, U+008E, quebra de linha): viram espaço
+      nc: cNC < 0 ? "" : txt(l[cNC]), obs: cObs < 0 ? "" : txt(l[cObs]).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim(),
       data, ug: txt(l[cUG]), ugNome, sigla: siglaDe(ugNome, REGRAS_RECEBIDO),
       nd: txt(l[cND]), ndNome: txt(l[cND + 1]), pi: txt(l[cPI]), piNome: txt(l[cPI + 1]), valor,
     });

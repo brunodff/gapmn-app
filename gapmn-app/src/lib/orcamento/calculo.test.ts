@@ -4,14 +4,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SEM_SIGLA, creditosPorLinha, hojeEmManaus, idadeDoSaldo, montarPainel } from "./calculo.ts";
-import { fmtCompacto, fmtData, fmtDias, fmtMoeda, fmtPct } from "./formato.ts";
+import { SEM_SIGLA, creditosPorLinha, hojeEmManaus, idadeDoSaldo, montarPainel, notasDoSaldo } from "./calculo.ts";
+import { fmtCompacto, fmtData, fmtDias, fmtMoeda, fmtNC, fmtPct } from "./formato.ts";
 import { dataBR, lerDisponivel, lerEmpenhos, lerRecebido, numeroBR, parseCSV } from "./leitura.ts";
 import type { DadosOrcamento, Empenho, LinhaDisponivel, LinhaRecebido } from "./tipos.ts";
 import { REGRAS_DISPONIVEL, REGRAS_RECEBIDO, siglaDe } from "./unidades.ts";
 
 const rec = (p: Partial<LinhaRecebido>): LinhaRecebido => ({
-  data: "2026-03-10", ug: "", ugNome: "", sigla: null, nd: "339030", ndNome: "MATERIAL DE CONSUMO",
+  nc: "", obs: "", data: "2026-03-10", ug: "", ugNome: "", sigla: null, nd: "339030", ndNome: "MATERIAL DE CONSUMO",
   pi: "PI001", piNome: "PI TESTE", valor: 0, ...p,
 });
 const emp = (p: Partial<Empenho>): Empenho => ({
@@ -58,19 +58,22 @@ test("crédito recebido: cabeçalho na 3ª linha, preenchimento para baixo e lin
     "RO - Doc Web,Emissão - Dia,Emitente - UG,,UG Responsável,,Esfera Orçamentária,,Ação Governo,,PI,,PTRES,Natureza Despesa,,Fonte Recursos Detalhada,,Doc - Observação,Movim. Líquido - R$ (Item Informação)",
     'NC1,05/03/2026,1,EMIT,111,BASE AEREA DE MANAUS,1,FISCAL,2000,ADM,PI01,VIDA VEG,1,339030,MATERIAL DE CONSUMO,1,F,obs,"1.000,50"',
     'NC2,,,,,,,,,,,,,339039,"OUTROS SERVICOS, PJ",,,,"2.000,00"',
-    "NC3,9/4/2026,1,EMIT,222,HOSPITAL DE AERONAUTICA DE MANAUS,1,FISCAL,2000,ADM,PI02,SAUDE,1,339030,MATERIAL DE CONSUMO,1,F,obs,-300",
+    "NC3,9/4/2026,1,EMIT,222,HOSPITAL DE AERONAUTICA DE MANAUS,1,FISCAL,2000,ADM,PI02,SAUDE,1,339030,MATERIAL DE CONSUMO,1,F,\"DEVOLUCAO\u008e\r\nREF 2026-37\u008d\",-300",
     ",,,,,,,,,,,,,,,,,,",
     "Total,,,,,,,,,,,,,,,,,,",
   ].join("\n");
   const l = lerRecebido(parseCSV(csv));
   assert.equal(l.length, 3);
+  assert.equal(l[0].nc, "NC1");
+  assert.equal(l[0].obs, "obs");
   assert.deepEqual(l[1], {
-    data: "2026-03-05", ug: "111", ugNome: "BASE AEREA DE MANAUS", sigla: "BAMN", nd: "339039", ndNome: "OUTROS SERVICOS, PJ",
+    nc: "NC2", obs: "", data: "2026-03-05", ug: "111", ugNome: "BASE AEREA DE MANAUS", sigla: "BAMN", nd: "339039", ndNome: "OUTROS SERVICOS, PJ",
     pi: "PI01", piNome: "VIDA VEG", valor: 2000,
   });
   assert.equal(l[2].data, "2026-04-09");
   assert.equal(l[2].sigla, "HAMN");
   assert.equal(l[2].valor, -300);
+  assert.equal(l[2].obs, "DEVOLUCAO REF 2026-37", "caracteres de controle do SIAFI viram espaço");
   assert.throws(() => lerRecebido(parseCSV("a,b\n1,2")), /Emissão/);
 });
 
@@ -249,4 +252,54 @@ test("hoje é a data de Manaus e os dias vêm por extenso", () => {
   assert.equal(fmtDias(0), "hoje");
   assert.equal(fmtDias(1), "1 dia");
   assert.equal(fmtDias(1225), "1.225 dias");
+});
+
+test("notas de crédito que formam o saldo: da mais nova para a mais antiga, a última só com a parte que sobra", () => {
+  const creditos = [
+    rec({ nc: "120002000012026NC000300", data: "2026-09-18", valor: 50, obs: "PAVIMENTACAO DO RANCHO" }),
+    rec({ nc: "120002000012026NC000200", data: "2026-04-05", valor: 300, obs: "MANUTENCAO PREDIAL" }),
+    rec({ nc: "120002000012026NC000100", data: "2026-03-10", valor: 1000, obs: "VIDA VEGETATIVA" }),
+  ];
+  assert.deepEqual(notasDoSaldo(40, creditos).map((n) => [n.nc.slice(-8), n.noSaldo, n.valor]), [["NC000300", 40, 50]]);
+  assert.deepEqual(notasDoSaldo(200, creditos).map((n) => [n.nc.slice(-8), n.noSaldo]), [["NC000300", 50], ["NC000200", 150]]);
+  assert.equal(notasDoSaldo(200, creditos)[1].obs, "MANUTENCAO PREDIAL");
+  assert.equal(notasDoSaldo(5000, creditos).length, 3, "saldo maior que tudo: entram todas");
+  assert.deepEqual(notasDoSaldo(0, creditos), []);
+  assert.deepEqual(notasDoSaldo(10, undefined), []);
+  // a mesma nota em duas linhas da mesma UG, PI e ND conta uma vez só
+  const repetida = [rec({ nc: "NC9", data: "2026-10-01", valor: 70 }), rec({ nc: "NC9", data: "2026-10-01", valor: 30 })];
+  assert.deepEqual(notasDoSaldo(100, repetida).map((n) => [n.nc, n.valor, n.noSaldo]), [["NC9", 100, 100]]);
+});
+
+test("tooltip: notas do último dia explicam a linha verde, com a descrição", () => {
+  const d: DadosOrcamento = {
+    recebido: [
+      rec({ nc: "120002000012026NC000010", data: "2026-10-01", ug: "120630", sigla: "GAP-MN", pi: "PI01", nd: "339039", valor: 1000, obs: "CREDITO ANTIGO" }),
+      rec({ nc: "120002000012026NC000020", data: "2026-10-21", ug: "120630", sigla: "GAP-MN", pi: "PI02", nd: "339039", valor: 265826.86, obs: "EMPENHO IMEDIATO - RECUPERACAO DA PAVIMENTACAO" }),
+      rec({ nc: "120002000012026NC000021", data: "2026-10-21", ug: "120630", sigla: "GAP-MN", pi: "PI01", nd: "339030", valor: -10, obs: "ANULACAO PARCIAL" }),
+      rec({ nc: "120002000012026NC000022", data: "2026-10-21", ug: "120082", sigla: "BAMN", pi: "PI01", nd: "339015", valor: 4335, obs: "DIARIAS" }),
+    ],
+    empenhos: [],
+    disponivel: [
+      disp({ ug: "120630", sigla: "GAP-MN", pi: "PI02", nd: "339039", valor: 265826.86 }),
+      disp({ ug: "120630", sigla: "GAP-MN", pi: "PI01", nd: "339039", valor: 400 }),
+    ],
+  };
+  const gap = montarPainel(d, { om: null, nd: null }, "2026-10-22").disponivel.find((u) => u.sigla === "GAP-MN")!;
+  assert.equal(gap.recebidoUltimoDia, 265816.86);
+  assert.deepEqual(gap.notasUltimoDia.map((n) => [fmtNC(n.nc), n.valor, n.obs]), [
+    ["2026NC000020", 265826.86, "EMPENHO IMEDIATO - RECUPERACAO DA PAVIMENTACAO"],
+    ["2026NC000021", -10, "ANULACAO PARCIAL"],
+  ], "só as notas da unidade, da maior para a menor (pelo valor absoluto)");
+  assert.equal(gap.linhas[0].notas[0].obs, "EMPENHO IMEDIATO - RECUPERACAO DA PAVIMENTACAO", "a nota nova forma o saldo da linha dela");
+  assert.deepEqual(gap.linhas[1].notas.map((n) => [n.obs, n.noSaldo]), [["CREDITO ANTIGO", 400]]);
+  // com a ND filtrada, a nota de outra ND some do último dia
+  const so339030 = montarPainel(d, { om: null, nd: "339030" }, "2026-10-22").disponivel;
+  assert.equal(so339030.length, 0);
+});
+
+test("número curto da nota de crédito", () => {
+  assert.equal(fmtNC("120002000012026NC011361"), "2026NC011361");
+  assert.equal(fmtNC(" 2026nc000001 "), "2026NC000001");
+  assert.equal(fmtNC("SEM PADRAO"), "SEM PADRAO");
 });

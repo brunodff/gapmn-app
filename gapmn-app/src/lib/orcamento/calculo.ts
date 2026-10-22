@@ -8,7 +8,7 @@
 
 import type {
   CartaoUnidade, DadosOrcamento, FiltroCredito, IdadeCredito, LinhaDisponivel, LinhaRecebido, LinhaSaldo,
-  OpcaoND, PainelCredito, UnidadeDisponivel, ValorRotulado,
+  NotaCredito, NotaNoSaldo, OpcaoND, PainelCredito, UnidadeDisponivel, ValorRotulado,
 } from "./tipos.ts";
 import { APOIADAS, logoDa } from "./unidades.ts";
 
@@ -87,24 +87,60 @@ export function idadeDoSaldo(saldo: number, creditos: LinhaRecebido[] | undefine
   return { desde, dias: Math.max(0, diasEntre(desde, hoje)), ultimo: creditos[0].data, parcial: acumulado < saldo - 0.005 };
 }
 
+const notaDe = (r: LinhaRecebido): NotaCredito =>
+  ({ nc: r.nc ?? "", data: r.data, valor: r.valor, obs: r.obs ?? "", pi: r.pi, piNome: r.piNome, nd: r.nd });
+
+/** Junta as linhas da mesma nota de crédito (uma nota pode vir em várias linhas). */
+function juntarNotas(linhas: LinhaRecebido[]): NotaCredito[] {
+  const m = new Map<string, NotaCredito>();
+  linhas.forEach((r, i) => {
+    const k = r.nc ? `${r.nc}|${r.pi}|${r.nd}` : `#${i}`;
+    const n = m.get(k);
+    if (n) n.valor += r.valor;
+    else m.set(k, notaDe(r));
+  });
+  return [...m.values()];
+}
+
+/**
+ * Notas de crédito que ainda formam o saldo, pela mesma regra da idade: o saldo é a parte mais nova do
+ * que chegou, então soma as notas da mais nova para a mais antiga até cobrir o saldo. A última nota
+ * somada pode estar em parte empenhada (`noSaldo` menor que o valor).
+ */
+export function notasDoSaldo(saldo: number, creditos: LinhaRecebido[] | undefined): NotaNoSaldo[] {
+  if (!creditos?.length || saldo <= 0) return [];
+  const out: NotaNoSaldo[] = [];
+  let falta = saldo;
+  for (const n of juntarNotas(creditos)) {
+    const parte = Math.min(n.valor, falta);
+    out.push({ ...n, noSaldo: Math.round(parte * 100) / 100 });
+    falta -= parte;
+    if (falta <= 0.005) break;
+  }
+  return out;
+}
+
 /** Agrupa o saldo disponível por unidade, com posição (empates dividem a posição, como o RANKX DENSE). */
 export function disponivelPorUnidade(
   linhas: LinhaDisponivel[],
   recebidoNoDia: Map<string, number>,
   creditos: Map<string, LinhaRecebido[]> = new Map(),
   hoje = hojeEmManaus(),
+  notasNoDia: Map<string, NotaCredito[]> = new Map(),
 ): UnidadeDisponivel[] {
   const grupos = new Map<string, LinhaSaldo[]>();
   for (const l of linhas) {
     const nome = l.sigla ?? (l.ugNome || "Unidade não cadastrada");
     if (!grupos.has(nome)) grupos.set(nome, []);
-    grupos.get(nome)!.push({ ...l, idade: idadeDoSaldo(l.valor, creditos.get(chaveDaLinha(l)), hoje) });
+    const doSaldo = creditos.get(chaveDaLinha(l));
+    grupos.get(nome)!.push({ ...l, idade: idadeDoSaldo(l.valor, doSaldo, hoje), notas: notasDoSaldo(l.valor, doSaldo) });
   }
   const lista = [...grupos].map(([sigla, ls]) => {
     const idades = ls.map((l) => l.idade?.dias).filter((x): x is number => x !== undefined);
     return {
       sigla, logo: logoDa(sigla), valor: ls.reduce((s, l) => s + l.valor, 0),
       recebidoUltimoDia: recebidoNoDia.has(sigla) ? recebidoNoDia.get(sigla)! : null,
+      notasUltimoDia: notasNoDia.get(sigla) ?? [],
       linhas: [...ls].sort((a, b) => b.valor - a.valor),
       idadeMaxima: idades.length ? Math.max(...idades) : null,
     };
@@ -152,10 +188,14 @@ export function montarPainel(d: DadosOrcamento, f: FiltroCredito, hoje = hojeEmM
 
   // Lista de disponível: só a ND filtra. A linha verde do BI ("variação") passa a ser o crédito
   // recebido pela unidade no dia do último lançamento.
-  const recebidoNoDia = somarPor(
-    recebidoND.filter((r) => r.data === atualizadoEm && r.sigla), (r) => r.sigla!, (r) => r.valor);
+  const doUltimoDia = recebidoND.filter((r) => r.data === atualizadoEm && r.sigla);
+  const recebidoNoDia = somarPor(doUltimoDia, (r) => r.sigla!, (r) => r.valor);
+  const notasNoDia = new Map<string, NotaCredito[]>();
+  for (const sigla of new Set(doUltimoDia.map((r) => r.sigla!))) {
+    notasNoDia.set(sigla, juntarNotas(doUltimoDia.filter((r) => r.sigla === sigla)).sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)));
+  }
   const disponivelND = d.disponivel.filter(daND);
-  const disponivel = disponivelPorUnidade(disponivelND, recebidoNoDia, creditosPorLinha(d.recebido), hoje);
+  const disponivel = disponivelPorUnidade(disponivelND, recebidoNoDia, creditosPorLinha(d.recebido), hoje, notasNoDia);
 
   return {
     hoje, ano, atualizadoEm, recebido, empenhado,
