@@ -250,7 +250,7 @@
   position: fixed; z-index: 60; width: min(640px, calc(100vw - 20px)); max-height: calc(100vh - 20px); overflow: auto;
   padding: 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px;
   background: var(--po-escuro); color: #fff; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
+  pointer-events: auto; overscroll-behavior: contain;
 }
 .po-dica table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .po-dica th { padding: 6px; border-bottom: 1px solid #000; font-size: 11.5px; font-weight: 700; text-align: left; }
@@ -262,16 +262,9 @@
 .po-nc { margin: 1px 0 4px; font-size: 10.5px; line-height: 1.35; }
 .po-nc-cab { color: var(--po-cinza); }
 .po-nc-cab b { color: #fff; font-weight: 700; }
-.po-nc[data-nova] .po-nc-cab b { color: var(--po-verde); }
 .po-nc-de { color: var(--po-cinza); }
-.po-nc-selo { margin-left: 6px; padding: 0 5px; border-radius: 4px; background: var(--po-verde); color: var(--po-escuro); font-size: 9.5px; font-weight: 700; }
 .po-nc-obs { display: block; color: #dbe7f3; overflow-wrap: anywhere; }
 .po-nc-mais { font-size: 10px; color: var(--po-cinza); }
-.po-nc-onde { display: block; margin: -2px 0 4px; font-size: 10px; color: var(--po-cinza); }
-.po-dica-dia { margin: 2px 2px 8px; padding: 6px 8px; border: 1px solid rgba(148, 254, 146, 0.45); border-radius: 6px; background: rgba(148, 254, 146, 0.07); }
-.po-dica-dia-tit { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 4px; font-size: 11.5px; font-weight: 700; }
-.po-dica-dia-tit b { color: var(--po-verde); }
-.po-dica-dia-nota + .po-dica-dia-nota { padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
 .po-dica tfoot td { border-top: 1px solid rgba(255, 255, 255, 0.35); font-weight: 700; }
 .po-dica .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .po-idade { white-space: nowrap; }
@@ -280,13 +273,8 @@
 .po-idade[data-faixa="novo"] b { color: var(--po-verde); }
 .po-idade[data-faixa="medio"] b { color: #ffd27a; }
 .po-idade[data-faixa="antigo"] b { color: var(--po-vermelho); }
-.po-dica-nota { margin: 6px 4px 2px; font-size: 10.5px; line-height: 1.4; color: var(--po-cinza); }
-.po-dica-nota b { color: #fff; }
-.po-dica[data-fixo] { pointer-events: auto; overscroll-behavior: contain; }
 .po-dica-tit { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0 4px 6px; font-size: 11.5px; color: var(--po-cinza); }
 .po-dica-tit b { color: #fff; }
-.po-dica-rolar { display: none; font-size: 10px; color: var(--po-verde); white-space: nowrap; }
-.po-dica[data-transborda="1"] .po-dica-rolar { display: inline; }
 .po-dica-fechar { flex: none; padding: 1px 8px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: transparent; color: #fff; font-size: 12px; cursor: pointer; }
 @media (max-width: 560px) {
   .po-dica table { font-size: 10px; }

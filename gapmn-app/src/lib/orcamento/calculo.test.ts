@@ -242,7 +242,6 @@ test("idade no tooltip: liga saldo e crédito por UG, PI e ND; ignora devoluçã
   assert.equal(u.linhas[0].idade?.desde, "2026-03-09");
   assert.equal(u.linhas[0].idade?.dias, 225);
   assert.equal(u.linhas[1].idade, null, "PI sem crédito na planilha fica sem idade");
-  assert.equal(u.idadeMaxima, 225);
   assert.equal(creditosPorLinha(d.recebido).get("120001|PI01|449051")?.length, 1, "devolução (negativa) não conta");
 });
 
@@ -271,7 +270,30 @@ test("notas de crédito que formam o saldo: da mais nova para a mais antiga, a �
   assert.deepEqual(notasDoSaldo(100, repetida).map((n) => [n.nc, n.valor, n.noSaldo]), [["NC9", 100, 100]]);
 });
 
-test("tooltip: notas do último dia explicam a linha verde, com a descrição", () => {
+test("tooltip: do crédito que chegou há menos tempo para o mais antigo; sem idade no fim; empate pelo maior saldo", () => {
+  const d: DadosOrcamento = {
+    recebido: [
+      rec({ data: "2026-10-20", ug: "120630", pi: "PI01", nd: "339030", valor: 1726932.6 }),
+      rec({ data: "2026-10-21", ug: "120630", pi: "PI02", nd: "339039", valor: 265826.86 }),
+      rec({ data: "2026-10-20", ug: "120630", pi: "PI04", nd: "339030", valor: 500 }),
+      rec({ data: "2026-07-21", ug: "120630", pi: "PI05", nd: "339030", valor: 10 }),
+    ],
+    empenhos: [],
+    disponivel: [
+      disp({ ug: "120630", sigla: "GAP-MN", pi: "PI05", nd: "339030", valor: 0.43 }),
+      disp({ ug: "120630", sigla: "GAP-MN", pi: "PI03", nd: "339030", valor: 9000 }),
+      disp({ ug: "120630", sigla: "GAP-MN", pi: "PI01", nd: "339030", valor: 1726932.6 }),
+      disp({ ug: "120630", sigla: "GAP-MN", pi: "PI04", nd: "339030", valor: 500 }),
+      disp({ ug: "120630", sigla: "GAP-MN", pi: "PI02", nd: "339039", valor: 265826.86 }),
+    ],
+  };
+  const gap = montarPainel(d, { om: null, nd: null }, "2026-10-22").disponivel[0];
+  assert.deepEqual(gap.linhas.map((l) => [l.pi, l.idade?.dias ?? null]), [
+    ["PI02", 1], ["PI01", 2], ["PI04", 2], ["PI05", 93], ["PI03", null],
+  ]);
+});
+
+test("tooltip: cada saldo traz as notas de crédito que o formam, com a descrição", () => {
   const d: DadosOrcamento = {
     recebido: [
       rec({ nc: "120002000012026NC000010", data: "2026-10-01", ug: "120630", sigla: "GAP-MN", pi: "PI01", nd: "339039", valor: 1000, obs: "CREDITO ANTIGO" }),
@@ -287,10 +309,6 @@ test("tooltip: notas do último dia explicam a linha verde, com a descrição", 
   };
   const gap = montarPainel(d, { om: null, nd: null }, "2026-10-22").disponivel.find((u) => u.sigla === "GAP-MN")!;
   assert.equal(gap.recebidoUltimoDia, 265816.86);
-  assert.deepEqual(gap.notasUltimoDia.map((n) => [fmtNC(n.nc), n.valor, n.obs]), [
-    ["2026NC000020", 265826.86, "EMPENHO IMEDIATO - RECUPERACAO DA PAVIMENTACAO"],
-    ["2026NC000021", -10, "ANULACAO PARCIAL"],
-  ], "só as notas da unidade, da maior para a menor (pelo valor absoluto)");
   assert.equal(gap.linhas[0].notas[0].obs, "EMPENHO IMEDIATO - RECUPERACAO DA PAVIMENTACAO", "a nota nova forma o saldo da linha dela");
   assert.deepEqual(gap.linhas[1].notas.map((n) => [n.obs, n.noSaldo]), [["CREDITO ANTIGO", 400]]);
   // com a ND filtrada, a nota de outra ND some do último dia

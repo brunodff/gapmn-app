@@ -120,13 +120,18 @@ export function notasDoSaldo(saldo: number, creditos: LinhaRecebido[] | undefine
   return out;
 }
 
+/** Linhas do tooltip: do crédito que chegou há menos tempo para o mais antigo; sem idade no fim; empate pelo maior saldo. */
+export function ordemDoTooltip(a: LinhaSaldo, b: LinhaSaldo): number {
+  const da = a.idade?.dias ?? Infinity, db = b.idade?.dias ?? Infinity;
+  return da === db ? b.valor - a.valor : da - db;
+}
+
 /** Agrupa o saldo disponível por unidade, com posição (empates dividem a posição, como o RANKX DENSE). */
 export function disponivelPorUnidade(
   linhas: LinhaDisponivel[],
   recebidoNoDia: Map<string, number>,
   creditos: Map<string, LinhaRecebido[]> = new Map(),
   hoje = hojeEmManaus(),
-  notasNoDia: Map<string, NotaCredito[]> = new Map(),
 ): UnidadeDisponivel[] {
   const grupos = new Map<string, LinhaSaldo[]>();
   for (const l of linhas) {
@@ -135,16 +140,11 @@ export function disponivelPorUnidade(
     const doSaldo = creditos.get(chaveDaLinha(l));
     grupos.get(nome)!.push({ ...l, idade: idadeDoSaldo(l.valor, doSaldo, hoje), notas: notasDoSaldo(l.valor, doSaldo) });
   }
-  const lista = [...grupos].map(([sigla, ls]) => {
-    const idades = ls.map((l) => l.idade?.dias).filter((x): x is number => x !== undefined);
-    return {
-      sigla, logo: logoDa(sigla), valor: ls.reduce((s, l) => s + l.valor, 0),
-      recebidoUltimoDia: recebidoNoDia.has(sigla) ? recebidoNoDia.get(sigla)! : null,
-      notasUltimoDia: notasNoDia.get(sigla) ?? [],
-      linhas: [...ls].sort((a, b) => b.valor - a.valor),
-      idadeMaxima: idades.length ? Math.max(...idades) : null,
-    };
-  });
+  const lista = [...grupos].map(([sigla, ls]) => ({
+    sigla, logo: logoDa(sigla), valor: ls.reduce((s, l) => s + l.valor, 0),
+    recebidoUltimoDia: recebidoNoDia.has(sigla) ? recebidoNoDia.get(sigla)! : null,
+    linhas: [...ls].sort(ordemDoTooltip),
+  }));
   lista.sort((a, b) => b.valor - a.valor || a.sigla.localeCompare(b.sigla, "pt-BR"));
   const valores = [...new Set(lista.map((u) => u.valor))];
   return lista.map((u) => ({ ...u, rank: valores.indexOf(u.valor) + 1 }));
@@ -190,12 +190,8 @@ export function montarPainel(d: DadosOrcamento, f: FiltroCredito, hoje = hojeEmM
   // recebido pela unidade no dia do último lançamento.
   const doUltimoDia = recebidoND.filter((r) => r.data === atualizadoEm && r.sigla);
   const recebidoNoDia = somarPor(doUltimoDia, (r) => r.sigla!, (r) => r.valor);
-  const notasNoDia = new Map<string, NotaCredito[]>();
-  for (const sigla of new Set(doUltimoDia.map((r) => r.sigla!))) {
-    notasNoDia.set(sigla, juntarNotas(doUltimoDia.filter((r) => r.sigla === sigla)).sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)));
-  }
   const disponivelND = d.disponivel.filter(daND);
-  const disponivel = disponivelPorUnidade(disponivelND, recebidoNoDia, creditosPorLinha(d.recebido), hoje, notasNoDia);
+  const disponivel = disponivelPorUnidade(disponivelND, recebidoNoDia, creditosPorLinha(d.recebido), hoje);
 
   return {
     hoje, ano, atualizadoEm, recebido, empenhado,

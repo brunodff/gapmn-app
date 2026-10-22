@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { fmtData, fmtDiaMes, fmtDias, fmtMoeda, fmtNC } from "../../lib/orcamento/formato.ts";
-import type { IdadeCredito, NotaCredito, NotaNoSaldo, UnidadeDisponivel } from "../../lib/orcamento/tipos.ts";
+import type { IdadeCredito, NotaNoSaldo, UnidadeDisponivel } from "../../lib/orcamento/tipos.ts";
 import { Logo } from "./Graficos";
 
 type Ativo = { unidade: UnidadeDisponivel; linha: HTMLElement };
@@ -11,34 +11,27 @@ const faixaDaIdade = (dias: number) => (dias <= 30 ? "novo" : dias <= 90 ? "medi
 /** Até quantas notas de crédito aparecem por linha de saldo (as mais novas). */
 const NOTAS_POR_LINHA = 3;
 
-/** Uma nota de crédito: número, data, valor e a descrição (observação) que veio do SIAFI. */
-function Nota({ nota, ultimoDia, noSaldo, descricaoAcima }: {
-  nota: NotaCredito; ultimoDia: string | null; noSaldo?: number;
-  /** A descrição já aparece no bloco "Recebido em": não repete. */
-  descricaoAcima?: boolean;
-}) {
-  const nova = !!ultimoDia && nota.data === ultimoDia;
-  const parcial = noSaldo !== undefined && noSaldo < nota.valor - 0.005;
+/** Uma nota de crédito: número, data, a parte dela que está no saldo e a descrição (observação) do SIAFI. */
+function Nota({ nota }: { nota: NotaNoSaldo }) {
+  const parcial = nota.noSaldo < nota.valor - 0.005;
   return (
-    <div className="po-nc" data-nova={nova ? "1" : undefined}>
+    <div className="po-nc">
       <span className="po-nc-cab">
         <b>{nota.nc ? fmtNC(nota.nc) : "Nota de crédito"}</b>
         {" · "}{fmtData(nota.data)}
-        {" · "}<span className="num">{fmtMoeda(noSaldo ?? nota.valor)}</span>
+        {" · "}<span className="num">{fmtMoeda(nota.noSaldo)}</span>
         {parcial && <span className="po-nc-de"> de {fmtMoeda(nota.valor)}</span>}
-        {nova && <span className="po-nc-selo">nova</span>}
-        {descricaoAcima && nota.obs && <span className="po-nc-de"> · descrição acima</span>}
       </span>
-      {nota.obs && !descricaoAcima && <span className="po-nc-obs">{nota.obs}</span>}
+      {nota.obs && <span className="po-nc-obs">{nota.obs}</span>}
     </div>
   );
 }
 
-function NotasDaLinha({ notas, ultimoDia, jaMostradas }: { notas: NotaNoSaldo[]; ultimoDia: string | null; jaMostradas: Set<string> }) {
+function NotasDaLinha({ notas }: { notas: NotaNoSaldo[] }) {
   const resto = notas.slice(NOTAS_POR_LINHA);
   return (
     <>
-      {notas.slice(0, NOTAS_POR_LINHA).map((n, i) => <Nota key={`${n.nc}|${i}`} nota={n} ultimoDia={ultimoDia} noSaldo={n.noSaldo} descricaoAcima={!!n.nc && jaMostradas.has(n.nc)} />)}
+      {notas.slice(0, NOTAS_POR_LINHA).map((n, i) => <Nota key={`${n.nc}|${i}`} nota={n} />)}
       {resto.length > 0 && (
         <div className="po-nc-mais">
           + {resto.length} nota{resto.length > 1 ? "s" : ""} mais antiga{resto.length > 1 ? "s" : ""} ({fmtMoeda(resto.reduce((s, n) => s + n.noSaldo, 0))})
@@ -60,31 +53,22 @@ function CelulaIdade({ idade }: { idade: IdadeCredito | null }) {
 
 /**
  * "Crédito Disponível por Unidade": lista do BI (posição, logo, sigla, saldo e a linha verde),
- * com o tooltip da tabela descrição | PI | ND | Disp | chegou há, ao passar o mouse, focar ou tocar.
- * O tooltip também mostra as notas de crédito do último dia (a linha verde) e, embaixo de cada saldo,
- * as notas que o formam, com o número e a descrição (observação) do SIAFI.
+ * com o tooltip da tabela descrição | PI | ND | Disp | chegou há e, embaixo de cada saldo, as notas
+ * de crédito que o formam, com o número e a descrição (observação) do SIAFI.
+ * Passar o mouse (ou focar, ou tocar) abre o tooltip, que fica aberto até o ✕, o Esc ou um clique fora;
+ * aberto, só um clique em outra unidade troca o conteúdo.
  */
-export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
+export default function Disponivel({ unidades, total, ultimoDia }: {
   unidades: UnidadeDisponivel[];
   total: number;
   ultimoDia: string | null;
-  /** Data de referência da idade do crédito. */
-  hoje: string;
 }) {
   const [ativo, setAtivo] = useState<Ativo | null>(null);
-  /** Fixado por clique ou toque: aceita o mouse, rola por dentro e só fecha no ✕, no Esc ou clicando fora. */
-  const [fixo, setFixo] = useState(false);
   const dicaRef = useRef<HTMLDivElement>(null);
 
   const abrir = (unidade: UnidadeDisponivel, linha: HTMLElement) => setAtivo({ unidade, linha });
-  const fechar = () => { setAtivo(null); setFixo(false); };
-  const passar = (unidade: UnidadeDisponivel, linha: HTMLElement) => { if (!fixo) abrir(unidade, linha); };
-  const sair = () => { if (!fixo) setAtivo(null); };
-  const clicar = (unidade: UnidadeDisponivel, linha: HTMLElement) => {
-    if (fixo && ativo?.unidade.sigla === unidade.sigla) { fechar(); return; }
-    abrir(unidade, linha);
-    setFixo(true);
-  };
+  const fechar = () => setAtivo(null);
+  const passar = (unidade: UnidadeDisponivel, linha: HTMLElement) => { if (!ativo) abrir(unidade, linha); };
 
   // A posição só é conhecida depois de medir o tooltip: à esquerda da linha; sem espaço, embaixo.
   // Devolve false quando a linha saiu da tela (aí o tooltip fecha).
@@ -106,8 +90,6 @@ export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
     el.style.left = `${Math.max(m, left)}px`;
     el.style.top = `${top}px`;
     el.style.visibility = "visible";
-    // quando não cabe na tela, o tooltip avisa que dá para fixar e rolar
-    el.dataset.transborda = el.scrollHeight > el.clientHeight + 1 ? "1" : "0";
     return true;
   }, [ativo]);
 
@@ -115,36 +97,31 @@ export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
 
   useEffect(() => {
     if (!ativo) return;
-    const tecla = (e: KeyboardEvent) => { if (e.key === "Escape") fechar(); };
+    const tecla = (e: KeyboardEvent) => { if (e.key === "Escape") setAtivo(null); };
     // Ao rolar (inclusive a rolagem que o celular faz até a linha tocada) o tooltip acompanha a linha.
     let quadro = 0;
     const acompanhar = () => {
       cancelAnimationFrame(quadro);
-      quadro = requestAnimationFrame(() => { if (!posicionar()) fechar(); });
+      quadro = requestAnimationFrame(() => { if (!posicionar()) setAtivo(null); });
+    };
+    // Clique ou toque fora do tooltip fecha; numa unidade, o clique dela troca o conteúdo.
+    const fora = (e: PointerEvent) => {
+      const alvo = e.target as Element;
+      if (dicaRef.current?.contains(alvo) || alvo.closest?.(".po-disp-item")) return;
+      setAtivo(null);
     };
     window.addEventListener("keydown", tecla);
     window.addEventListener("scroll", acompanhar, true);
     window.addEventListener("resize", acompanhar);
+    document.addEventListener("pointerdown", fora);
     return () => {
       cancelAnimationFrame(quadro);
       window.removeEventListener("keydown", tecla);
       window.removeEventListener("scroll", acompanhar, true);
       window.removeEventListener("resize", acompanhar);
+      document.removeEventListener("pointerdown", fora);
     };
   }, [ativo, posicionar]);
-
-  // fixado, fecha ao clicar ou tocar fora dele e da unidade
-  useEffect(() => {
-    if (!fixo) return;
-    const fora = (e: PointerEvent) => {
-      const alvo = e.target as Node;
-      if (dicaRef.current?.contains(alvo) || ativo?.linha.contains(alvo)) return;
-      setAtivo(null);
-      setFixo(false);
-    };
-    document.addEventListener("pointerdown", fora);
-    return () => document.removeEventListener("pointerdown", fora);
-  }, [fixo, ativo]);
 
   return (
     <aside className="po-direita" aria-label="Crédito disponível por unidade">
@@ -163,10 +140,10 @@ export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
             return (
               <li key={u.sigla}>
                 <div className="po-disp-item" tabIndex={0} data-ativo={ativo?.unidade.sigla === u.sigla ? "1" : undefined}
-                  aria-label={`${u.rank}º ${u.sigla}: ${fmtMoeda(u.valor)} disponível`}
-                  onMouseEnter={(e) => passar(u, e.currentTarget)} onMouseLeave={sair}
-                  onFocus={(e) => passar(u, e.currentTarget)} onBlur={sair}
-                  onClick={(e) => clicar(u, e.currentTarget)}>
+                  aria-label={`${u.rank}º ${u.sigla}: ${fmtMoeda(u.valor)} disponível`} aria-haspopup="dialog"
+                  onMouseEnter={(e) => passar(u, e.currentTarget)} onFocus={(e) => passar(u, e.currentTarget)}
+                  onClick={(e) => abrir(u, e.currentTarget)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(u, e.currentTarget); } }}>
                   <span className="po-rank">{u.rank}</span>
                   <Logo sigla={u.sigla} src={u.logo} className="po-disp-logo" />
                   <span className="po-disp-sigla" title={u.sigla}>{u.sigla}</span>
@@ -191,30 +168,12 @@ export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
       </div>
 
       {ativo && (
-        <div ref={dicaRef} className="po-dica" role={fixo ? "dialog" : "tooltip"} aria-label={`Crédito disponível de ${ativo.unidade.sigla}`}
-          data-fixo={fixo ? "1" : undefined} style={{ visibility: "hidden", left: 0, top: 0 }}>
+        <div ref={dicaRef} className="po-dica" role="dialog" aria-label={`Crédito disponível de ${ativo.unidade.sigla}`}
+          style={{ visibility: "hidden", left: 0, top: 0 }}>
           <div className="po-dica-tit">
             <span><b>{ativo.unidade.sigla}</b> · crédito disponível por PI e ND</span>
-            {fixo
-              ? <button type="button" className="po-dica-fechar" onClick={fechar} aria-label="Fechar">✕</button>
-              : <span className="po-dica-rolar">clique na unidade para fixar e rolar</span>}
+            <button type="button" className="po-dica-fechar" onClick={fechar} aria-label="Fechar">✕</button>
           </div>
-          {ativo.unidade.notasUltimoDia.length > 0 && (
-            <section className="po-dica-dia" aria-label={`Crédito recebido em ${fmtDiaMes(ultimoDia)}`}>
-              <div className="po-dica-dia-tit">
-                Recebido em {fmtDiaMes(ultimoDia)}
-                {ativo.unidade.recebidoUltimoDia !== null && (
-                  <b className="num">{ativo.unidade.recebidoUltimoDia >= 0 ? "+" : ""}{fmtMoeda(ativo.unidade.recebidoUltimoDia)}</b>
-                )}
-              </div>
-              {ativo.unidade.notasUltimoDia.map((n, i) => (
-                <div key={`${n.nc}|${i}`} className="po-dica-dia-nota">
-                  <Nota nota={n} ultimoDia={null} />
-                  <span className="po-nc-onde">{n.piNome || n.pi} · ND {n.nd}</span>
-                </div>
-              ))}
-            </section>
-          )}
           <table>
             <thead>
               <tr><th>DESCRIÇÃO</th><th>PI</th><th className="po-nd">ND</th><th className="num">Disp</th><th>CHEGOU HÁ</th></tr>
@@ -230,7 +189,7 @@ export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
                 </tr>
                 {l.notas.length > 0 && (
                   <tr className="po-nc-linha">
-                    <td colSpan={5}><NotasDaLinha notas={l.notas} ultimoDia={ultimoDia} jaMostradas={new Set(ativo.unidade.notasUltimoDia.map((n) => n.nc).filter(Boolean))} /></td>
+                    <td colSpan={5}><NotasDaLinha notas={l.notas} /></td>
                   </tr>
                 )}
               </tbody>
@@ -241,19 +200,10 @@ export default function Disponivel({ unidades, total, ultimoDia, hoje }: {
                 <td />
                 <td />
                 <td className="num">{fmtMoeda(ativo.unidade.valor)}</td>
-                {ativo.unidade.idadeMaxima === null ? <td className="po-idade">—</td> : (
-                  <td className="po-idade" data-faixa={faixaDaIdade(ativo.unidade.idadeMaxima)}>
-                    <b>{fmtDias(ativo.unidade.idadeMaxima)}</b><small>o mais antigo</small>
-                  </td>
-                )}
+                <td />
               </tr>
             </tfoot>
           </table>
-          <p className="po-dica-nota">
-            <b>Chegou há:</b> tempo, até hoje ({fmtData(hoje)}), desde o crédito mais antigo que ainda forma o saldo
-            (os empenhos gastam primeiro o crédito mais antigo). Verde até 30 dias, amarelo até 90, vermelho acima disso.
-            Embaixo de cada saldo, as notas de crédito que o formam, com a descrição do SIAFI.
-          </p>
         </div>
       )}
     </aside>

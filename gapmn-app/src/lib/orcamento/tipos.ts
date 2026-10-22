@@ -101,11 +101,8 @@ export type UnidadeDisponivel = {
   valor: number;
   /** Crédito recebido pela unidade no último dia com lançamento (null = nenhum). */
   recebidoUltimoDia: number | null;
-  /** Notas de crédito desse último dia (explicam a linha verde), da maior para a menor. */
-  notasUltimoDia: NotaCredito[];
+  /** Saldos por PI e ND, do crédito que chegou há menos tempo para o mais antigo. */
   linhas: LinhaSaldo[];
-  /** Idade do crédito mais antigo parado na unidade (dias), para o rodapé do tooltip. */
-  idadeMaxima: number | null;
 };
 
 export type OpcaoND = { codigo: string; nome: string };
