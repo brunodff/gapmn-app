@@ -448,7 +448,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
     return [...s].sort();
   }, [compraMap]);
 
-  const bookmarklet = "javascript:(function(){var s=document.createElement('script');s.src='https://processoscae.vercel.app/arp-bot.js?v='+Date.now();document.body.appendChild(s);})();";
+  const bookmarklet = "javascript:(function(){var s=document.createElement('script');s.src='https://gapmn.app/arp-bot.js?v='+Date.now();document.body.appendChild(s);})();";
 
   async function copiarBookmarklet() {
     try {
@@ -568,7 +568,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
         {canSync && (
           <div className="text-[11px] text-slate-400 flex items-center gap-1">
             <span>Robô de ATAs disponível em</span>
-            <a href="/ferramentas" className="text-violet-600 hover:underline font-medium">🔧 Ferramentas & Catálogo</a>
+            <a href="/app?vista=ferramentas" className="text-violet-600 hover:underline font-medium">🔧 Ferramentas & Catálogo</a>
           </div>
         )}
       </div>

@@ -1,7 +1,7 @@
 {
   "name": "GAP-MN App",
   "short_name": "GAP-MN",
-  "description": "Sistema de Gestão do Grupamento de Aviação do Exército — Manaus",
+  "description": "Sistema de Gestão do Grupamento de Apoio de Manaus (GAP-MN)",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",

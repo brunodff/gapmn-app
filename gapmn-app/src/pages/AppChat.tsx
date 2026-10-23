@@ -1202,20 +1202,23 @@ export default function AppChat() {
   const [bellOpen,       setBellOpen]   = useState(false);
   // Só o Painel de Governança vai para o endereço (?painel=governanca), para os filtros
   // dele poderem ser compartilhados por link; as outras telas seguem só no estado.
+  // ?vista=ferramentas abre a Central de Ferramentas: é para onde vão os endereços antigos
+  // /ferramentas e /cnet; vale só na entrada e sai do endereço na primeira troca de tela.
   const [params,         setParams]     = useSearchParams();
-  const [view,           setViewRaw]    = useState<View>(() => (params.get("painel") === "governanca" ? "painel-governanca" : "dashboard"));
+  const [view,           setViewRaw]    = useState<View>(() => (
+    params.get("painel") === "governanca" ? "painel-governanca"
+      : params.get("vista") === "ferramentas" ? "ferramentas"
+      : "dashboard"));
   const [filterTipo,     setFilterTipo] = useState("todos");
 
   function setView(v: View) {
     setViewRaw(v);
     logActivity("page_view", v);
-    if (v === "painel-governanca") {
-      if (params.get("painel") !== "governanca") setParams({ painel: "governanca" }, { replace: true });
-    } else if (params.get("painel") === "governanca") {
-      const p = new URLSearchParams(params);
-      for (const k of ["painel", "div", "cat", "st", "q", "comp"]) p.delete(k);
-      setParams(p, { replace: true });
-    }
+    const p = new URLSearchParams(params);
+    p.delete("vista");
+    if (v === "painel-governanca") p.set("painel", "governanca");
+    else if (p.get("painel") === "governanca") for (const k of ["painel", "div", "cat", "st", "q", "comp"]) p.delete(k);
+    if (p.toString() !== params.toString()) setParams(p, { replace: true });
   }
   const [showProf,       setShowProf]   = useState(false);
   const [userNotifs,     setUserNotifs] = useState<BellItem[]>([]);

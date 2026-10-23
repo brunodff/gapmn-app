@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 
 const BOOKMARKLET_URL = `javascript:(function(){var s=document.createElement('script');s.src='https://gapmn.app/cnet-bot.js?_='+Date.now();document.head.appendChild(s);}())`;
-const BOOKMARKLET_ARP_URL = `javascript:(function(){var s=document.createElement('script');s.src='https://processoscae.vercel.app/arp-bot.js?v='+Date.now();document.body.appendChild(s);})();`;
+const BOOKMARKLET_ARP_URL = `javascript:(function(){var s=document.createElement('script');s.src='https://gapmn.app/arp-bot.js?v='+Date.now();document.body.appendChild(s);})();`;
 
 interface Props {
   onClose: () => void;

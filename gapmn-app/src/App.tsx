@@ -5,13 +5,10 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import AppChat from "./pages/AppChat";
 import ControleOrcamentario from "./pages/ControleOrcamentario";
-import FerramentasGestao from "./pages/FerramentasGestao";
 import EmpenhoAutomatico from "./pages/EmpenhoAutomatico";
 import OrdensBancarias from "./pages/OrdensBancarias";
 import UsoExtensoes from "./pages/UsoExtensoes";
-import CnetBot from "./pages/CnetBot";
 import AptPage from "./pages/AptPage";
-import PaineisExternos from "./pages/PaineisExternos";
 import LandingPage from "./pages/LandingPage";
 import PainelOrcamentarioPublico from "./pages/PainelOrcamentarioPublico";
 import ColetaIndicadores from "./pages/ColetaIndicadores";
@@ -114,14 +111,9 @@ export default function App() {
             }
           />
 
-          <Route
-            path="/ferramentas"
-            element={
-              <RequireAuth>
-                <FerramentasGestao />
-              </RequireAuth>
-            }
-          />
+          {/* A Central de Ferramentas mora dentro do app (vista "ferramentas"); a página avulsa antiga, de
+              fundo branco, foi desativada em 23/10/2026 e o endereço leva para a vista. */}
+          <Route path="/ferramentas" element={<Navigate to="/app?vista=ferramentas" replace />} />
 
 
           <Route
@@ -151,9 +143,17 @@ export default function App() {
             }
           />
 
-          <Route path="/cnet" element={<CnetBot />} />
           <Route path="/apt"  element={<AptPage />} />
-          <Route path="/paineis-externos" element={<PaineisExternos />} />
+          {/* Páginas antigas desativadas em 23/10/2026: o endereço leva para o lugar atual.
+              /cnet: instalador do bookmarklet CNET (substituído pela extensão Painel ComprasNet, na Central de Ferramentas);
+              /paineis-externos: "Meus Painéis" (substituído pelos Painéis Gerenciais de /orcamento);
+              /dashboard e as páginas .html: sobras da hospedagem antiga, que deixaram de ser publicadas (vite.config.ts). */}
+          <Route path="/cnet" element={<Navigate to="/app?vista=ferramentas" replace />} />
+          <Route path="/paineis-externos" element={<Navigate to="/orcamento" replace />} />
+          {["/dashboard", "/dashboard.html", "/apresentacao-gapmn", "/apresentacao-gapmn.html",
+            "/guia-tecnico-gapmn", "/guia-tecnico-gapmn.html", "/relatorio-gapmn", "/relatorio-gapmn.html"].map((p) => (
+            <Route key={p} path={p} element={<Navigate to="/app" replace />} />
+          ))}
           {/* aberta, sem login: Painel Orçamentário para a página do GAP-MN na INTRAER */}
           <Route path="/painel-orcamentario" element={<PainelOrcamentarioPublico />} />
           {/* aberta, sem login: formulário mensal dos indicadores (vale com o código do link do mês) */}

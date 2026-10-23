@@ -422,7 +422,7 @@ export default function EmpenhoAutomatico() {
             <StatusDot />
             Extensão
           </button>
-          <a href="/ferramentas" className="text-xs text-slate-500 hover:text-slate-300 transition">← Ferramentas</a>
+          <a href="/app?vista=ferramentas" className="text-xs text-slate-500 hover:text-slate-300 transition">← Ferramentas</a>
         </div>
       </div>
 
