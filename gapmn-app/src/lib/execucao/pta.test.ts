@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 
 import type { NotaEmpenho } from "./empenhos.ts";
 import type { ContratoResumo, Vinculo } from "./painel.ts";
-import { conferirComposicao, gerarComposicao, periodoDe, setorSugerido, textoCapitulo, totalArtigo, totalComposicao } from "./pta.ts";
+import { conferirComposicao, gerarComposicao, periodoDe, textoCapitulo, totalArtigo, totalComposicao } from "./pta.ts";
+import { MACROPROCESSOS, ehDaMatriz, macroDaTarefa, macroSugerido, ultimoDaMatriz } from "./ptaMatriz.ts";
 
 let seq = 0;
 function ne(p: Partial<NotaEmpenho> & { itens: { nome: string; valor: number; categoria: NotaEmpenho["categoria"] }[] }): NotaEmpenho {
@@ -86,13 +87,46 @@ test("tarefas: alimentação mensal, contrato anual, diversos com os pequenos; v
   assert.equal(totalComposicao(COMP), 94070);
 });
 
-test("códigos: ano do PTA + setor sugerido + sequencial do setor", () => {
+test("códigos: ano do PTA + macroprocesso da Matriz + sequencial depois das tarefas da Matriz", () => {
   const codigos = COMP.artigos.flatMap((a) => a.tarefas.map((t) => t.codigo));
-  assert.deepEqual(codigos, ["27DRH001", "27DIE001", "27DIE002", "27DIE003", "27DOC001"]);
-  assert.equal(setorSugerido("449052", "equipamentos"), "DAD");
-  assert.equal(setorSugerido("339039", "engenharia"), "DIE");
-  assert.equal(setorSugerido("339139", "expediente"), "DOC");
+  // diárias → PES (Matriz vai até 006); gêneros → SUB (005); limpeza → ADM (005); diversos → PAT (005)
+  assert.deepEqual(codigos, ["27PES007", "27SUB006", "27ADM006", "27PAT006", "27ADM007"]);
+  assert.equal(macroSugerido("449052", "equipamentos"), "PAT");
+  assert.equal(macroSugerido("449052", "tic"), "TIC");
+  assert.equal(macroSugerido("339039", "engenharia"), "INF");
+  assert.equal(macroSugerido("339039", "utilidades"), "ADM");
+  assert.equal(macroSugerido("339030", "equipamentos"), "SPV");
+  assert.equal(macroSugerido("339030", "veiculos"), "STR");
+  assert.equal(macroSugerido("339092", "outros"), "FIN");
   assert.deepEqual(conferirComposicao(COMP), []);
+});
+
+test("macroprocesso de tarefas já escritas (minutas com código por setor)", () => {
+  assert.equal(macroDaTarefa("339015", "Pagar diárias – Operacao Excelsior"), "PES");
+  assert.equal(macroDaTarefa("339030", "Adquirir gêneros alimentícios e material de copa e cozinha"), "SUB");
+  assert.equal(macroDaTarefa("339030", "Quitar as despesas do contrato DESPESA 045/GAPMN/2025 (agricultura familiar)"), "SUB");
+  assert.equal(macroDaTarefa("339030", "Adquirir fardamento, mobiliário e material individual"), "SPV");
+  assert.equal(macroDaTarefa("339030", "Adquirir material de manutenção predial e infraestrutura"), "INF");
+  assert.equal(macroDaTarefa("339039", "Quitar as despesas do contrato DESPESA 018/GAPMN/2026 (contratação de serviço de limpeza do gap-mn)"), "ADM");
+  assert.equal(macroDaTarefa("339039", "Quitar as despesas de energia elétrica"), "ADM");
+  assert.equal(macroDaTarefa("339040", "Contratar serviços de tecnologia da informação e telefonia"), "TIC");
+  assert.equal(macroDaTarefa("449052", "Adquirir freezer"), "PAT");
+  assert.equal(macroDaTarefa("339030", "Quitar despesas diversas"), "PAT");
+  assert.equal(macroDaTarefa("339039", "Quitar as despesas do contrato 00036/2021 (serviços de administração e gerenciamento compartilhado de frota)"), "STR");
+  assert.equal(macroDaTarefa("339039", "Quitar as despesas do contrato DESPESA 006/2025 (serviço de outsourcing de impressão)"), "TIC");
+  assert.equal(macroDaTarefa("339039", "Quitar as despesas do contrato DESPESA 043/2021 (outsourcing para operação de almoxarifado virtual)"), "PAT");
+  assert.equal(macroDaTarefa("339039", "Quitar as despesas do contrato DESPESA 066/2024 (empresa brasileira de correios e telégrafos (ebct))"), "ARQ");
+  assert.equal(macroDaTarefa("339039", "Quitar as despesas do contrato DESPESA 009/2023 (assinatura de ferramenta de pesquisas de preço)"), "CON");
+  assert.equal(macroDaTarefa("339039", "Contratar serviços de manutenção e reparo de equipamentos, mobiliário e fardamento", "SISHT - SEFA"), "SHT");
+  assert.equal(macroDaTarefa("449052", "Adquirir veiculos teleguiados"), "PAT", "material permanente fica no patrimônio");
+  assert.equal(macroSugerido("339039", "limpeza", "SISHT - SEFA"), "SHT");
+});
+
+test("Matriz da DIRAD: trigramas e códigos reservados", () => {
+  assert.equal(ultimoDaMatriz("SPV"), 14);
+  assert.equal(ultimoDaMatriz("DIE"), 0, "trigrama de setor não é da Matriz");
+  assert.ok(ehDaMatriz("FIN", 5) && !ehDaMatriz("FIN", 6) && !ehDaMatriz("FIN", 0));
+  assert.ok(MACROPROCESSOS.ARQ && !MACROPROCESSOS.DOC, "documental usa ARQ, como nas tarefas da Matriz");
 });
 
 test("período pelos meses de emissão", () => {
@@ -127,6 +161,6 @@ test("texto do capítulo no formato do PTA, numerando a partir do artigo informa
   assert.equal(t[0], "CAPÍTULO VII");
   assert.equal(t[3], "Art. 38 DIÁRIAS MILITARES – OPERACAO EXCELSIOR – ND 339015 – Ação: «a confirmar» – R$ 9.000,00");
   assert.equal(t[5], "CÓDIGO\tPERÍODO\tTAREFA\tTOTAL (R$)");
-  assert.equal(t[6], "27DRH001\tAbril\tPagar diárias – Operacao Excelsior\t9.000,00");
+  assert.equal(t[6], "27PES007\tAbril\tPagar diárias – Operacao Excelsior\t9.000,00");
   assert.ok(t.includes("Art. 40 SERVIÇOS DE TERCEIROS – PESSOA JURÍDICA – CONTRATOS CONTINUADOS - SEFA – ND 339039 – Ação: «a confirmar» – R$ 75.000,00"));
 });

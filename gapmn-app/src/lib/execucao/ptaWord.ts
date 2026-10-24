@@ -2,12 +2,16 @@
 // aprovada, e o app só mexe no que é dele:
 // - troca o cap. VII (Composição Orçamentária) pelo da minuta do painel, no formato das tabelas que já estão lá;
 // - renumera os artigos do anexo e o sumário;
-// - refaz os códigos de tarefa na ordem do documento: ano + setor + sequencial do setor, sem repetir nem saltar
-//   (DCA 11-1/2020, Anexo G, item VI). A mesma tarefa que aparece de novo no cap. VII fica com o mesmo código.
+// - refaz os códigos de tarefa na ordem do documento: ano + trigrama + sequencial do trigrama, sem repetir nem
+//   saltar. Desde o PTA 2027 o trigrama é o do macroprocesso da Matriz de Atividades e Tarefas Mínimas da DIRAD
+//   (ptaMatriz.ts): as tarefas da Matriz mantêm o código e as próprias do GAP-MN continuam depois delas. Trigrama
+//   de setor (PTA 2026 e anteriores, DCA 11-1/2020, Anexo G, item VI) segue numerado do 001. A mesma tarefa que
+//   aparece de novo no cap. VII fica com o mesmo código.
 // O resto do texto é de quem edita no Word.
 
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { ACAO_A_CONFIRMAR, totalArtigo } from "./pta.ts";
+import { ehDaMatriz, ultimoDaMatriz } from "./ptaMatriz.ts";
 import type { ConteudoCap7 } from "./ptaMinuta.ts";
 
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -232,11 +236,14 @@ function renumerarCodigos(corpo: string, aa: string, cap7: { codigo: string; des
       if (!cod) {
         novo = "«código»";
         semSetor.push(desc0.slice(0, 60));
+      } else if (ehDaMatriz(cod[2], Number(cod[3]))) {
+        // tarefa da Matriz da DIRAD: código fixo, só o ano acompanha o PTA
+        novo = `${aa}${cod[2]}${cod[3]}`;
       } else {
         const chave = `${antigo}|${chaveTarefa(desc0)}`;
         novo = vistos.get(chave) ?? "";
         if (!novo) {
-          const n = (cont.get(cod[2]) ?? 0) + 1;
+          const n = (cont.get(cod[2]) ?? ultimoDaMatriz(cod[2])) + 1;
           cont.set(cod[2], n);
           novo = `${aa}${cod[2]}${String(n).padStart(3, "0")}`;
           vistos.set(chave, novo);

@@ -1,10 +1,12 @@
 // Composição orçamentária (cap. VII) da minuta do PTA, gerada só com os dados do Painel de Execução:
 // empenhos do ano por item, da UG do GAP-MN, agrupados em artigos (natureza de despesa + PI) e tarefas
 // (contrato do PAG ou grupo de objetos). Regras do capítulo: DCA 11-1/2020, Anexo G, item IV, tópico 7
-// (granularidade de tarefa; até 10% em "diversos") e item VI (código de tarefa ano + setor + sequencial).
+// (granularidade de tarefa; até 10% em "diversos"). Código de tarefa: ano + macroprocesso + sequencial, pela
+// Matriz de Atividades e Tarefas Mínimas da DIRAD para o PTA 2027 (ptaMatriz.ts).
 // A ação orçamentária não está no painel: fica marcada para confirmar.
 
 import { categoria, normalizar, type CategoriaId } from "./categorias.ts";
+import { macroSugerido, ultimoDaMatriz } from "./ptaMatriz.ts";
 import type { ItemEmpenho, NotaEmpenho } from "./empenhos.ts";
 import type { ContratoResumo, Vinculo } from "./painel.ts";
 
@@ -122,15 +124,6 @@ const SERVICO: Partial<Record<CategoriaId, string>> = {
   outros: "apoio diverso",
 };
 
-/** Setor sugerido para o código da tarefa, pelo costume do PTA GAP-MN 2026. O Bruno ajusta na minuta. */
-export function setorSugerido(nd: string, cat: CategoriaId): string {
-  if (/^449/.test(nd)) return "DAD";
-  if (/^3390(14|15|33)/.test(nd) || cat === "capacitacao" || cat === "deslocamento") return "DRH";
-  if (/^339[01]39$/.test(nd)) return ["utilidades", "engenharia", "veiculos"].includes(cat) ? "DIE" : "DOC";
-  if (nd === "339030" && (cat === "equipamentos" || cat === "expediente")) return "DAD";
-  return "DIE";
-}
-
 type Grupo = { chave: string; descricao: string; cat: CategoriaId; contrato: ContratoResumo | null; itens: { nota: NotaEmpenho; item: ItemEmpenho }[] };
 
 function grupoDe(nd: string, piNome: string, nota: NotaEmpenho, item: ItemEmpenho, contrato: ContratoResumo | null): Omit<Grupo, "itens"> {
@@ -234,14 +227,14 @@ export function gerarComposicao(
     .filter((a) => a.tarefas.length)
     .sort((x, y) => x.nd.localeCompare(y.nd) || totalArtigo(y) - totalArtigo(x));
 
-  // códigos: ano + setor sugerido + sequencial do setor, na ordem dos artigos
+  // códigos: ano + macroprocesso sugerido + sequencial, depois das tarefas da Matriz, na ordem dos artigos
   const aa = String(opcoes.ano).slice(-2);
   for (const a of lista) for (const t of a.tarefas) {
     const cat = (t as TarefaPTA & { _cat?: CategoriaId })._cat ?? "outros";
-    const setor = setorSugerido(a.nd, cat);
-    const n = (seq.get(setor) ?? 0) + 1;
-    seq.set(setor, n);
-    t.codigo = `${aa}${setor}${String(n).padStart(3, "0")}`;
+    const macro = macroSugerido(a.nd, cat, a.piNome);
+    const n = (seq.get(macro) ?? ultimoDaMatriz(macro)) + 1;
+    seq.set(macro, n);
+    t.codigo = `${aa}${macro}${String(n).padStart(3, "0")}`;
     delete (t as TarefaPTA & { _cat?: CategoriaId })._cat;
   }
 
@@ -251,7 +244,7 @@ export function gerarComposicao(
   const pontos = [
     `Base: empenhos de ${anoBase} da UG ${ug} no Painel de Execução, emitidos até ${recorte ? `${recorte.slice(8, 10)}/${recorte.slice(5, 7)}/${recorte.slice(0, 4)}` : "—"}. Valor proposto = empenhado em ${anoBase}, sem anualização nem reajuste.`,
     "Ação orçamentária: o painel não traz a ação. Confirmar a de cada artigo pelo PI.",
-    "Códigos de tarefa: setor sugerido pelo costume do PTA anterior; o sequencial definitivo sai ao levar a minuta para o Word, continuando a numeração dos caps. V e VI (DCA 11-1, Anexo G, item VI).",
+    "Códigos de tarefa: ano + macroprocesso + sequencial, pela Matriz de Atividades e Tarefas Mínimas da DIRAD (Ofício nº 35/CGOV/17011). O macroprocesso é sugerido pela natureza de despesa e pelo objeto; o sequencial definitivo sai ao levar a minuta para o Word, depois das tarefas da Matriz e dos caps. V e VI.",
   ];
   if (listaExcl.length) pontos.push(`Fora do capítulo, para decidir: ${listaExcl.map((e) => `${e.nd} ${e.ndNome.toLowerCase()} (${fmt(e.valor)})`).join("; ")}.`);
   if (venc) pontos.push(`${venc} tarefa(s) de contrato que vence até o fim de ${opcoes.ano}: prever prorrogação ou nova contratação.`);
@@ -293,7 +286,7 @@ export function conferirComposicao(c: Pick<ComposicaoPTA, "artigos" | "ano">): s
     const diversos = a.tarefas.filter((t) => /divers|outros/i.test(t.descricao)).reduce((s, t) => s + (Number(t.valor) || 0), 0);
     if (total > 0 && diversos > total * 0.1) avisos.push(`${a.titulo}: "diversos/outros" passa de 10% do artigo.`);
     for (const t of a.tarefas) {
-      if (!/^\d{2}[A-Z]{3}\d{3}$/.test(t.codigo)) avisos.push(`Tarefa "${t.descricao}": código "${t.codigo || "vazio"}" fora do padrão ano + setor + sequencial.`);
+      if (!/^\d{2}[A-Z]{3}\d{3}$/.test(t.codigo)) avisos.push(`Tarefa "${t.descricao}": código "${t.codigo || "vazio"}" fora do padrão ano + macroprocesso + sequencial.`);
       else if (!t.codigo.startsWith(aa)) avisos.push(`Tarefa ${t.codigo}: o código deve começar por ${aa}.`);
       const outra = vistos.get(t.codigo);
       if (t.codigo && outra && outra !== t.descricao) avisos.push(`Código ${t.codigo} repetido em tarefas diferentes.`);
