@@ -1,5 +1,7 @@
 // Tipos do Painel Orçamentário (aba Crédito), réplica do Power BI "Painel de Controle | DOC-MN".
 
+import type { LancamentosEmpenho } from "./lancamentos.ts";
+
 /** Um lançamento de crédito recebido (planilha "Dados (2)" do Power BI). */
 export type LinhaRecebido = {
   /** Número da nota de crédito ("RO - Doc Web", ex.: 120002000012026NC011361). */
@@ -81,6 +83,8 @@ export type DadosOrcamento = {
   recebido: LinhaRecebido[];
   empenhos: Empenho[];
   disponivel: LinhaDisponivel[];
+  /** Emissões, reforços e anulações de empenho, dia a dia (lista "Empenhos do dia"). */
+  lancamentos?: LancamentosEmpenho;
 };
 
 export type FiltroCredito = {

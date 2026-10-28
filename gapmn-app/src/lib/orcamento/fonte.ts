@@ -1,7 +1,10 @@
 // Busca das três planilhas do Painel Orçamentário (as mesmas que o Power BI lê).
 // São planilhas publicadas por link; o navegador baixa o CSV direto do Google, sem servidor no meio.
 // Guarda o último resultado bom para a tela abrir na hora e para quando o Google não responder.
+// Os lançamentos de empenho (lista "Empenhos do dia") ficam numa chave à parte: são grandes e, se
+// não couberem no armazenamento do navegador, o resto do painel continua abrindo na hora.
 
+import { lerLancamentos, type LancamentosEmpenho } from "./lancamentos.ts";
 import { lerDisponivel, lerEmpenhos, lerRecebido, parseCSV } from "./leitura.ts";
 import type { DadosOrcamento } from "./tipos.ts";
 
@@ -23,6 +26,7 @@ export type ResultadoOrcamento = {
 };
 
 const CHAVE = "gapmn_orcamento_credito_v3";
+const CHAVE_LANCAMENTOS = "gapmn_orcamento_lancamentos_v1";
 const TEMPO_LIMITE_MS = 45_000;
 
 async function baixar(url: string, sinal: AbortSignal): Promise<string[][]> {
@@ -50,10 +54,16 @@ export async function buscarOrcamento(): Promise<ResultadoOrcamento> {
       baixar(PLANILHAS_ORCAMENTO.empenhos, ctl.signal),
     ]);
     const res: ResultadoOrcamento = {
-      dados: { recebido: lerRecebido(rec), disponivel: lerDisponivel(disp), empenhos: lerEmpenhos(emp) },
+      dados: { recebido: lerRecebido(rec), disponivel: lerDisponivel(disp), empenhos: lerEmpenhos(emp), lancamentos: lerLancamentos(emp) },
       lidoEm: new Date().toISOString(),
     };
-    try { localStorage.setItem(CHAVE, JSON.stringify(res)); } catch { /* cota cheia ou navegação privada */ }
+    const { lancamentos, ...semLancamentos } = res.dados;
+    try { localStorage.setItem(CHAVE, JSON.stringify({ ...res, dados: semLancamentos })); } catch { /* cota cheia ou navegação privada */ }
+    try {
+      localStorage.setItem(CHAVE_LANCAMENTOS, JSON.stringify(lancamentos));
+    } catch {
+      try { localStorage.removeItem(CHAVE_LANCAMENTOS); } catch { /* sem armazenamento */ }
+    }
     return res;
   } catch (e) {
     if ((e as Error)?.name === "AbortError") throw new Error("As planilhas demoraram demais para responder.");
@@ -68,7 +78,12 @@ export function orcamentoGuardado(): ResultadoOrcamento | null {
     const bruto = localStorage.getItem(CHAVE);
     if (!bruto) return null;
     const r = JSON.parse(bruto) as ResultadoOrcamento;
-    return Array.isArray(r?.dados?.recebido) && Array.isArray(r?.dados?.empenhos) && Array.isArray(r?.dados?.disponivel) ? r : null;
+    if (!(Array.isArray(r?.dados?.recebido) && Array.isArray(r?.dados?.empenhos) && Array.isArray(r?.dados?.disponivel))) return null;
+    try {
+      const l = JSON.parse(localStorage.getItem(CHAVE_LANCAMENTOS) ?? "null") as LancamentosEmpenho | null;
+      if (Array.isArray(l?.notas) && Array.isArray(l?.lancamentos)) r.dados.lancamentos = l;
+    } catch { /* sem a lista guardada: ela aparece na primeira leitura */ }
+    return r;
   } catch {
     return null;
   }

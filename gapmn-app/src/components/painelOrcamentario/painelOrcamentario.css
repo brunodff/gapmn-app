@@ -38,6 +38,8 @@
   /* Tela cheia: uma tela só, como o BI; os gráficos de barras ocupam a sobra da altura. */
   .po[data-cheia] .po-grade { height: 100vh; min-height: 640px; }
   .po[data-cheia] .po-duas { flex: 1 1 auto; min-height: 0; }
+  .po[data-cheia] .po-emp { flex: 1 1 auto; }
+  .po[data-cheia] .po-emp-lista { flex: 1 1 0; min-height: 120px; max-height: none; }
   .po[data-cheia] .po-barras-cartao { display: flex; flex-direction: column; min-height: 0; }
   .po[data-cheia] .po-barras { flex: 1 1 0; min-height: 110px; max-height: none; }
   .po[data-cheia] .po-disp-lista { overflow-y: auto; min-height: 0; }
@@ -195,6 +197,80 @@
 .po-barra-trilho { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .po-barra { flex: none; height: 13px; min-width: 2px; border-radius: 0 2px 2px 0; background: var(--po-escuro); }
 .po-barra-val { font-size: 11px; white-space: nowrap; color: #252f3a; font-variant-numeric: tabular-nums; }
+
+/* Empenhos do dia (no lugar de "Crédito Empenhado por PI" e "Crédito Recebido por OM") */
+.po-emp { --po-emissao: #1d4ed8; --po-reforco: #047857; --po-anulacao: #b42318; display: flex; flex-direction: column; min-height: 0; }
+.po-emp-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #c8ccd0; }
+.po-emp-tit { margin: 0; padding: 0; border: 0; }
+.po-emp-dia-nome { font-weight: 400; color: var(--po-texto-2); }
+.po-emp-nav { display: flex; align-items: center; gap: 4px; }
+.po-emp-seta {
+  display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+  border: 1px solid #cdd3da; border-radius: 6px; background: #fff; color: var(--po-escuro); cursor: pointer;
+}
+.po-emp-seta:hover:not(:disabled) { background: #f4f6f8; }
+.po-emp-seta:disabled { opacity: 0.35; cursor: default; }
+.po-emp-data {
+  height: 26px; padding: 0 6px; border: 1px solid #cdd3da; border-radius: 6px;
+  background: #fff; color: var(--po-escuro); font: inherit; font-size: 12px;
+}
+.po-emp-resumo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+@container po (max-width: 620px) { .po-emp-resumo { grid-template-columns: minmax(0, 1fr); } }
+.po-emp-chip {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "rot n" "v v"; gap: 1px 6px;
+  padding: 6px 10px; border: 1px solid #d5dae0; border-left: 4px solid var(--po-cor); border-radius: 8px;
+  background: #fff; color: var(--po-escuro); font: inherit; text-align: left; cursor: pointer;
+}
+.po-emp-chip[data-tipo="emissao"] { --po-cor: var(--po-emissao); }
+.po-emp-chip[data-tipo="reforco"] { --po-cor: var(--po-reforco); }
+.po-emp-chip[data-tipo="anulacao"] { --po-cor: var(--po-anulacao); }
+.po-emp-chip[aria-pressed="false"] { opacity: 0.45; background: transparent; }
+.po-emp-chip-rot { grid-area: rot; font-size: 11.5px; font-weight: 600; color: #3d4650; }
+.po-emp-chip-n { grid-area: n; font-size: 15px; font-weight: 800; color: var(--po-cor); font-variant-numeric: tabular-nums; }
+.po-emp-chip-v { grid-area: v; font-size: 12.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.po-emp-lista { display: flex; flex-direction: column; gap: 3px; max-height: 290px; margin: 0; padding: 0 4px 0 0; overflow-y: auto; list-style: none; }
+.po-emp-item { border: 1px solid transparent; border-radius: 6px; }
+.po-emp-item[data-aberto] { border-color: #cdd3da; background: #fff; }
+.po-emp-linha {
+  display: grid; grid-template-columns: 14px 74px 104px 64px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  width: 100%; min-height: 26px; padding: 3px 6px; border: 0; border-radius: 6px;
+  background: none; color: inherit; font: inherit; font-size: 11.5px; text-align: left; cursor: pointer;
+}
+.po-emp-linha:hover { background: rgba(2, 16, 27, 0.06); }
+.po-emp-chev { transition: transform 0.15s; color: var(--po-texto-2); }
+.po-emp-item[data-aberto] .po-emp-chev { transform: rotate(180deg); }
+.po-emp-tipo {
+  justify-self: start; padding: 1px 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; color: #fff; background: var(--po-emissao);
+}
+.po-emp-tipo[data-tipo="reforco"] { background: var(--po-reforco); }
+.po-emp-tipo[data-tipo="anulacao"] { background: var(--po-anulacao); }
+.po-emp-ne { font-weight: 700; font-variant-numeric: tabular-nums; }
+.po-emp-om { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; color: var(--po-texto-2); }
+.po-emp-obj { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #252f3a; }
+.po-emp-val { justify-self: end; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.po-emp-val[data-neg] { color: var(--po-anulacao); }
+@container po (max-width: 620px) {
+  .po-emp-linha { grid-template-columns: 14px 74px minmax(0, 1fr) auto; }
+  .po-emp-om, .po-emp-obj { display: none; }
+}
+
+.po-emp-det { padding: 4px 10px 10px 28px; font-size: 11.5px; color: #252f3a; }
+.po-emp-aviso { margin: 0 0 6px; padding: 4px 8px; border-radius: 6px; background: #fff4e5; color: #7a4b00; }
+.po-emp-campos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 14px; margin: 0; }
+.po-emp-campos dt { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--po-texto-2); }
+.po-emp-campos dd { margin: 0; overflow-wrap: anywhere; }
+.po-emp-sub { margin: 8px 0 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: var(--po-texto-2); }
+.po-emp-hist { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.po-emp-hist li { display: grid; grid-template-columns: 76px 80px auto; align-items: center; gap: 8px; padding: 1px 4px; border-radius: 4px; }
+.po-emp-hist li[data-atual] { background: rgba(2, 16, 27, 0.07); font-weight: 700; }
+.po-emp-hist .po-emp-val { justify-self: start; }
+.po-emp-itens { display: flex; flex-direction: column; gap: 2px; max-height: 140px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.po-emp-itens li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; }
+.po-emp-seq { color: var(--po-texto-2); font-variant-numeric: tabular-nums; }
+.po-emp-item-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-emp-obs { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
 
 /* ── Painel da direita (crédito disponível) ────────────────────────────── */
 .po-direita {

@@ -47,7 +47,7 @@ export default function PainelOrcamentarioPublico() {
       )}
       <main className={embutido ? "flex-1" : "flex-1 px-2 pt-4 pb-6 md:px-6"}>
         <div className="mx-auto w-full max-w-[1600px]">
-          <PainelOrcamentario />
+          <PainelOrcamentario publico />
         </div>
       </main>
       {!embutido && (

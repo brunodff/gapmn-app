@@ -9,7 +9,8 @@ import { buscarOrcamento, orcamentoGuardado, type ResultadoOrcamento } from "../
 import { fmtCompacto, fmtData, fmtHora, fmtMoeda, fmtPct } from "../../lib/orcamento/formato.ts";
 import type { FiltroCredito } from "../../lib/orcamento/tipos.ts";
 import Disponivel from "./Disponivel";
-import { Barras, Colunas, Faixa } from "./Graficos";
+import EmpenhosDoDia from "./EmpenhosDoDia";
+import { Colunas, Faixa } from "./Graficos";
 import "./painelOrcamentario.css";
 
 const ATUALIZAR_A_CADA_MS = 5 * 60_000;
@@ -27,7 +28,8 @@ function Kpi({ rotulo, valor, dica, Icone }: { rotulo: string; valor: string; di
   );
 }
 
-export default function PainelOrcamentario() {
+/** `publico`: página aberta, sem login (INTRAER) — esconde e-mails e telefones das observações das notas. */
+export default function PainelOrcamentario({ publico = false }: { publico?: boolean }) {
   const [res, setRes] = useState<ResultadoOrcamento | null>(() => orcamentoGuardado());
   const [lendo, setLendo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -142,6 +144,9 @@ export default function PainelOrcamentario() {
               Passe o mouse numa unidade em <i>Crédito Disponível</i> para ver o saldo por PI e ND.
               <b> Clique na unidade para fixar</b> o detalhe e rolar.
             </p>
+            <p className="po-info">
+              Em <i>Empenhos do dia</i>, escolha o dia nas setas ou no calendário e clique numa nota para ver os detalhes.
+            </p>
           </div>
           <div className="po-lat-rodape">
             <div className="po-atualizado">
@@ -176,12 +181,7 @@ export default function PainelOrcamentario() {
 
           <Colunas titulo={`Crédito Recebido por meses (${painel.ano ?? "—"})`} itens={painel.porMes} />
 
-          <div className="po-duas">
-            <Barras titulo="Crédito Empenhado por PI" itens={painel.porPI} vazio="Sem empenhos para este filtro." />
-            <Barras titulo="Crédito Recebido por OM" itens={painel.porOM} vazio="Sem crédito recebido para este filtro."
-              selecionado={filtro.om}
-              aoEscolher={(om) => setFiltro((f) => ({ ...f, om: f.om === om ? null : om }))} />
-          </div>
+          <EmpenhosDoDia dados={res?.dados.lancamentos} filtro={filtro} publico={publico} />
         </div>
 
         <Disponivel unidades={painel.disponivel} total={painel.totalDisponivel} ultimoDia={painel.atualizadoEm} />
