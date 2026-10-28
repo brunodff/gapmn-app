@@ -258,6 +258,7 @@
 
 .po-emp-det { padding: 4px 10px 10px 28px; font-size: 11.5px; color: #252f3a; }
 .po-emp-aviso { margin: 0 0 6px; padding: 4px 8px; border-radius: 6px; background: #fff4e5; color: #7a4b00; }
+.po-emp-nota { margin: 0 0 6px; color: var(--po-texto-2); font-style: italic; }
 .po-emp-campos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 14px; margin: 0; }
 .po-emp-campos dt { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--po-texto-2); }
 .po-emp-campos dd { margin: 0; overflow-wrap: anywhere; }

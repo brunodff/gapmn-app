@@ -7,9 +7,10 @@
 //   K/L natureza de despesa (código/nome) · M/N PI (código/nome) · O PAG · P/Q favorecido (código/nome)
 //   R/S assinante da NE (CPF e nome: NÃO são lidos) · T situação da assinatura · U valor do lançamento
 //
-// O valor do lançamento (coluna U) não serve para somar: anulações às vezes vêm positivas e, em parte
-// das NEs, o valor vem multiplicado pela repetição de linhas. O valor da NE é a soma da coluna G, que
-// bate com o SIAFI. Dos lançamentos o painel usa só as datas.
+// O movimento do lançamento (coluna U) não serve para somar: vem multiplicado pelos registros de
+// operação dos itens (o valor certo de cada lançamento sai de ./movimentos.ts). O valor da NE é a soma
+// da coluna G, que bate com o SIAFI e com a soma dos lançamentos corrigidos. Dos lançamentos o painel
+// usa só as datas.
 //
 // Cada lançamento da NE (original, reforço, anulação) repete a NE na coluna B. As linhas seguintes,
 // sem NE, são os itens daquele lançamento, mas só no mesmo dia: a planilha intercala NEs diferentes.

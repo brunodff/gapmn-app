@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { diasComLancamento, fatorDosLancamentos, lerLancamentos, resumirDia, semContatos } from "./lancamentos.ts";
+import { diasComLancamento, lerLancamentos, resumirDia, semContatos } from "./lancamentos.ts";
 
 /** Linha da planilha: data, NE (vazia nas linhas de item), item, descrição, valor atual do item, valor do lançamento. */
 function linha(data: string, ne: string, seq: string, desc: string, valorItem: string, valorLanc: string, extra: Partial<Record<number, string>> = {}): string[] {
@@ -32,17 +32,17 @@ test("emissão, reforço e anulação de uma NE que fecha com o valor atual", ()
   assert.equal(n.sigla, "GAP-MN");
   assert.equal(n.solicitacao, "26S0101");
   assert.equal(n.favorecido.tipo, "empresa");
-  assert.deepEqual(n.lancamentos.map((l) => [l.data, l.tipo, l.valor, l.conferido]), [
-    ["2026-03-10", "emissao", 1000, true],
-    ["2026-03-20", "reforco", 300, true],
-    ["2026-04-02", "anulacao", -500, true],
+  assert.deepEqual(n.lancamentos.map((l) => [l.data, l.tipo, l.valor, l.origem]), [
+    ["2026-03-10", "emissao", 1000, "exato"],
+    ["2026-03-20", "reforco", 300, "exato"],
+    ["2026-04-02", "anulacao", -500, "exato"],
   ]);
   // a lista geral vem do mais recente para o mais antigo
   assert.deepEqual(r.lancamentos.map((l) => l.data), ["2026-04-02", "2026-03-20", "2026-03-10"]);
   assert.deepEqual(diasComLancamento(r.lancamentos), ["2026-04-02", "2026-03-20", "2026-03-10"]);
 });
 
-test("lançamentos multiplicados pela repetição de linhas são divididos pelo fator", () => {
+test("lançamentos multiplicados pelos registros de operação são divididos pelo multiplicador", () => {
   const r = lerLancamentos([
     linha("19/02/2026", "NE000081", "1", "Solicitacao de Emissao de Empenho", "2935,95", "5994"),
     linha("17/03/2026", "NE000081", "1", "Solicitacao de Emissao de Empenho", "2935,95", "-122,1"),
@@ -51,7 +51,7 @@ test("lançamentos multiplicados pela repetição de linhas são divididos pelo 
   assert.equal(ls[0].valor, 2997);
   assert.ok(Math.abs(ls[1].valor - -61.05) < 1e-9);
   assert.equal(ls[1].tipo, "anulacao");
-  assert.ok(ls.every((l) => l.conferido));
+  assert.ok(ls.every((l) => l.origem === "exato"));
 });
 
 test("NE que não fecha fica 'a conferir' com o valor como veio", () => {
@@ -60,13 +60,29 @@ test("NE que não fecha fica 'a conferir' com o valor como veio", () => {
     linha("05/02/2026", "NE000020", "1", "Item compra: 00002 - CANETA", "100", "7"),
   ]);
   const ls = r.notas[0].lancamentos;
-  assert.deepEqual(ls.map((l) => [l.tipo, l.valor, l.conferido]), [["emissao", 130, false], ["reforco", 7, false]]);
+  assert.deepEqual(ls.map((l) => [l.tipo, l.valor, l.origem]), [["emissao", 130, "a conferir"], ["reforco", 7, "a conferir"]]);
 });
 
-test("anulação total (valor atual zero) fecha sem fator", () => {
-  assert.equal(fatorDosLancamentos([716, -1.83, -714.17], 0), 1);
-  assert.equal(fatorDosLancamentos([500, 10], 0), null);
-  assert.equal(fatorDosLancamentos([4500000, 6000000, 4500000], 5000000), 3);
+test("NE emitida e anulada pela mesma quantidade (2026NE001520): R$ 20.400,00, não R$ 40.800,00", () => {
+  const r = lerLancamentos([
+    linha("06/10/2026", "NE001520", "1", "Item compra: 00001 - CONFECCAO DE MOVEL DE MADEIRA", "0", "40800"),
+    linha("27/10/2026", "NE001520", "1", "Item compra: 00001 - CONFECCAO DE MOVEL DE MADEIRA", "0", "-40800"),
+  ]);
+  assert.deepEqual(r.notas[0].lancamentos.map((l) => [l.tipo, l.valor, l.origem]), [
+    ["emissao", 20400, "deduzido"],
+    ["anulacao", -20400, "deduzido"],
+  ]);
+});
+
+test("as linhas de item do mesmo dia entram na conta do multiplicador", () => {
+  // serviço: cada operação gera um registro com a fração da ata e outro com quantidade 1
+  const r = lerLancamentos([
+    linha("06/10/2026", "NE001519", "1", "Item compra: 00048 - MANUTENCAO", "0", "52959,66", { 5: "0,03993" }),
+    linha("06/10/2026", "", "", "", "0", "52959,66", { 5: "1" }),
+    linha("14/10/2026", "NE001519", "1", "Item compra: 00048 - MANUTENCAO", "0", "-52959,66", { 5: "0,03993" }),
+    linha("14/10/2026", "", "", "", "0", "-52959,66", { 5: "1" }),
+  ]);
+  assert.deepEqual(r.notas[0].lancamentos.map((l) => [l.tipo, l.valor]), [["emissao", 26479.83], ["anulacao", -26479.83]]);
 });
 
 test("itens: linhas sem NE no mesmo dia são do lançamento de cima; repetição do item não duplica", () => {

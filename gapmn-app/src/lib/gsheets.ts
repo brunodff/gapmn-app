@@ -9,6 +9,7 @@
  */
 
 import { SIGLA_POR_UG } from "./ugSiglas";
+import { valoresDosLancamentos } from "./execucao/movimentos";
 
 // ─── URLs ─────────────────────────────────────────────────────────────────────
 export const SHEET_URLS = {
@@ -421,8 +422,9 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
  *   col 17 (R) = CPF (ignorado) — era col 12 (M)
  *   col 18 (S) = Assinatura OD — era col 13 (N)
  *   col 19 (T) = Pendente OD — era col 14 (O)
- *   col 20 (U) = Valor do lançamento — era col 15 (P). Cada linha é um documento
- *                (original, reforço ou anulação, negativa); a soma das linhas da NE dá o valor dela.
+ *   col 20 (U) = Movimento do lançamento — era col 15 (P). Cada linha com NE é um documento
+ *                (original, reforço ou anulação, negativa). A planilha repete o movimento em cada
+ *                registro de operação dos itens; `valor` sai corrigido por lib/execucao/movimentos.ts.
  *
  * NEs que não são de compra (contratos, diárias, taxas) não têm "Item compra:" em D,
  * mas seguem o mesmo layout de 21 colunas, com texto livre em D.
@@ -436,6 +438,9 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   // intercala linhas de NEs diferentes.
   const itensPorNE = new Map<string, Map<string, number>>();
   let neAtual = "", diaAtual = "", itemAtual = "";
+  // Col U de todas as linhas de cada lançamento (a da NE primeiro), para corrigir o valor dele
+  const movimentosDoLanc = new Map<EmpenhoNF, number[]>();
+  let movAtual: number[] | null = null;
 
   let skippedDate = 0, skippedNota = 0;
 
@@ -448,12 +453,13 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
 
     const rawNota = (row[1] ?? "").trim();
     if (row.length >= 21) {
-      if (rawNota.length >= 12) { neAtual = notaCurta(rawNota); diaAtual = rawData; itemAtual = ""; }
+      if (rawNota.length >= 12) { neAtual = notaCurta(rawNota); diaAtual = rawData; itemAtual = ""; movAtual = []; }
       if (neAtual && rawData === diaAtual) {
         const seq = (row[2] ?? "").trim();
         if (seq) itemAtual = seq;
         const itens = itensPorNE.get(neAtual) ?? itensPorNE.set(neAtual, new Map()).get(neAtual)!;
         itens.set(itemAtual || "1", toNum((row[6] ?? "").trim()));
+        movAtual?.push(toNum((row[20] ?? "").trim()));
       }
     }
     if (rawNota.length < 12) { skippedNota++; continue; }
@@ -519,14 +525,25 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
       valor_ne:          0,  // preenchido abaixo
       solicitacao:       extractSolicitacao(descricao),
     });
+    if (row.length >= 21 && movAtual) movimentosDoLanc.set(result[result.length - 1], movAtual);
   }
 
   // Valor atual da NE: soma dos itens. Sem as colunas de item (layout antigo), soma dos lançamentos.
   const somaLanc = new Map<string, number>();
   for (const r of result) somaLanc.set(r.nota_empenho, (somaLanc.get(r.nota_empenho) ?? 0) + r.valor);
+  const porNota = new Map<string, EmpenhoNF[]>();
   for (const r of result) {
     const itens = itensPorNE.get(r.nota_empenho);
     r.valor_ne = itens ? [...itens.values()].reduce((s, v) => s + v, 0) : (somaLanc.get(r.nota_empenho) ?? 0);
+    const lancs = porNota.get(r.nota_empenho) ?? porNota.set(r.nota_empenho, []).get(r.nota_empenho)!;
+    lancs.push(r);
+  }
+
+  // Valor de cada lançamento: a col U vem multiplicada pelos registros de operação dos itens
+  for (const lancs of porNota.values()) {
+    if (!lancs.every((r) => movimentosDoLanc.has(r))) continue; // layout antigo: fica como veio
+    const { valores } = valoresDosLancamentos(lancs.map((r) => movimentosDoLanc.get(r)!), lancs[0].valor_ne);
+    lancs.forEach((r, i) => { r.valor = valores[i]; });
   }
 
   // Ordena pelo número da NE (parte numérica após "NE")

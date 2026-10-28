@@ -26,7 +26,7 @@ export type ResultadoOrcamento = {
 };
 
 const CHAVE = "gapmn_orcamento_credito_v3";
-const CHAVE_LANCAMENTOS = "gapmn_orcamento_lancamentos_v1";
+const CHAVE_LANCAMENTOS = "gapmn_orcamento_lancamentos_v2";
 const TEMPO_LIMITE_MS = 45_000;
 
 async function baixar(url: string, sinal: AbortSignal): Promise<string[][]> {

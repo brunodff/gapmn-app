@@ -125,7 +125,7 @@ export default function EmpenhosDoDia({ dados, filtro, publico = false }: {
                       <span className="po-emp-om">{n.sigla ?? n.ug}</span>
                       <span className="po-emp-obj" title={objetoDa(n)}>{objetoDa(n)}</span>
                       <span className="po-emp-val" data-neg={l.valor < 0 ? "1" : undefined}>
-                        {fmtMoeda(l.valor)}{!l.conferido && <sup title="A planilha não fecha com o valor atual da nota: conferir no SIAFI"> *</sup>}
+                        {fmtMoeda(l.valor)}{l.origem === "a conferir" && <sup title="A planilha não fecha com o valor atual da nota: conferir no SIAFI"> *</sup>}
                       </span>
                     </button>
                     {abrir && <Detalhe nota={n} lancamento={l} publico={publico} />}
@@ -147,8 +147,11 @@ function Detalhe({ nota: n, lancamento: l, publico }: { nota: NotaDoDia; lancame
   const obs = publico ? semContatos(n.observacao) : n.observacao;
   return (
     <div className="po-emp-det">
-      {!l.conferido && (
+      {l.origem === "a conferir" && (
         <p className="po-emp-aviso">* Os lançamentos desta nota na planilha não fecham com o valor atual dela. O valor mostrado é o que veio da planilha: conferir no SIAFI.</p>
+      )}
+      {l.origem === "deduzido" && (
+        <p className="po-emp-nota">Nota zerada: o valor de cada lançamento foi deduzido da planilha, que repete o movimento em cada operação dos itens.</p>
       )}
       <dl className="po-emp-campos">
         <div><dt>Unidade</dt><dd>{n.ugNome || n.ug}{n.ug ? ` (${n.ug})` : ""}</dd></div>
@@ -167,7 +170,7 @@ function Detalhe({ nota: n, lancamento: l, publico }: { nota: NotaDoDia; lancame
           <li key={x.id} data-atual={x.id === l.id ? "1" : undefined}>
             <span>{fmtData(x.data)}</span>
             <span className="po-emp-tipo" data-tipo={x.tipo}>{ROTULO[x.tipo]}</span>
-            <span className="po-emp-val" data-neg={x.valor < 0 ? "1" : undefined}>{fmtMoeda(x.valor)}{!x.conferido && " *"}</span>
+            <span className="po-emp-val" data-neg={x.valor < 0 ? "1" : undefined}>{fmtMoeda(x.valor)}{x.origem === "a conferir" && " *"}</span>
           </li>
         ))}
       </ol>

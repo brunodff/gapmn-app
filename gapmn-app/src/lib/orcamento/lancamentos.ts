@@ -4,13 +4,12 @@
 // do lançamento na coluna U; as linhas seguintes, sem NE e no mesmo dia, são os itens dele.
 //
 // O primeiro lançamento da NE é a emissão; os seguintes são reforço (valor positivo) ou anulação
-// (valor negativo). A coluna U às vezes vem multiplicada pela repetição de linhas do relatório: quando
-// a soma dos lançamentos dá um múltiplo inteiro do valor atual da NE (soma da coluna G dos itens),
-// os valores são divididos por esse fator. Se nem assim a conta fecha, o lançamento fica marcado
-// "a conferir" e mostra o valor como veio.
+// (valor negativo). A coluna U vem multiplicada pelos registros de operação dos itens; o valor de
+// cada lançamento sai de lib/execucao/movimentos.ts (exato, deduzido na NE zerada ou "a conferir").
 
 import { nomeDoItem } from "../execucao/categorias.ts";
 import { dataISO, favorecidoDe, neCurta, numero, solicitacaoDe, type NotaEmpenho } from "../execucao/empenhos.ts";
+import { valoresDosLancamentos, type OrigemDoValor } from "../execucao/movimentos.ts";
 import { REGRAS_RECEBIDO, siglaDe } from "./unidades.ts";
 
 export type TipoLancamento = "emissao" | "reforco" | "anulacao";
@@ -27,8 +26,8 @@ export type Lancamento = {
   tipo: TipoLancamento;
   /** Valor do lançamento: positivo na emissão e no reforço, negativo na anulação. */
   valor: number;
-  /** false quando os lançamentos da NE não fecham com o valor atual dela (conferir no SIAFI). */
-  conferido: boolean;
+  /** "deduzido" na NE zerada; "a conferir" quando os lançamentos não fecham com o valor atual (conferir no SIAFI). */
+  origem: OrigemDoValor;
   /** Posição do lançamento na NE (1 = emissão) e quantos ela tem. */
   ordem: number;
   total: number;
@@ -61,22 +60,10 @@ export type LancamentosEmpenho = {
   lancamentos: Lancamento[];
 };
 
-const TOLERANCIA = 0.05;
-
-/** Fator que a planilha usou para multiplicar os lançamentos (1 = valores certos; null = não fecha). */
-export function fatorDosLancamentos(valores: number[], valorAtual: number): number | null {
-  const soma = valores.reduce((s, v) => s + v, 0);
-  if (Math.abs(soma - valorAtual) <= TOLERANCIA) return 1;
-  if (valorAtual <= TOLERANCIA) return null;
-  const k = soma / valorAtual;
-  const inteiro = Math.round(k);
-  if (inteiro >= 2 && inteiro <= 12 && Math.abs(soma - inteiro * valorAtual) <= TOLERANCIA * inteiro) return inteiro;
-  return null;
-}
-
 type Bruta = Omit<NotaDoDia, "itens" | "lancamentos" | "valorAtual"> & {
   itens: Map<string, ItemDaNota>;
-  brutos: { data: string; valor: number }[];
+  /** Cada lançamento com a coluna U de todas as linhas dele (a da NE primeiro). */
+  brutos: { data: string; movimentos: number[] }[];
 };
 
 /** Lê as linhas do CSV (já separadas em colunas) e devolve as notas com os lançamentos classificados. */
@@ -119,11 +106,13 @@ export function lerLancamentos(linhas: string[][]): LancamentosEmpenho {
       } else if (/ASSINAD/i.test(c[19] ?? "")) {
         atual.assinada = true;
       }
-      atual.brutos.push({ data, valor: numero(c[20]) });
+      atual.brutos.push({ data, movimentos: [numero(c[20])] });
       dia = data;
       seqAtual = "";
     } else if (!atual || data !== dia) {
       continue; // linha sem NE de outro dia: não dá para saber de qual NE é
+    } else {
+      atual.brutos[atual.brutos.length - 1].movimentos.push(numero(c[20]));
     }
 
     const seq = (c[2] ?? "").trim();
@@ -140,11 +129,11 @@ export function lerLancamentos(linhas: string[][]): LancamentosEmpenho {
     const itens = [...b.itens.values()].sort((x, y) => Number(x.seq) - Number(y.seq));
     const valorAtual = itens.reduce((s, it) => s + it.valor, 0);
     const brutos = [...b.brutos].sort((x, y) => x.data.localeCompare(y.data));
-    const fator = fatorDosLancamentos(brutos.map((l) => l.valor), valorAtual);
+    const { valores, origem } = valoresDosLancamentos(brutos.map((l) => l.movimentos), valorAtual);
     const lancamentos: Lancamento[] = brutos.map((l, i) => {
-      const valor = fator ? l.valor / fator : l.valor;
+      const valor = valores[i];
       const tipo: TipoLancamento = i === 0 ? "emissao" : valor < 0 ? "anulacao" : "reforco";
-      return { id: `${b.ne}#${i + 1}`, ne: b.ne, data: l.data, tipo, valor, conferido: fator !== null, ordem: i + 1, total: brutos.length };
+      return { id: `${b.ne}#${i + 1}`, ne: b.ne, data: l.data, tipo, valor, origem, ordem: i + 1, total: brutos.length };
     });
     notas.push({
       ne: b.ne, ug: b.ug, ugNome: b.ugNome, sigla: b.sigla, nd: b.nd, ndNome: b.ndNome, pi: b.pi, piNome: b.piNome,
