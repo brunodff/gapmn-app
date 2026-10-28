@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
-import { SHEET_URLS, toEmpenhosNF, fetchCSV } from "../lib/gsheets";
 import { EnviadorNEFornecedor } from "./EnviadorNEFornecedor";
+import PainelEnviosEmpenho from "./PainelEnviosEmpenho";
 
-const ENVIO_AUTOMATICO_ATIVO = true;
+// O e-mail ao fiscal (empenho emitido e assinado) sai sozinho: a função auto-solicitacoes-empenho lê a
+// planilha de empenhos a cada 15 minutos (regra em supabase/functions/_shared/solicitacoesAuto.ts).
+// Esta tela tem o painel dos envios e a lista para corrigir e-mail, anexar PDF e reenviar.
 
-const DATA_INICIO_SIAFI   = new Date(2026, 7, 3); // 03/08/2026 — auto-feed cria registros a partir daqui
 const DATA_INICIO_ANTIGAS = new Date(2026, 7, 27); // 27/08/2026 — registros pré-03/08 ASSINADOS passam a aparecer
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Status = "IMPORTADA" | "EMITIDA" | "ASSINADA" | "ENCERRADA";
-type ResultadoEnvio = "ENVIADO" | "PENDENTE_DESATIVADO" | "SEM_EMAIL" | "NOTIF_INATIVA" | "ERRO";
+type ResultadoEnvio = "ENVIADO" | "PENDENTE_DESATIVADO" | "SEM_EMAIL" | "NOTIF_INATIVA" | "ERRO" | "JA_ENVIADO";
 
 interface Solicitacao {
   id: string;
@@ -62,6 +63,16 @@ interface SyncReport {
   sem_mudanca: number;
 }
 
+/** Item da resposta da função auto-solicitacoes-empenho. */
+interface RespostaItem {
+  numero: string;
+  ne: string;
+  tipo: "EMITIDA" | "ASSINADA";
+  email: string | null;
+  resultado: ResultadoEnvio;
+  motivo: string | null;
+}
+
 // ─── SILOMS column indices (17 cols A–Q) ─────────────────────────────────────
 const COL = {
   NUMERO:           0,
@@ -89,12 +100,6 @@ function normalizeSilomStatus(raw: string): Status {
   if (s.startsWith("aguarda"))   return "EMITIDA";
   if (s === "encerrada")         return "ENCERRADA";
   return "IMPORTADA";
-}
-
-function parseSheetDate(s: string): Date | null {
-  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  return new Date(+m[3], +m[2] - 1, +m[1]);
 }
 
 function fmtDate(iso: string | null): string {
@@ -151,6 +156,7 @@ const RESULTADO_LABEL: Record<ResultadoEnvio, string> = {
   SEM_EMAIL:           "✗ Sem e-mail",
   NOTIF_INATIVA:       "✗ Notificação inativa",
   ERRO:                "✗ Erro",
+  JA_ENVIADO:          "✓ Já enviado",
 };
 
 const RESULTADO_CLASS: Record<ResultadoEnvio, string> = {
@@ -159,6 +165,7 @@ const RESULTADO_CLASS: Record<ResultadoEnvio, string> = {
   SEM_EMAIL:           "text-red-600",
   NOTIF_INATIVA:       "text-slate-500",
   ERRO:                "text-red-700 font-semibold",
+  JA_ENVIADO:          "text-slate-500",
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -210,7 +217,9 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   const [deleting, setDeleting]   = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [uploadingPdf, setUploadingPdf] = useState<string | null>(null);
-  const [verifying, setVerifying] = useState(false);
+  // Abas: painel dos envios (padrão) e a lista de solicitações
+  const [aba, setAba] = useState<"painel" | "lista">("painel");
+  const [atualizacao, setAtualizacao] = useState(0);
 
   // EnviadorNEFornecedor modal
   const [showEnviador, setShowEnviador] = useState(false);
@@ -339,233 +348,42 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
     if (f) handleFile(f);
   }
 
-  // ── Sync com planilha SIAFI ────────────────────────────────────────────────
+  // ── Verificar agora ───────────────────────────────────────────────────────
+  // A mesma verificação que roda sozinha a cada 15 minutos (função auto-solicitacoes-empenho):
+  // lê a planilha de empenhos, cria as solicitações novas, manda os e-mails e marca como verificadas
+  // as assinadas com e-mail enviado. O resultado aparece no relatório.
 
-  async function syncWithSiafi() {
+  async function verificarAgora() {
     setSyncing(true);
     try {
-      const rows = await fetchCSV(SHEET_URLS.empenhosNF);
-      const nes = toEmpenhosNF(rows);
-
-      const bySolic = new Map<string, typeof nes>();
-      for (const ne of nes) {
-        const sol = (ne.solicitacao ?? "").toUpperCase();
-        if (!sol) continue;
-        if (!bySolic.has(sol)) bySolic.set(sol, []);
-        bySolic.get(sol)!.push(ne);
-      }
-
-      const { data: current } = await supabase
-        .from("solicitacoes_empenho")
-        .select("*")
-        .order("numero");
-      let dbItems = (current as Solicitacao[]) ?? [];
-
-      // ── Auto-feed: criar registros para NEs novas a partir de DATA_INICIO_SIAFI ──
-      const nesRecentes = nes.filter(ne => {
-        const d = parseSheetDate(ne.data);
-        return d && d >= DATA_INICIO_SIAFI && ne.solicitacao;
-      });
-      const existingNums = new Set(dbItems.map(i => i.numero.toUpperCase()));
-      const nesNovas = nesRecentes.filter(ne => !existingNums.has(ne.solicitacao!.toUpperCase()));
-
-      if (nesNovas.length > 0) {
-        const records = nesNovas.map(ne => {
-          const email       = extractEmail(ne.descricao);
-          const responsavel = extractResponsavelFromDesc(ne.descricao, email);
-          const status: Status = ne.pendente_od.toUpperCase() === "ASSINADA"
-            ? "ASSINADA" : "EMITIDA";
-          const dateObj = parseSheetDate(ne.data);
-          return {
-            numero:            ne.solicitacao!,
-            pag:               ne.pag || null,
-            cnpj_fornecedor:   ne.cnpj ? ne.cnpj.replace(/\D/g, "") || null : null,
-            fornecedor:        ne.nome_fantasia || null,
-            valor:             ne.valor || null,
-            nd:                ne.natureza || null,
-            ugcred:            ne.ugcred_code || null,
-            ne_siafi:          ne.nota_empenho || null,
-            obs_original:      ne.descricao || null,
-            responsavel:       responsavel || null,
-            email:             email || null,
-            sem_destinatario:  !email,
-            status,
-            data_emissao:      dateObj ? dateObj.toISOString().slice(0, 10) : null,
-            notificacao_ativa: true,
-            updated_at:        new Date().toISOString(),
-          };
-        });
-
-        const { error: upsertErr } = await supabase.from("solicitacoes_empenho").upsert(records, {
-          onConflict: "numero",
-          ignoreDuplicates: true,
-        });
-        if (upsertErr) console.error("[GAPMN] Auto-feed upsert error:", upsertErr);
-
-        // Atualiza dbItems antes de enviar emails (precisamos dos IDs para salvar timestamps)
-        const { data: refreshed } = await supabase.from("solicitacoes_empenho").select("*").order("numero");
-        dbItems = (refreshed as Solicitacao[]) ?? [];
-
-        if (ENVIO_AUTOMATICO_ATIVO) {
-          const autoNow = new Date().toISOString();
-          for (const ne of nesNovas) {
-            const email = extractEmail(ne.descricao);
-            if (!email) continue;
-            const status: Status = ne.pendente_od.toUpperCase() === "ASSINADA"
-              ? "ASSINADA" : "EMITIDA";
-            const responsavel = extractResponsavelFromDesc(ne.descricao, email);
-            const { error: fnErr } = await supabase.functions.invoke("send-empenho-email", {
-              body: {
-                solicitacao_id: ne.solicitacao!,
-                tipo:           status,
-                email,
-                responsavel:    responsavel || ne.solicitacao!,
-                numero:         ne.solicitacao!,
-                ne_siafi:       ne.nota_empenho || "",
-                pag:            ne.pag,
-                fornecedor:     ne.nome_fantasia,
-                valor:          ne.valor,
-                nd:             ne.natureza,
-                data_emissao:   ne.data,
-              },
-            });
-            if (!fnErr) {
-              // Salva timestamp para não reenviar em syncs futuros
-              const tsField = status === "ASSINADA" ? "notificado_assinada_em" : "notificado_emitida_em";
-              const rec = dbItems.find(i => i.numero.toUpperCase() === ne.solicitacao!.toUpperCase());
-              if (rec) {
-                await supabase.from("solicitacoes_empenho").update({ [tsField]: autoNow }).eq("id", rec.id);
-                (rec as unknown as Record<string, unknown>)[tsField] = autoNow; // atualiza in-memory p/ sync não reenviar
-              }
-            }
-          }
-        }
-      }
-
-      // Busca template do fiscal uma vez para reutilizar em todos os envios ASSINADA
-      const { data: fiscalTpl } = await supabase
-        .from("email_templates").select("assunto, corpo").eq("tipo", "FISCAL").single();
-
-      const reportItens: SyncReportItem[] = [];
-      let semMudanca = 0;
-
-      for (const item of dbItems) {
-        if (item.status === "ENCERRADA") continue;
-
-        // Registros pré-03/08: não processa até 05/08
-        if (item.data_emissao && item.data_emissao < "2026-08-03" && new Date() < DATA_INICIO_ANTIGAS) continue;
-
-        const sheetNEs = bySolic.get(item.numero.toUpperCase());
-        if (!sheetNEs?.length) continue;
-
-        const bestNE = sheetNEs[sheetNEs.length - 1];
-
-        const anyAssinada = sheetNEs.some(ne => ne.pendente_od.toUpperCase() === "ASSINADA");
-        const anyEmitida  = sheetNEs.some(ne => ne.pendente_od.toUpperCase() !== "ASSINADA");
-
-        const newStatus: Status = anyAssinada ? "ASSINADA" : anyEmitida ? "EMITIDA" : item.status;
-
-        if (newStatus === item.status && item.ne_siafi) { semMudanca++; continue; }
-
-        const now = new Date().toISOString();
-
-        // Determina se este é um novo evento de notificação
-        const isNovaEmissao  = newStatus === "EMITIDA"  && !item.notificado_emitida_em;
-        const isNovaAssinada = newStatus === "ASSINADA" && !item.notificado_assinada_em;
-        const isNovoEvento   = isNovaEmissao || isNovaAssinada;
-
-        // Patch base — não inclui timestamps de notificação ainda
-        const patch: Record<string, unknown> = {
-          status:     newStatus,
-          ne_siafi:   bestNE.nota_empenho || item.ne_siafi,
-          updated_at: now,
-        };
-
-        const tipo = (isNovaEmissao ? "EMITIDA" : "ASSINADA") as "EMITIDA" | "ASSINADA";
-        const neNum = bestNE.nota_empenho || item.ne_siafi || "";
-
-        if (isNovoEvento) {
-          const temEmail     = !!(item.email && !item.sem_destinatario);
-          const notifAtiva   = item.notificacao_ativa;
-
-          if (!temEmail) {
-            reportItens.push({ id: item.id, numero: item.numero, ne_siafi: neNum, tipo, email: null, resultado: "SEM_EMAIL", motivo: "Sem e-mail cadastrado" });
-          } else if (!notifAtiva) {
-            reportItens.push({ id: item.id, numero: item.numero, ne_siafi: neNum, tipo, email: item.email, resultado: "NOTIF_INATIVA", motivo: "Notificação manual desativada" });
-          } else if (!ENVIO_AUTOMATICO_ATIVO) {
-            // Registra que o evento foi detectado mas e-mail não enviado
-            reportItens.push({ id: item.id, numero: item.numero, ne_siafi: neNum, tipo, email: item.email, resultado: "PENDENTE_DESATIVADO", motivo: "Ative ENVIO_AUTOMATICO_ATIVO para enviar" });
-          } else {
-            // ── Envio automático ativo ─────────────────────────────────────
-            let resultadoEnvio: ResultadoEnvio = "ERRO";
-            let motivoErro: string | undefined;
-            try {
-              const assuntoFiscal = (tipo === "ASSINADA" && fiscalTpl) ? applyTemplate(fiscalTpl.assunto, item) : undefined;
-              const corpoFiscal   = (tipo === "ASSINADA" && fiscalTpl) ? applyTemplate(fiscalTpl.corpo,   item) : undefined;
-              const { error: fnErr } = await supabase.functions.invoke("send-empenho-email", {
-                body: {
-                  solicitacao_id: item.id,
-                  tipo,
-                  email:       item.email,
-                  responsavel: item.responsavel ?? item.numero,
-                  numero:      item.numero,
-                  subprocesso: item.subprocesso,
-                  ne_siafi:    neNum,
-                  pag:         item.pag,
-                  fornecedor:  item.fornecedor,
-                  valor:       item.valor,
-                  nd:          item.nd,
-                  pregao:      item.pregao,
-                  obs_atraso:  item.obs_atraso,
-                  pdf_ne_url:  item.pdf_ne_url,
-                  ...(assuntoFiscal && { assunto_customizado: assuntoFiscal }),
-                  ...(corpoFiscal   && { corpo_customizado:   corpoFiscal   }),
-                },
-              });
-              if (!fnErr) {
-                resultadoEnvio = "ENVIADO";
-                if (isNovaEmissao)  patch.notificado_emitida_em  = now;
-                if (isNovaAssinada) patch.notificado_assinada_em = now;
-              } else {
-                motivoErro = fnErr.message;
-              }
-            } catch (e: any) {
-              motivoErro = String(e);
-            }
-            reportItens.push({ id: item.id, numero: item.numero, ne_siafi: neNum, tipo, email: item.email, resultado: resultadoEnvio, motivo: motivoErro });
-          }
-        } else {
-          semMudanca++;
-        }
-
-        await supabase.from("solicitacoes_empenho").update(patch).eq("id", item.id);
-      }
-
-      const report: SyncReport = { executado_em: new Date().toISOString(), itens: reportItens, sem_mudanca: semMudanca };
+      const { data, error } = await supabase.functions.invoke("auto-solicitacoes-empenho", { body: { origem: "manual" } });
+      const corpo = data as { executado_em?: string; itens?: RespostaItem[]; erro?: string | null } | null;
+      if (error || !corpo?.executado_em) throw new Error(corpo?.erro || error?.message || "sem resposta");
+      const report: SyncReport = {
+        executado_em: corpo.executado_em,
+        itens: (corpo.itens ?? []).map((i) => ({
+          id: i.numero, numero: i.numero, ne_siafi: i.ne, tipo: i.tipo, email: i.email, resultado: i.resultado, motivo: i.motivo ?? undefined,
+        })),
+        sem_mudanca: 0,
+      };
       setSyncReport(report);
       setShowSyncReport(true);
-
-      const enviados = reportItens.filter(i => i.resultado === "ENVIADO").length;
-      const pendentes = reportItens.filter(i => i.resultado === "PENDENTE_DESATIVADO").length;
-      const falhas   = reportItens.filter(i => ["SEM_EMAIL","NOTIF_INATIVA","ERRO"].includes(i.resultado)).length;
-
+      const enviados = report.itens.filter(i => i.resultado === "ENVIADO").length;
+      const falhas = report.itens.filter(i => i.resultado === "ERRO").length;
       flash(
-        reportItens.length === 0
-          ? `Sincronizado. ${semMudanca} sem mudança.`
-          : `Sincronizado. ${enviados} e-mail(s) enviado(s) · ${pendentes} pendente(s) · ${falhas} sem envio.`,
-        falhas === 0
+        corpo.erro ? `Verificação com erro: ${corpo.erro}`
+          : report.itens.length === 0 ? "Verificado. Nenhuma novidade na planilha."
+          : `Verificado. ${enviados} e-mail(s) enviado(s)${falhas ? ` · ${falhas} falha(s)` : ""}.`,
+        !corpo.erro && falhas === 0
       );
       await load();
-    } catch (e: any) {
-      flash("Erro na sincronização: " + e.message, false);
+      setAtualizacao(n => n + 1);
+    } catch (e) {
+      flash("Erro na verificação: " + (e instanceof Error ? e.message : String(e)), false);
     } finally {
       setSyncing(false);
     }
   }
-
-  // ── Verificar relatório ───────────────────────────────────────────────────
-  // Marca como revisadas as NEs ASSINADAS que tiveram e-mail enviado.
-  // NEs EMITIDAS ficam na página pois ainda aguardam assinatura.
 
   // ── Limpar lista ─────────────────────────────────────────────────────────
   // Arquiva itens já processados: e-mail enviado OU sem destinatário.
@@ -598,31 +416,6 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
       .in("id", candidatos.map(i => i.id));
     await load();
     flash(`${candidatos.length} item(ns) arquivados.`, true);
-  }
-
-  async function verificarRelatorio() {
-    if (!syncReport) return;
-    setVerifying(true);
-    const idsAssinadasEnviadas = syncReport.itens
-      .filter(i => i.tipo === "ASSINADA" && i.resultado === "ENVIADO")
-      .map(i => i.id);
-
-    if (idsAssinadasEnviadas.length) {
-      await supabase
-        .from("solicitacoes_empenho")
-        .update({ revisado_em: new Date().toISOString() })
-        .in("id", idsAssinadasEnviadas);
-    }
-    setSyncReport(null);
-    setShowSyncReport(false);
-    setVerifying(false);
-    await load();
-    flash(
-      idsAssinadasEnviadas.length
-        ? `${idsAssinadasEnviadas.length} NE(s) assinada(s) marcada(s) como verificadas e removidas da lista.`
-        : "Relatório verificado. Nenhuma NE assinada com e-mail enviado para remover.",
-      true
-    );
   }
 
   // ── Edição inline: OBS atraso ─────────────────────────────────────────────
@@ -912,14 +705,23 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
         </div>
       )}
 
-      {/* ── Banner: envio desativado ── */}
-      {!ENVIO_AUTOMATICO_ATIVO && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800 flex items-center gap-2">
-          <span className="font-bold">⏸ Envio automático desativado.</span>
-          <span>O sync detectará novos empenhos e gerará o relatório, mas não enviará e-mails até que <code className="font-mono bg-amber-100 px-1 rounded">ENVIO_AUTOMATICO_ATIVO</code> seja ativado.</span>
-        </div>
+      {/* ── Abas ── */}
+      <div className="flex items-center gap-1 border-b border-slate-200" role="tablist">
+        {([["painel", "📊 Painel de envios"], ["lista", "📋 Solicitações"]] as const).map(([v, r]) => (
+          <button key={v} role="tab" aria-selected={aba === v} onClick={() => setAba(v)}
+            className={`-mb-px rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold transition-colors ${
+              aba === v ? "border-sky-500 text-sky-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}>
+            {r}
+          </button>
+        ))}
+      </div>
+
+      {aba === "painel" && (
+        <PainelEnviosEmpenho podeVerificar={canManage} verificando={syncing} aoVerificar={verificarAgora} atualizacao={atualizacao} />
       )}
 
+      {aba === "lista" && (<>
       {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-2">
         {canManage && (
@@ -935,11 +737,12 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
             <input ref={pdfInputRef} type="file" accept="application/pdf" className="hidden" onChange={handlePdfChange} />
 
             <button
-              onClick={syncWithSiafi}
+              onClick={verificarAgora}
               disabled={syncing || loading}
+              title="O envio é automático a cada 15 minutos; use para verificar a planilha agora"
               className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors"
             >
-              {syncing ? "Sincronizando…" : "↻ Sincronizar SIAFI"}
+              {syncing ? "Verificando…" : "↻ Verificar agora"}
             </button>
 
             {confirmDeleteAll ? (
@@ -1324,6 +1127,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
           </tbody>
         </table>
       </div>
+      </>)}
 
       {/* ── Modal: Relatório de Sincronização ── */}
       {showSyncReport && syncReport && (
@@ -1333,9 +1137,9 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4" style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
               <div>
-                <h3 className="font-semibold text-sm" style={{ color: "#0f172a" }}>Relatório de Sincronização</h3>
+                <h3 className="font-semibold text-sm" style={{ color: "#0f172a" }}>Relatório da verificação</h3>
                 <p className="text-xs mt-0.5" style={{ color: "#64748b" }}>
-                  {new Date(syncReport.executado_em).toLocaleString("pt-BR")} · {syncReport.itens.length} evento(s) · {syncReport.sem_mudanca} sem mudança
+                  {new Date(syncReport.executado_em).toLocaleString("pt-BR")} · {syncReport.itens.length} evento(s)
                 </p>
               </div>
               <button onClick={() => setShowSyncReport(false)} className="text-lg leading-none" style={{ color: "#94a3b8" }}>✕</button>
@@ -1361,14 +1165,6 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
                 );
               })()}
             </div>
-
-            {/* Banner: envio desativado */}
-            {!ENVIO_AUTOMATICO_ATIVO && (
-              <div className="mx-5 mt-3 rounded-lg px-3 py-2 text-xs" style={{ border: "1px solid #fbbf24", backgroundColor: "#fffbeb", color: "#92400e" }}>
-                <strong>⏸ Envio automático desativado.</strong> Os itens abaixo foram detectados mas nenhum e-mail foi enviado.{" "}
-                Quando ativar <code className="rounded px-1" style={{ backgroundColor: "#fef3c7", fontFamily: "monospace" }}>ENVIO_AUTOMATICO_ATIVO</code>, o próximo sync enviará automaticamente.
-              </div>
-            )}
 
             {/* Tabela de eventos */}
             {syncReport.itens.length > 0 ? (
@@ -1414,28 +1210,18 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
             {/* Footer */}
             <div className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap" style={{ backgroundColor: "#f8fafc", borderTop: "1px solid #e2e8f0" }}>
               <div className="text-xs" style={{ color: "#64748b" }}>
-                {canManage && syncReport.itens.some(i => i.tipo === "ASSINADA" && i.resultado === "ENVIADO") && (
-                  <span>NEs assinadas com e-mail enviado serão removidas ao verificar.</span>
+                {syncReport.itens.some(i => i.tipo === "ASSINADA" && i.resultado === "ENVIADO") && (
+                  <span>As NEs assinadas com e-mail enviado já saíram da lista como verificadas.</span>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowSyncReport(false)}
-                  className="rounded-lg px-4 py-2 text-xs transition-colors"
-                  style={{ border: "1px solid #e2e8f0", color: "#475569", backgroundColor: "#ffffff" }}
+                  className="rounded-lg px-4 py-2 text-xs font-semibold text-white transition-colors"
+                  style={{ backgroundColor: "#059669" }}
                 >
                   Fechar
                 </button>
-                {canManage && (
-                  <button
-                    onClick={verificarRelatorio}
-                    disabled={verifying}
-                    className="rounded-lg px-4 py-2 text-xs font-semibold text-white transition-colors disabled:opacity-60"
-                    style={{ backgroundColor: "#059669" }}
-                  >
-                    {verifying ? "Verificando…" : "✓ Verificar e Fechar"}
-                  </button>
-                )}
               </div>
             </div>
           </div>
