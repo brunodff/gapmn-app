@@ -10,7 +10,7 @@ import type { DadosColeta } from "./coleta.ts";
 import { classificar, montarAbas } from "./exportar.ts";
 import { calcularValor, lerNumero, numeroParaCampo } from "./formulas.ts";
 import { previaDoIndicador } from "./previa.ts";
-import type { IndicadorGov, LancamentoAdmin } from "./tipos.ts";
+import { cobradoEm, type IndicadorGov, type LancamentoAdmin } from "./tipos.ts";
 
 const ind = (p: Partial<IndicadorGov>): IndicadorGov => ({
   id: "1", divisao: "DRH", categoria: "1. GESTÃO DE PESSOAL", indicador: "Indicador", unidade: "Dias úteis", formula: "",
@@ -36,7 +36,25 @@ test("fórmulas iguais às do banco, com valores reais da BD", () => {
   assert.equal(calcularValor("taxa_ajustada", 1, 5, 5), null, "P_t − P_av = 0");
 });
 
+test("catálogo GAP/CAE: redução (FAQ 14) e soma das médias do MAC/SILOMS (FAQ 17)", () => {
+  perto(calcularValor("reducao", 209, 557, null), 62.478);         // ID 16: pendências caíram
+  assert.equal(calcularValor("reducao", 600, 557, null), 0, "sem redução = 0, nunca negativo");
+  assert.equal(calcularValor("reducao", 557, 557, null), 0);
+  assert.equal(calcularValor("reducao", 10, 0, null), null, "anterior zero");
+  perto(calcularValor("soma", 2.4, 1.85, null), 4.25);             // ID 26: item 5 + item 6
+  assert.equal(calcularValor("soma", 2.4, null, null), null, "falta uma das médias");
+  const ID16N = ind({ id: "16", divisao: "DA", unidade: "Percentual (%)", calculo: "reducao", meta_txt: "≥ 10%", meta_num: 10, direcao: "Maior é melhor" });
+  assert.equal(previaDoIndicador(ID16N, v(209, 557)).status, "Adequado");
+  const subiu = previaDoIndicador(ID16N, v(600, 557));
+  assert.equal(subiu.valor, 0);
+  assert.equal(subiu.status, "Crítico");
+  assert.ok(cobradoEm({ desde: null }, "2026-06"));
+  assert.ok(!cobradoEm({ desde: "2026-10" }, "2026-09"));
+  assert.ok(cobradoEm({ desde: "2026-10" }, "2026-10"));
+});
+
 test("número digitado em pt-BR", () => {
+  assert.equal(lerNumero("R$ 19.692,83"), 19692.83);
   assert.equal(lerNumero("1.234,5"), 1234.5);
   assert.equal(lerNumero("12,4"), 12.4);
   assert.equal(lerNumero(" 7 "), 7);
@@ -110,4 +128,24 @@ test("planilha consolidada: matrizes por mês, lançamentos, abas por divisão, 
   assert.equal(abas[4].linhas[0]["Término da vigência"], "07/10/2027");
   assert.match(String(abas[5].linhas[0]["Antes"]), /v1: 4512/);
   assert.equal(classificar(ID25, { v1: 17, v2: 11, v3: null, valor: 154.5, tipo: "Realizado" }).status, "Adequado");
+});
+
+test("planilha: lançamento da regra anterior do catálogo não usa os nomes de variável de hoje", () => {
+  const ID28N = ind({ id: "28", divisao: "DOC", unidade: "Horas", calculo: "direto", variaveis: [], meta_txt: "72 horas", meta_num: 72 });
+  const lanc = (p: Partial<LancamentoAdmin>): LancamentoAdmin => ({
+    competencia: "2026-09", indicador_id: "28", tipo: "Realizado", v1: null, v2: null, v3: null, valor: null, comentario: null,
+    anexo: null, anexo_nome: null, posto: null, nome_guerra: null, divisao: "DOC", atualizado_em: "2026-10-14T13:00:00Z", versao: 1, ...p,
+  });
+  const d: DadosColeta = {
+    indicadores: [ID28N],
+    competencias: [{ codigo: "2026-09", rotulo: "SET/26", semestral: false, token: null, aberta: false, prazo: null, origem: "planilha", aberta_em: null, fechada_em: null },
+      { codigo: "2026-10", rotulo: "OUT/26", semestral: false, token: "x".repeat(24), aberta: true, prazo: null, origem: "formulario", aberta_em: null, fechada_em: null }],
+    lancamentos: [lanc({ v1: 7776, v2: 162, valor: 48, calculo: "razao" }), lanc({ competencia: "2026-10", v1: 16, valor: 16, calculo: "direto" })],
+    historico: [], contratos: [],
+  };
+  const l = montarAbas(d)[2].linhas;
+  assert.equal(l[0]["Variável 1"], "Variável 1 (regra anterior do catálogo)");
+  assert.equal(l[0]["Resultado"], 48);
+  assert.equal(l[0]["Classificação"], "Adequado", "o resultado antigo continua valendo");
+  assert.equal(l[1]["Variável 1"], "Valor informado");
 });

@@ -14,6 +14,8 @@ export const DIVISOES: { sigla: string; nome: string }[] = [
   { sigla: "ASESO", nome: "Assessoria de Serviço Social (inclui Comunicação Social)" },
   { sigla: "DOC", nome: "Divisão de Obtenções e Contratos" },
   { sigla: "ACI", nome: "Assessoria de Controle Interno" },
+  // Fala.BR (Ouvidoria e LAI): Matriz de Atividades e Tarefas Mínimas da DIRAD, macroprocesso ACS
+  { sigla: "SEC", nome: "Secretaria da Chefia (Ouvidoria e SIC)" },
 ];
 
 export const nomeDivisao = (sigla: string) => DIVISOES.find((d) => d.sigla === sigla)?.nome ?? sigla;

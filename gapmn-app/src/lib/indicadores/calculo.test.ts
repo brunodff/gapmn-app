@@ -242,10 +242,46 @@ test("grupos de contagem: 0 é dado, PCA emparelhado e fora de qualquer nota", (
   assert.equal(epessoal.itens[0].realizado, 0);
   assert.equal(epessoal.total, 2);
   assert.equal(pca.emparelhado, true);
+  assert.deepEqual(pca.rotulos, ["realizado", "planejado"]);
   assert.equal(pca.itens[0].planejado, 17);
   assert.ok(Math.abs((pca.itens[0].execucao as number) - 10 / 17) < 1e-9);
   assert.equal(p.resumo.n, 1);
   assert.equal(p.indicadores.length, 1);
+});
+
+test("grupos à parte: montantes em R$ fora do total, Fala.BR com recebidas × resolvidas, nada disso muda a referência", () => {
+  const extra = (id: string, cat: string, p: Partial<LinhaBD>) => linha("AGO/26", {
+    ID: id, CATEGORIA: cat, UNIDADE: "Quantidade", DIRECAO: "Monitoramento", META_NUM: null, META_TXT: null, ...p,
+  });
+  const bd = [
+    ind("1", "DRH", 3, "JUL/26"),
+    extra("59", "Ressarcimento ao Erário", { DIVISAO: "AJUR", VALOR: 4 }),
+    extra("60", "Ressarcimento ao Erário", { DIVISAO: "AJUR", VALOR: 0 }),
+    extra("67", "Ressarcimento ao Erário", { DIVISAO: "AJUR", UNIDADE: "R$", VALOR: 19692.83 }),
+    extra("70", "Fala.BR (Ouvidoria e LAI)", { DIVISAO: "SEC", TIPO: "Planejado", VALOR: 3, VAR1_NOME: "Resolvidas ou respondidas", VAR2_NOME: "Recebidas" }),
+    extra("70", "Fala.BR (Ouvidoria e LAI)", { DIVISAO: "SEC", TIPO: "Realizado", VALOR: 3, VAR1_NOME: "Resolvidas ou respondidas", VAR2_NOME: "Recebidas" }),
+  ];
+  // os extras de AGO/26 (inclusive o montante em R$) não fazem AGO virar a competência de referência
+  assert.equal(competenciaReferencia(bd)?.label, "JUL/26");
+  const p = calcularPainel([...bd, ind("1", "DRH", 4, "AGO/26")]);
+  assert.equal(p.referencia?.label, "AGO/26");
+  const ress = p.grupos.find((g) => g.categoria === "Ressarcimento ao Erário")!;
+  assert.equal(ress.total, 4, "R$ fora da soma das quantidades");
+  assert.equal(ress.itens.find((i) => i.id === "67")?.unidade, "R$");
+  const fala = p.grupos.find((g) => g.categoria === "Fala.BR (Ouvidoria e LAI)")!;
+  assert.equal(fala.emparelhado, true);
+  assert.deepEqual(fala.rotulos, ["resolvidas ou respondidas", "recebidas"]);
+  assert.equal(fala.somavel, true);
+  assert.equal(fala.itens[0].execucao, 1);
+  assert.deepEqual(p.grupos.map((g) => g.categoria), ["Ressarcimento ao Erário", "Fala.BR (Ouvidoria e LAI)"]);
+  assert.equal(p.monitoramento.length, 0, "monitoramento em R$ fica nos grupos, não na lista");
+  assert.equal(fmtValor(19692.83, "R$").replace(/\s/g, " "), "R$ 19.692,83");
+});
+
+test("orientação de preenchimento chega à ficha do indicador", () => {
+  const { linhas } = normalizarLinhas([{ ...linha("JUL/26", { VALOR: 5 }), ORIENTACAO: "  Considere só o Cap. VIII. " }]);
+  const p = calcularPainel(linhas);
+  assert.equal(p.indicadores[0].orientacao, "Considere só o Cap. VIII.");
 });
 
 test("meta de percentual gravada como fração aparece como percentual", () => {
@@ -386,10 +422,11 @@ test("catálogo: ficha técnica por ID, só informativa", () => {
   assert.deepEqual(prepararPayload({ ok: true, bd: [] }).payload.catalogo, {});
 });
 
-test("catálogo no código: 39 fichas completas e a planilha tem prioridade", () => {
+test("catálogo no código: 41 fichas completas e a planilha tem prioridade", () => {
   const ids = Object.keys(CATALOGO_PADRAO).sort(compararId);
+  // catálogo GAP/CAE: as 35 fichas antigas (17 e 24 desdobrados) e as duas novas do Serviço Social (62 e 63)
   const esperados = [...Array.from({ length: 35 }, (_, i) => String(i + 1)).filter((x) => x !== "17" && x !== "24"),
-    "17.1", "17.2", "17.3", "24.1", "24.2", "24.3"].sort(compararId);
+    "17.1", "17.2", "17.3", "24.1", "24.2", "24.3", "62", "63"].sort(compararId);
   assert.deepEqual(ids, esperados);
   for (const [id, f] of Object.entries(CATALOGO_PADRAO)) {
     assert.ok(f.objetivo && f.origem && f.periodicidade && f.meta, `ficha ${id} incompleta`);

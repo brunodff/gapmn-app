@@ -256,6 +256,8 @@ export default function ColetaIndicadores() {
             <button type="button" className="ci-btn ci-btn-texto" onClick={() => setEtapa("ident")}>trocar</button>
           </section>
 
+          <ComoPreencher />
+
           {[...secoes].map(([secao, itens]) => (
             <section key={secao} className="ci-secao" aria-label={secao}>
               <h2 className="ci-h2 ci-secao-tit">{secao}</h2>
@@ -301,6 +303,33 @@ function Moldura({ children, refTopo }: { children: React.ReactNode; refTopo?: R
       </header>
       <main className="ci-corpo">{children}</main>
     </div>
+  );
+}
+
+/** Orientações gerais do FAQ do Catálogo de Indicadores dos GAPs (DIRAD), as que valem para todo indicador. */
+function ComoPreencher() {
+  const [aberto, setAberto] = useState(true);
+  return (
+    <section className="ci-cartao" aria-labelledby="ci-como-tit">
+      <div className="ci-ctr-cab">
+        <h2 id="ci-como-tit" className="ci-h2">Como preencher</h2>
+        <button type="button" className="ci-btn ci-btn-texto" aria-expanded={aberto} onClick={() => setAberto((a) => !a)}>
+          {aberto ? "esconder" : "mostrar"}
+        </button>
+      </div>
+      {aberto && (
+        <>
+          <ul className="ci-orientacoes">
+            <li>Informe só os números do mês de referência. O resultado, a meta e a classificação são calculados aqui.</li>
+            <li>Indicador que não se aplica ao GAP-MN: deixe em branco. Não use 0, &quot;N/A&quot; nem texto. O zero vale quando o indicador se aplica e o evento não aconteceu.</li>
+            <li>Use a fórmula da ficha, sem adaptar. Na dúvida, fale com o Elo da Governança, que consulta a DIRAD.</li>
+            <li>Tire os dados de sistemas corporativos, registros oficiais ou controles formais, que possam ser comprovados.</li>
+            <li>Resultado em Atenção ou Crítico: na justificativa, diga as causas, os riscos, as ações corretivas e os prazos. É o que vai para a RAG.</li>
+          </ul>
+          <p className="ci-sub" style={{ marginBottom: 0 }}>Fonte: Catálogo de Indicadores de Desempenho dos GAPs e Perguntas Frequentes (DIRAD). Quando um indicador tem regra própria, ela aparece no quadro azul dele.</p>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -351,6 +380,8 @@ function CartaoIndicador({ e, aberta, mudar, anterior }: {
         </div>
         {temMeta && <div className="ci-meta">meta <b>{metaExibida(ind.meta_txt, ind.meta_num, ind.unidade, ind.direcao)}</b></div>}
       </header>
+
+      {ind.orientacao && <p className="ci-orientacao"><b>Como preencher:</b> {ind.orientacao}</p>}
 
       <div className="ci-vars">
         {Array.from({ length: n }, (_, i) => (
@@ -412,33 +443,49 @@ function CartaoIndicador({ e, aberta, mudar, anterior }: {
   );
 }
 
-/** Grupos de contagem (pendências do e-Pessoal, PCA, ressarcimento): uma linha por item. */
+/**
+ * Grupos de contagem (pendências e indícios do e-Pessoal, PCA, ressarcimento ao erário, Fala.BR): uma linha
+ * por item. Os montantes em R$ aceitam centavos; no Fala.BR as colunas são recebidas × resolvidas.
+ */
 function Contagens({ itens, aberta, mudar, anterior }: {
   itens: Estado[]; aberta: boolean; mudar: (k: string, p: Partial<Campos>) => void;
   anterior: Map<string, { rotulo: string | null; valor: number | null }>;
 }) {
   const ids = [...new Set(itens.map((e) => e.ind.id))];
   const planejado = itens.some((e) => e.tipo === "Planejado");
+  const temReais = itens.some((e) => e.ind.unidade === "R$");
+  // nomes das colunas: os das variáveis (Fala.BR: resolvidas/respondidas e recebidas), senão os do PCA
+  const nomes = itens[0]?.ind.variaveis ?? [];
+  const rotulo: Record<TipoLancamento, string> = {
+    Planejado: nomes[1] ?? "Planejado",
+    Realizado: nomes[0] ?? (planejado ? "Realizado" : temReais ? "Quantidade ou valor" : "Quantidade"),
+  };
   return (
     <div className="ci-cartao ci-contagens">
-      <p className="ci-sub">Informe a quantidade de cada item no mês (0 quando não houver).</p>
+      <p className="ci-sub">
+        Informe a quantidade de cada item no mês (0 quando não houver){temReais ? " e os montantes em reais, com centavos" : ""}.
+      </p>
       <div className={`ci-tab-contagem${planejado ? " ci-tab-2" : ""}`} role="table">
         <div className="ci-tab-cab" role="row">
           <span role="columnheader">Item</span>
-          {planejado && <span role="columnheader">Planejado</span>}
-          <span role="columnheader">{planejado ? "Realizado" : "Quantidade"}</span>
+          {planejado && <span role="columnheader">{rotulo.Planejado}</span>}
+          <span role="columnheader">{rotulo.Realizado}</span>
         </div>
-        {ids.map((id) => {
+        {ids.map((id, n) => {
           const linhas = itens.filter((e) => e.ind.id === id);
           const ind = linhas[0].ind;
+          const reais = ind.unidade === "R$";
+          // a orientação repetida em itens seguidos (os três montantes) aparece só no primeiro
+          const orientacao = ind.orientacao && ind.orientacao !== itens.find((e) => e.ind.id === ids[n - 1])?.ind.orientacao ? ind.orientacao : null;
           return (
             <div key={id} className="ci-tab-linha" role="row">
               <span role="cell" className="ci-tab-item">
                 <small>Nº {id}</small> {ind.indicador}
                 {(() => {
                   const a = anterior.get(chave(id, "Realizado"));
-                  return a && a.valor !== null ? <small className="ci-anterior"> · último ({a.rotulo}): {a.valor}</small> : null;
+                  return a && a.valor !== null ? <small className="ci-anterior"> · último ({a.rotulo}): {fmtValor(a.valor, ind.unidade)}</small> : null;
                 })()}
+                {orientacao && <small className="ci-orientacao-linha">{orientacao}</small>}
               </span>
               {(planejado ? (["Planejado", "Realizado"] as const) : (["Realizado"] as const)).map((t) => {
                 const e = linhas.find((x) => x.tipo === t);
@@ -446,8 +493,8 @@ function Contagens({ itens, aberta, mudar, anterior }: {
                 const ruim = e.invalido;
                 return (
                   <span key={t} role="cell">
-                    <input aria-label={`${ind.indicador} — ${t}`} value={e.c.t1} inputMode="numeric" disabled={!aberta} aria-invalid={ruim}
-                      className={e.mudou ? "ci-sujo-campo" : undefined} onChange={(ev) => mudar(e.k, { t1: ev.target.value })} placeholder="0" />
+                    <input aria-label={`${ind.indicador} — ${rotulo[t]}`} value={e.c.t1} inputMode={reais ? "decimal" : "numeric"} disabled={!aberta} aria-invalid={ruim}
+                      className={e.mudou ? "ci-sujo-campo" : undefined} onChange={(ev) => mudar(e.k, { t1: ev.target.value })} placeholder={reais ? "R$ 0,00" : "0"} />
                   </span>
                 );
               })}

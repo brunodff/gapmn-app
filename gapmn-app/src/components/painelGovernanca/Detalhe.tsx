@@ -196,6 +196,13 @@ export function FichaIndicador({ ind, competencia, aoFechar, devolverFoco = fals
           </div>
         )}
 
+        {ind.orientacao && (
+          <div className="pg-tt-bloco">
+            <div className="pg-rotulo">Como preencher</div>
+            <p className="pg-orientacao">{ind.orientacao}</p>
+          </div>
+        )}
+
         {ind.historico.length > 0 && (
           <div className="pg-tt-bloco">
             <div className="pg-rotulo">Histórico (resultado por competência; a altura da barra mostra a distância da meta)</div>

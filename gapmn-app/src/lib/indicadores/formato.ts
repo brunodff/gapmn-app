@@ -68,9 +68,16 @@ export function unidadeCurta(unidade: string, valor?: number): string {
   return valor !== undefined && Math.abs(valor) === 1 && u in SINGULARES ? SINGULARES[u] : u;
 }
 
-/** Valor com unidade: '12,4 dias úteis', '1 dia útil', '98,9%', '—'. */
+/** Reais: 'R$ 19.692,83'. */
+export function fmtReais(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined || !Number.isFinite(valor)) return "—";
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Valor com unidade: '12,4 dias úteis', '1 dia útil', '98,9%', 'R$ 19.692,83', '—'. */
 export function fmtValor(valor: number | null, unidade: string, maxCasas = 2): string {
   if (valor === null || !Number.isFinite(valor)) return "—";
+  if (unidade === "R$") return fmtReais(valor);
   const u = unidadeCurta(unidade, valor);
   const n = fmtNumero(valor, maxCasas);
   if (!u) return n;

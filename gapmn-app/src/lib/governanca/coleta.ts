@@ -136,10 +136,10 @@ export type DadosColeta = {
 /** Tudo o que a tela de acompanhamento e a planilha consolidada precisam. */
 export async function lerDadosColeta(): Promise<DadosColeta> {
   const [indicadores, competencias, lancamentos, historico, contratos] = await Promise.all([
-    lerTudo<IndicadorGov>("gov_indicadores", "id,divisao,categoria,indicador,unidade,formula,calculo,variaveis,meta_txt,meta_num,direcao,planejado,ordem", "ordem"),
+    lerTudo<IndicadorGov>("gov_indicadores", "id,divisao,categoria,indicador,unidade,formula,calculo,variaveis,meta_txt,meta_num,direcao,planejado,ordem,orientacao,desde", "ordem"),
     listarCompetencias(),
     lerTudo<LancamentoAdmin>("gov_lancamentos",
-      "competencia,indicador_id,tipo,v1,v2,v3,valor,comentario,anexo,anexo_nome,posto,nome_guerra,divisao,atualizado_em,versao", "competencia"),
+      "competencia,indicador_id,tipo,v1,v2,v3,valor,calculo,comentario,anexo,anexo_nome,posto,nome_guerra,divisao,atualizado_em,versao", "competencia"),
     lerTudo<HistoricoGov>("gov_historico", "id,competencia,indicador_id,tipo,antes,depois,posto,nome_guerra,quando", "id"),
     lerTudo<ContratoAdmin>("gov_contratos", "id,competencia,ordem,servico,nup,termino,status,providencias,padrao,posto,nome_guerra,atualizado_em", "competencia"),
   ]);

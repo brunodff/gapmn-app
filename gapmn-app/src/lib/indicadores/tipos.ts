@@ -29,6 +29,8 @@ export type LinhaBD = {
   COMENTARIO?: string | null;
   /** A divisão anexou comprovante. */
   TEM_ANEXO?: boolean;
+  /** Como preencher (FAQ do catálogo ou quadro do FAsGov-DIRAD). */
+  ORIENTACAO?: string | null;
 };
 
 /** Contrato ou ata essencial informado pela DOC (checklist da coleta mensal). */
@@ -146,6 +148,8 @@ export type IndicadorPainel = {
   /** Justificativa da divisão para o resultado da competência. */
   comentario?: string | null;
   temAnexo?: boolean;
+  /** Como preencher (FAQ do catálogo), quando houver. */
+  orientacao?: string | null;
 };
 
 /** O indicador numa competência, para o histórico. */
@@ -166,6 +170,8 @@ export type ContagemStatus = Record<Status, number>;
 export type ItemContagem = {
   id: string;
   indicador: string;
+  /** 'Quantidade' ou 'R$' (montantes do ressarcimento ao erário). */
+  unidade: string;
   realizado: number | null;
   planejado: number | null;
   /** realizado ÷ planejado, quando planejado > 0. */
@@ -175,10 +181,15 @@ export type ItemContagem = {
 export type GrupoContagem = {
   categoria: string;
   divisao: string;
-  /** true no Plano de Contratações Anual: planejado × realizado. */
+  /** true no Plano de Contratações Anual e no Fala.BR: planejado × realizado. */
   emparelhado: boolean;
+  /** Nomes das duas colunas quando emparelhado: [realizado, planejado] (Fala.BR: resolvidas ou respondidas, recebidas). */
+  rotulos: [string, string];
   itens: ItemContagem[];
+  /** Soma das quantidades (os valores em R$ ficam fora da soma). */
   total: number | null;
+  /** false quando somar os itens não faz sentido (acompanhamento dos indícios: estoque, comunicados e esclarecidos). */
+  somavel: boolean;
   totalPlanejado: number | null;
 };
 

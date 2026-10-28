@@ -511,6 +511,7 @@
 
 /* objetivo do indicador (catálogo) e ficha técnica */
 .pg-objetivo { margin: 6px 0 0; font-size: 12px; font-style: italic; color: var(--txt-2); line-height: 1.4; }
+.pg-orientacao { margin: 4px 0 0; font-size: 12px; color: var(--txt-2); line-height: 1.45; }
 .pg-ficha-tecnica { grid-template-columns: auto minmax(0, 1fr); }
 .pg-ficha-tecnica dd { font-weight: 500; }
 

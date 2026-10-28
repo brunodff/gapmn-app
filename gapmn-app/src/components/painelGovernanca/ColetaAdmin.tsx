@@ -9,7 +9,7 @@ import {
   abrirColeta, fecharColeta, lerDadosColeta, linkDoFormulario, trocarLink, urlDoAnexo, type DadosColeta,
 } from "../../lib/governanca/coleta.ts";
 import { baixarPlanilha, classificar } from "../../lib/governanca/exportar.ts";
-import type { CompetenciaAdmin, HistoricoGov, IndicadorGov, LancamentoAdmin } from "../../lib/governanca/tipos.ts";
+import { cobradoEm, type CompetenciaAdmin, type HistoricoGov, type IndicadorGov, type LancamentoAdmin } from "../../lib/governanca/tipos.ts";
 
 const MESES = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 const rotuloDe = (codigo: string) => `${MESES[Number(codigo.slice(5, 7)) - 1]}/${codigo.slice(2, 4)}`;
@@ -148,7 +148,7 @@ function Acompanhamento({ dados, vendo, setVendo, aberta, setAberta }: {
   const linhas = useMemo(() => {
     if (!comp) return [];
     return DIVISOES.map((div) => {
-      const inds = dados.indicadores.filter((i) => i.divisao === div.sigla);
+      const inds = dados.indicadores.filter((i) => i.divisao === div.sigla && cobradoEm(i, comp.codigo));
       const esperadas = inds.flatMap((i) => (i.planejado ? ["Planejado", "Realizado"] : ["Realizado"]).map((t) => ({ ind: i, tipo: t })));
       const lancs = dados.lancamentos.filter((l) => l.competencia === comp.codigo && inds.some((i) => i.id === l.indicador_id));
       const preenchidas = lancs.filter((l) => l.valor !== null || l.v1 !== null || l.v2 !== null).length;
@@ -159,7 +159,7 @@ function Acompanhamento({ dados, vendo, setVendo, aberta, setAberta }: {
         div, inds, esperadas: esperadas.length, preenchidas, ruins: ruins.length, semJustificativa: ruins.filter((c) => !c.l.comentario).length,
         anexos: lancs.filter((l) => l.anexo).length, ultima, classificados,
       };
-    });
+    }).filter((x) => x.esperadas > 0); // divisão sem indicador cobrado no mês (a SEC antes de OUT/26) não aparece
   }, [dados, comp]);
   if (!comp) return null;
   const contratos = dados.contratos.filter((c) => c.competencia === comp.codigo);

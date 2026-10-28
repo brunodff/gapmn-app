@@ -19,10 +19,17 @@ export type IndicadorGov = {
   meta_txt: string | null;
   meta_num: number | null;
   direcao: Direcao;
-  /** Tem linha Planejado além do Realizado (Plano de Contratações Anual). */
+  /** Tem linha Planejado além do Realizado (Plano de Contratações Anual; no Fala.BR, recebidas × resolvidas). */
   planejado: boolean;
   ordem: number;
+  /** Como preencher (FAQ do Catálogo de Indicadores ou quadro do FAsGov-DIRAD). */
+  orientacao?: string | null;
+  /** Primeira competência em que o indicador é cobrado ('AAAA-MM'); null = desde sempre. */
+  desde?: string | null;
 };
+
+/** O indicador é cobrado na competência? (os novos não contam nos meses anteriores) */
+export const cobradoEm = (i: Pick<IndicadorGov, "desde">, competencia: string) => !i.desde || i.desde <= competencia;
 
 export type LancamentoGov = {
   indicador_id: string;
@@ -110,7 +117,11 @@ export type CompetenciaAdmin = {
 };
 
 /** Lançamento completo, com o caminho do anexo (só ADMIN e DEV leem). */
-export type LancamentoAdmin = Omit<LancamentoGov, "tem_anexo"> & { competencia: string; anexo: string | null; divisao: string | null };
+export type LancamentoAdmin = Omit<LancamentoGov, "tem_anexo"> & {
+  competencia: string; anexo: string | null; divisao: string | null;
+  /** Cálculo vigente quando foi salvo; diferente do atual = variáveis da regra antiga (só o resultado vale). */
+  calculo?: string | null;
+};
 
 export type HistoricoGov = {
   id: number;

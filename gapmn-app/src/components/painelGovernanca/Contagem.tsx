@@ -1,35 +1,40 @@
-import { fmtNumero, fmtPercentual, larguraCss } from "../../lib/indicadores/formato.ts";
+import { fmtNumero, fmtPercentual, fmtReais, larguraCss } from "../../lib/indicadores/formato.ts";
 import type { GrupoContagem, ItemContagem } from "../../lib/indicadores/tipos.ts";
 
 // Grupos de contagem (EXTRAS): quantidades, sem meta, sem semáforo e fora de qualquer nota.
 // 0 quer dizer "não há" e aparece como 0; vazio quer dizer "ainda não informado" e aparece como —.
+// Os montantes do ressarcimento ao erário aparecem em reais e ficam fora do total do grupo.
 
-function Quantidade({ v }: { v: number | null }) {
+function Quantidade({ v, reais = false }: { v: number | null; reais?: boolean }) {
   if (v === null) return <span className="pg-item-qtd" data-zero="1" title="Informação ainda não registrada">—</span>;
-  return <span className="pg-item-qtd" data-zero={v === 0 ? "1" : undefined} data-positivo={v > 0 ? "1" : undefined}>{fmtNumero(v)}</span>;
+  return (
+    <span className="pg-item-qtd" data-zero={v === 0 ? "1" : undefined} data-positivo={v > 0 ? "1" : undefined}>
+      {reais ? fmtReais(v) : fmtNumero(v)}
+    </span>
+  );
 }
 
 function ItemSimples({ item }: { item: ItemContagem }) {
   return (
     <div className="pg-item" data-ativo={item.realizado !== null && item.realizado > 0 ? "1" : undefined}>
       <span className="pg-item-nome">{item.indicador}</span>
-      <Quantidade v={item.realizado} />
+      <Quantidade v={item.realizado} reais={item.unidade === "R$"} />
     </div>
   );
 }
 
-function ItemPlanejado({ item }: { item: ItemContagem }) {
+function ItemPlanejado({ item, rotulos }: { item: ItemContagem; rotulos: [string, string] }) {
   const base = Math.max(item.planejado ?? 0, item.realizado ?? 0);
   return (
     <div className="pg-pca">
       <div className="pg-item" style={{ border: "none", padding: 0 }} data-ativo="1">
         <span className="pg-item-nome">{item.indicador}</span>
-        <span className="pg-item-qtd">
+        <span className="pg-item-qtd" title={`${rotulos[0]} / ${rotulos[1]}`}>
           {fmtNumero(item.realizado)} / {fmtNumero(item.planejado)}
           {item.execucao !== null && <span className="pg-sub" style={{ fontWeight: 600 }}> · {fmtPercentual(item.execucao)}</span>}
         </span>
       </div>
-      <div className="pg-pca-trilha" aria-hidden="true" title="Barra: realizado; contorno: planejado">
+      <div className="pg-pca-trilha" aria-hidden="true" title={`Barra: ${rotulos[0]}; contorno: ${rotulos[1]}`}>
         {base > 0 && item.realizado !== null && (
           <span className="pg-pca-barra" style={{ width: larguraCss(item.realizado / base, 1) }} />
         )}
@@ -42,18 +47,21 @@ export function CartaoGrupo({ g, competencia, largo = false }: { g: GrupoContage
   const total = g.emparelhado
     ? `${fmtNumero(g.total)} / ${fmtNumero(g.totalPlanejado)}${g.total !== null && g.totalPlanejado ? ` · ${fmtPercentual(g.total / g.totalPlanejado)}` : ""}`
     : fmtNumero(g.total);
+  const soReais = g.itens.every((i) => i.unidade === "R$");
   return (
     <section className="pg-card" aria-label={g.categoria}>
       <div className="pg-secao-topo">
         <span className="pg-rotulo">{g.categoria} · {g.divisao}</span>
-        <span className="pg-num pg-grupo-total" title={g.emparelhado ? "Realizado / planejado" : "Total"}>
-          {total}
-        </span>
+        {!soReais && g.somavel && (
+          <span className="pg-num pg-grupo-total" title={g.emparelhado ? `${g.rotulos[0]} / ${g.rotulos[1]}` : "Total (quantidades)"}>
+            {total}
+          </span>
+        )}
       </div>
-      {g.emparelhado && <div className="pg-sub" style={{ marginTop: -6, marginBottom: 6 }}>realizado / planejado em {competencia}</div>}
+      {g.emparelhado && <div className="pg-sub" style={{ marginTop: -6, marginBottom: 6 }}>{g.rotulos[0]} / {g.rotulos[1]} em {competencia}</div>}
       <div className={largo ? "pg-itens-2" : undefined}>
         {g.itens.map((item) =>
-          g.emparelhado ? <ItemPlanejado key={item.id} item={item} /> : <ItemSimples key={item.id} item={item} />,
+          g.emparelhado ? <ItemPlanejado key={item.id} item={item} rotulos={g.rotulos} /> : <ItemSimples key={item.id} item={item} />,
         )}
       </div>
     </section>

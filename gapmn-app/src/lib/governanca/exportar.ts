@@ -36,6 +36,9 @@ export function montarAbas(d: DadosColeta): Aba[] {
     const ind = porId.get(l.indicador_id);
     const c = ind ? classificar(ind, l) : null;
     const semMeta = !ind || ind.direcao === "Monitoramento";
+    // lançado com a regra anterior do catálogo (IDs 26, 27 e 28 até SET/26): as variáveis não têm os nomes de hoje
+    const regraAntiga = !!ind && !!l.calculo && l.calculo !== ind.calculo;
+    const nomeVar = (i: number) => (regraAntiga ? `Variável ${i + 1} (regra anterior do catálogo)` : ind?.variaveis[i] ?? "");
     return {
       "Competência": rotulo.get(l.competencia) ?? l.competencia,
       "Mês (AAAA-MM)": l.competencia,
@@ -45,11 +48,11 @@ export function montarAbas(d: DadosColeta): Aba[] {
       "Indicador": ind?.indicador ?? "",
       "Tipo": l.tipo,
       "Unidade": ind?.unidade ?? "",
-      "Variável 1": ind?.variaveis[0] ?? (ind?.calculo === "direto" ? "Valor informado" : ""),
+      "Variável 1": regraAntiga ? nomeVar(0) : ind?.variaveis[0] ?? (ind?.calculo === "direto" ? "Valor informado" : ""),
       "Valor 1": arred(l.v1),
-      "Variável 2": ind?.variaveis[1] ?? "",
+      "Variável 2": nomeVar(1),
       "Valor 2": arred(l.v2),
-      "Variável 3": ind?.variaveis[2] ?? "",
+      "Variável 3": nomeVar(2),
       "Valor 3": arred(l.v3),
       "Resultado": arred(l.valor),
       "Meta": ind ? (semMeta ? "" : metaExibida(ind.meta_txt, ind.meta_num, ind.unidade, ind.direcao)) : "",

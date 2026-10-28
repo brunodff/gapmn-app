@@ -15,12 +15,22 @@ export const N_PIORES = 5;
 /** Quantos indicadores aparecem em "Maiores avanços". */
 export const N_AVANCOS = 5;
 export const UNIDADE_CONTAGEM = "Quantidade";
-/** Variação mensal (16 e 22): o desejável é a redução; o sentido vem de VAR1 × VAR2. */
+/**
+ * Variação mensal (16 e 22): o desejável é a redução; o sentido vem de VAR1 (atual) × VAR2 (anterior).
+ * Desde o catálogo GAP/CAE o VALOR é o percentual reduzido e 0 sem redução (FAQ 14); antes era o módulo.
+ */
 export const IDS_VARIACAO = new Set(["16", "22"]);
 /** Eventos para o Efetivo: gravado em ASESO, pertence à Comunicação Social, fora do ranking. */
 export const ID_COMSOC = "35";
-export const ORDEM_DIVISOES = ["DRH", "DIE", "DA", "AJUR", "ASESO", "DOC", "ACI", "COMSOC"];
-export const ORDEM_GRUPOS = ["Pendências do e-Pessoal", "Plano de Contratações Anual", "Ressarcimento ao Erário"];
+export const ORDEM_DIVISOES = ["DRH", "DIE", "DA", "AJUR", "ASESO", "DOC", "ACI", "SEC", "COMSOC"];
+export const ORDEM_GRUPOS = [
+  "Pendências do e-Pessoal", "Acompanhamento dos indícios do e-Pessoal", "Plano de Contratações Anual",
+  "Ressarcimento ao Erário", "Fala.BR (Ouvidoria e LAI)",
+];
+/** Unidade dos montantes em reais (fora da soma das quantidades do grupo). */
+export const UNIDADE_REAIS = "R$";
+/** Grupos cujos itens medem coisas diferentes (estoque, comunicados no ano, esclarecidos no ano): sem total. */
+export const GRUPOS_SEM_TOTAL = new Set(["Acompanhamento dos indícios do e-Pessoal"]);
 
 export const STATUS: Status[] = [
   "Aguardando informação", "Sem dados no mês de referência", "Crítico", "Atenção", "Adequado", "Sem meta",
@@ -55,8 +65,12 @@ export function divisaoExibida(id: string, divisao: string): string {
   return id === ID_COMSOC ? "COMSOC" : divisao;
 }
 
-export function ehContagem(l: Pick<LinhaBD, "UNIDADE">): boolean {
-  return l.UNIDADE === UNIDADE_CONTAGEM;
+/**
+ * Item dos grupos à parte do catálogo (EXTRAS): quantidades e, desde OUT/26, os montantes em R$ do
+ * ressarcimento ao erário. Todo indicador de Monitoramento entra aqui, nunca na nota.
+ */
+export function ehContagem(l: Pick<LinhaBD, "UNIDADE" | "DIRECAO">): boolean {
+  return l.UNIDADE === UNIDADE_CONTAGEM || l.DIRECAO === "Monitoramento";
 }
 
 function ultimo<T>(lista: T[]): T | undefined {
@@ -112,6 +126,7 @@ export function normalizarLinhas(bruto: unknown[]): { linhas: LinhaBD[]; avisos:
       o[c] = v === null || v === undefined || v === "" ? null : String(v);
     }
     if (typeof r.COMENTARIO === "string" && r.COMENTARIO.trim()) o.COMENTARIO = r.COMENTARIO.trim();
+    if (typeof r.ORIENTACAO === "string" && r.ORIENTACAO.trim()) o.ORIENTACAO = r.ORIENTACAO.trim();
     if (r.TEM_ANEXO === true) o.TEM_ANEXO = true;
     for (const c of CAMPOS_NUMERICOS) {
       const n = paraNumero(r[c]);
@@ -377,6 +392,7 @@ function montarIndicador(
     catalogo: null,
     comentario: l.COMENTARIO ?? null,
     temAnexo: !!l.TEM_ANEXO,
+    orientacao: l.ORIENTACAO ?? null,
   };
 }
 
@@ -420,20 +436,29 @@ export function gruposDeContagem(bd: LinhaBD[], data: string): GrupoContagem[] {
       return {
         id,
         indicador: (real ?? plan)!.INDICADOR,
+        unidade: (real ?? plan)!.UNIDADE,
         realizado,
         planejado,
         execucao: realizado !== null && planejado !== null && planejado > 0 ? realizado / planejado : null,
       };
     });
-    // Soma de itens da MESMA competência (permitido); null quando nada foi lançado.
+    // Soma de itens da MESMA competência (permitido); null quando nada foi lançado. Valores em R$ não somam com quantidades.
     const soma = (vs: (number | null)[]) => (vs.some((v) => v !== null) ? vs.reduce<number>((s, v) => s + (v ?? 0), 0) : null);
+    const quantidades = itens.filter((i) => i.unidade !== UNIDADE_REAIS);
+    // nomes das colunas emparelhadas: os das variáveis (Fala.BR), senão realizado/planejado (PCA)
+    const primeira = linhas[0];
+    const rotulos: [string, string] = [
+      (primeira.VAR1_NOME ?? "realizado").toLowerCase(), (primeira.VAR2_NOME ?? "planejado").toLowerCase(),
+    ];
     return {
       categoria,
       divisao: linhas[0].DIVISAO,
       emparelhado,
+      rotulos,
       itens,
-      total: soma(itens.map((i) => i.realizado)),
-      totalPlanejado: emparelhado ? soma(itens.map((i) => i.planejado)) : null,
+      somavel: !GRUPOS_SEM_TOTAL.has(categoria),
+      total: soma(quantidades.map((i) => i.realizado)),
+      totalPlanejado: emparelhado ? soma(quantidades.map((i) => i.planejado)) : null,
     };
   });
 }

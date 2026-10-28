@@ -1,11 +1,13 @@
-// Catálogo de Indicadores de Desempenho — Grupamentos de Apoio (GAPs), versão de 24 JUL 26.
-// Ficha técnica de cada indicador (objetivo, origem dos dados, periodicidade, unidade e meta),
-// transcrita do PDF do catálogo. Só informativa: não entra em nenhuma conta do painel.
+// Catálogo de Indicadores de Desempenho — Grupamentos de Apoio (GAPs), versão GAP/CAE (out/2026),
+// que substituiu a de 24 JUL 26: dois indicadores novos no Serviço Social (62 e 63), objetivos novos nos
+// IDs 20, 22 e 23, unidade do 19 e origem do 9. Ficha técnica de cada indicador (objetivo, origem dos
+// dados, periodicidade, unidade e meta), transcrita do PDF. Só informativa: não entra em conta nenhuma.
+// As regras de preenchimento do FAQ ficam no banco (gov_indicadores.orientacao).
 // Se a planilha tiver a aba CATALOGO, ela tem prioridade (permite revisar sem publicar o app).
 
 import type { FichaCatalogo } from "./tipos.ts";
 
-export const VERSAO_CATALOGO = "v24JUL26";
+export const VERSAO_CATALOGO = "GAP/CAE, out/2026";
 
 export const CATALOGO_PADRAO: Record<string, FichaCatalogo> = {
   "1": {
@@ -66,7 +68,7 @@ export const CATALOGO_PADRAO: Record<string, FichaCatalogo> = {
   },
   "9": {
     objetivo: "Acelerar a publicação do resultado médico para implantação da isenção.",
-    origem: "Protocolo da OM de vínculo / Sis. Boletim",
+    origem: "Protocolo da OM de vinculação / Sis. Boletim",
     periodicidade: "Mensal",
     unidade: "Dias úteis",
     meta: "5 dias úteis",
@@ -152,11 +154,25 @@ export const CATALOGO_PADRAO: Record<string, FichaCatalogo> = {
     objetivo: "Garantir suporte tempestivo aos militares, medindo o tempo entre a recepção do requerimento e a emissão do parecer de deferimento.",
     origem: "Sistema do Serviço Social",
     periodicidade: "Mensal",
-    unidade: "Dias úteis",
+    unidade: "Dias corridos",
     meta: "15 dias corridos",
   },
+  "62": {
+    objetivo: "Aferir a proporção de benefícios socioassistenciais efetivamente pagos em relação ao total de benefícios concedidos, avaliando a capacidade de atendimento físico.",
+    origem: "Sistema do Serviço Social / SIAFI",
+    periodicidade: "Mensal",
+    unidade: "Percentual (%)",
+    meta: "100%",
+  },
+  "63": {
+    objetivo: "Mensurar a execução financeira dos benefícios socioassistenciais, comparando o montante de recursos efetivamente pagos com o total de recursos financeiros concedidos.",
+    origem: "Sistema do Serviço Social / SIAFI",
+    periodicidade: "Mensal",
+    unidade: "Percentual (%)",
+    meta: "100%",
+  },
   "20": {
-    objetivo: "Mensurar o ritmo de transição do modelo tradicional de suprimentos para o modelo virtual, avaliando a eficácia da política de migração dos gastos com material de expediente.",
+    objetivo: "Mensurar o ritmo de transição do modelo tradicional de suprimentos para o modelo virtual, avaliando a eficácia da política de migração dos gastos com materiais atendidos pelo Almoxarifado Virtual Nacional (AVN).",
     origem: "SILOMS / Plataforma AVN",
     periodicidade: "Mensal",
     unidade: "Percentual (%)",
@@ -170,14 +186,14 @@ export const CATALOGO_PADRAO: Record<string, FichaCatalogo> = {
     meta: "> 75% via AVN",
   },
   "22": {
-    objetivo: "Avaliar o ritmo de esvaziamento do estoque físico de material de expediente, medindo se o consumo mensal está superando a entrada.",
+    objetivo: "Monitorar a curva de consumo do estoque interno de materiais do catálogo do AVN, a fim de validar a transição para esse modelo.",
     origem: "SIAFI / SILOMS",
     periodicidade: "Mensal",
     unidade: "Percentual (%)",
     meta: "Redução linear de 5% ao mês",
   },
   "23": {
-    objetivo: "Estimar o tempo restante para o consumo definitivo do estoque físico remanescente de material de expediente, visando a aquisição Just In Time.",
+    objetivo: "Mensurar o tempo de cobertura do estoque interno para substituição gradativa pelo modelo Just In Time (AVN).",
     origem: "SIAFI / SILOMS",
     periodicidade: "Mensal",
     unidade: "Meses",

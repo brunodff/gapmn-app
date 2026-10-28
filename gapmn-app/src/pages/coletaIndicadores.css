@@ -54,6 +54,11 @@
 .ci-ind-num { font-size: 12px; font-weight: 700; color: var(--azul-2); }
 .ci-ind-tit { margin: 1px 0 0; font-size: 16px; font-weight: 700; }
 .ci-formula { font-family: Consolas, "Courier New", monospace; font-size: 12.5px; color: var(--fraco); margin-top: 2px; overflow-wrap: anywhere; }
+.ci-orientacao { margin: 0; padding: 8px 10px; border-left: 3px solid #2f6db5; background: #f1f6fc; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.45; color: #23364d; }
+.ci-orientacao b { color: #17406e; }
+.ci-orientacoes { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
+.ci-orientacoes li + li { margin-top: 4px; }
+.ci-tab-item .ci-orientacao-linha { display: block; margin-top: 2px; font-size: 12px; color: var(--fraco); font-weight: 400; }
 .ci-meta { font-size: 13px; color: var(--fraco); background: #f1f5fa; border-radius: 8px; padding: 4px 9px; white-space: nowrap; }
 .ci-vars { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 .ci-campo-num input { font-variant-numeric: tabular-nums; }
