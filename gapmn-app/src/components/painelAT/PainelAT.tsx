@@ -23,6 +23,7 @@ function quando(iso: string | null | undefined): string {
 
 function Atualizacao({ leituras }: { leituras: Leitura[] }) {
   const ok = leituras.find((l) => l.status === "ok");
+  const completa = leituras.find((l) => l.status === "ok" && !l.parcial);
   const ultima = leituras[0];
   const falhou = ultima && ultima.status === "erro" && (!ok || ultima.iniciada_em > ok.iniciada_em);
   const novidades = ok ? [
@@ -37,6 +38,11 @@ function Atualizacao({ leituras }: { leituras: Leitura[] }) {
         {ok ? `Lido do SIGPES ${quando(ok.concluida_em)}` : "Ainda sem leitura completa do SIGPES"}
       </span>
       {novidades && <span className="at-atualizacao-sub">Na última leitura: {novidades}</span>}
+      {ok?.parcial && (
+        <span className="at-atualizacao-sub" title="Quem sincronizou vê só parte da lista no SIGPES: as solicitações que vieram foram atualizadas e as demais ficaram como estavam.">
+          Leitura parcial (perfil que vê só parte da lista){completa ? ` · última completa ${quando(completa.concluida_em)}` : ""}
+        </span>
+      )}
       {falhou && (
         <span className="at-selo" data-tipo="alerta" title={ultima.erro ?? undefined}>
           <span className="at-ponto" aria-hidden="true" /> A leitura de {quando(ultima.iniciada_em)} falhou{ultima.erro ? `: ${ultima.erro}` : ""}

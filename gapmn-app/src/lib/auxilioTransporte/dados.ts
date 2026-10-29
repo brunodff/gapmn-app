@@ -32,6 +32,8 @@ export type Leitura = {
   novas: number;
   alteradas: number;
   sairam: number | null;
+  /** quem leu tem perfil que vê só parte da lista: atualizou o que veio e não tirou ninguém da lista */
+  parcial?: boolean;
   erro: string | null;
 };
 

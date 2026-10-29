@@ -24,16 +24,10 @@
     <a class="btn btn-primario" id="abrir-painel" href="#" target="_blank" rel="noopener">Abrir painel</a>
     <button class="btn" id="sincronizar" type="button">Sincronizar agora</button>
   </div>
+  <button class="btn btn-largo" id="permitir" type="button" hidden>Permitir acesso ao SIGPES</button>
   <p class="aviso" id="aviso" hidden></p>
-
-  <details id="config">
-    <summary>Configuração</summary>
-    <label for="codigo">Código de configuração</label>
-    <input id="codigo" type="password" autocomplete="off" spellcheck="false" placeholder="AT1.…" />
-    <button class="btn btn-pequeno" id="salvar" type="button">Salvar</button>
-    <p class="nota" id="config-estado"></p>
-    <button class="link" id="diagnostico" type="button">Copiar diagnóstico (sem dados pessoais)</button>
-  </details>
+  <p class="nota" id="nota"></p>
+  <button class="link" id="diagnostico" type="button">Copiar diagnóstico (sem dados pessoais)</button>
 
   <script src="config.js"></script>
   <script src="popup.js"></script>

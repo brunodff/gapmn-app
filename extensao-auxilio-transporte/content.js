@@ -13,7 +13,6 @@
   const buscarSigpes = typeof globalThis.content?.fetch === "function" ? globalThis.content.fetch.bind(globalThis.content) : fetch.bind(globalThis);
 
   const CH_STATUS = "at_status";
-  const CH_CONFIG = "at_config";
   const CH_TRAVA = "at_trava";
   const PULSO_MS = 4000;
   const VIVO_MS = 15000;                       // sem pulso por 15 s = leitura interrompida
@@ -94,9 +93,11 @@
     if (t?.id === trava.id) await api.storage.local.remove(CH_TRAVA);
   }
 
+  // chave de envio embutida no pacote (sem configuração); marcador = pacote gerado sem as chaves
+  const CHAVE = CFG.chaveEnvio && !CFG.chaveEnvio.startsWith("__") ? CFG.chaveEnvio : null;
+
   async function sincronizar({ forcar = false } = {}) {
-    const cfg = (await ler(CH_CONFIG)) || {};
-    if (!cfg.chave) return { ok: false, mensagem: "Configure a extensão (código de configuração) antes de sincronizar." };
+    if (!CHAVE) return { ok: false, mensagem: "Esta cópia da extensão veio sem a chave do painel. Peça o pacote atualizado a quem mantém a extensão." };
     const st = (await ler(CH_STATUS)) || {};
     if (!forcar) {
       if (st.ultimaOk && diaSP(new Date(st.ultimaOk)) === diaSP(new Date())) return { ok: true, pulou: "ja_hoje" };
@@ -138,17 +139,17 @@
       lidas = linhas.length;
 
       await marcar({ fase: "enviando", lidos: 0, total: linhas.length });
-      execucao = await rpc("at_iniciar", { p_chave: cfg.chave, p_total: Math.max(total, linhas.length), p_versao: CFG.versao });
+      execucao = await rpc("at_iniciar", { p_chave: CHAVE, p_total: Math.max(total, linhas.length), p_versao: CFG.versao });
       for (let i = 0; i < linhas.length; i += LOTE) {
-        await rpc("at_lote", { p_chave: cfg.chave, p_execucao: execucao, p_linhas: linhas.slice(i, i + LOTE) });
+        await rpc("at_lote", { p_chave: CHAVE, p_execucao: execucao, p_linhas: linhas.slice(i, i + LOTE) });
         await marcar({ fase: "enviando", lidos: Math.min(i + LOTE, linhas.length), total: linhas.length });
       }
-      const fim = await rpc("at_concluir", { p_chave: cfg.chave, p_execucao: execucao, p_erro: null });
+      const fim = await rpc("at_concluir", { p_chave: CHAVE, p_execucao: execucao, p_erro: null });
       const ok = fim?.status === "ok";
       encerrar();
       const ultima = {
         quando: new Date().toISOString(), ok, registros: linhas.length, total,
-        novas: fim?.novas ?? null, alteradas: fim?.alteradas ?? null, sairam: fim?.sairam ?? null,
+        novas: fim?.novas ?? null, alteradas: fim?.alteradas ?? null, sairam: fim?.sairam ?? null, parcial: !!fim?.parcial,
         duracaoMs: Date.now() - inicio, contaComoTentativa: true,
         mensagem: ok ? null : "O painel não aceitou a leitura como completa.",
       };
@@ -158,7 +159,7 @@
       encerrar();
       const sessao = e?.codigo === "sessao";
       if (execucao) {
-        try { await rpc("at_concluir", { p_chave: cfg.chave, p_execucao: execucao, p_erro: String(e.message || e).slice(0, 300) }); } catch { /* fica como interrompida */ }
+        try { await rpc("at_concluir", { p_chave: CHAVE, p_execucao: execucao, p_erro: String(e.message || e).slice(0, 300) }); } catch { /* fica como interrompida */ }
       }
       let mensagem = String(e?.message || e);
       // a leitura deu certo e só o envio falhou: dizer isso, para ninguém achar que o problema é o SIGPES
