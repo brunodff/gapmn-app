@@ -203,7 +203,7 @@ export default function PainelEnviosEmpenho({ podeVerificar, verificando, aoVeri
           {estado.texto}
         </span>
         <span className="text-xs text-slate-500">
-          A planilha de empenhos é lida a cada 15 minutos, das 07h às 21h45, todos os dias. E-mail de emitida e de assinada sai sozinho.
+          A planilha de empenhos é lida a cada 15 minutos, das 07h às 21h45, todos os dias. O fiscal recebe um e-mail só, quando a OD assina a NE (o aviso de emitida deixou de sair em 29/10/2026).
         </span>
         {ultima && (
           <span className="text-xs text-slate-600">

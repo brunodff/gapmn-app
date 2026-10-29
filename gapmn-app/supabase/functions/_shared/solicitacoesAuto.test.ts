@@ -48,19 +48,32 @@ test("contato do fiscal tirado da observação", () => {
   assert.equal(extrairResponsavel(OBS, email), "1T SILVA");
 });
 
-test("NE nova cria o registro e manda um e-mail só, mesmo com dois lançamentos", () => {
+test("NE nova ainda sem assinatura da OD cria o registro e não manda e-mail", () => {
   const p = planejar([ne({}), ne({ data: "11/09/2026", dataISO: "2026-09-11" })], []);
   assert.equal(p.novas.length, 1);
   assert.equal(p.novas[0].status, "EMITIDA");
   assert.equal(p.novas[0].email, "silva@fab.mil.br");
+  assert.equal(p.acoes.length, 0);
+});
+
+test("NE nova assinada manda um e-mail só, mesmo com dois lançamentos", () => {
+  const p = planejar([ne({ assinada: true }), ne({ data: "11/09/2026", dataISO: "2026-09-11", assinada: true })], []);
+  assert.equal(p.novas.length, 1);
   assert.equal(p.acoes.length, 1);
-  assert.deepEqual([p.acoes[0].tipo, p.acoes[0].resultado, p.acoes[0].nova], ["EMITIDA", "ENVIAR", true]);
+  assert.deepEqual([p.acoes[0].tipo, p.acoes[0].resultado, p.acoes[0].nova], ["ASSINADA", "ENVIAR", true]);
+});
+
+test("NE emitida e não assinada não manda e-mail, nem o de emitida que ficou para trás", () => {
+  const p = planejar([ne({})], [sol({ notificado_emitida_em: null })]);
+  assert.equal(p.acoes.length, 0);
+  assert.equal(p.atualizacoes.length, 0);
+  assert.equal(p.semMudanca, 1);
 });
 
 test("NE nova já assinada manda o e-mail de assinada; sem e-mail fica como pendência", () => {
   const assinada = planejar([ne({ assinada: true })], []);
   assert.equal(assinada.acoes[0].tipo, "ASSINADA");
-  const semEmail = planejar([ne({ descricao: "SOLICITACAO DE EMPENHO 26S0500 SEM CONTATO" })], []);
+  const semEmail = planejar([ne({ assinada: true, descricao: "SOLICITACAO DE EMPENHO 26S0500 SEM CONTATO" })], []);
   assert.equal(semEmail.acoes[0].resultado, "SEM_EMAIL");
   assert.equal(semEmail.novas[0].sem_destinatario, true);
 });

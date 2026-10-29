@@ -2,10 +2,12 @@
 // para a função auto-solicitacoes-empenho e para os testes. É a mesma regra do antigo botão
 // "Sincronizar SIAFI" do painel de Solicitações, agora rodando sozinha no servidor:
 //   1. NE nova na planilha (desde 03/08/2026) com solicitação que ainda não está no banco: cria o
-//      registro e manda o e-mail (emitida ou assinada, conforme a NE já esteja assinada ou não).
-//   2. Solicitação que muda de situação (emitida → assinada): atualiza e manda o e-mail do novo estado.
+//      registro; se a NE já chega assinada pela OD, manda o e-mail.
+//   2. Solicitação que muda de situação (emitida → assinada): atualiza e manda o e-mail.
 //   3. E-mail de "assinada" enviado: o registro já sai da lista como verificado (antes era o botão
 //      "Verificar e Fechar").
+// Só a assinatura da OD gera e-mail (desde 29/10/2026): o aviso de NE emitida deixou de sair, porque
+// havia fiscal com mais de 80 e-mails. O "Reenviar" manual da lista continua podendo mandar qualquer um.
 // Diferenças em relação ao botão antigo: um e-mail por solicitação (antes, duas NEs da mesma solicitação
 // na mesma leitura geravam dois); o valor é o valor atual da NE (soma dos itens), não o do lançamento;
 // o modelo do fiscal vale também para a NE que já chega assinada; a solicitação nova conta pela data da
@@ -291,8 +293,10 @@ export function planejar(nes: LinhaNE[], solicitacoes: Solicitacao[], inicio = I
       notificacao_ativa: true,
     };
     novas.push(nova);
+    // ainda sem a assinatura da OD: só entra na lista; o e-mail sai quando a NE for assinada
+    if (!assinada) continue;
     acoes.push({
-      id: "", numero, tipo: assinada ? "ASSINADA" : "EMITIDA", resultado: email ? "ENVIAR" : "SEM_EMAIL",
+      id: "", numero, tipo: "ASSINADA", resultado: email ? "ENVIAR" : "SEM_EMAIL",
       email: email || null, ne: ultima.ne, nova: true, patch: null, registro: nova, dataNE: primeira.data,
     });
   }
@@ -304,13 +308,13 @@ export function planejar(nes: LinhaNE[], solicitacoes: Solicitacao[], inicio = I
     if (!lista?.length) continue;
     const melhor = lista[lista.length - 1];
     const novoStatus: Status = lista.some((l) => l.assinada) ? "ASSINADA" : "EMITIDA";
-    const faltaEmitida = novoStatus === "EMITIDA" && !s.notificado_emitida_em;
+    // só a assinatura da OD gera e-mail: NE emitida e ainda não assinada não manda nada
     const faltaAssinada = novoStatus === "ASSINADA" && !s.notificado_assinada_em;
     const mudou = novoStatus !== s.status || !s.ne_siafi;
     const temEmail = !!(s.email && !s.sem_destinatario);
     // envio que ficou para trás (falhou ou o e-mail foi cadastrado depois) só sai se o registro não foi
     // arquivado; sem e-mail ou com a notificação desligada, a pendência só aparece quando a situação muda
-    const pendente = (faltaEmitida || faltaAssinada) && !s.revisado_em && temEmail && s.notificacao_ativa;
+    const pendente = faltaAssinada && !s.revisado_em && temEmail && s.notificacao_ativa;
     if (!mudou && !pendente) { semMudanca++; continue; }
 
     const patch: Partial<Solicitacao> = {};
@@ -318,14 +322,13 @@ export function planejar(nes: LinhaNE[], solicitacoes: Solicitacao[], inicio = I
     if (melhor.ne && melhor.ne !== s.ne_siafi) patch.ne_siafi = melhor.ne;
     const registro: Solicitacao = { ...s, ...patch };
 
-    if (!(faltaEmitida || faltaAssinada)) {
+    if (!faltaAssinada) {
       if (Object.keys(patch).length) atualizacoes.push({ id: s.id, numero: s.numero, patch });
       else semMudanca++;
       continue;
     }
-    const tipo: TipoEnvio = faltaEmitida ? "EMITIDA" : "ASSINADA";
     acoes.push({
-      id: s.id, numero: s.numero, tipo,
+      id: s.id, numero: s.numero, tipo: "ASSINADA",
       resultado: !temEmail ? "SEM_EMAIL" : !s.notificacao_ativa ? "NOTIF_INATIVA" : "ENVIAR",
       email: s.email, ne: registro.ne_siafi ?? melhor.ne, nova: false,
       patch: Object.keys(patch).length ? patch : null, registro, dataNE: melhor.data,
