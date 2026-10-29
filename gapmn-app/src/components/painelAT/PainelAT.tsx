@@ -1,7 +1,7 @@
 // Painel do Auxílio Transporte: filtros numa fileira, quatro números, quatro gráficos e a tabela.
 // Tudo responde aos mesmos filtros; clicar num mês, numa situação, numa OM ou numa faixa de valor filtra.
-import { useCallback, useMemo, useState } from "react";
-import { Bus, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bus, Maximize, Minimize, RefreshCw } from "lucide-react";
 import {
   FAIXAS, FILTRO_VAZIO, filtrar, fmtMoeda, fmtNumero, opcoes, porFaixa, porMes, porOM, porSituacao, resumir,
   type DadosAT, type FiltroAT, type Leitura,
@@ -71,6 +71,19 @@ export default function PainelAT({ dados, lendo, aoRecarregar }: { dados: DadosA
   const oms = useMemo(() => porOM(filtradas, 10), [filtradas]);
   const faixas = useMemo(() => porFaixa(filtradas), [filtradas]);
 
+  // tela cheia para apresentações: o painel inteiro, com rolagem; Esc ou o botão saem
+  const raiz = useRef<HTMLDivElement>(null);
+  const [cheia, setCheia] = useState(false);
+  useEffect(() => {
+    const aoMudar = () => setCheia(!!raiz.current && document.fullscreenElement === raiz.current);
+    document.addEventListener("fullscreenchange", aoMudar);
+    return () => document.removeEventListener("fullscreenchange", aoMudar);
+  }, []);
+  const alternarTelaCheia = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void raiz.current?.requestFullscreen?.().catch(() => undefined);
+  };
+
   const mesAtivo = (mes: string) => {
     const [a, m] = mes.split("-").map(Number);
     const fim = new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
@@ -78,7 +91,7 @@ export default function PainelAT({ dados, lendo, aoRecarregar }: { dados: DadosA
   };
 
   return (
-    <div className="at-painel" data-lendo={lendo ? "1" : undefined}>
+    <div className="at-painel" ref={raiz} data-lendo={lendo ? "1" : undefined} data-cheia={cheia ? "1" : undefined}>
       <header className="at-topo">
         <div className="at-marca">
           <span className="at-marca-icone" aria-hidden="true"><Bus size={22} /></span>
@@ -91,6 +104,10 @@ export default function PainelAT({ dados, lendo, aoRecarregar }: { dados: DadosA
           <Atualizacao leituras={dados.leituras} />
           <button type="button" className="at-botao" onClick={aoRecarregar} disabled={lendo}>
             <RefreshCw size={15} className={lendo ? "at-girando" : undefined} aria-hidden="true" /> {lendo ? "Carregando…" : "Recarregar"}
+          </button>
+          <button type="button" className="at-botao" onClick={alternarTelaCheia} aria-pressed={cheia}>
+            {cheia ? <Minimize size={15} aria-hidden="true" /> : <Maximize size={15} aria-hidden="true" />}
+            {cheia ? "Sair da tela cheia" : "Tela cheia"}
           </button>
         </div>
       </header>

@@ -64,6 +64,9 @@
 
 .at-painel { max-width: 1440px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 32px) 32px; transition: opacity 0.2s; }
 .at-painel[data-lendo="1"] { opacity: 0.6; }
+/* tela cheia: o painel vira a tela toda (fundo próprio, rolagem, ocupa a largura) */
+.at-painel:fullscreen { max-width: none; overflow-y: auto; background: var(--at-fundo); padding: 28px 40px 36px; }
+.at-painel:fullscreen .at-rodape { display: none; }
 
 /* ── topo ─────────────────────────────────────────────────────────────── */
 .at-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; margin-bottom: 18px; }
