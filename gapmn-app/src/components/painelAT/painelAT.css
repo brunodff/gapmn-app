@@ -64,9 +64,49 @@
 
 .at-painel { max-width: 1440px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 32px) 32px; transition: opacity 0.2s; }
 .at-painel[data-lendo="1"] { opacity: 0.6; }
-/* tela cheia: o painel vira a tela toda (fundo próprio, rolagem, ocupa a largura) */
-.at-painel:fullscreen { max-width: none; overflow-y: auto; background: var(--at-fundo); padding: 28px 40px 36px; }
-.at-painel:fullscreen .at-rodape { display: none; }
+/* ── tela cheia = modo apresentação: um dashboard de uma tela só, sem rolagem ─────────────────
+   cabeçalho e filtros compactos, os quatro números e os quatro gráficos esticados até o pé da tela;
+   a tabela fica de fora (milhares de linhas não cabem numa tela). */
+.at-painel:fullscreen { background: var(--at-fundo); }
+.at-painel[data-cheia="1"] {
+  height: 100vh; max-width: none; overflow: hidden; padding: 14px 22px 16px;
+  display: flex; flex-direction: column; gap: 10px; background: var(--at-fundo);
+}
+.at-painel[data-cheia="1"] > * { margin: 0; flex: none; }
+/* a tabela também é .at-cartao (que vira flex mais abaixo): seletor mais forte para ela sumir de fato */
+.at-painel[data-cheia="1"] .at-cartao.at-tabela-cartao, .at-painel[data-cheia="1"] .at-rodape { display: none; }
+.at-painel[data-cheia="1"] .at-marca-icone { width: 36px; height: 36px; border-radius: 11px; }
+.at-painel[data-cheia="1"] .at-titulo { font-size: 21px; }
+.at-painel[data-cheia="1"] .at-subtitulo { font-size: 12.5px; margin: 0; }
+.at-painel[data-cheia="1"] .at-botao { padding: 6px 12px; }
+.at-painel[data-cheia="1"] .at-filtros { padding: 6px; gap: 6px; border-radius: 16px; }
+.at-painel[data-cheia="1"] .at-busca,
+.at-painel[data-cheia="1"] .at-campo,
+.at-painel[data-cheia="1"] .at-limpar { height: 34px; }
+.at-painel[data-cheia="1"] .at-busca { flex: 1 1 200px; min-width: 180px; }
+.at-painel[data-cheia="1"] .at-kpi { padding: 10px 16px; border-radius: 18px; }
+.at-painel[data-cheia="1"] .at-kpi-val { font-size: clamp(22px, 3.2vh, 30px); margin: 2px 0 0; }
+.at-painel[data-cheia="1"] .at-kpi[data-destaque="1"] .at-kpi-val { font-size: clamp(30px, 5vh, 48px); }
+/* os gráficos ocupam o resto da altura, em duas linhas iguais */
+.at-painel[data-cheia="1"] .at-grade { flex: 1 1 0; min-height: 0; grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.at-painel[data-cheia="1"] .at-cartao { display: flex; flex-direction: column; min-height: 0; padding: 10px 16px 8px; border-radius: 18px; }
+.at-painel[data-cheia="1"] .at-cartao-topo { margin-bottom: 4px; flex: none; }
+.at-painel[data-cheia="1"] .at-cartao-tit { font-size: 15px; }
+.at-painel[data-cheia="1"] .at-cartao-sub { font-size: 11.5px; }
+.at-painel[data-cheia="1"] .at-colunas { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.at-painel[data-cheia="1"] .at-colunas-area { flex: 1 1 0; height: auto; min-height: 0; padding-top: 18px; }
+.at-painel[data-cheia="1"] .at-coluna-rot { height: 26px; padding-top: 4px; font-size: 11px; }
+.at-painel[data-cheia="1"] .at-barras { flex: 1 1 0; min-height: 0; gap: 1px; }
+.at-painel[data-cheia="1"] .at-barra-linha { flex: 1 1 0; min-height: 0; max-height: 34px; padding: 0 6px; }
+.at-painel[data-cheia="1"] .at-barra-nome, .at-painel[data-cheia="1"] .at-barra-num { font-size: 11.5px; line-height: 1.15; }
+.at-painel[data-cheia="1"] .at-barra-trilha { height: 100%; max-height: 14px; }
+.at-painel[data-cheia="1"] .at-barra { height: 100%; }
+.at-painel[data-cheia="1"] .at-vazio { padding: 8px 0; }
+/* tela de notebook (768 px de altura): sem as linhas de apoio, para sobrar altura aos gráficos */
+@media (max-height: 800px) {
+  .at-painel[data-cheia="1"] .at-kpi-sub { display: none; }
+  .at-painel[data-cheia="1"] .at-cartao-sub { display: none; }
+}
 
 /* ── topo ─────────────────────────────────────────────────────────────── */
 .at-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; margin-bottom: 18px; }

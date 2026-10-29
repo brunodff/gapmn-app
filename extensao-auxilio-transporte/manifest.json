@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auxílio Transporte — Leitor do SIGPES",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Lê uma vez por dia as solicitações de auxílio transporte do SIGPES e atualiza o painel.",
   "permissions": ["storage"],
   "host_permissions": [

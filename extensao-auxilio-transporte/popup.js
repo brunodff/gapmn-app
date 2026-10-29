@@ -24,12 +24,20 @@
   async function render() {
     const { at_status: st = {}, at_config: cfg = {} } = await api.storage.local.get(["at_status", "at_config"]);
     const ponto = $("ponto"), texto = $("estado-texto"), detalhe = $("detalhe"), barra = $("barra");
-    const andamento = st.andamento && Date.now() - st.andamento.desde < 20 * 60 * 1000 ? st.andamento : null;
+    // andamento só vale enquanto a leitura "pulsa" (a cada 4 s) e se não houver resultado mais novo que ele
+    const resto = st.andamento && !(st.ultima && new Date(st.ultima.quando).getTime() >= st.andamento.desde) ? st.andamento : null;
+    const andamento = resto && Date.now() - (resto.vivo ?? resto.desde) < 15000 ? resto : null;
+    const interrompida = resto && !andamento;
     barra.hidden = !andamento;
     $("sincronizar").disabled = !!andamento || !cfg.chave;
     detalhe.innerHTML = "";
 
-    if (!cfg.chave) {
+    if (cfg.chave && interrompida) {
+      ponto.dataset.estado = "erro";
+      texto.textContent = "A leitura foi interrompida";
+      detalhe.textContent = "A página do SIGPES mudou ou foi fechada durante a leitura, ou a conexão caiu. Ela recomeça sozinha em instantes com o SIGPES aberto; ou clique em “Sincronizar agora”.";
+      if (st.ultimaOk) detalhe.append(document.createElement("br"), `Último sucesso: ${quando(st.ultimaOk)}.`);
+    } else if (!cfg.chave) {
       ponto.dataset.estado = "";
       texto.textContent = "Falta configurar";
       detalhe.textContent = "Cole o código de configuração recebido em “Configuração”, abaixo.";
@@ -40,7 +48,8 @@
       texto.textContent = fase;
       const total = andamento.total || 0;
       $("barra-cheia").style.width = total ? `${Math.min(100, (andamento.lidos / total) * 100).toFixed(1)}%` : "8%";
-      detalhe.textContent = total ? `${fmtN(andamento.lidos)} de ${fmtN(total)}` : "";
+      const seg = Math.max(0, Math.round((Date.now() - andamento.desde) / 1000));
+      detalhe.textContent = `${total ? `${fmtN(andamento.lidos)} de ${fmtN(total)} · ` : ""}há ${seg} s`;
     } else if (st.ultima?.ok) {
       ponto.dataset.estado = "ok";
       texto.textContent = `Sincronizado ${quando(st.ultima.quando)}`;
@@ -124,5 +133,7 @@
   });
 
   api.storage.onChanged.addListener((mudou, area) => { if (area === "local" && (mudou.at_status || mudou.at_config)) render(); });
+  // redesenha a cada 2 s: atualiza o tempo e percebe uma leitura que parou de pulsar
+  setInterval(render, 2000);
   render();
 })();
