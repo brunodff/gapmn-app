@@ -1,9 +1,13 @@
 // Popup: mostra a última sincronização (e o andamento, se houver) e abre o painel. Não há o que configurar:
-// a chave de envio e o código do painel vêm no pacote.
+// a chave de envio e o código do painel vêm no pacote. Se houver uma leitura inteira guardada que não chegou
+// ao painel (ex.: lida com a VPN, que corta a internet), o botão a envia daqui mesmo, sem o SIGPES aberto.
 (function () {
   "use strict";
   const api = globalThis.browser ?? globalThis.chrome;
   const CFG = globalThis.CONFIG_AT;
+  const E = globalThis.EnvioAT;
+  let enviandoAqui = false;
+  const paraEnviar = (st) => !!st.guardada?.completa && E.vale(st.guardada);
   const SIGPES = ["*://sigpes.servicos.ccarj.intraer/*"];
   const $ = (id) => document.getElementById(id);
   const fmtN = (n) => (n ?? 0).toLocaleString("pt-BR");
@@ -43,7 +47,8 @@
     const andamento = resto && Date.now() - (resto.vivo ?? resto.desde) < 15000 ? resto : null;
     const interrompida = resto && !andamento;
     barra.hidden = !andamento;
-    $("sincronizar").disabled = !!andamento || !embutido(CFG.chaveEnvio);
+    $("sincronizar").disabled = !!andamento || enviandoAqui || !embutido(CFG.chaveEnvio);
+    $("sincronizar").textContent = paraEnviar(st) ? "Enviar leitura guardada" : "Sincronizar agora";
     detalhe.innerHTML = "";
 
     if (!embutido(CFG.chaveEnvio)) {
@@ -71,7 +76,8 @@
         falta = ` · faltam ~${duracao((total - andamento.lidos) / porSeg)}`;
       }
       detalhe.textContent = `${total ? `${fmtN(andamento.lidos)} de ${fmtN(total)}${falta} · ` : ""}há ${duracao(decorrido)}`;
-      if (andamento.retomados) detalhe.append(document.createElement("br"), `Continuando de onde parou (${fmtN(andamento.retomados)} já lidas antes).`);
+      if (andamento.retomados && andamento.fase === "lendo") detalhe.append(document.createElement("br"), `Continuando de onde parou (${fmtN(andamento.retomados)} já lidas antes).`);
+      if (enviandoAqui) detalhe.append(document.createElement("br"), "Não feche esta janela até terminar.");
     } else if (st.ultima?.ok) {
       ponto.dataset.estado = "ok";
       texto.textContent = `Sincronizado ${quando(st.ultima.quando)}`;
@@ -82,6 +88,7 @@
       if (st.ultima.duracaoMs >= 1000 && !st.ultima.reenvio) partes.push(`em ${duracao(st.ultima.duracaoMs / 1000)}`);
       detalhe.innerHTML = partes.join(" · ");
       if (st.ultima.reenvio) detalhe.append(document.createElement("br"), "Leitura guardada da tentativa anterior, enviada agora.");
+      if (st.ultima.faltaram) detalhe.append(document.createElement("br"), `${fmtN(st.ultima.faltaram)} das ${fmtN(st.ultima.total)} contadas pelo SIGPES não vieram nas páginas; as que vieram foram atualizadas e ninguém saiu da lista por isso.`);
       if (st.ultima.parcial) detalhe.append(document.createElement("br"), "Seu perfil vê só parte da lista: o painel atualizou essas e manteve as demais.");
     } else if (st.ultima) {
       ponto.dataset.estado = "erro";
@@ -89,9 +96,8 @@
       detalhe.textContent = st.ultima.mensagem || "Erro sem descrição.";
       if (st.ultima.retomavel) {
         const seg = st.ultima.proximaEm ? (st.ultima.proximaEm - Date.now()) / 1000 : -1;
-        detalhe.append(document.createElement("br"), seg > 0
-          ? `Tenta de novo sozinha em ${duracao(seg)} (com o SIGPES aberto), ou clique em “Sincronizar agora”.`
-          : `Clique em “Sincronizar agora” para ${["sem_internet", "banco"].includes(st.ultima.codigo) ? "enviar a leitura guardada" : "continuar de onde parou"}.`);
+        if (seg > 0) detalhe.append(document.createElement("br"), `Tenta de novo sozinha em ${duracao(seg)} se o SIGPES continuar aberto.`);
+        else if (!paraEnviar(st)) detalhe.append(document.createElement("br"), "Clique em “Sincronizar agora” para continuar de onde parou.");
       }
       if (st.ultimaOk) detalhe.append(document.createElement("br"), `Último sucesso: ${quando(st.ultimaOk)}.`);
     } else {
@@ -125,8 +131,31 @@
     render();
   });
 
+  /** Envia daqui a leitura guardada (não precisa do SIGPES). */
+  async function enviarGuardada(g) {
+    const trava = await E.pegarTrava();
+    if (!trava) { aviso("Já há uma leitura ou envio em andamento."); return; }
+    enviandoAqui = true;
+    const ac = E.acompanhar(trava, { fase: "enviando", total: g.linhas.length });
+    render();
+    try {
+      await E.enviar({ linhas: g.linhas, total: g.total, medidas: g.medidas, reenvio: true, acompanhamento: ac });
+    } finally {
+      ac.encerrar();
+      await E.soltarTrava(trava);
+      enviandoAqui = false;
+      render();
+    }
+  }
+
   $("sincronizar").addEventListener("click", async () => {
     aviso("");
+    const { at_status: st = {} } = await api.storage.local.get("at_status");
+    if (paraEnviar(st)) {
+      const g = await E.leituraGuardada();
+      if (g?.completa) { await enviarGuardada(g); return; }
+      await E.atualizarStatus({ guardada: null });   // resumo velho, sem a leitura: segue para ler do SIGPES
+    }
     if (!(await temPermissao()) && !(await pedirPermissao())) { aviso("Sem permissão para ler o SIGPES. Autorize a extensão e tente de novo."); return; }
     const aba = await abaDoSigpes();
     if (!aba) { aviso("Abra o Auxílio Transporte do SIGPES numa aba e tente de novo."); return; }

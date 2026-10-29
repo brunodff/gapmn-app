@@ -136,7 +136,10 @@
     const t = String(html || "").trim();
     const doc = new DOMParser().parseFromString(/^<tr[\s>]/i.test(t) ? `<table><tbody>${t}</tbody></table>` : t, "text/html");
     const corpo = doc.querySelector("tbody") || doc;
-    return [...corpo.querySelectorAll("tr")].map((tr) => lerLinha(tr, mapa)).filter(Boolean);
+    const trs = [...corpo.querySelectorAll("tr")];
+    const linhas = trs.map((tr) => lerLinha(tr, mapa)).filter(Boolean);
+    linhas.descartadas = trs.length - linhas.length;   // <tr> sem id legível (ou a linha de "nenhum registro")
+    return linhas;
   }
 
   // ── Rede ────────────────────────────────────────────────────────────────────
@@ -243,14 +246,19 @@
   };
 
   /** Trechos [início, fim) de 0 a `total` que ainda não estão em `feitos`, cortados no tamanho `bloco`. */
-  function trechosPendentes(total, feitos, bloco) {
+  function trechosPendentes(total, feitos, bloco, deslocamento = 0) {
     const ordenados = [...feitos].sort((a, b) => a[0] - b[0]);
     const livres = [];
     let pos = 0;
     for (const [a, b] of ordenados) { if (a > pos) livres.push([pos, Math.min(a, total)]); pos = Math.max(pos, b); }
     if (pos < total) livres.push([pos, total]);
     const fila = [];
-    for (const [a, b] of livres) for (let i = a; i < b; i += bloco) fila.push([i, Math.min(i + bloco, b)]);
+    for (const [a, b] of livres) {
+      // deslocamento: as emendas entre trechos caem em outras linhas (usado na releitura)
+      let i = a;
+      if (deslocamento > 0 && a + deslocamento < b) { fila.push([a, a + deslocamento]); i = a + deslocamento; }
+      for (; i < b; i += bloco) fila.push([i, Math.min(i + bloco, b)]);
+    }
     return fila;
   }
 
@@ -263,17 +271,23 @@
    * - O servidor pode devolver menos linhas que o pedido: o próximo pedido começa onde a resposta terminou.
    * - `retomada` traz o que uma tentativa anterior já leu ({ linhas, feitos, bloco }); `aoBloco` recebe o
    *   estado a cada trecho terminado, para guardar.
+   * - Se no fim faltar alguma (menos ids que o total do paginador), relê tudo até `passesExtras` vezes, com as
+   *   emendas dos trechos em outro lugar, e junta. Motivo: na primeira leitura real vieram 20 a menos; cada
+   *   cópia pode trazer a lista em ordem um pouco diferente quando há empate, e nas emendas umas se repetem e
+   *   outras não vêm. Só relê se houve repetidas; `medidas.repetidas`, `vazias` e `descartadas` mostram o caso.
    */
   async function lerTodas(pagina, buscar, opcoes = {}) {
     const {
       abrirOutra = null, trabalhadores = 3, prazoMs = 60000, alvoMs = 8000, blocoInicial = 200, blocoMin = 50, blocoMax = 1000,
-      tentativas = 4, pausaMs = 100, retomada = null, aoProgredir = () => {}, aoBloco = () => {},
+      tentativas = 4, pausaMs = 100, passesExtras = 2, retomada = null, aoProgredir = () => {}, aoBloco = () => {},
     } = opcoes;
     const porId = new Map((retomada?.linhas || []).map((l) => [l[0], l]));
     const feitos = [...(retomada?.feitos || [])];
     let total = pagina.total;
     let bloco = retomada?.bloco || null;
-    const medidas = { pedidos: 0, msTotal: 0, msMax: 0, bytes: 0, linhas: 0, repeticoes: 0, copias: 1, retomadas: porId.size };
+    const medidas = { pedidos: 0, msTotal: 0, msMax: 0, bytes: 0, linhas: 0, repeticoes: 0, copias: 1, retomadas: porId.size,
+      repetidas: 0, vazias: 0, descartadas: 0, passes: 1 };
+    let releitura = false;
     const estado = () => ({ total, bloco, feitos: feitos.slice(), linhas: [...porId.values()] });
     const progresso = () => aoProgredir({ lidos: porId.size, total, retomados: medidas.retomadas });
     const fechar = () => ({
@@ -281,6 +295,8 @@
       kbMedio: medidas.pedidos ? Math.round(medidas.bytes / medidas.pedidos / 1024) : null,
       linhasPorPedido: medidas.pedidos ? Math.round(medidas.linhas / medidas.pedidos) : null,
       repeticoes: medidas.repeticoes, copias: medidas.copias, bloco, retomadas: medidas.retomadas,
+      repetidas: medidas.repetidas, vazias: medidas.vazias, descartadas: medidas.descartadas, passes: medidas.passes,
+      faltaram: total === null ? null : Math.max(0, total - porId.size),
     });
 
     async function pedir(pag, first, rows) {
@@ -293,7 +309,7 @@
       if (resp.viewState) pag.viewState = resp.viewState;
       const ms = Date.now() - t0;
       medidas.pedidos++; medidas.msTotal += ms; medidas.msMax = Math.max(medidas.msMax, ms);
-      medidas.bytes += texto.length; medidas.linhas += resp.linhas.length;
+      medidas.bytes += texto.length; medidas.linhas += resp.linhas.length; medidas.descartadas += resp.linhas.descartadas || 0;
       return resp;
     }
 
@@ -313,8 +329,11 @@
         }
         falhas = 0;
         if (resp.total !== null) total = resp.total;
-        if (!resp.linhas.length) return false;
-        for (const l of resp.linhas) porId.set(l[0], l);
+        if (!resp.linhas.length) { medidas.vazias++; return false; }
+        for (const l of resp.linhas) {
+          if (!releitura && porId.has(l[0])) medidas.repetidas++;   // id que já tinha vindo em outro trecho
+          porId.set(l[0], l);
+        }
         first += resp.linhas.length;
         progresso();
         if (pausaMs) await esperar(pausaMs);
@@ -347,26 +366,37 @@
     }
 
     // 3) total conhecido: várias cópias da gerência leem trechos diferentes ao mesmo tempo
-    const fila = trechosPendentes(total, feitos, bloco);
+    const copias = [pagina];
+    let fila = trechosPendentes(total, feitos, bloco);
     let erro = null;
     const trabalhar = async (pag) => {
-      while (fila.length && !erro) {
+      while (fila.length && !erro && porId.size < total) {
         const [a, b] = fila.shift();
         try {
           await lerTrecho(pag, a, b);
-          feitos.push([a, b]);
+          if (!releitura) feitos.push([a, b]);
           aoBloco(estado());
         } catch (e) {
           erro = erro || e;
         }
       }
     };
-    const outras = abrirOutra && fila.length > 1
+    const abrindo = abrirOutra && fila.length > 1
       ? Array.from({ length: Math.min(trabalhadores, fila.length) - 1 }, () =>
-        abrirOutra().then((p) => { medidas.copias++; return trabalhar(p); }, () => { /* sem outra cópia: segue com menos */ }))
+        abrirOutra().then((p) => { copias.push(p); medidas.copias++; return trabalhar(p); }, () => { /* sem outra cópia: segue com menos */ }))
       : [];
-    await Promise.all([trabalhar(pagina), ...outras]);
+    await Promise.all([trabalhar(pagina), ...abrindo]);
     if (erro) throw falhou(erro);
+
+    // 4) faltou alguma E houve repetidas (sinal de ordem instável): relê com as emendas em outro lugar e junta.
+    //    Sem repetidas, a lista só é menor que o paginador diz: reler não traria nada.
+    for (let passe = 1; passe <= passesExtras && porId.size < total && medidas.repetidas > 0; passe++) {
+      releitura = true;
+      medidas.passes++;
+      fila = trechosPendentes(total, [], bloco, Math.max(1, Math.round((bloco * passe) / (passesExtras + 1))));
+      await Promise.all(copias.map(trabalhar));
+      if (erro) throw falhou(erro);
+    }
     return { linhas: [...porId.values()], total, medidas: fechar() };
   }
 

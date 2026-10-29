@@ -34,6 +34,8 @@ export type Leitura = {
   sairam: number | null;
   /** quem leu tem perfil que vê só parte da lista: atualizou o que veio e não tirou ninguém da lista */
   parcial?: boolean;
+  /** quantas o paginador do SIGPES contou e as páginas não entregaram (leitura aceita, ninguém saiu da lista) */
+  faltaram?: number | null;
   erro: string | null;
 };
 

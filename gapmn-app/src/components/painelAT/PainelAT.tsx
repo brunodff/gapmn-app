@@ -43,6 +43,11 @@ function Atualizacao({ leituras }: { leituras: Leitura[] }) {
           Leitura parcial (perfil que vê só parte da lista){completa ? ` · última completa ${quando(completa.concluida_em)}` : ""}
         </span>
       )}
+      {!ok?.parcial && !!ok?.faltaram && (
+        <span className="at-atualizacao-sub" title="O paginador do SIGPES contou mais solicitações do que as páginas entregaram. As que vieram foram atualizadas e ninguém saiu da lista por isso.">
+          {fmtNumero(ok.faltaram)} das {fmtNumero(ok.total ?? 0)} contadas pelo SIGPES não vieram na leitura
+        </span>
+      )}
       {falhou && (
         <span className="at-selo" data-tipo="alerta" title={ultima.erro ?? undefined}>
           <span className="at-ponto" aria-hidden="true" /> A leitura de {quando(ultima.iniciada_em)} falhou{ultima.erro ? `: ${ultima.erro}` : ""}
