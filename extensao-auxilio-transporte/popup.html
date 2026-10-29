@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Auxílio Transporte</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="topo">
+    <img src="icones/48.png" alt="" class="logo" />
+    <div>
+      <div class="titulo">Auxílio Transporte</div>
+      <div class="sub">Leitor do SIGPES</div>
+    </div>
+  </header>
+
+  <section class="cartao" id="estado" aria-live="polite">
+    <div class="linha-estado"><span class="ponto" id="ponto"></span><span id="estado-texto">Carregando…</span></div>
+    <div class="barra" id="barra" hidden><span id="barra-cheia"></span></div>
+    <div class="detalhe" id="detalhe"></div>
+  </section>
+
+  <div class="acoes">
+    <a class="btn btn-primario" id="abrir-painel" href="#" target="_blank" rel="noopener">Abrir painel</a>
+    <button class="btn" id="sincronizar" type="button">Sincronizar agora</button>
+  </div>
+  <p class="aviso" id="aviso" hidden></p>
+
+  <details id="config">
+    <summary>Configuração</summary>
+    <label for="codigo">Código de configuração</label>
+    <input id="codigo" type="password" autocomplete="off" spellcheck="false" placeholder="AT1.…" />
+    <button class="btn btn-pequeno" id="salvar" type="button">Salvar</button>
+    <p class="nota" id="config-estado"></p>
+    <button class="link" id="diagnostico" type="button">Copiar diagnóstico (sem dados pessoais)</button>
+  </details>
+
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

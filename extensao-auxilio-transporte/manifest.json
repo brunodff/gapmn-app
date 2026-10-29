@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Auxílio Transporte — Leitor do SIGPES",
+  "version": "1.0.0",
+  "description": "Lê uma vez por dia as solicitações de auxílio transporte do SIGPES e atualiza o painel.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "*://sigpes.servicos.ccarj.intraer/*",
+    "https://fychrtyyqbzlfbzbvzqp.supabase.co/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Auxílio Transporte",
+    "default_icon": { "16": "icones/16.png", "32": "icones/32.png", "48": "icones/48.png" }
+  },
+  "icons": { "16": "icones/16.png", "32": "icones/32.png", "48": "icones/48.png", "128": "icones/128.png" },
+  "content_scripts": [
+    {
+      "matches": ["*://sigpes.servicos.ccarj.intraer/auxilio-transporte/*"],
+      "js": ["config.js", "extrator.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "leitor-auxilio-transporte@painel-at",
+      "strict_min_version": "128.0"
+    }
+  }
+}

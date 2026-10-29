@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:painel-at": "vite build --config vite.painel-at.config.ts",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test src/lib/indicadores/calculo.test.ts src/lib/orcamento/calculo.test.ts src/lib/orcamento/lancamentos.test.ts src/lib/execucao/movimentos.test.ts src/lib/execucao/painel.test.ts src/lib/execucao/pta.test.ts src/lib/execucao/ptaWord.test.ts src/lib/governanca/governanca.test.ts"
+    "test": "node --test src/lib/indicadores/calculo.test.ts src/lib/orcamento/calculo.test.ts src/lib/orcamento/lancamentos.test.ts src/lib/execucao/movimentos.test.ts src/lib/auxilioTransporte/dados.test.ts src/lib/execucao/painel.test.ts src/lib/execucao/pta.test.ts src/lib/execucao/ptaWord.test.ts src/lib/governanca/governanca.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",
