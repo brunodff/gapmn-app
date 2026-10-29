@@ -232,41 +232,142 @@
     return { ...achada, url, acao, viewStateNome, viewState: vsEl.value, primeiras: lerLinhasDeHtml(achada.table.querySelector("tbody")?.innerHTML || "", achada.mapa) };
   }
 
+  // erros de rede ou de lentidão: vale pedir de novo o mesmo trecho (sessão expirada não vale)
+  const REPETIVEIS = new Set(["sigpes_lento", "sigpes_fora", "sigpes_instavel", "resposta_ilegivel", "sem_tabela_na_resposta"]);
+  const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const POST_PARCIAL = {
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "Faces-Request": "partial/ajax",
+    "X-Requested-With": "XMLHttpRequest",
+    Accept: "application/xml, text/xml, */*; q=0.01",
+  };
+
+  /** Trechos [início, fim) de 0 a `total` que ainda não estão em `feitos`, cortados no tamanho `bloco`. */
+  function trechosPendentes(total, feitos, bloco) {
+    const ordenados = [...feitos].sort((a, b) => a[0] - b[0]);
+    const livres = [];
+    let pos = 0;
+    for (const [a, b] of ordenados) { if (a > pos) livres.push([pos, Math.min(a, total)]); pos = Math.max(pos, b); }
+    if (pos < total) livres.push([pos, total]);
+    const fila = [];
+    for (const [a, b] of livres) for (let i = a; i < b; i += bloco) fila.push([i, Math.min(i + bloco, b)]);
+    return fila;
+  }
+
   /**
-   * Lê todas as solicitações, página por página, a partir da linha 0.
-   * O servidor pode devolver menos linhas que o pedido: o próximo pedido começa onde a resposta terminou.
+   * Lê todas as solicitações.
+   * - O primeiro pedido mede quanto o SIGPES demora por linha; o tamanho dos pedidos seguintes mira `alvoMs`.
+   * - Abre até `trabalhadores` cópias da gerência (cada uma com o próprio ViewState, como abas diferentes)
+   *   e lê trechos diferentes ao mesmo tempo. Se uma cópia não abrir, segue com as outras.
+   * - Pedido que estoura o prazo ou perde a conexão é repetido com metade do tamanho, até `tentativas` vezes.
+   * - O servidor pode devolver menos linhas que o pedido: o próximo pedido começa onde a resposta terminou.
+   * - `retomada` traz o que uma tentativa anterior já leu ({ linhas, feitos, bloco }); `aoBloco` recebe o
+   *   estado a cada trecho terminado, para guardar.
    */
-  async function lerTodas(pagina, buscar, { porPagina = 500, pausaMs = 150, aoProgredir = () => {} } = {}) {
-    const porId = new Map();
+  async function lerTodas(pagina, buscar, opcoes = {}) {
+    const {
+      abrirOutra = null, trabalhadores = 3, prazoMs = 60000, alvoMs = 8000, blocoInicial = 200, blocoMin = 50, blocoMax = 1000,
+      tentativas = 4, pausaMs = 100, retomada = null, aoProgredir = () => {}, aoBloco = () => {},
+    } = opcoes;
+    const porId = new Map((retomada?.linhas || []).map((l) => [l[0], l]));
+    const feitos = [...(retomada?.feitos || [])];
     let total = pagina.total;
-    let first = 0;
-    let voltas = 0;
-    while (total === null || first < total) {
-      if (++voltas > 2000) throw new ErroLeitura("voltas", "Leitura parou: páginas demais.");
-      const r = await buscar(pagina.acao, {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "Faces-Request": "partial/ajax",
-          "X-Requested-With": "XMLHttpRequest",
-          Accept: "application/xml, text/xml, */*; q=0.01",
-        },
-        body: corpoPaginacao(pagina, first, porPagina).toString(),
-      });
-      if (!r.ok) throw new ErroLeitura("http", `O SIGPES respondeu ${r.status} na página que começa na linha ${first + 1}.`);
-      const resp = lerRespostaParcial(await r.text(), pagina);
-      if (resp.viewState) pagina.viewState = resp.viewState;
-      if (resp.total !== null) total = resp.total;
-      if (!resp.linhas.length) break;
-      for (const l of resp.linhas) porId.set(l[0], l);
-      first += resp.linhas.length;
-      aoProgredir({ lidos: porId.size, total });
-      if (total === null && resp.linhas.length < porPagina) break;
-      if (pausaMs) await new Promise((ok) => setTimeout(ok, pausaMs));
+    let bloco = retomada?.bloco || null;
+    const medidas = { pedidos: 0, msTotal: 0, msMax: 0, bytes: 0, linhas: 0, repeticoes: 0, copias: 1, retomadas: porId.size };
+    const estado = () => ({ total, bloco, feitos: feitos.slice(), linhas: [...porId.values()] });
+    const progresso = () => aoProgredir({ lidos: porId.size, total, retomados: medidas.retomadas });
+    const fechar = () => ({
+      pedidos: medidas.pedidos, msMedio: medidas.pedidos ? Math.round(medidas.msTotal / medidas.pedidos) : null, msMax: medidas.msMax,
+      kbMedio: medidas.pedidos ? Math.round(medidas.bytes / medidas.pedidos / 1024) : null,
+      linhasPorPedido: medidas.pedidos ? Math.round(medidas.linhas / medidas.pedidos) : null,
+      repeticoes: medidas.repeticoes, copias: medidas.copias, bloco, retomadas: medidas.retomadas,
+    });
+
+    async function pedir(pag, first, rows) {
+      const t0 = Date.now();
+      const r = await buscar(pag.acao, { method: "POST", credentials: "include", cache: "no-store", headers: POST_PARCIAL,
+        body: corpoPaginacao(pag, first, rows).toString() }, prazoMs);
+      if (!r.ok) throw new ErroLeitura(r.status >= 500 ? "sigpes_instavel" : "http", `O SIGPES respondeu ${r.status} na página que começa na linha ${first + 1}.`);
+      const texto = await r.text();
+      const resp = lerRespostaParcial(texto, pag);
+      if (resp.viewState) pag.viewState = resp.viewState;
+      const ms = Date.now() - t0;
+      medidas.pedidos++; medidas.msTotal += ms; medidas.msMax = Math.max(medidas.msMax, ms);
+      medidas.bytes += texto.length; medidas.linhas += resp.linhas.length;
+      return resp;
     }
-    return { linhas: [...porId.values()], total: total ?? porId.size };
+
+    /** Lê as linhas [inicio, fim). Devolve false se a lista acabou antes (veio resposta vazia). */
+    async function lerTrecho(pag, inicio, fim) {
+      let first = inicio, tamanho = fim - inicio, falhas = 0;
+      while (first < fim) {
+        let resp;
+        try {
+          resp = await pedir(pag, first, Math.min(tamanho, fim - first));
+        } catch (e) {
+          if (!REPETIVEIS.has(e?.codigo) || ++falhas >= tentativas) { if (e && e.linha === undefined) e.linha = first; throw e; }
+          medidas.repeticoes++;
+          tamanho = Math.max(blocoMin, Math.ceil(tamanho / 2));
+          await esperar(1500 * falhas);
+          continue;
+        }
+        falhas = 0;
+        if (resp.total !== null) total = resp.total;
+        if (!resp.linhas.length) return false;
+        for (const l of resp.linhas) porId.set(l[0], l);
+        first += resp.linhas.length;
+        progresso();
+        if (pausaMs) await esperar(pausaMs);
+      }
+      return true;
+    }
+
+    const falhou = (e) => { e.lidas = porId.size; e.estado = estado(); return e; };
+    progresso();
+    try {
+      // 1) sem tamanho definido: o primeiro trecho mede o SIGPES (e traz o total, se a página não mostrou)
+      if (!bloco) {
+        const fim0 = total === null ? blocoInicial : Math.min(blocoInicial, total);
+        const seguiu = await lerTrecho(pagina, 0, fim0);
+        feitos.push([0, fim0]);
+        const msPorLinha = medidas.msTotal / Math.max(1, medidas.linhas);
+        bloco = Math.min(blocoMax, Math.max(blocoMin, Math.round(alvoMs / Math.max(msPorLinha, 0.5) / 50) * 50));
+        aoBloco(estado());
+        if (!seguiu) return { linhas: [...porId.values()], total: porId.size, medidas: fechar() };
+      }
+
+      // 2) total desconhecido: segue sozinho, em sequência, até vir resposta vazia
+      if (total === null) {
+        let pos = Math.max(0, ...feitos.map((f) => f[1]));
+        while (await lerTrecho(pagina, pos, pos + bloco)) { feitos.push([pos, pos + bloco]); pos += bloco; aoBloco(estado()); }
+        return { linhas: [...porId.values()], total: total ?? porId.size, medidas: fechar() };
+      }
+    } catch (e) {
+      throw falhou(e);
+    }
+
+    // 3) total conhecido: várias cópias da gerência leem trechos diferentes ao mesmo tempo
+    const fila = trechosPendentes(total, feitos, bloco);
+    let erro = null;
+    const trabalhar = async (pag) => {
+      while (fila.length && !erro) {
+        const [a, b] = fila.shift();
+        try {
+          await lerTrecho(pag, a, b);
+          feitos.push([a, b]);
+          aoBloco(estado());
+        } catch (e) {
+          erro = erro || e;
+        }
+      }
+    };
+    const outras = abrirOutra && fila.length > 1
+      ? Array.from({ length: Math.min(trabalhadores, fila.length) - 1 }, () =>
+        abrirOutra().then((p) => { medidas.copias++; return trabalhar(p); }, () => { /* sem outra cópia: segue com menos */ }))
+      : [];
+    await Promise.all([trabalhar(pagina), ...outras]);
+    if (erro) throw falhou(erro);
+    return { linhas: [...porId.values()], total, medidas: fechar() };
   }
 
   /** Relatório da estrutura da página, sem dado pessoal (para ajustar o leitor se o SIGPES mudar). */
@@ -292,6 +393,12 @@
         campos: [...new Set([...form.querySelectorAll("[name]")].map((e) => `${e.tagName.toLowerCase()}:${e.getAttribute("type") || ""}:${e.getAttribute("name")}`))].slice(0, 60) } : null,
       primeiraLinha: achada ? [...(achada.table.querySelector("tbody tr")?.children ?? [])].map((td) => mascarar(textoCelula(td)).slice(0, 30)) : null,
       paginador: [...doc.querySelectorAll(".ui-paginator-current")].map((e) => mascarar(e.textContent)).slice(0, 2),
+      // botões de exportar (Excel/CSV/PDF): se existirem, a leitura pode ficar bem mais rápida
+      exportar: [...doc.querySelectorAll("button, a, input[type=submit], input[type=button], input[type=image]")]
+        .filter((e) => /export|excel|xls|csv|pdf|planilha|imprim|relat/i.test(`${e.textContent} ${e.getAttribute("title") || ""} ${e.getAttribute("value") || ""} ${e.getAttribute("class") || ""} ${e.getAttribute("onclick") || ""} ${e.id}`))
+        .map((e) => ({ tag: e.tagName.toLowerCase(), id: e.id || null, texto: (e.textContent || e.getAttribute("value") || e.getAttribute("title") || "").trim().slice(0, 40) }))
+        .slice(0, 10),
+      opcoesPorPagina: [...doc.querySelectorAll(".ui-paginator-rpp-options option")].map((o) => o.value).slice(0, 10),
       tabelas,
       ...extra,
     };
@@ -299,7 +406,7 @@
 
   raiz.ExtratorAT = {
     CAMPOS, COLUNAS, norm, textoCelula, mapearCabecalho, dataISO, dinheiro, inteiro, lerLinha, totalDoPaginador,
-    localizarTabela, lerLinhasDeHtml, camposDoFormulario, corpoPaginacao, lerRespostaParcial, abrirTabela, lerTodas,
+    localizarTabela, lerLinhasDeHtml, camposDoFormulario, corpoPaginacao, lerRespostaParcial, abrirTabela, lerTodas, trechosPendentes,
     diagnostico, ErroLeitura,
   };
 })(globalThis);

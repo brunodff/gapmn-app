@@ -18,6 +18,14 @@
     return `${d.toLocaleDateString("pt-BR", { timeZone: CFG.fuso })} às ${hora}`;
   }
 
+  /** "45 s", "3 min 10 s", "12 min" */
+  function duracao(seg) {
+    seg = Math.max(0, Math.round(seg));
+    if (seg < 60) return `${seg} s`;
+    const m = Math.floor(seg / 60), s = seg % 60;
+    return m < 10 && s ? `${m} min ${s} s` : `${m} min`;
+  }
+
   function aviso(texto) {
     $("aviso").hidden = !texto;
     $("aviso").textContent = texto || "";
@@ -53,8 +61,17 @@
       texto.textContent = fase;
       const total = andamento.total || 0;
       $("barra-cheia").style.width = total ? `${Math.min(100, (andamento.lidos / total) * 100).toFixed(1)}%` : "8%";
-      const seg = Math.max(0, Math.round((Date.now() - andamento.desde) / 1000));
-      detalhe.textContent = `${total ? `${fmtN(andamento.lidos)} de ${fmtN(total)} · ` : ""}há ${seg} s`;
+      const decorrido = (Date.now() - andamento.desde) / 1000;
+      // tempo que falta: pelo ritmo desta leitura (o que veio de uma tentativa anterior não conta no ritmo)
+      let falta = "";
+      const novos = (andamento.lidos || 0) - (andamento.retomados || 0);
+      const desdeLeitura = andamento.lendoDesde || andamento.desde;
+      if (andamento.fase === "lendo" && total && novos > 0 && Date.now() - desdeLeitura > 5000) {
+        const porSeg = novos / ((Date.now() - desdeLeitura) / 1000);
+        falta = ` · faltam ~${duracao((total - andamento.lidos) / porSeg)}`;
+      }
+      detalhe.textContent = `${total ? `${fmtN(andamento.lidos)} de ${fmtN(total)}${falta} · ` : ""}há ${duracao(decorrido)}`;
+      if (andamento.retomados) detalhe.append(document.createElement("br"), `Continuando de onde parou (${fmtN(andamento.retomados)} já lidas antes).`);
     } else if (st.ultima?.ok) {
       ponto.dataset.estado = "ok";
       texto.textContent = `Sincronizado ${quando(st.ultima.quando)}`;
@@ -62,12 +79,20 @@
       if (st.ultima.novas) partes.push(`${fmtN(st.ultima.novas)} novas`);
       if (st.ultima.alteradas) partes.push(`${fmtN(st.ultima.alteradas)} alteradas`);
       if (st.ultima.sairam) partes.push(`${fmtN(st.ultima.sairam)} saíram da lista`);
+      if (st.ultima.duracaoMs >= 1000 && !st.ultima.reenvio) partes.push(`em ${duracao(st.ultima.duracaoMs / 1000)}`);
       detalhe.innerHTML = partes.join(" · ");
+      if (st.ultima.reenvio) detalhe.append(document.createElement("br"), "Leitura guardada da tentativa anterior, enviada agora.");
       if (st.ultima.parcial) detalhe.append(document.createElement("br"), "Seu perfil vê só parte da lista: o painel atualizou essas e manteve as demais.");
     } else if (st.ultima) {
       ponto.dataset.estado = "erro";
       texto.textContent = `A sincronização ${quando(st.ultima.quando)} falhou`;
       detalhe.textContent = st.ultima.mensagem || "Erro sem descrição.";
+      if (st.ultima.retomavel) {
+        const seg = st.ultima.proximaEm ? (st.ultima.proximaEm - Date.now()) / 1000 : -1;
+        detalhe.append(document.createElement("br"), seg > 0
+          ? `Tenta de novo sozinha em ${duracao(seg)} (com o SIGPES aberto), ou clique em “Sincronizar agora”.`
+          : `Clique em “Sincronizar agora” para ${["sem_internet", "banco"].includes(st.ultima.codigo) ? "enviar a leitura guardada" : "continuar de onde parou"}.`);
+      }
       if (st.ultimaOk) detalhe.append(document.createElement("br"), `Último sucesso: ${quando(st.ultimaOk)}.`);
     } else {
       ponto.dataset.estado = "";
