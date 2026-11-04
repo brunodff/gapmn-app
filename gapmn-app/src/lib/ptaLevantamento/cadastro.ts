@@ -17,7 +17,6 @@ export const SETORES: { sigla: string; nome: string }[] = [
   { sigla: "APLG", nome: "Assessoria de Planejamento e Governança" },
   { sigla: "ARC", nome: "Assessoria de Riscos Contratuais" },
   { sigla: "ASESO", nome: "Assessoria de Serviço Social" },
-  { sigla: "ARE", nome: "Assessoria Religiosa" },
 ];
 export const nomeSetor = (sigla: string) => {
   const s = SETORES.find((x) => x.sigla === sigla);
