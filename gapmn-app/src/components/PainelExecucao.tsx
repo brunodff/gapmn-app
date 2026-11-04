@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import MultiSelectPI from "./MultiSelectPI";
 import PtaMinuta from "./PtaMinuta";
+import PtaLevantamento from "./PtaLevantamento";
 import { supabase } from "../lib/supabase";
 import { CATEGORIAS, categoria as catDe, type CategoriaId } from "../lib/execucao/categorias.ts";
 import { fmtCNPJ, type ItemEmpenho, type NotaEmpenho } from "../lib/execucao/empenhos.ts";
@@ -165,7 +166,7 @@ export default function PainelExecucao() {
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
   const [telaCheia, setTelaCheia] = useState(false);
   const [setor, setSetor] = useState<string | null>(null);
-  const [aba, setAba] = useState<"execucao" | "pta">("execucao");
+  const [aba, setAba] = useState<"execucao" | "pta" | "levantamento">("execucao");
 
   // setor do usuário: a minuta do PTA só aparece para ADMIN e DEV (o banco também só entrega a eles)
   useEffect(() => {
@@ -340,7 +341,7 @@ export default function PainelExecucao() {
       {/* ── Abas: a minuta do PTA só aparece para ADMIN e DEV ── */}
       {podeVerPta && (
         <div role="tablist" aria-label="Conteúdo do painel" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {([["execucao", `Execução ${anoPTA - 1}`], ["pta", `Minuta do PTA ${anoPTA}`]] as const).map(([id, rotulo]) => (
+          {([["execucao", `Execução ${anoPTA - 1}`], ["pta", `Minuta do PTA ${anoPTA}`], ["levantamento", `Levantamento dos setores ${anoPTA}`]] as const).map(([id, rotulo]) => (
             <button key={id} type="button" role="tab" aria-selected={aba === id} onClick={() => setAba(id)}
               style={{ ...estiloBotao, background: aba === id ? `${DK.cyan}22` : "transparent", borderColor: aba === id ? DK.cyan : DK.cardBorder, color: aba === id ? DK.cyan : DK.text, padding: "7px 14px", fontSize: 12 }}>
               {rotulo}
@@ -351,6 +352,8 @@ export default function PainelExecucao() {
 
       {aba === "pta" && podeVerPta ? (
         <PtaMinuta nes={dados.nes} vinculos={vinculos} setor={setor ?? ""} ano={anoPTA} />
+      ) : aba === "levantamento" && podeVerPta ? (
+        <PtaLevantamento ano={anoPTA} />
       ) : (<>
 
       {/* ── Filtros ── */}

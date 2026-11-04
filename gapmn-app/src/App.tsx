@@ -12,6 +12,7 @@ import AptPage from "./pages/AptPage";
 import LandingPage from "./pages/LandingPage";
 import PainelOrcamentarioPublico from "./pages/PainelOrcamentarioPublico";
 import ColetaIndicadores from "./pages/ColetaIndicadores";
+import LevantamentoPta from "./pages/LevantamentoPta";
 import RequireAuth from "./routes/RequireAuth";
 import RequireDev from "./routes/RequireDev";
 import ManualSite from "./components/ManualSite";
@@ -34,7 +35,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const [showManual, setShowManual] = useState(false);
   const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/ferramentas") || loc.pathname.startsWith("/ordens-bancarias");
-  if (loc.pathname.startsWith("/cnet") || loc.pathname.startsWith("/app") || loc.pathname.startsWith("/paineis-externos") || loc.pathname.startsWith("/empenho-automatico") || loc.pathname.startsWith("/painel-orcamentario") || loc.pathname.startsWith("/indicadores")) return <>{children}</>;
+  if (loc.pathname.startsWith("/cnet") || loc.pathname.startsWith("/app") || loc.pathname.startsWith("/paineis-externos") || loc.pathname.startsWith("/empenho-automatico") || loc.pathname.startsWith("/painel-orcamentario") || loc.pathname.startsWith("/indicadores") || loc.pathname.startsWith("/pta-levantamento")) return <>{children}</>;
 
   // Login/signup: componente controla o próprio layout
   if (loc.pathname === "/" || loc.pathname === "/login") {
@@ -158,6 +159,8 @@ export default function App() {
           <Route path="/painel-orcamentario" element={<PainelOrcamentarioPublico />} />
           {/* aberta, sem login: formulário mensal dos indicadores (vale com o código do link do mês) */}
           <Route path="/indicadores" element={<ColetaIndicadores />} />
+          {/* aberta, sem login: levantamento dos projetos e atividades do PTA (vale com o código do link do ano) */}
+          <Route path="/pta-levantamento" element={<LevantamentoPta />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
