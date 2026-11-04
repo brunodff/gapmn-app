@@ -106,15 +106,15 @@ test("códigos da Matriz da DIRAD ficam fixos; tarefas próprias continuam depoi
     .replace("26DIE004", "27TIC777");
   const m = minuta();
   m.artigos[0].tarefas[0].codigo = "27INF950"; // cap. VII: própria de infraestrutura
-  m.artigos[1].tarefas[0].codigo = "27ADM003"; // a mesma tarefa da Matriz no cap. VII
+  m.artigos[1].tarefas[0].codigo = "27SAD003"; // a mesma tarefa da Matriz no cap. VII
   const r = aplicarCap7(doc, m);
   const t = textos(r.xml).join("|");
-  assert.match(t, /27INF006Fazer o projeto/, "INF: a Matriz vai até 005, a primeira própria é 006");
+  assert.match(t, /27INF007Fazer o projeto/, "INF: a Matriz vai até 006, a primeira própria é 007");
   assert.match(t, /27FIN003Executar a obra/, "código da Matriz não muda");
-  assert.match(t, /27TIC006SoftwarePacote de escritório/);
+  assert.match(t, /27TIC007SoftwarePacote de escritório/);
   const codigos = r.conteudo.artigos.flatMap((a) => a.tarefas.map((x) => x.codigo));
-  assert.equal(codigos[0], "27INF007");
-  assert.equal(codigos[2], "27ADM003");
+  assert.equal(codigos[0], "27INF008");
+  assert.equal(codigos[2], "27SAD003");
 });
 
 test("o que falta decidir fica realçado em amarelo", () => {
