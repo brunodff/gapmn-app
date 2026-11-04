@@ -92,11 +92,47 @@ export type Filtros = {
   soComContrato: boolean;
   /** Só as NEs que ainda têm saldo a liquidar (pela planilha de situação; NE sem linha nela fica de fora). */
   soALiquidar: boolean;
+  /** Só as NEs ainda sem a assinatura do Gestor de Licitação e/ou do Ordenador de Despesa. */
+  soPendentesAssinatura: boolean;
 };
 
 export const FILTROS_VAZIOS: Filtros = {
   busca: "", om: "", categoria: "", natureza: "", pis: new Set(), mes: "", contrato: "", fornecedor: "", soComContrato: false, soALiquidar: false,
+  soPendentesAssinatura: false,
 };
+
+// ─── Assinatura ─────────────────────────────────────────────────────────────
+
+/** Data de hoje (AAAA-MM-DD) no fuso de Manaus. */
+export function hojeEm(agora: Date = new Date(), fuso = "America/Manaus"): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: fuso }).format(agora);
+}
+
+/** Dias corridos entre duas datas AAAA-MM-DD (0 se a segunda não for depois da primeira). */
+export function diasEntre(de: string, ate: string): number {
+  const ms = Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`);
+  return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 86_400_000)) : 0;
+}
+
+/**
+ * Pendência de assinatura da NE (Gestor de Licitação e/ou Ordenador de Despesa).
+ * A planilha traz só a situação atual da NE (ASSINADA ou PENDENTE), repetida em todas as linhas, sem dizer
+ * qual das assinaturas falta. Reforço ou anulação depois de assinada volta a pedir assinatura (ratificação):
+ * por isso a pendência conta do último lançamento, e não da emissão. Ex.: emitida em janeiro, reforçada
+ * em 03/11 e ainda pendente em 04/11 = pendente há 1 dia, desde o reforço.
+ */
+export type PendenciaAssinatura = { desde: string; dias: number; porNovoLancamento: boolean };
+
+export function pendenciaAssinatura(n: NotaEmpenho, hoje: string): PendenciaAssinatura | null {
+  if (n.assinada) return null;
+  const desde = n.ultimoLancamento || n.emissao;
+  return { desde, dias: diasEntre(desde, hoje), porNovoLancamento: n.lancamentos.length > 1 };
+}
+
+/** Data do lançamento mais recente da planilha (mostra até quando ela está atualizada). */
+export function ultimaDataDaPlanilha(nes: readonly NotaEmpenho[]): string | null {
+  return nes.reduce<string | null>((m, n) => (!m || n.ultimoLancamento > m ? n.ultimoLancamento : m), null);
+}
 
 /** NE recortada pelos filtros: só os itens que passaram e o valor deles. */
 export type Recorte = { nota: NotaEmpenho; itens: ItemEmpenho[]; valor: number; parcial: boolean };
@@ -117,6 +153,7 @@ export function filtrar(
     if (f.contrato && v?.contrato?.id !== f.contrato) continue;
     if (f.soComContrato && !v?.contrato) continue;
     if (f.soALiquidar && !((fin.get(n.ne)?.aLiquidar ?? 0) > 0.005)) continue;
+    if (f.soPendentesAssinatura && n.assinada) continue;
 
     let itens = n.itens;
     if (f.categoria) itens = itens.filter((i) => i.categoria === f.categoria);

@@ -7,8 +7,8 @@ import assert from "node:assert/strict";
 import { classificar, nomeDoItem } from "./categorias.ts";
 import { chavePAG, favorecidoDe, lerEmpenhos, type NotaEmpenho } from "./empenhos.ts";
 import {
-  FILTROS_VAZIOS, filtrar, financeiroDo, financeiroPorNE, porCategoria, porContrato, porMes, porObjeto,
-  resumir, vincular, type ContratoResumo, type Financeiro, type ProcessoResumo,
+  FILTROS_VAZIOS, diasEntre, filtrar, financeiroDo, financeiroPorNE, hojeEm, pendenciaAssinatura, porCategoria, porContrato, porMes,
+  porObjeto, resumir, ultimaDataDaPlanilha, vincular, type ContratoResumo, type Financeiro, type ProcessoResumo,
 } from "./painel.ts";
 
 /** Uma linha de 21 colunas no layout da planilha. */
@@ -171,6 +171,34 @@ test("filtro 'só com saldo a liquidar': fica só a NE com saldo; sem linha na s
   assert.deepEqual(so.map((r) => r.nota.ne), ["2026NE000001"]);
   assert.equal(filtrar(nes, { ...FILTROS_VAZIOS, soALiquidar: true }, v).length, 0, "sem a planilha de situação, nenhuma");
   assert.equal(filtrar(nes, FILTROS_VAZIOS, v, fin).length, 4, "desligado, não muda nada");
+});
+
+test("pendente de assinatura conta do último lançamento: emitida em janeiro, reforçada em 03/11, hoje 04/11 = 1 dia", () => {
+  const pend = (l: string[]) => { const c = [...l]; c[19] = "PENDENTE"; return c; };
+  const planilha = [
+    pend(linha({ data: "10/01/2026", ne: "2026NE000010", seq: "1", item: "Item compra: 00001 - AGUA MINERAL", valor: "100" })),
+    pend(linha({ data: "03/11/2026", ne: "2026NE000010", seq: "1", item: "Item compra: 00001 - AGUA MINERAL", valor: "150" })),
+    pend(linha({ data: "28/10/2026", ne: "2026NE000011", seq: "1", item: "Item compra: 00002 - CAFE", valor: "80" })),
+    linha({ data: "02/11/2026", ne: "2026NE000012", seq: "1", item: "Item compra: 00003 - ACUCAR", valor: "30" }),
+  ];
+  const lidas = lerEmpenhos(planilha);
+  const de = (n: string) => lidas.find((x) => x.ne === n)!;
+  assert.deepEqual(pendenciaAssinatura(de("2026NE000010"), "2026-11-04"), { desde: "2026-11-03", dias: 1, porNovoLancamento: true });
+  assert.deepEqual(pendenciaAssinatura(de("2026NE000011"), "2026-11-04"), { desde: "2026-10-28", dias: 7, porNovoLancamento: false });
+  assert.equal(pendenciaAssinatura(de("2026NE000012"), "2026-11-04"), null, "assinada não tem pendência");
+  const so = filtrar(lidas, { ...FILTROS_VAZIOS, soPendentesAssinatura: true }, vincular(lidas, [], []));
+  assert.deepEqual(so.map((r) => r.nota.ne).sort(), ["2026NE000010", "2026NE000011"]);
+  assert.equal(ultimaDataDaPlanilha(lidas), "2026-11-03");
+  assert.equal(filtrar(nes, { ...FILTROS_VAZIOS, soPendentesAssinatura: true }, vincular(nes, [], [])).length, 0, "todas assinadas: nenhuma");
+});
+
+test("dias corridos e data de hoje no fuso de Manaus", () => {
+  assert.equal(diasEntre("2026-11-03", "2026-11-04"), 1);
+  assert.equal(diasEntre("2026-10-28", "2026-11-04"), 7);
+  assert.equal(diasEntre("2026-11-04", "2026-11-04"), 0);
+  assert.equal(diasEntre("2026-11-05", "2026-11-04"), 0);
+  // 02:30 UTC de 04/11 ainda é 03/11 em Manaus (UTC-4)
+  assert.equal(hojeEm(new Date("2026-11-04T02:30:00Z")), "2026-11-03");
 });
 
 test("planilha de situação: soma as linhas da mesma NE pelo número curto", () => {

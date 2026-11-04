@@ -11,8 +11,8 @@ import { CATEGORIAS, categoria as catDe, type CategoriaId } from "../lib/execuca
 import { fmtCNPJ, type ItemEmpenho, type NotaEmpenho } from "../lib/execucao/empenhos.ts";
 import { buscarExecucao, type DadosExecucao } from "../lib/execucao/fonte.ts";
 import {
-  FILTROS_VAZIOS, filtrar, financeiroDo, omDe, porCategoria, porContrato, porFornecedor, porMes, porOM,
-  porObjeto, resumir, vincular, type Filtros, type Financeiro, type Recorte, type Vinculo,
+  FILTROS_VAZIOS, filtrar, financeiroDo, hojeEm, omDe, pendenciaAssinatura, porCategoria, porContrato, porFornecedor, porMes, porOM,
+  porObjeto, resumir, ultimaDataDaPlanilha, vincular, type Filtros, type Financeiro, type Recorte, type Vinculo,
 } from "../lib/execucao/painel.ts";
 
 // ─── Aparência (mesmos tons dos outros painéis escuros) ──────────────────────
@@ -153,7 +153,7 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
-type Ordem = "valor" | "aLiquidar" | "liquidadoPagar" | "emissao" | "ne";
+type Ordem = "valor" | "aLiquidar" | "liquidadoPagar" | "emissao" | "assinatura" | "ne";
 
 export default function PainelExecucao() {
   const [dados, setDados] = useState<DadosExecucao | null>(null);
@@ -218,6 +218,11 @@ export default function PainelExecucao() {
 
   const vinculos = useMemo(() => (dados ? vincular(dados.nes, dados.contratos, dados.processos) : new Map<string, Vinculo>()), [dados]);
   const fin = useMemo(() => dados?.financeiro ?? new Map<string, Financeiro>(), [dados]);
+  // "hoje" muda junto com a releitura da planilha (a cada hora), para os dias de pendência não ficarem parados
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const hoje = useMemo(() => hojeEm(), [dados]);
+  const ultimaData = useMemo(() => ultimaDataDaPlanilha(dados?.nes ?? []), [dados]);
+  const pendentesTotal = useMemo(() => (dados?.nes ?? []).filter((n) => !n.assinada).length, [dados]);
   const recortes = useMemo(() => (dados ? filtrar(dados.nes, f, vinculos, fin) : []), [dados, f, vinculos, fin]);
   const resumo = useMemo(() => resumir(recortes, fin, vinculos), [recortes, fin, vinculos]);
   const categorias = useMemo(() => porCategoria(recortes), [recortes]);
@@ -253,9 +258,13 @@ export default function PainelExecucao() {
     else if (ordem === "aLiquidar") a.sort((x, y) => financeiroDo(y, fin).aLiquidar - financeiroDo(x, fin).aLiquidar || y.valor - x.valor);
     else if (ordem === "liquidadoPagar") a.sort((x, y) => financeiroDo(y, fin).liquidadoPagar - financeiroDo(x, fin).liquidadoPagar || y.valor - x.valor);
     else if (ordem === "emissao") a.sort((x, y) => y.nota.emissao.localeCompare(x.nota.emissao) || y.valor - x.valor);
+    else if (ordem === "assinatura") {
+      const dias = (r: Recorte) => pendenciaAssinatura(r.nota, hoje)?.dias ?? -1;
+      a.sort((x, y) => dias(y) - dias(x) || y.valor - x.valor);
+    }
     else a.sort((x, y) => x.nota.ne.localeCompare(y.nota.ne));
     return a;
-  }, [recortes, ordem, fin]);
+  }, [recortes, ordem, fin, hoje]);
 
   useEffect(() => setLimite(30), [f, ordem]);
 
@@ -277,6 +286,8 @@ export default function PainelExecucao() {
         Fornecedor: n.favorecido.nome, CNPJ: n.favorecido.tipo === "empresa" && n.favorecido.documento ? fmtCNPJ(n.favorecido.documento) : "",
         "Item da compra": i.itemCompra ?? "", Item: semPrefixo(i.descricao), Categoria: catDe(i.categoria).nome, "Valor do item": Number(i.valor.toFixed(2)),
         Solicitação: n.solicitacao ?? "",
+        Assinatura: n.assinada ? "Assinada" : "Pendente",
+        "Pendente há (dias)": pendenciaAssinatura(n, hoje)?.dias ?? "",
       };
     }));
     const ws = XLSX.utils.json_to_sheet(linhas);
@@ -378,6 +389,12 @@ export default function PainelExecucao() {
             title="Só as NEs que ainda têm valor a liquidar (pela planilha de situação de empenhos)">
             <input type="checkbox" checked={f.soALiquidar} onChange={(e) => mudar({ soALiquidar: e.target.checked })} />
             Só com saldo a liquidar
+          </label>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: DK.text, cursor: "pointer" }}
+            title="NEs ainda sem a assinatura do Gestor de Licitação e/ou do Ordenador de Despesa. Reforço ou anulação depois de assinada pede nova assinatura: o prazo conta do último lançamento.">
+            <input type="checkbox" checked={f.soPendentesAssinatura}
+              onChange={(e) => { mudar({ soPendentesAssinatura: e.target.checked }); if (e.target.checked) setOrdem("assinatura"); }} />
+            Só pendentes de assinatura{pendentesTotal ? ` (${pendentesTotal})` : ""}
           </label>
           {temFiltro && (
             <button type="button" onClick={() => setF(FILTROS_VAZIOS)}
@@ -497,14 +514,17 @@ export default function PainelExecucao() {
 
       {/* ── Tabela de NEs ── */}
       <Cartao
-        titulo={`Notas de empenho (${recortes.length.toLocaleString("pt-BR")})`}
-        dica="Clique numa NE para ver os itens, o contrato, a licitação e os lançamentos."
+        titulo={`Notas de empenho${f.soPendentesAssinatura ? " pendentes de assinatura" : ""} (${recortes.length.toLocaleString("pt-BR")})`}
+        dica={f.soPendentesAssinatura
+          ? `Assinatura do Gestor de Licitação e/ou do Ordenador de Despesa, contada do último lançamento (emissão, reforço ou anulação) até hoje. A planilha tem lançamentos até ${fmtData(ultimaData)}.`
+          : "Clique numa NE para ver os itens, o contrato, a licitação e os lançamentos."}
         extra={
           <select value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)} style={estiloSelect} aria-label="Ordenar">
             <option value="valor">Maior valor</option>
             <option value="aLiquidar">Maior a liquidar</option>
             <option value="liquidadoPagar">Maior liquidado a pagar</option>
             <option value="emissao">Mais recentes</option>
+            <option value="assinatura">Há mais tempo sem assinatura</option>
             <option value="ne">Número da NE</option>
           </select>
         }
@@ -531,6 +551,7 @@ export default function PainelExecucao() {
                 const aberta = abertas.has(n.ne);
                 const fr = financeiroDo(r, fin);
                 const principal = r.itens.reduce((m, i) => (i.valor > m.valor ? i : m), r.itens[0]);
+                const pend = pendenciaAssinatura(n, hoje);
                 return (
                   <Fragment key={n.ne}>
                     <tr
@@ -540,6 +561,7 @@ export default function PainelExecucao() {
                       <td style={{ padding: "8px", whiteSpace: "nowrap", verticalAlign: "top" }}>
                         <div style={{ fontFamily: "monospace", fontWeight: 700 }}>{aberta ? "▾" : "▸"} {n.ne}</div>
                         <div style={{ fontSize: 10, color: DK.muted }}>{fmtData(n.emissao)}{n.lancamentos.length > 1 ? ` · ${n.lancamentos.length} lanç.` : ""}</div>
+                        {pend && <SeloAssinatura pend={pend} />}
                       </td>
                       <td style={{ padding: "8px", verticalAlign: "top", maxWidth: 320 }}>
                         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={principal.nome}>{principal.nome}</div>
@@ -566,7 +588,7 @@ export default function PainelExecucao() {
                     {aberta && (
                       <tr style={{ borderBottom: `1px solid ${DK.grid}`, background: `${DK.cyan}08` }}>
                         <td colSpan={9} style={{ padding: "4px 12px 14px" }}>
-                          <DetalheNE nota={n} itens={n.itens} recorte={r} vinculo={v} financeiro={fin.get(n.ne) ?? null} />
+                          <DetalheNE nota={n} itens={n.itens} recorte={r} vinculo={v} financeiro={fin.get(n.ne) ?? null} hoje={hoje} />
                         </td>
                       </tr>
                     )}
@@ -600,9 +622,27 @@ function CelulaFinanceira({ tem, valor, cor }: { tem: boolean; valor: number; co
 
 // ─── Detalhe de uma NE ───────────────────────────────────────────────────────
 
-function DetalheNE({ nota: n, itens, recorte, vinculo, financeiro }: {
-  nota: NotaEmpenho; itens: ItemEmpenho[]; recorte: Recorte; vinculo: Vinculo | undefined; financeiro: Financeiro | null;
+/** "Pendente há N dias" (âmbar até 3 dias, vermelho depois), com a origem da contagem no título. */
+function SeloAssinatura({ pend }: { pend: NonNullable<ReturnType<typeof pendenciaAssinatura>> }) {
+  const cor = pend.dias > 3 ? DK.red : DK.amber;
+  const texto = pend.dias === 0 ? "Pendente de assinatura desde hoje" : `Pendente de assinatura há ${pend.dias} ${pend.dias === 1 ? "dia" : "dias"}`;
+  return (
+    <>
+      <div title={`Desde ${pend.porNovoLancamento ? "o último lançamento (reforço ou anulação)" : "a emissão"} em ${fmtData(pend.desde)}`}
+        style={{ marginTop: 3, display: "inline-block", fontSize: 10, fontWeight: 700, color: cor, border: `1px solid ${cor}66`, background: `${cor}14`, borderRadius: 999, padding: "1px 7px" }}>
+        {texto}
+      </div>
+      <div style={{ fontSize: 10, color: DK.muted, marginTop: 2 }}>
+        {pend.porNovoLancamento ? "desde o reforço/anulação de " : "desde a emissão de "}{fmtData(pend.desde)}
+      </div>
+    </>
+  );
+}
+
+function DetalheNE({ nota: n, itens, recorte, vinculo, financeiro, hoje }: {
+  nota: NotaEmpenho; itens: ItemEmpenho[]; recorte: Recorte; vinculo: Vinculo | undefined; financeiro: Financeiro | null; hoje: string;
 }) {
+  const pend = pendenciaAssinatura(n, hoje);
   const noRecorte = new Set(recorte.itens.map((i) => i.seq));
   const c = vinculo?.contrato;
   const p = vinculo?.processo;
@@ -639,7 +679,11 @@ function DetalheNE({ nota: n, itens, recorte, vinculo, financeiro }: {
           {n.favorecido.tipo === "empresa" && n.favorecido.documento ? ` · ${fmtCNPJ(n.favorecido.documento)}` : ""}
         </Campo>
         <Campo rotulo="Solicitação de empenho">{n.solicitacao ?? "—"}</Campo>
-        <Campo rotulo="Assinatura">{n.assinada ? "Assinada" : "Pendente"}</Campo>
+        <Campo rotulo="Assinatura">
+          {pend
+            ? `Pendente (GL e/ou OD) há ${pend.dias} ${pend.dias === 1 ? "dia" : "dias"}, desde ${pend.porNovoLancamento ? "o último lançamento" : "a emissão"} de ${fmtData(pend.desde)}`
+            : "Assinada"}
+        </Campo>
         <Campo rotulo="Lançamentos">{n.lancamentos.map(fmtData).join(" · ")}</Campo>
         <Campo rotulo="Liquidação e pagamento">
           {financeiro
