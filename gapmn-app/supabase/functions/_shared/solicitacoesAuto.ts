@@ -146,12 +146,18 @@ export function parseCSV(texto: string): string[][] {
 export function lerNEs(linhas: string[][]): LinhaNE[] {
   const saida: LinhaNE[] = [];
   const itens = new Map<string, Map<string, number>>();
-  let neAtual = "", dia = "", item = "";
+  // Desde 05/11/2026 a planilha traz as NEs de 2022 em diante: só interessam as do exercício (ano mais
+  // recente). Linhas de item seguem a NE de cima.
+  let anoAlvo = 0;
+  for (const c of linhas) { const ne = c.length >= 21 && dataISO(c[0]) ? neCurta(c[1]) : null; if (ne) anoAlvo = Math.max(anoAlvo, Number(ne.slice(0, 4))); }
+  let neAtual = "", dia = "", item = "", doAno = false;
   for (const c of linhas) {
     if (c.length < 21) continue;
     const iso = dataISO(c[0]);
     if (!iso) continue;
     const ne = neCurta(c[1]);
+    if (ne) doAno = Number(ne.slice(0, 4)) === anoAlvo;
+    if (!doAno) continue;
     if (ne) { neAtual = ne; dia = c[0].trim(); item = ""; }
     if (neAtual && c[0].trim() === dia) {
       const seq = (c[2] ?? "").trim();

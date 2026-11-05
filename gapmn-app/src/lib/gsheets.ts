@@ -10,6 +10,7 @@
 
 import { SIGLA_POR_UG } from "./ugSiglas";
 import { valoresDosLancamentos } from "./execucao/movimentos";
+import { linhasDoAno } from "./execucao/empenhos";
 
 // ─── URLs ─────────────────────────────────────────────────────────────────────
 export const SHEET_URLS = {
@@ -428,8 +429,12 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
  *
  * NEs que não são de compra (contratos, diárias, taxas) não têm "Item compra:" em D,
  * mas seguem o mesmo layout de 21 colunas, com texto livre em D.
+ *
+ * A planilha traz as NEs de 2022 em diante; sem `todosOsAnos`, só as do ano mais recente (o exercício),
+ * que é o que os painéis de empenhos usam.
  */
-export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
+export function toEmpenhosNF(todas: string[][], opcoes: { todosOsAnos?: boolean } = {}): EmpenhoNF[] {
+  const rows = opcoes.todosOsAnos ? todas : linhasDoAno(todas);
   const result: EmpenhoNF[] = [];
   const notaCurta = (raw: string) => raw.match(/(\d{4}NE\d+)$/i)?.[1] ?? raw.slice(-12);
 
@@ -438,6 +443,7 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
   // intercala linhas de NEs diferentes.
   const itensPorNE = new Map<string, Map<string, number>>();
   let neAtual = "", diaAtual = "", itemAtual = "";
+  let vistosNoLancamento = new Set<string>();
   // Col U de todas as linhas de cada lançamento (a da NE primeiro), para corrigir o valor dele
   const movimentosDoLanc = new Map<EmpenhoNF, number[]>();
   let movAtual: number[] | null = null;
@@ -453,12 +459,15 @@ export function toEmpenhosNF(rows: string[][]): EmpenhoNF[] {
 
     const rawNota = (row[1] ?? "").trim();
     if (row.length >= 21) {
-      if (rawNota.length >= 12) { neAtual = notaCurta(rawNota); diaAtual = rawData; itemAtual = ""; movAtual = []; }
+      if (rawNota.length >= 12) { neAtual = notaCurta(rawNota); diaAtual = rawData; itemAtual = ""; movAtual = []; vistosNoLancamento = new Set(); }
       if (neAtual && rawData === diaAtual) {
         const seq = (row[2] ?? "").trim();
         if (seq) itemAtual = seq;
         const itens = itensPorNE.get(neAtual) ?? itensPorNE.set(neAtual, new Map()).get(neAtual)!;
-        itens.set(itemAtual || "1", toNum((row[6] ?? "").trim()));
+        // no mesmo lançamento vale a 1ª linha do item (em NE de ano anterior ele reaparece com o valor que
+        // foi para RP); entre lançamentos, o mais novo (ver lerEmpenhos em execucao/empenhos.ts)
+        const chaveItem = itemAtual || "1";
+        if (!vistosNoLancamento.has(chaveItem)) { vistosNoLancamento.add(chaveItem); itens.set(chaveItem, toNum((row[6] ?? "").trim())); }
         movAtual?.push(toNum((row[20] ?? "").trim()));
       }
     }

@@ -1,6 +1,6 @@
 // Carrega as planilhas do SIAFI e devolve a execução de cada contrato, pelas regras de ./execucao.ts:
 //  - "Situação de empenhos" e restos a pagar: valores de cada NE (empenhado, a liquidar, liquidado, pago);
-//  - "Notas de Empenho" (só o ano corrente): itens, lançamentos e data de emissão de cada NE.
+//  - "Notas de Empenho" (de 2022 em diante): valor, itens, lançamentos e data de emissão de cada NE.
 // Usado pela lista de contratos, Dados Gerais, aba Execução, previsão e apostilamento, para que todos mostrem
 // os mesmos números. As planilhas são baixadas uma vez por sessão (relidas depois de 5 minutos), mesmo com
 // várias telas abertas. Sem a planilha de itens, os valores aparecem do mesmo jeito (só faltam os itens).
@@ -9,14 +9,21 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchCSV, toEmpenhosNF, toExecucaoLinhas, toRPNEs, SHEET_URLS, type ExecucaoLinha, type LinhaRPNE } from "../gsheets";
 import { lerEmpenhos, type NotaEmpenho } from "../execucao/empenhos.ts";
 import {
-  execucaoPorContrato, juntarNEs, neCanonica, primeiraNE, saldoAEmpenhar, vincularNEs,
+  execucaoPorContrato, juntarNEs, neCanonica, notaItensDe, primeiraNE, saldoAEmpenhar, vincularNEs,
   type ContratoVinculo, type ExecucaoContrato, type NotaContrato, type SaldoAEmpenhar, type Vinculo,
 } from "./execucao.ts";
 
 export type EstadoPlanilhas = "carregando" | "ok" | "erro";
 export type Lancamento = { data: string; valor: number };
 
-type Itens = { itens: Map<string, NotaEmpenho>; lancamentos: Map<string, Lancamento[]>; emissao: Map<string, string> };
+type Itens = {
+  itens: Map<string, NotaEmpenho>;
+  lancamentos: Map<string, Lancamento[]>;
+  emissao: Map<string, string>;
+  /** primeiro e último ano da planilha de itens */
+  desde: number;
+  ate: number;
+};
 type Planilhas = { situacao: ExecucaoLinha[]; rps: LinhaRPNE[]; itens: Itens | null };
 let cache: { em: number; promessa: Promise<Planilhas> } | null = null;
 const VALIDADE_MS = 5 * 60_000;
@@ -32,7 +39,7 @@ function lerItens(rows: string[][]): Itens {
     if (n.emissao) emissao.set(k, n.emissao);
   }
   const lancamentos = new Map<string, Lancamento[]>();
-  for (const l of toEmpenhosNF(rows)) {
+  for (const l of toEmpenhosNF(rows, { todosOsAnos: true })) {
     const k = neCanonica(l.nota_empenho);
     if (!k || Math.abs(l.valor) < 0.005) continue;
     const data = l.data.split("/").reverse().map((p) => p.padStart(2, "0")).join("-");
@@ -41,7 +48,8 @@ function lerItens(rows: string[][]): Itens {
     lancamentos.set(k, arr);
   }
   for (const arr of lancamentos.values()) arr.sort((a, b) => a.data.localeCompare(b.data));
-  return { itens, lancamentos, emissao };
+  const anos = [...itens.keys()].map((k) => Number(k.slice(0, 4)));
+  return { itens, lancamentos, emissao, desde: Math.min(...anos), ate: Math.max(...anos) };
 }
 
 function baixar(): Promise<Planilhas> {
@@ -80,7 +88,7 @@ export function useExecucaoContratos(contratos: readonly ContratoExec[]): Execuc
   const [dados, setDados] = useState<Planilhas>({ situacao: [], rps: [], itens: null });
   const [estado, setEstado] = useState<EstadoPlanilhas>("carregando");
   const [erro, setErro] = useState<string | null>(null);
-  const anoAtual = useMemo(() => new Date().getFullYear(), []);
+  const anoHoje = useMemo(() => new Date().getFullYear(), []);
 
   useEffect(() => {
     let vivo = true;
@@ -99,9 +107,19 @@ export function useExecucaoContratos(contratos: readonly ContratoExec[]): Execuc
     return () => { vivo = false; };
   }, []);
 
-  const nes = useMemo(() => juntarNEs(dados.situacao, dados.rps), [dados]);
+  // o exercício é o ano mais recente da planilha de itens (no começo do ano ela pode ainda estar no anterior)
+  const anoAtual = dados.itens?.ate && Number.isFinite(dados.itens.ate) ? dados.itens.ate : anoHoje;
+  const nes = useMemo(
+    () => juntarNEs(dados.situacao, dados.rps, [...(dados.itens?.itens.values() ?? [])].map(notaItensDe), anoAtual),
+    [dados, anoAtual],
+  );
   const vinculos = useMemo(() => vincularNEs(contratos, nes.values()), [contratos, nes]);
-  const porContrato = useMemo(() => execucaoPorContrato(contratos, nes, vinculos, anoAtual), [contratos, nes, vinculos, anoAtual]);
+  // valor das NEs completo desde o primeiro ano da planilha de itens (sem ela, só o ano e o anterior)
+  const cobertura = dados.itens && Number.isFinite(dados.itens.desde) ? `${dados.itens.desde}-01-01` : undefined;
+  const porContrato = useMemo(
+    () => execucaoPorContrato(contratos, nes, vinculos, anoAtual, cobertura),
+    [contratos, nes, vinculos, anoAtual, cobertura],
+  );
 
   const ok = estado === "ok";
   const saldo = useMemo(

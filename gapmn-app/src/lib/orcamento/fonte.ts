@@ -6,6 +6,7 @@
 
 import { lerLancamentos, type LancamentosEmpenho } from "./lancamentos.ts";
 import { lerDisponivel, lerEmpenhos, lerRecebido, parseCSV } from "./leitura.ts";
+import { linhasDoAno } from "../execucao/empenhos.ts";
 import type { DadosOrcamento } from "./tipos.ts";
 
 const csv = (id: string, gid: string) => `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
@@ -48,11 +49,13 @@ export async function buscarOrcamento(): Promise<ResultadoOrcamento> {
   const ctl = new AbortController();
   const relogio = setTimeout(() => ctl.abort(), TEMPO_LIMITE_MS);
   try {
-    const [rec, disp, emp] = await Promise.all([
+    const [rec, disp, todasNEs] = await Promise.all([
       baixar(PLANILHAS_ORCAMENTO.recebido, ctl.signal),
       baixar(PLANILHAS_ORCAMENTO.disponivel, ctl.signal),
       baixar(PLANILHAS_ORCAMENTO.empenhos, ctl.signal),
     ]);
+    // A planilha de NE traz os anos anteriores (para Contratos e Painel de Execução): o painel é do exercício
+    const emp = linhasDoAno(todasNEs);
     const res: ResultadoOrcamento = {
       dados: { recebido: lerRecebido(rec), disponivel: lerDisponivel(disp), empenhos: lerEmpenhos(emp), lancamentos: lerLancamentos(emp) },
       lidoEm: new Date().toISOString(),

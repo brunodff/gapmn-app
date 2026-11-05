@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { classificar, nomeDoItem } from "./categorias.ts";
-import { chavePAG, favorecidoDe, lerEmpenhos, type NotaEmpenho } from "./empenhos.ts";
+import { anoMaisRecente, chavePAG, favorecidoDe, lerEmpenhos, linhasDoAno, type NotaEmpenho } from "./empenhos.ts";
 import {
   FILTROS_VAZIOS, diasEntre, filtrar, financeiroDo, financeiroPorNE, hojeEm, pendenciaAssinatura, porCategoria, porContrato, porMes,
   porObjeto, resumir, ultimaDataDaPlanilha, vincular, type ContratoResumo, type Financeiro, type ProcessoResumo,
@@ -221,6 +221,38 @@ test("por mês usa a emissão; por contrato soma o empenhado e o pago", () => {
   assert.equal(linhaCarne.pago, 60);
   const objetos = porObjeto(rs);
   assert.equal(objetos[0].nome, "ENERGIA ELETRICA - FORNECIMENTO MERCADO");
+});
+
+test("anos anteriores: no mesmo lançamento vale a 1ª linha do item (a 2ª é o valor que foi para RP)", () => {
+  // como na planilha real (2025NE000013): o item 1 reaparece no mesmo bloco com o valor inscrito em RP
+  const antigos: string[][] = [
+    ["Notas de Empenho", ...Array(20).fill("")],
+    linha({ data: "27/01/2025", ne: "2025NE000013", seq: "1", item: "Diarias", valor: "418880,5", lanc: "250000" }),
+    linha({ data: "27/01/2025", seq: "1", item: "Diarias", valor: "2007,5", lanc: "50000" }),
+    linha({ data: "16/05/2025", ne: "2025NE000013", seq: "1", item: "Diarias", valor: "418880,5", lanc: "750000" }),
+    linha({ data: "16/05/2025", seq: "1", item: "Diarias", valor: "2007,5", lanc: "150000" }),
+    ...PLANILHA.slice(1),
+  ];
+  const lidas = lerEmpenhos(antigos);
+  assert.equal(lidas.find((n) => n.ne === "2025NE000013")!.valor, 418880.5);
+  // e entre lançamentos continua valendo o mais novo (o reforço da NE 1 levou o item 1 a 80)
+  assert.equal(lidas.find((n) => n.ne === "2026NE000001")!.valor, 130);
+});
+
+test("ano das NEs: o mais recente da planilha; filtrar deixa só as linhas dele (itens acompanham a NE)", () => {
+  const misturada: string[][] = [
+    ["Notas de Empenho", ...Array(20).fill("")],
+    linha({ data: "27/01/2025", ne: "2025NE000013", seq: "1", item: "Diarias", valor: "100" }),
+    linha({ data: "27/01/2025", seq: "2", item: "Diarias", valor: "50" }),
+    ...PLANILHA.slice(1),
+    ["Emissão - Dia", "NE", ...Array(19).fill("")], // cabeçalho no fim, como no CSV real
+  ];
+  assert.equal(anoMaisRecente(misturada), 2026);
+  const so2026 = linhasDoAno(misturada);
+  assert.ok(so2026.every((l) => !/2025NE/.test(l[1] ?? "")));
+  assert.ok(!so2026.some((l) => l[6] === "50" && l[0] === "27/01/2025"), "item da NE de 2025 também sai");
+  assert.deepEqual(lerEmpenhos(so2026).map((n) => n.ne).sort(), lerEmpenhos(PLANILHA).map((n) => n.ne).sort());
+  assert.equal(lerEmpenhos(linhasDoAno(misturada, 2025)).map((n) => n.ne).join(), "2025NE000013");
 });
 
 // Uso de tipo só para o TS não reclamar de import não usado em alguns editores

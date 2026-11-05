@@ -431,7 +431,7 @@ export default function ApostilamentoContratosView() {
   const siafi = useExecucaoContratos(contratos);
   const contratosNE = useMemo(() => contratos.map((c) => {
     const t = siafi.estado === "ok" ? siafi.porContrato.get(c.id)?.totais : undefined;
-    // saldo a empenhar: pelas NEs; com NEs de 2024 ou antes (incompletas nas planilhas), o do SILOMS
+    // saldo a empenhar: pelas NEs; em contrato anterior a 2022 (início da planilha de NEs), o do SILOMS
     return { ...c, vl_a_empenhar: siafi.saldo(c).valor, saldo: t ? t.aLiquidar : null, vl_liquidado: t ? t.liquidadoPagar + t.pago : null };
   }), [contratos, siafi]);
 

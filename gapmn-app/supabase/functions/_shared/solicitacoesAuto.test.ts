@@ -42,6 +42,19 @@ test("leitura: NE, solicitação, situação e valor atual pela soma dos itens",
   ]);
 });
 
+test("leitura: com os anos anteriores na planilha, só as NEs do exercício (o ano mais recente) entram", () => {
+  const antiga = linha("15/03/2025", "NE000900", "1", "5000", "ASSINADA", "SOLICITACAO DE EMPENHO 25S0300. CTT: fiscal@fab.mil.br");
+  antiga[1] = "120630000012025NE000900";
+  const itemAntigo = linha("15/03/2025", "", "2", "700");
+  const nes = lerNEs([
+    ["Notas de Empenho"],
+    antiga, itemAntigo,
+    linha("10/09/2026", "NE001000", "1", "600", "PENDENTE"),
+    linha("10/09/2026", "", "2", "400", "PENDENTE"),
+  ]);
+  assert.deepEqual(nes.map((n) => [n.ne, n.valorNE]), [["2026NE001000", 1000]]);
+});
+
 test("contato do fiscal tirado da observação", () => {
   const email = extrairEmail(OBS);
   assert.equal(email, "silva@fab.mil.br");

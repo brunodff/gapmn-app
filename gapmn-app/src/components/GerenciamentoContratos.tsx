@@ -1490,7 +1490,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                               {f.saldo.valor != null && (
                                 <div
                                   className={f.saldo.valor > 0 ? "text-green-700" : "text-red-600"}
-                                  title={f.saldo.fonte === "SILOMS" ? "Saldo do SILOMS: as NEs de 2024 ou antes não estão completas nas planilhas do SIAFI" : "Valor total − empenhado nas NEs do contrato"}
+                                  title={f.saldo.fonte === "SILOMS" ? "Saldo do SILOMS: o contrato é anterior a 2022, quando começa a planilha de NEs do SIAFI" : "Valor total − empenhado nas NEs do contrato"}
                                 >
                                   A empenhar: {fmtMoney(f.saldo.valor)}{f.saldo.fonte === "SILOMS" && <span className="ml-1 text-[9px] text-slate-400">SILOMS</span>}
                                 </div>
@@ -1784,7 +1784,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   {selected.vl_atual == null && aEmpSel != null && (
                     <div className="text-[10px] text-slate-500 mt-0.5">
                       {saldoSel?.fonte === "SILOMS"
-                        ? "do SILOMS: as NEs de 2024 ou antes não estão completas nas planilhas do SIAFI"
+                        ? "do SILOMS: o contrato é anterior a 2022, quando começa a planilha de NEs do SIAFI"
                         : "valor total − empenhado nas NEs"}
                     </div>
                   )}
@@ -1844,7 +1844,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   <p className="mt-2 text-[11px] text-slate-500">
                     Execução pelas notas de empenho do SIAFI — os mesmos valores da aba{" "}
                     <button onClick={() => setDetailMode("execucao")} className="text-sky-700 underline">Execução</button>.
-                    {e.empenhadoIncompleto && e.totais.nNE > 0 && " NEs de 2024 ou antes entram só com o pago no ano e o RP ainda aberto."}
+                    {e.empenhadoIncompleto && e.totais.nNE > 0 && " A planilha de NEs começa em 2022 e este contrato é anterior: o empenhado pode estar a menor."}
                     {fora > 0 && <span className="text-amber-700"> {fora} NE{fora > 1 ? "s" : ""} do PAG ficaram fora (veja na aba Execução).</span>}
                   </p>
                 );

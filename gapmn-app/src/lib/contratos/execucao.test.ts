@@ -85,9 +85,16 @@ test("vínculo: citação vale até em outro PAG; PAG de laboratório com outros
   assert.deepEqual(v.get("2026NE009999")!.candidatos, ["054", "055"]);
   assert.deepEqual([v.get("2026NE000030")!.contratoId, v.get("2026NE000030")!.motivo], [null, "cita outro contrato"]);
   assert.equal(v.get("2024NE001439")!.contratoId, "009");
-  assert.deepEqual([v.get("2022NE000099")!.contratoId, v.get("2022NE000099")!.motivo], ["009", "PAG do contrato"]);
+  // o PAG também paga outros contratos do laboratório (a 2026NE000030 cita o 005): NE sem citação fica sem contrato
+  assert.deepEqual([v.get("2022NE000099")!.contratoId, v.get("2022NE000099")!.motivo, v.get("2022NE000099")!.candidatos], [null, "PAG compartilhado", ["009"]]);
   assert.equal(v.get("2021NE000269")!.contratoId, "cred"); // "001/2020" no PAG do 001/2021: erro de digitação
   assert.deepEqual([v.get("2026NE000500")!.contratoId, v.get("2026NE000500")!.motivo], ["019", "cita o contrato"]);
+});
+
+test("vínculo: contrato de receita não recebe NE", () => {
+  const contratos = [{ id: "rec", numero_contrato: "RECEITA 001/BAMN-HAMN/2022", pag_nup: "67436.000001/2022-11", cnpj: null }];
+  const nes = juntarNEs([sit("2022NE000500", "67436.000001/2022-11", "AQUISICAO QUALQUER")]);
+  assert.deepEqual(vincularNEs(contratos, nes.values()).get("2022NE000500"), { contratoId: null, motivo: "sem contrato", candidatos: [] });
 });
 
 test("vínculo: PAG compartilhado se resolve pelo CNPJ do fornecedor", () => {
@@ -197,4 +204,35 @@ test("previsão: contrato com NE dele bem antes do início gravado já corria (p
   // empenho prévio de contrato novo (menos de 45 dias antes) não conta como "já corria"
   const previo = projetarContratos([{ ...base, primeira_ne: "2026-05-20" }], new Map(), new Map(), op).get("luz")!;
   assert.equal(Math.round(previo.mensal), Math.round(sem.mensal));
+});
+
+test("planilha de itens (2022 em diante): valor das NEs antigas, NEs que só existem nela e histórico completo", () => {
+  const item = (ne: string, valor: number, pag = "67615.014924/2023-31") => ({
+    ne, valor, pag, favorecidoCodigo: "", favorecidoNome: "CONSTRUTORA", descricao: "CONTRATO: DESPESA 004/GAPMN-DACTAIV/2024", pi: "", unidade: "",
+  });
+  const nes = juntarNEs(
+    [
+      sit("2024NE000636", "67615.014924/2023-31", "OBRA DE REFORMA", { pago: 572329.72 }), // só o pago em 2024
+      sit("2026NE000318", "67615.014924/2023-31", "CONTRATO: DESPESA 004/GAPMN-DACTAIV/2024", { a_liquidar: 105811, pago: 723823 }),
+    ],
+    [rp("2024NE000636", "67615.014924/2023-31", { rp_nao_proc_a_liq: 1000 })],
+    [item("2024NE000636", 1293164.75), item("2026NE000318", 829634), item("2023NE000100", 50000)],
+    2026,
+  );
+  const n24 = nes.get("2024NE000636")!;
+  assert.equal(n24.empenhado, 1293164.75);
+  assert.equal(n24.aLiquidar, 1000);
+  assert.equal(n24.pagoAnterior.toFixed(2), "719835.03"); // pago (ou RP cancelado) em 2025, que nenhuma planilha detalha
+  assert.equal((n24.aLiquidar + n24.liquidadoPagar + n24.pago).toFixed(2), "1293164.75");
+  assert.equal(n24.completo, true);
+  const so = nes.get("2023NE000100")!; // NE toda paga como RP no ano seguinte: só existe na planilha de itens
+  assert.deepEqual([so.empenhado, so.pago, so.aLiquidar, so.pagChave], [50000, 50000, 0, "676150149242023"]);
+  // contrato com vigência desde 2023: com a planilha de itens desde 2022, o saldo sai das NEs
+  const contratos = [{ id: "obra", numero_contrato: "DESPESA 004/GAPMN-DACTAIV/2024", pag_nup: "67615.014924/2023-31", cnpj: null, data_inicio: "2023-06-19" }];
+  const ex = execucaoPorContrato(contratos, nes, vincularNEs(contratos, nes.values()), 2026, "2022-01-01");
+  assert.equal(ex.get("obra")!.empenhadoIncompleto, false);
+  assert.equal(saldoAEmpenhar(2172798.75, ex.get("obra"), 0).fonte, "NEs");
+  // sem a planilha de itens (cobertura padrão: ano anterior), o mesmo contrato volta para o SILOMS
+  const sem = execucaoPorContrato(contratos, juntarNEs([sit("2024NE000636", "67615.014924/2023-31", "X", { pago: 1 })]), new Map([["2024NE000636", { contratoId: "obra", motivo: "PAG do contrato" as const, candidatos: ["obra"] }]]), 2026);
+  assert.equal(sem.get("obra")!.empenhadoIncompleto, true);
 });

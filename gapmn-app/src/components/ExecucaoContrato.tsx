@@ -117,9 +117,9 @@ export default function ExecucaoContrato({
       )}
       {exec?.empenhadoIncompleto && nes.length > 0 && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-          As planilhas trazem as NEs de 2021 em diante. Numa NE de 2024 ou antes, o empenhado aparece só com o pago no
-          próprio ano e o resto a pagar ainda aberto (o RP já pago em 2025 não está nelas). O a liquidar e o liquidado a pagar
-          de hoje estão completos.
+          O valor de cada NE vem da planilha "Notas de Empenho", que começa em 2022. Este contrato começou antes disso
+          (ou tem NE de 2021, sem itens): o empenhado pode estar a menor e, por isso, o saldo a empenhar vem do SILOMS.
+          O a liquidar e o liquidado a pagar de hoje estão completos.
         </p>
       )}
 
@@ -135,8 +135,8 @@ export default function ExecucaoContrato({
           <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
             <div className="text-[11px] text-slate-500">
               {carregandoItens ? "Carregando os itens das NEs…" : resumoItens.comItens
-                ? <>Itens de {anoAtual}: <strong>{resumoItens.n}</strong> em {resumoItens.comItens} NE{resumoItens.comItens > 1 ? "s" : ""} · soma <strong>{fmt(resumoItens.soma)}</strong>. Clique na NE para ver os itens.</>
-                : `Os itens só existem para as NEs de ${anoAtual}.`}
+                ? <>Itens: <strong>{resumoItens.n}</strong> em {resumoItens.comItens} NE{resumoItens.comItens > 1 ? "s" : ""} · soma <strong>{fmt(resumoItens.soma)}</strong>. Clique na NE para ver os itens.</>
+                : "Nenhuma destas NEs está na planilha \"Notas de Empenho\" (ela começa em 2022)."}
             </div>
             <div className="flex gap-1 shrink-0">
               <button onClick={() => setAbertas(new Set(nes.map((n) => n.ne)))} className="text-[11px] text-sky-700 border border-sky-200 rounded px-2 py-0.5 hover:bg-sky-50">Abrir todas</button>
@@ -211,14 +211,19 @@ export default function ExecucaoContrato({
                             </table>
                           ) : (
                             <p className="text-[11px] text-slate-500">
-                              {carregandoItens ? "Carregando os itens…" : n.ano === anoAtual
+                              {carregandoItens ? "Carregando os itens…" : n.ano >= 2022
                                 ? "Esta NE ainda não está na planilha \"Notas de Empenho\"."
-                                : `A planilha "Notas de Empenho" só traz os itens das NEs de ${anoAtual}.`}
+                                : "A planilha \"Notas de Empenho\" começa em 2022: esta NE não tem itens."}
                             </p>
                           )}
-                          {it && n.ano === anoAtual && !quase(it.valor, n.empenhado) && (
+                          {it && n.ano >= anoAtual - 1 && !quase(n.aLiquidar + n.liquidadoPagar + n.pago, n.empenhado) && (
                             <p className="text-[11px] text-amber-700">
-                              ⚠ A soma dos itens ({fmt(it.valor)}) difere da situação da NE ({fmt(n.empenhado)}). Confira a NE no SIAFI.
+                              ⚠ A soma dos itens ({fmt(n.empenhado)}) difere dos saldos da situação e do RP ({fmt(n.aLiquidar + n.liquidadoPagar + n.pago)}). Confira a NE no SIAFI.
+                            </p>
+                          )}
+                          {n.pagoAnterior > 0.004 && (
+                            <p className="text-[11px] text-slate-600">
+                              {fmt(n.pagoAnterior)} pagos (ou restos a pagar cancelados) entre {n.ano + 1} e {anoAtual - 1}: as planilhas não detalham esses anos, e o valor entra como pago.
                             </p>
                           )}
                           {n.rp && (

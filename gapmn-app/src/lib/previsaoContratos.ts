@@ -499,7 +499,7 @@ export function projetarContratos(
         ? `Saldo a empenhar ${fmt(saldoRestante)} distribuído até o fim da vigência (${Math.max(1, Math.ceil(mesesRestantes - 1e-9))} ${Math.ceil(mesesRestantes - 1e-9) > 1 ? "meses" : "mês"})`
         : saldoRestante > 0 ? `Saldo a empenhar ${fmt(saldoRestante)} com vigência encerrada` : "Sem saldo a empenhar";
       if (saldoRestante > 0 && mesesRestantes === 0) alertas.push("Saldo a empenhar com vigência encerrada");
-      if (c.saldo_fonte === "SILOMS") base += " · saldo do SILOMS (as NEs de 2024 ou antes não estão completas nas planilhas do SIAFI)";
+      if (c.saldo_fonte === "SILOMS") base += " · saldo do SILOMS (o contrato é anterior a 2022, quando começa a planilha de NEs do SIAFI)";
       else if (c.saldo_fonte === "NEs") base += " · valor total − empenhado nas NEs";
     }
 

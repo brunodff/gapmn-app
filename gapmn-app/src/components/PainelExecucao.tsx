@@ -1,5 +1,5 @@
-// Painel de Execução: empenhos de 2026 por item, com categoria do objeto, contrato do PAG,
-// liquidação e pagamento. Os dados vêm de lib/execucao (leitura, classificação e agrupamentos).
+// Painel de Execução: empenhos por item, ano a ano (a planilha traz de 2022 em diante; abre no ano mais
+// recente), com categoria do objeto, contrato do PAG, liquidação e pagamento. Os dados vêm de lib/execucao (leitura, classificação e agrupamentos).
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis,
@@ -167,6 +167,7 @@ export default function PainelExecucao() {
   const [telaCheia, setTelaCheia] = useState(false);
   const [setor, setSetor] = useState<string | null>(null);
   const [aba, setAba] = useState<"execucao" | "pta" | "levantamento">("execucao");
+  const [anoEscolhido, setAnoEscolhido] = useState("");
 
   // setor do usuário: a minuta do PTA só aparece para ADMIN e DEV (o banco também só entrega a eles)
   useEffect(() => {
@@ -218,13 +219,20 @@ export default function PainelExecucao() {
   };
 
   const vinculos = useMemo(() => (dados ? vincular(dados.nes, dados.contratos, dados.processos) : new Map<string, Vinculo>()), [dados]);
+  // Ano de emissão da NE: o painel mostra um ano por vez (padrão: o mais recente da planilha)
+  const anos = useMemo(() => [...new Set((dados?.nes ?? []).map((n) => n.ne.slice(0, 4)))].sort().reverse(), [dados]);
+  const ano = anos.includes(anoEscolhido) ? anoEscolhido : anos[0] ?? "";
+  const nesDoAno = useMemo(() => (dados?.nes ?? []).filter((n) => n.ne.startsWith(ano)), [dados, ano]);
+  const anoCorrente = ano === anos[0];
   const fin = useMemo(() => dados?.financeiro ?? new Map<string, Financeiro>(), [dados]);
   // "hoje" muda junto com a releitura da planilha (a cada hora), para os dias de pendência não ficarem parados
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const hoje = useMemo(() => hojeEm(), [dados]);
   const ultimaData = useMemo(() => ultimaDataDaPlanilha(dados?.nes ?? []), [dados]);
-  const pendentesTotal = useMemo(() => (dados?.nes ?? []).filter((n) => !n.assinada).length, [dados]);
-  const recortes = useMemo(() => (dados ? filtrar(dados.nes, f, vinculos, fin) : []), [dados, f, vinculos, fin]);
+  // pendência de assinatura só no ano corrente: as NEs antigas não trazem a situação da assinatura
+  const pendencia = useCallback((n: NotaEmpenho) => (anoCorrente ? pendenciaAssinatura(n, hoje) : null), [anoCorrente, hoje]);
+  const pendentesTotal = useMemo(() => (anoCorrente ? nesDoAno.filter((n) => !n.assinada).length : 0), [nesDoAno, anoCorrente]);
+  const recortes = useMemo(() => filtrar(nesDoAno, f, vinculos, fin), [nesDoAno, f, vinculos, fin]);
   const resumo = useMemo(() => resumir(recortes, fin, vinculos), [recortes, fin, vinculos]);
   const categorias = useMemo(() => porCategoria(recortes), [recortes]);
   const meses = useMemo(() => porMes(recortes), [recortes]);
@@ -235,7 +243,7 @@ export default function PainelExecucao() {
 
   // Opções dos filtros (do conjunto inteiro, para não sumirem ao filtrar)
   const opcoes = useMemo(() => {
-    const nes = dados?.nes ?? [];
+    const nes = nesDoAno;
     const om = [...new Set(nes.map(omDe))].sort();
     const nd = new Map<string, string>();
     const pis = new Map<string, string>();
@@ -251,7 +259,7 @@ export default function PainelExecucao() {
       pis: [...pis].map(([codigo, desc]) => ({ codigo, desc })).sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })),
       meses: [...ms].sort(),
     };
-  }, [dados]);
+  }, [nesDoAno]);
 
   const ordenados = useMemo(() => {
     const a = [...recortes];
@@ -260,12 +268,12 @@ export default function PainelExecucao() {
     else if (ordem === "liquidadoPagar") a.sort((x, y) => financeiroDo(y, fin).liquidadoPagar - financeiroDo(x, fin).liquidadoPagar || y.valor - x.valor);
     else if (ordem === "emissao") a.sort((x, y) => y.nota.emissao.localeCompare(x.nota.emissao) || y.valor - x.valor);
     else if (ordem === "assinatura") {
-      const dias = (r: Recorte) => pendenciaAssinatura(r.nota, hoje)?.dias ?? -1;
+      const dias = (r: Recorte) => pendencia(r.nota)?.dias ?? -1;
       a.sort((x, y) => dias(y) - dias(x) || y.valor - x.valor);
     }
     else a.sort((x, y) => x.nota.ne.localeCompare(y.nota.ne));
     return a;
-  }, [recortes, ordem, fin, hoje]);
+  }, [recortes, ordem, fin, pendencia]);
 
   useEffect(() => setLimite(30), [f, ordem]);
 
@@ -288,19 +296,19 @@ export default function PainelExecucao() {
         "Item da compra": i.itemCompra ?? "", Item: semPrefixo(i.descricao), Categoria: catDe(i.categoria).nome, "Valor do item": Number(i.valor.toFixed(2)),
         Solicitação: n.solicitacao ?? "",
         Assinatura: n.assinada ? "Assinada" : "Pendente",
-        "Pendente há (dias)": pendenciaAssinatura(n, hoje)?.dias ?? "",
+        "Pendente há (dias)": pendencia(n)?.dias ?? "",
       };
     }));
     const ws = XLSX.utils.json_to_sheet(linhas);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Empenhos 2026");
-    XLSX.writeFile(wb, `empenhos-2026-por-item.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, `Empenhos ${ano}`);
+    XLSX.writeFile(wb, `empenhos-${ano}-por-item.xlsx`);
   }
 
   // ── Estados de carga ───────────────────────────────────────────────────────
 
   if (carregando && !dados) {
-    return <div style={{ background: DK.bg, borderRadius: 20, padding: 40, textAlign: "center", color: DK.muted, fontSize: 13 }}>Carregando os empenhos de 2026…</div>;
+    return <div style={{ background: DK.bg, borderRadius: 20, padding: 40, textAlign: "center", color: DK.muted, fontSize: 13 }}>Carregando os empenhos…</div>;
   }
   if (erro && !dados) {
     return (
@@ -321,7 +329,7 @@ export default function PainelExecucao() {
       {/* ── Cabeçalho ── */}
       <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Execução dos empenhos — 2026</h2>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Execução dos empenhos — {ano}</h2>
           <p style={{ margin: "2px 0 0", fontSize: 11, color: DK.muted }}>
             Notas de empenho por item (Tesouro Gerencial) · liquidação e pagamento da planilha de situação · lido às{" "}
             {new Date(dados.lidoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
@@ -341,7 +349,7 @@ export default function PainelExecucao() {
       {/* ── Abas: a minuta do PTA só aparece para ADMIN e DEV ── */}
       {podeVerPta && (
         <div role="tablist" aria-label="Conteúdo do painel" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {([["execucao", `Execução ${anoPTA - 1}`], ["pta", `Minuta do PTA ${anoPTA}`], ["levantamento", `Levantamento dos setores ${anoPTA}`]] as const).map(([id, rotulo]) => (
+          {([["execucao", "Execução"], ["pta", `Minuta do PTA ${anoPTA}`], ["levantamento", `Levantamento dos setores ${anoPTA}`]] as const).map(([id, rotulo]) => (
             <button key={id} type="button" role="tab" aria-selected={aba === id} onClick={() => setAba(id)}
               style={{ ...estiloBotao, background: aba === id ? `${DK.cyan}22` : "transparent", borderColor: aba === id ? DK.cyan : DK.cardBorder, color: aba === id ? DK.cyan : DK.text, padding: "7px 14px", fontSize: 12 }}>
               {rotulo}
@@ -355,6 +363,25 @@ export default function PainelExecucao() {
       ) : aba === "levantamento" && podeVerPta ? (
         <PtaLevantamento ano={anoPTA} />
       ) : (<>
+
+      {/* ── Ano ── */}
+      {anos.length > 1 && (
+        <div role="group" aria-label="Ano de emissão das NEs" style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: DK.muted }}>Ano:</span>
+          {anos.map((a) => (
+            <button key={a} type="button" aria-pressed={a === ano}
+              onClick={() => { if (a !== ano) { setAnoEscolhido(a); setF(FILTROS_VAZIOS); setAbertas(new Set()); } }}
+              style={{ ...estiloBotao, padding: "5px 12px", fontSize: 12, background: a === ano ? `${DK.cyan}22` : "transparent", borderColor: a === ano ? DK.cyan : DK.cardBorder, color: a === ano ? DK.cyan : DK.text }}>
+              {a}
+            </button>
+          ))}
+          {!anoCorrente && (
+            <span style={{ fontSize: 11, color: DK.muted }}>
+              NEs de {ano}: a liquidar e liquidado a pagar são os restos a pagar de hoje; o pago inclui o RP pago nos anos seguintes.
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Filtros ── */}
       <div style={{ background: DK.card, border: `1px solid ${DK.cardBorder}`, borderRadius: 14, padding: "10px 12px", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8 }}>
@@ -393,12 +420,12 @@ export default function PainelExecucao() {
             <input type="checkbox" checked={f.soALiquidar} onChange={(e) => mudar({ soALiquidar: e.target.checked })} />
             Só com saldo a liquidar
           </label>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: DK.text, cursor: "pointer" }}
+          {anoCorrente && <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: DK.text, cursor: "pointer" }}
             title="NEs ainda sem a assinatura do Gestor de Licitação e/ou do Ordenador de Despesa. Reforço ou anulação depois de assinada pede nova assinatura: o prazo conta do último lançamento.">
             <input type="checkbox" checked={f.soPendentesAssinatura}
               onChange={(e) => { mudar({ soPendentesAssinatura: e.target.checked }); if (e.target.checked) setOrdem("assinatura"); }} />
             Só pendentes de assinatura{pendentesTotal ? ` (${pendentesTotal})` : ""}
-          </label>
+          </label>}
           {temFiltro && (
             <button type="button" onClick={() => setF(FILTROS_VAZIOS)}
               style={{ ...estiloBotao, color: DK.red, borderColor: `${DK.red}55`, background: "transparent" }}>✕ Limpar filtros</button>
@@ -414,7 +441,7 @@ export default function PainelExecucao() {
 
       {/* ── Números ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-        <Kpi rotulo="Empenhado em 2026" valor={fmtCurto(resumo.valor)} sub={`${resumo.nes.toLocaleString("pt-BR")} NEs · ${resumo.itens.toLocaleString("pt-BR")} itens`} cor={DK.cyan} />
+        <Kpi rotulo={`Empenhado em ${ano}`} valor={fmtCurto(resumo.valor)} sub={`${resumo.nes.toLocaleString("pt-BR")} NEs · ${resumo.itens.toLocaleString("pt-BR")} itens`} cor={DK.cyan} />
         <Kpi rotulo="A liquidar" valor={fmtCurto(resumo.aLiquidar)} sub={pct(resumo.aLiquidar, resumo.valor) + " do empenhado"} cor={DK.amber} />
         <Kpi rotulo="Liquidado a pagar" valor={fmtCurto(resumo.liquidadoPagar)} sub={pct(resumo.liquidadoPagar, resumo.valor) + " do empenhado"} cor={DK.teal} />
         <Kpi rotulo="Pago" valor={fmtCurto(resumo.pago)} sub={pct(resumo.pago, resumo.valor) + " do empenhado"} cor={DK.green} />
@@ -472,7 +499,7 @@ export default function PainelExecucao() {
             linhas={objetos.map((o) => ({ chave: o.chave, nome: o.nome, valor: o.valor, cor: catDe(o.categoria).cor, sub: `${o.nes} NE${o.nes > 1 ? "s" : ""} · ${catDe(o.categoria).nome}` }))}
           />
         </Cartao>
-        <Cartao titulo="Contratos mais empenhados em 2026" dica="Contrato encontrado pelo PAG da NE. Clique para ver só as NEs do contrato.">
+        <Cartao titulo={`Contratos mais empenhados em ${ano}`} dica="Contrato encontrado pelo PAG da NE. Clique para ver só as NEs do contrato.">
           {contratos.length === 0 ? (
             <p style={{ fontSize: 12, color: DK.muted }}>Nenhuma NE dos filtros está ligada a contrato.</p>
           ) : (
@@ -554,7 +581,7 @@ export default function PainelExecucao() {
                 const aberta = abertas.has(n.ne);
                 const fr = financeiroDo(r, fin);
                 const principal = r.itens.reduce((m, i) => (i.valor > m.valor ? i : m), r.itens[0]);
-                const pend = pendenciaAssinatura(n, hoje);
+                const pend = pendencia(n);
                 return (
                   <Fragment key={n.ne}>
                     <tr
@@ -591,7 +618,7 @@ export default function PainelExecucao() {
                     {aberta && (
                       <tr style={{ borderBottom: `1px solid ${DK.grid}`, background: `${DK.cyan}08` }}>
                         <td colSpan={9} style={{ padding: "4px 12px 14px" }}>
-                          <DetalheNE nota={n} itens={n.itens} recorte={r} vinculo={v} financeiro={fin.get(n.ne) ?? null} hoje={hoje} />
+                          <DetalheNE nota={n} itens={n.itens} recorte={r} vinculo={v} financeiro={fin.get(n.ne) ?? null} hoje={hoje} assinatura={anoCorrente} />
                         </td>
                       </tr>
                     )}
@@ -642,10 +669,12 @@ function SeloAssinatura({ pend }: { pend: NonNullable<ReturnType<typeof pendenci
   );
 }
 
-function DetalheNE({ nota: n, itens, recorte, vinculo, financeiro, hoje }: {
+function DetalheNE({ nota: n, itens, recorte, vinculo, financeiro, hoje, assinatura }: {
   nota: NotaEmpenho; itens: ItemEmpenho[]; recorte: Recorte; vinculo: Vinculo | undefined; financeiro: Financeiro | null; hoje: string;
+  /** mostra a situação da assinatura (só no ano corrente) */
+  assinatura: boolean;
 }) {
-  const pend = pendenciaAssinatura(n, hoje);
+  const pend = assinatura ? pendenciaAssinatura(n, hoje) : null;
   const noRecorte = new Set(recorte.itens.map((i) => i.seq));
   const c = vinculo?.contrato;
   const p = vinculo?.processo;

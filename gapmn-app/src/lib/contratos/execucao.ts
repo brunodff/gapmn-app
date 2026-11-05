@@ -4,12 +4,15 @@
 // Funções puras (sem React nem rede), testadas em execucao.test.ts.
 //
 // De onde vêm os valores de cada NE:
+//  - planilha "Notas de Empenho" (por item, de 2022 em diante desde 05/11/2026): o VALOR da NE, a soma dos
+//    itens no exercício dela (primeira ocorrência de cada item, ver lerEmpenhos);
 //  - planilha "Situação de empenhos": todas as NEs de 2021 em diante, uma linha por NE, com o que está a
 //    liquidar, liquidado a pagar e pago NO EXERCÍCIO DA NE;
 //  - planilha de restos a pagar (exercício corrente): o que a NE de ano anterior ainda tem em RP.
-// As duas partes se completam: no fim do ano o que não foi pago vai para RP. Limite conhecido: o RP de NE
-// de 2024 ou antes que foi pago ou cancelado em 2025 não está em nenhuma das duas planilhas, então o
-// empenhado dessas NEs sai a menor (o a liquidar e o liquidado a pagar de hoje estão completos).
+// Situação e RP se completam para as NEs do ano e do ano anterior. Numa NE mais antiga, o RP pago ou cancelado
+// nos anos do meio não está em planilha nenhuma: o empenhado vem dos itens, o a liquidar e o liquidado a
+// pagar de hoje vêm do RP, e o resto conta como pago (ou RP cancelado) em anos anteriores. NE de 2021, sem
+// itens, fica com o que as duas planilhas mostram e marca o histórico como incompleto.
 //
 // Qual NE é de qual contrato. O PAG é do processo, e um processo pode ter vários contratos (atas de
 // laboratório, pares de energia demanda/consumo, contrato anterior e atual):
@@ -90,11 +93,29 @@ export type NotaContrato = {
   exercicio: Valores;
   /** Restos a pagar no exercício corrente (null = a NE não tem RP). */
   rp: RestosNE | null;
-  /** exercicio + rp, por tipo */
+  /** valor da NE pela planilha de itens (null = NE sem itens: 2021, ou ainda fora da planilha) */
+  valorItens: number | null;
+  /** exercicio + rp, por tipo (pago inclui pagoAnterior) */
   aLiquidar: number;
   liquidadoPagar: number;
   pago: number;
+  /** pago (ou RP cancelado) em anos do meio, que nenhuma planilha detalha: valor − saldos de hoje − pago conhecido */
+  pagoAnterior: number;
   empenhado: number;
+  /** o empenhado desta NE está completo (tem itens, ou é do ano ou do ano anterior) */
+  completo: boolean;
+};
+
+/** NE da planilha de itens (lerEmpenhos), no que interessa aqui. */
+export type NotaItens = {
+  ne: string;
+  valor: number;
+  pag: string;
+  favorecidoCodigo: string;
+  favorecidoNome: string;
+  descricao: string;
+  pi: string;
+  unidade: string;
 };
 
 const NE = /(\d{4})NE(\d+)/i;
@@ -110,17 +131,44 @@ const rpValores = (r: RestosNE): Valores => ({
   pago: r.naoProcPago + r.procPago,
 });
 
-function fechar(n: Omit<NotaContrato, "aLiquidar" | "liquidadoPagar" | "pago" | "empenhado">): NotaContrato {
+type Bruta = Omit<NotaContrato, "aLiquidar" | "liquidadoPagar" | "pago" | "pagoAnterior" | "empenhado" | "completo"> & { naPlanilha: boolean };
+
+function fechar(n: Bruta, anoAtual: number): NotaContrato {
   const r = n.rp ? rpValores(n.rp) : { aLiquidar: 0, liquidadoPagar: 0, pago: 0 };
-  const aLiquidar = n.exercicio.aLiquidar + r.aLiquidar;
+  let aLiquidar = n.exercicio.aLiquidar + r.aLiquidar;
   const liquidadoPagar = n.exercicio.liquidadoPagar + r.liquidadoPagar;
-  const pago = n.exercicio.pago + r.pago;
-  return { ...n, aLiquidar, liquidadoPagar, pago, empenhado: aLiquidar + liquidadoPagar + pago };
+  let pago = n.exercicio.pago + r.pago;
+  let pagoAnterior = 0;
+  const conhecido = aLiquidar + liquidadoPagar + pago;
+  // NE do ano ou do ano anterior: situação + RP têm tudo
+  const recente = n.ano >= anoAtual - 1;
+  if (n.valorItens != null && !recente) {
+    // NE mais antiga: o que não está nos saldos de hoje nem no pago conhecido foi pago (ou o RP cancelado) no meio
+    pagoAnterior = Math.max(0, n.valorItens - conhecido);
+    pago += pagoAnterior;
+  } else if (n.valorItens != null && !n.naPlanilha && n.ano === anoAtual) {
+    aLiquidar = n.valorItens; // NE do ano que ainda não chegou à planilha de situação: nada liquidado
+  } else if (n.valorItens != null && !n.naPlanilha) {
+    pagoAnterior = n.valorItens; // NE do ano anterior sem saldo em lugar nenhum: executada
+    pago += pagoAnterior;
+  }
+  const empenhado = n.valorItens ?? conhecido;
+  const { naPlanilha: _ignorado, ...resto } = n;
+  void _ignorado;
+  return { ...resto, aLiquidar, liquidadoPagar, pago, pagoAnterior, empenhado, completo: n.valorItens != null || recente };
 }
 
-/** Junta as duas planilhas: uma NotaContrato por NE. */
-export function juntarNEs(situacao: readonly LinhaSituacao[], rps: readonly LinhaRP[] = []): Map<string, NotaContrato> {
-  type Bruta = Omit<NotaContrato, "aLiquidar" | "liquidadoPagar" | "pago" | "empenhado">;
+/**
+ * Junta as planilhas: uma NotaContrato por NE. `itens` (planilha "Notas de Empenho") dá o valor da NE e traz as
+ * NEs que não estão na situação nem no RP (de 2022 a 2024, muitas foram todas pagas como RP no ano seguinte).
+ * `anoAtual`: o exercício (padrão: o ano mais recente das NEs).
+ */
+export function juntarNEs(
+  situacao: readonly LinhaSituacao[],
+  rps: readonly LinhaRP[] = [],
+  itens: Iterable<NotaItens> = [],
+  anoAtual?: number,
+): Map<string, NotaContrato> {
   const m = new Map<string, Bruta>();
   for (const l of situacao) {
     const ne = neCanonica(l.nota_empenho);
@@ -138,7 +186,7 @@ export function juntarNEs(situacao: readonly LinhaSituacao[], rps: readonly Linh
       favorecidoCodigo: (l.info_d ?? "").trim(), favorecidoNome: (l.info_e ?? "").trim(),
       descricao: (l.info_f ?? "").trim(), pi: (l.pi ?? "").trim(), unidade: (l.unidade ?? "").trim(),
       exercicio: { aLiquidar: l.a_liquidar || 0, liquidadoPagar: l.liquidado_pagar || 0, pago: l.pago || 0 },
-      rp: null,
+      rp: null, valorItens: null, naPlanilha: true,
     });
   }
   for (const r of rps) {
@@ -156,7 +204,7 @@ export function juntarNEs(situacao: readonly LinhaSituacao[], rps: readonly Linh
         pag: (r.processo ?? "").trim(), pagChave: chavePAG(r.processo),
         favorecidoCodigo: (r.favorecido_codigo ?? "").trim(), favorecidoNome: (r.favorecido ?? "").trim(), descricao: (r.descricao ?? "").trim(),
         pi: (r.pi ?? "").trim(), unidade: (r.ugr_nome ?? "").trim(),
-        exercicio: { aLiquidar: 0, liquidadoPagar: 0, pago: 0 }, rp: null,
+        exercicio: { aLiquidar: 0, liquidadoPagar: 0, pago: 0 }, rp: null, valorItens: null, naPlanilha: true,
       };
       m.set(ne, x);
     }
@@ -168,9 +216,42 @@ export function juntarNEs(situacao: readonly LinhaSituacao[], rps: readonly Linh
         }
       : rp;
   }
+  for (const it of itens) {
+    const ne = neCanonica(it.ne);
+    if (!ne) continue;
+    const x = m.get(ne);
+    if (x) {
+      x.valorItens = it.valor;
+      // a planilha de itens tem a descrição e o PAG de todas; completa o que faltava
+      if (!x.descricao) x.descricao = it.descricao;
+      if (!x.pagChave && it.pag) { x.pag = it.pag; x.pagChave = chavePAG(it.pag); }
+      if (!x.favorecidoCodigo) x.favorecidoCodigo = it.favorecidoCodigo;
+      continue;
+    }
+    // NE só na planilha de itens: sem saldo na situação nem no RP
+    m.set(ne, {
+      ne, ano: Number(ne.slice(0, 4)),
+      pag: it.pag, pagChave: chavePAG(it.pag),
+      favorecidoCodigo: it.favorecidoCodigo, favorecidoNome: it.favorecidoNome, descricao: it.descricao,
+      pi: it.pi, unidade: it.unidade,
+      exercicio: { aLiquidar: 0, liquidadoPagar: 0, pago: 0 }, rp: null, valorItens: it.valor, naPlanilha: false,
+    });
+  }
+  const ano = anoAtual ?? Math.max(0, ...[...m.values()].map((x) => x.ano));
   const out = new Map<string, NotaContrato>();
-  for (const [k, v] of m) out.set(k, fechar(v));
+  for (const [k, v] of m) out.set(k, fechar(v, ano));
   return out;
+}
+
+/** NotaEmpenho da planilha de itens (lerEmpenhos) → NotaItens. */
+export function notaItensDe(n: {
+  ne: string; valor: number; pag: string; observacao: string; pi: string; ugNome: string;
+  favorecido: { documento: string | null; nome: string };
+}): NotaItens {
+  return {
+    ne: n.ne, valor: n.valor, pag: n.pag, descricao: n.observacao, pi: n.pi, unidade: n.ugNome,
+    favorecidoCodigo: n.favorecido.documento ?? "", favorecidoNome: n.favorecido.nome,
+  };
 }
 
 // ─── Número do contrato e citações na descrição da NE ───────────────────────
@@ -250,13 +331,21 @@ const cnpjDe = (s: string | null | undefined) => {
 
 export function vincularNEs(contratos: readonly ContratoVinculo[], nes: Iterable<NotaContrato>): Map<string, Vinculo> {
   type C = ContratoVinculo & { chave: ChaveContrato | null; cnpj14: string | null };
-  const lista: C[] = contratos.map((c) => ({ ...c, chave: chaveContrato(c.numero_contrato), cnpj14: cnpjDe(c.cnpj) }));
+  // contrato de receita não tem empenho: fica fora (o RECEITA 001/BAMN-HAMN/2022 recebia R$ 1 mi do PAG)
+  const lista: C[] = contratos
+    .filter((c) => !/^\s*RECEITA\b/i.test(c.numero_contrato))
+    .map((c) => ({ ...c, chave: chaveContrato(c.numero_contrato), cnpj14: cnpjDe(c.cnpj) }));
   const porPag = new Map<string, C[]>();
   for (const c of lista) {
     const k = chavePAG(c.pag_nup);
     if (k) porPag.set(k, [...(porPag.get(k) ?? []), c]);
   }
   const out = new Map<string, Vinculo>();
+  // PAGs com NE que cita outro contrato (não cadastrado): o processo serve a mais de um contrato, então NE
+  // sem citação nesse PAG não é, por certo, do único contrato cadastrado (ex.: 009/BAMN-HAMN/2022, cujo PAG
+  // também paga os contratos 005, 007 e 010 do laboratório)
+  const pagComOutro = new Set<string>();
+  const pagDaNE = new Map<string, string>();
   for (const n of nes) {
     const cand = n.pagChave ? porPag.get(n.pagChave) ?? [] : [];
     const ids = cand.map((c) => c.id);
@@ -282,11 +371,12 @@ export function vincularNEs(contratos: readonly ContratoVinculo[], nes: Iterable
     //    (mesmo número com outro ano é erro de digitação comum: "CREDENCIAMENTO 001/2020" no PAG do 001/2021)
     if (cand.length && fortes.length && !cand.some((c) => c.chave && fortes.some((x) => x.num === c.chave!.num))) {
       out.set(n.ne, { contratoId: null, motivo: "cita outro contrato", candidatos: ids });
+      if (n.pagChave) pagComOutro.add(n.pagChave);
       continue;
     }
 
     // 4. sem citação útil: pelo PAG e, se preciso, pelo fornecedor
-    if (cand.length === 1) { liga(cand[0], "PAG do contrato"); continue; }
+    if (cand.length === 1) { liga(cand[0], "PAG do contrato"); if (n.pagChave) pagDaNE.set(n.ne, n.pagChave); continue; }
     if (cand.length > 1) {
       const doc = cnpjDe(n.favorecidoCodigo);
       const mesmo = doc ? cand.filter((c) => c.cnpj14 === doc) : [];
@@ -295,6 +385,10 @@ export function vincularNEs(contratos: readonly ContratoVinculo[], nes: Iterable
       continue;
     }
     out.set(n.ne, { contratoId: null, motivo: "sem contrato", candidatos: [] });
+  }
+  for (const [ne, pag] of pagDaNE) {
+    const v = out.get(ne);
+    if (v && pagComOutro.has(pag)) out.set(ne, { contratoId: null, motivo: "PAG compartilhado", candidatos: v.candidatos });
   }
   return out;
 }
@@ -319,7 +413,7 @@ export type ExecucaoContrato = {
   citamOutro: NotaContrato[];
   /** NEs do PAG que podem ser deste contrato ou de outro do mesmo PAG (mesmo fornecedor, sem citação) */
   semContratoNoPag: NotaContrato[];
-  /** o empenhado só tem NEs de 2021 em diante e perde o RP antigo já pago: a vigência começou antes de 2025 */
+  /** o empenhado do contrato pode estar a menor: a vigência começou antes da cobertura das planilhas, ou há NE sem itens (2021) */
   empenhadoIncompleto: boolean;
 };
 
@@ -340,13 +434,15 @@ export function execucaoPorContrato(
   nes: ReadonlyMap<string, NotaContrato>,
   vinculos: ReadonlyMap<string, Vinculo>,
   anoAtual: number,
+  /** desde quando o valor das NEs está completo nas planilhas (1º de janeiro do 1º ano da planilha de itens) */
+  coberturaDesde = `${anoAtual - 1}-01-01`,
 ): Map<string, ExecucaoContrato> {
   const out = new Map<string, ExecucaoContrato>();
   for (const c of contratos) {
     out.set(c.id, {
       nes: [], citamOutro: [], semContratoNoPag: [],
       totais: totalizar([], anoAtual),
-      empenhadoIncompleto: !!c.data_inicio && c.data_inicio < "2025-01-01",
+      empenhadoIncompleto: !!c.data_inicio && c.data_inicio < coberturaDesde,
     });
   }
   for (const n of nes.values()) {
@@ -363,8 +459,7 @@ export function execucaoPorContrato(
   for (const e of out.values()) {
     e.nes.sort(porNE); e.citamOutro.sort(porNE); e.semContratoNoPag.sort(porNE);
     e.totais = totalizar(e.nes, anoAtual);
-    // NE de antes de 2025 só aparece com o pago no próprio ano: o empenhado dela pode estar a menor
-    if (e.nes.some((n) => n.ano < 2025)) e.empenhadoIncompleto = true;
+    if (e.nes.some((n) => !n.completo)) e.empenhadoIncompleto = true;
   }
   return out;
 }
@@ -378,9 +473,9 @@ export type SaldoAEmpenhar = { valor: number | null; fonte: "NEs" | "SILOMS" | n
 
 /**
  * Saldo a empenhar mostrado em todas as telas. Pelas NEs, quando o histórico delas está completo nas
- * planilhas. Quando o contrato tem NE de 2024 ou antes (ou vigência anterior a 2025), o empenhado das NEs
- * sai a menor — falta o RP pago em 2025 — e o saldo pelas NEs sairia a maior (ex.: obra 004/GAPMN-DACTAIV/2024,
- * 100% empenhada, aparecia com R$ 720 mil a empenhar). Aí vale o saldo do SILOMS, sempre identificado.
+ * planilhas. Quando o contrato começou antes da cobertura das planilhas (hoje, 2022) ou tem NE sem itens
+ * (2021), o empenhado das NEs sai a menor e o saldo pelas NEs sairia a maior. Aí vale o saldo do SILOMS,
+ * sempre identificado.
  */
 export function saldoAEmpenhar(valorContrato: number | null | undefined, e: ExecucaoContrato | undefined, saldoSiloms: number | null | undefined): SaldoAEmpenhar {
   if (!e) return { valor: null, fonte: null };

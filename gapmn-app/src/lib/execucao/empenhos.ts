@@ -82,6 +82,38 @@ export function neCurta(v: string): string | null {
   return m ? m[1].toUpperCase() : null;
 }
 
+// ─── Ano das NEs ─────────────────────────────────────────────────────────────
+// Desde 05/11/2026 a planilha traz as NEs de 2022 em diante. Os painéis do exercício (Orçamentário,
+// Empenhos, Gerenciais, e-mail ao fiscal) usam só o ano corrente — o mais recente da planilha; o Painel de
+// Execução e os Contratos usam todos os anos.
+
+const NE_ANO = /(\d{4})NE\d+/i;
+
+/** Ano mais recente das NEs da planilha (coluna B). */
+export function anoMaisRecente(linhas: readonly string[][]): number | null {
+  let max: number | null = null;
+  for (const c of linhas) {
+    const m = NE_ANO.exec(c[1] ?? "");
+    if (m && DATA.test((c[0] ?? "").trim())) { const a = Number(m[1]); if (max === null || a > max) max = a; }
+  }
+  return max;
+}
+
+/**
+ * Só as linhas das NEs de `ano` (padrão: o mais recente). As linhas sem NE (itens do lançamento de cima)
+ * acompanham a NE delas; título e cabeçalho (sem data) ficam.
+ */
+export function linhasDoAno(linhas: readonly string[][], ano: number | null = anoMaisRecente(linhas)): string[][] {
+  if (ano === null) return [...linhas];
+  let manter = false;
+  return linhas.filter((c) => {
+    if (!DATA.test((c[0] ?? "").trim())) return true;
+    const m = NE_ANO.exec(c[1] ?? "");
+    if (m) manter = Number(m[1]) === ano;
+    return manter;
+  });
+}
+
 /** Parte fixa do PAG: 5 dígitos do órgão + 6 do sequencial + 4 do ano. Os dígitos verificadores às vezes vêm cortados. */
 export function chavePAG(v: string | null | undefined): string | null {
   const d = String(v ?? "").replace(/\D/g, "");
@@ -122,6 +154,7 @@ export function lerEmpenhos(linhas: string[][]): NotaEmpenho[] {
   let atual: Bruta | null = null;
   let diaAtual = "";
   let seqAtual = "";
+  let vistosNoLancamento = new Set<string>();
 
   for (const c of linhas) {
     if (c.length < 21) continue;
@@ -130,6 +163,7 @@ export function lerEmpenhos(linhas: string[][]): NotaEmpenho[] {
 
     const ne = neCurta(c[1]);
     if (ne) {
+      vistosNoLancamento = new Set();
       atual = porNE.get(ne) ?? null;
       if (!atual) {
         const obs = (c[7] ?? "").trim();
@@ -164,11 +198,21 @@ export function lerEmpenhos(linhas: string[][]): NotaEmpenho[] {
     const seq = (c[2] ?? "").trim();
     if (seq) seqAtual = seq;
     if (!seqAtual) continue;
-    if (!seq && atual.itens.has(seqAtual)) continue; // repetição do item de cima
-
+    // Dentro do mesmo lançamento vale a primeira linha de cada item: numa NE de ano anterior o item reaparece,
+    // no mesmo bloco, com o valor que foi para restos a pagar no exercício seguinte (ex.: 2025NE000013,
+    // R$ 418.880,50 e depois R$ 2.007,50); as linhas sem sequencial repetem o item de cima. Entre lançamentos,
+    // vale o mais novo (reforço ou anulação mudam o valor do item). Conferido: bate com situação + RP em 97,5%
+    // das NEs de 2025 (a regra antiga, última linha, batia em 74%).
+    const anterior = atual.itens.get(seqAtual);
     const descricao = (c[3] ?? "").replace(/\s+/g, " ").trim();
     const compra = /item\s*compra\s*:\s*(\d+)/i.exec(descricao);
-    const anterior = atual.itens.get(seqAtual);
+    if (vistosNoLancamento.has(seqAtual)) {
+      // só completa o que faltava (descrição e número do item da compra), sem trocar o valor
+      if (anterior && descricao && (!anterior.descricao || anterior.descricao === atual.observacao)) { anterior.descricao = descricao; anterior.nome = nomeDoItem(descricao); }
+      if (anterior && compra && !anterior.itemCompra) anterior.itemCompra = String(Number(compra[1]));
+      continue;
+    }
+    vistosNoLancamento.add(seqAtual);
     atual.itens.set(seqAtual, {
       seq: seqAtual,
       itemCompra: compra ? String(Number(compra[1])) : anterior?.itemCompra ?? null,

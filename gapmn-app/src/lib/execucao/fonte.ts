@@ -1,14 +1,16 @@
 // Busca dos dados do Painel de Execução:
-//  - empenhos de 2026 por item (planilha "Notas de Empenho" do Tesouro Gerencial, publicada por link);
-//  - situação de cada NE: a liquidar, liquidado a pagar e pago (planilha "Situação de empenhos");
+//  - empenhos por item de 2022 em diante (planilha "Notas de Empenho" do Tesouro Gerencial, publicada por link);
+//  - situação de cada NE: a liquidar, liquidado a pagar e pago (planilha "Situação de empenhos") e, para as
+//    NEs de anos anteriores, os restos a pagar — pela mesma regra da tela de Contratos (lib/contratos/execucao.ts);
 //  - contratos e processos licitatórios do app, para ligar o PAG da NE ao contrato e à licitação.
 // Sem acesso aos contratos (sessão vencida, por exemplo), o painel abre do mesmo jeito, sem os vínculos.
 
 import { supabase } from "../supabase";
-import { SHEET_URLS, toExecucaoLinhas } from "../gsheets";
+import { SHEET_URLS, toExecucaoLinhas, toRPNEs } from "../gsheets";
 import { parseCSV } from "../orcamento/leitura.ts";
+import { juntarNEs, notaItensDe } from "../contratos/execucao.ts";
 import { chavePAG, lerEmpenhos, type NotaEmpenho } from "./empenhos.ts";
-import { financeiroPorNE, type ContratoResumo, type Financeiro, type ProcessoResumo } from "./painel.ts";
+import type { ContratoResumo, Financeiro, ProcessoResumo } from "./painel.ts";
 
 export type DadosExecucao = {
   nes: NotaEmpenho[];
@@ -98,10 +100,14 @@ export async function buscarExecucao(): Promise<DadosExecucao> {
   const relogio = setTimeout(() => ctl.abort(), TEMPO_LIMITE_MS);
   const avisos: string[] = [];
   try {
-    const [itens, situacao, contratos, processos] = await Promise.all([
+    const [itens, situacao, rp, contratos, processos] = await Promise.all([
       baixarCSV(SHEET_URLS.empenhosNF, ctl.signal),
       baixarCSV(SHEET_URLS.execucao, ctl.signal).catch(() => {
         avisos.push("A planilha de situação não respondeu: a liquidação e o pagamento aparecem zerados.");
+        return [] as string[][];
+      }),
+      baixarCSV(SHEET_URLS.rpNE, ctl.signal).catch(() => {
+        avisos.push("A planilha de restos a pagar não respondeu: nas NEs de anos anteriores, o RP aparece zerado.");
         return [] as string[][];
       }),
       lerContratos().catch(() => {
@@ -115,9 +121,17 @@ export async function buscarExecucao(): Promise<DadosExecucao> {
     ]);
     const nes = lerEmpenhos(itens);
     if (!nes.length) throw new Error("A planilha de empenhos veio sem notas de empenho.");
+    // liquidação e pagamento de cada NE (situação + restos a pagar + valor dos itens), como em Contratos
+    // (sem a planilha de situação, nada de liquidação e pagamento: o aviso acima já diz que aparecem zerados)
+    const financeiro = new Map<string, Financeiro>();
+    if (situacao.length) {
+      for (const [ne, n] of juntarNEs(toExecucaoLinhas(situacao).linhas, toRPNEs(rp), nes.map(notaItensDe))) {
+        financeiro.set(ne, { aLiquidar: n.aLiquidar, liquidadoPagar: n.liquidadoPagar, pago: n.pago });
+      }
+    }
     return {
       nes,
-      financeiro: financeiroPorNE(toExecucaoLinhas(situacao).linhas),
+      financeiro,
       contratos,
       processos,
       avisos,
