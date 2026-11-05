@@ -3,8 +3,10 @@ import { supabase } from "../lib/supabase";
 import { Card } from "./Card";
 import * as XLSX from "xlsx";
 import TermoApostilamentoContrato from "./TermoApostilamentoContrato";
-import { fetchCSV, toExecucaoLinhas, toRPNEs, toEmpenhosNF, normalizeNE, type ExecucaoLinha, type LinhaRPNE, type EmpenhoNF, SHEET_URLS } from "../lib/gsheets";
 import { montarHistorico, projetarContratos, calcularNecessidade, mesHoje, mesIdx, anoDe, type CfgPrevisao, type Regime } from "../lib/previsaoContratos";
+import { useExecucaoContratos } from "../lib/contratos/useExecucaoContratos";
+import { neCanonica } from "../lib/contratos/execucao.ts";
+import ExecucaoContrato from "./ExecucaoContrato";
 import { carregarCfgs, salvarCfg } from "../lib/previsaoConfig";
 import { PrevisaoOrcamentaria, PrevisaoResumoContrato, RegimeEditor, PrevisaoNoCard, type EstadoSiafi } from "./PrevisaoContratos";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -421,11 +423,13 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [mainView, setMainView]     = useState<"lista" | "previsao">("lista");
   const [reajustePct, setReajustePct]           = useState(5.1); // IPCA referência
   const [suporProrrogacao, setSuporProrrogacao] = useState(false);
-  // Execução SIAFI (todas as NEs) e restos a pagar — base do histórico por PAG
-  const [execSiafi, setExecSiafi]   = useState<ExecucaoLinha[]>([]);
-  const [rpSiafi, setRpSiafi]       = useState<LinhaRPNE[]>([]);
-  const [siafiCarregando, setSiafiCarregando] = useState(true);
-  const [siafiErro, setSiafiErro]   = useState<string | null>(null);
+  // Execução SIAFI (NEs de todos os anos + restos a pagar), ligada a cada contrato: a fonte única de
+  // empenhado, a liquidar, liquidado a pagar, pago e a empenhar (lista, Dados Gerais, Execução, previsão)
+  const siafi = useExecucaoContratos(contratos);
+  const execSiafi = siafi.situacao;
+  const rpSiafi = siafi.rps;
+  const siafiCarregando = siafi.estado === "carregando";
+  const siafiErro = siafi.estado === "erro" ? siafi.erro ?? "falha ao carregar" : null;
   // Ajustes manuais da previsão (regime / valor mensal por contrato)
   const [cfgsPrev, setCfgsPrev]     = useState<Map<string, CfgPrevisao>>(new Map());
   const [cfgPrevDisponivel, setCfgPrevDisponivel] = useState(false);
@@ -493,12 +497,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   // Aba de detalhe a abrir na próxima seleção (ex.: vindo da Previsão → Execução)
   const detalheInicialRef = useRef<DetailMode | null>(null);
 
-  // Execução — NEs do contrato carregadas do Google Sheets
-  const [execLinhas, setExecLinhas]   = useState<ExecucaoLinha[]>([]);
-  const [rpMap, setRpMap]             = useState<Map<string, LinhaRPNE>>(new Map());
-  const [execLoading, setExecLoading] = useState(false);
-  const [execExpandedNE, setExecExpandedNE] = useState<string | null>(null);
-  const [execNFMap, setExecNFMap]           = useState<Map<string, EmpenhoNF[]>>(new Map());
 
   // Rola para o painel de detalhes ao selecionar (mobile) e reseta estados de edição
   useEffect(() => {
@@ -514,10 +512,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     setReajusteForm(null);
     setDetailMode(detalheInicialRef.current ?? "dados");
     detalheInicialRef.current = null;
-    setExecLinhas([]);
-    setRpMap(new Map());
-    setExecNFMap(new Map());
-    setExecExpandedNE(null);
     setReajusteMsg(null);
     setContratoDocs([]);
     setDocMsg(null);
@@ -528,71 +522,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       }, 60);
     }
   }, [selected?.id]);
-
-  // Carrega NEs do contrato (Execução) + mapa de RP em paralelo
-  useEffect(() => {
-    if (detailMode !== "execucao" || !selected) return;
-    setExecLoading(true);
-    setExecLinhas([]);
-    setRpMap(new Map());
-    const pag = (selected.pag_nup ?? "").trim().replace(/[\s]/g, "").toUpperCase();
-    Promise.all([
-      fetchCSV(SHEET_URLS.execucao),
-      fetchCSV(SHEET_URLS.rpNE),
-      fetchCSV(SHEET_URLS.empenhosNF).catch(() => [] as string[][]),
-    ]).then(([execRows, rpRows, nfRows]) => {
-      // Filtra NEs do contrato pela planilha de execução
-      const { linhas } = toExecucaoLinhas(execRows);
-      const filtered = pag
-        ? linhas.filter((l) => l.info_g.replace(/[\s]/g, "").toUpperCase() === pag)
-        : [];
-
-      // Constrói mapa NE → itens (empenhosNF com dados por item)
-      const nfItems = toEmpenhosNF(nfRows);
-      const nfMap = new Map<string, EmpenhoNF[]>();
-      for (const ne of nfItems) {
-        const key = normalizeNE(ne.nota_empenho);
-        const arr = nfMap.get(key) ?? [];
-        arr.push(ne);
-        nfMap.set(key, arr);
-      }
-      setExecNFMap(nfMap);
-
-      // Constrói mapa de RP
-      const rps = toRPNEs(rpRows);
-      const map = new Map<string, LinhaRPNE>();
-      rps.forEach((r) => map.set(normalizeNE(r.ne), r));
-
-      // Adiciona NEs que existem APENAS no RP (não na planilha de execução)
-      // Ex: NE já liquidada/paga em exercício anterior — não consta mais na execução corrente
-      if (pag) {
-        const execNEs = new Set(filtered.map((l) => normalizeNE(l.nota_empenho)));
-        for (const rp of rps) {
-          const rpPag = rp.processo.replace(/[\s]/g, "").toUpperCase();
-          if (rpPag !== pag) continue;
-          if (execNEs.has(normalizeNE(rp.ne))) continue; // já presente
-          // Linha sintética: valores de execução = 0, RP será resolvido via rpMap
-          filtered.push({
-            pi:              rp.pi ?? "",
-            pi_desc:         "",
-            unidade:         rp.ugr_nome,
-            nota_empenho:    rp.ne,
-            info_d:          "",
-            info_e:          rp.favorecido,
-            info_f:          rp.descricao,
-            info_g:          rp.processo,
-            a_liquidar:      0,
-            liquidado_pagar: 0,
-            pago:            0,
-          });
-        }
-      }
-
-      setExecLinhas(filtered);
-      setRpMap(map);
-      setExecLoading(false);
-    }).catch(() => setExecLoading(false));
-  }, [detailMode, selected?.id]);
 
   // Carrega histórico de reajustes do contrato selecionado
   useEffect(() => {
@@ -626,24 +555,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
   // ── Carga ────────────────────────────────────────────────────────────────
   useEffect(() => { load(); }, []);
-
-  // Execução SIAFI (NEs de todos os anos) + restos a pagar: alimentam o mapa de PIs,
-  // os cards da lista e a previsão. Uma carga só, ao abrir a tela.
-  useEffect(() => {
-    let vivo = true;
-    Promise.all([
-      fetchCSV(SHEET_URLS.execucao).then((rows) => toExecucaoLinhas(rows).linhas),
-      fetchCSV(SHEET_URLS.rpNE).then(toRPNEs).catch(() => [] as LinhaRPNE[]),
-    ]).then(([linhas, rps]) => {
-      if (!vivo) return;
-      setExecSiafi(linhas);
-      setRpSiafi(rps);
-      setSiafiErro(linhas.length ? null : "planilha vazia");
-    }).catch((e: unknown) => {
-      if (vivo) setSiafiErro(e instanceof Error ? e.message : "falha ao carregar");
-    }).finally(() => { if (vivo) setSiafiCarregando(false); });
-    return () => { vivo = false; };
-  }, []);
 
   // Ajustes manuais da previsão (tabela contratos_previsao; ausente = só automático)
   useEffect(() => {
@@ -1078,13 +989,34 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   // ── Previsão orçamentária ────────────────────────────────────────────────
   // Data de referência fixa na sessão: a previsão não troca de mês com a tela aberta
   const hoje = useMemo(() => new Date(), []);
+  // Por PAG: só para o aviso do "PAG principal"; o resto da previsão usa as NEs de cada contrato
   const historicoSiafi = useMemo(() => montarHistorico(execSiafi, rpSiafi), [execSiafi, rpSiafi]);
+  const historicoContrato = useMemo(
+    () => montarHistorico(execSiafi, rpSiafi, siafi.anoAtual, (_pag, ne) => siafi.vinculos.get(neCanonica(ne) ?? "")?.contratoId ?? null),
+    [execSiafi, rpSiafi, siafi.anoAtual, siafi.vinculos],
+  );
   // Sem a planilha (carregando ou com falha) não se sabe o que foi empenhado
   const estadoSiafi: EstadoSiafi = siafiCarregando ? "carregando" : siafiErro ? "erro" : "ok";
   const execucaoIndisponivel = estadoSiafi !== "ok";
+  /** Execução do contrato pelas NEs (null enquanto as planilhas carregam ou se falharam). */
+  const finDe = (c: Contrato) => {
+    const e = estadoSiafi === "ok" ? siafi.porContrato.get(c.id) : undefined;
+    return e ? { e, t: e.totais, saldo: siafi.saldo(c) } : null;
+  };
+  // A previsão usa o mesmo empenhado e o mesmo saldo a empenhar (regime "saldo"), e a data da primeira NE
+  // do contrato para saber se ele já corria antes do início gravado
+  const contratosPrev = useMemo(
+    () => contratos.map((c) => {
+      const t = siafi.porContrato.get(c.id)?.totais;
+      if (!t || execucaoIndisponivel) return c;
+      const s = siafi.saldo(c);
+      return { ...c, vl_empenhado: t.empenhado, vl_a_empenhar: s.valor, saldo_fonte: s.fonte, primeira_ne: siafi.primeiraNE(c.id) };
+    }),
+    [contratos, siafi, execucaoIndisponivel],
+  );
   const previsoes = useMemo(
-    () => projetarContratos(contratos, historicoSiafi, cfgsPrev, { hoje, reajustePct, suporProrrogacao, execucaoIndisponivel }),
-    [contratos, historicoSiafi, cfgsPrev, hoje, reajustePct, suporProrrogacao, execucaoIndisponivel],
+    () => projetarContratos(contratosPrev, historicoSiafi, cfgsPrev, { hoje, reajustePct, suporProrrogacao, execucaoIndisponivel, historicoContrato }),
+    [contratosPrev, historicoSiafi, cfgsPrev, hoje, reajustePct, suporProrrogacao, execucaoIndisponivel, historicoContrato],
   );
   // Crédito necessário até dezembro, por contrato (cards e ordenação da lista)
   const necessidadeDez = useMemo(() => {
@@ -1111,10 +1043,13 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
-    if (sortBy === "saldo_asc")       arr.sort((a, b) => (a.vl_a_empenhar ?? 0) - (b.vl_a_empenhar ?? 0));
-    else if (sortBy === "saldo_desc") arr.sort((a, b) => (b.vl_a_empenhar ?? 0) - (a.vl_a_empenhar ?? 0));
-    else if (sortBy === "liquidar_asc")  arr.sort((a, b) => (a.saldo ?? 0) - (b.saldo ?? 0));
-    else if (sortBy === "liquidar_desc") arr.sort((a, b) => (b.saldo ?? 0) - (a.saldo ?? 0));
+    // A empenhar e a liquidar pelas NEs (as mesmas da aba Execução)
+    const aEmp = (c: Contrato) => siafi.saldo(c).valor ?? 0;
+    const aLiq = (c: Contrato) => siafi.porContrato.get(c.id)?.totais.aLiquidar ?? 0;
+    if (sortBy === "saldo_asc")       arr.sort((a, b) => aEmp(a) - aEmp(b));
+    else if (sortBy === "saldo_desc") arr.sort((a, b) => aEmp(b) - aEmp(a));
+    else if (sortBy === "liquidar_asc")  arr.sort((a, b) => aLiq(a) - aLiq(b));
+    else if (sortBy === "liquidar_desc") arr.sort((a, b) => aLiq(b) - aLiq(a));
     else if (sortBy === "vencimento_asc") {
       arr.sort((a, b) => {
         const da = a.data_final ? new Date(a.data_final).getTime() : Infinity;
@@ -1136,7 +1071,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       arr.sort((a, b) => (necessidadeDez.get(b.id) ?? 0) - (necessidadeDez.get(a.id) ?? 0));
     }
     return arr;
-  }, [filtered, sortBy, necessidadeDez]);
+  }, [filtered, sortBy, necessidadeDez, siafi]);
 
   const fld = (key: keyof typeof form) => ({
     value: form[key],
@@ -1345,22 +1280,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
               <label className="text-xs font-medium text-slate-600">Valor Contratual (R$)</label>
               <input {...fld("vl_contratual")} placeholder="Ex: 150000,00" />
             </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600">Vl. a Empenhar (R$)</label>
-              <input {...fld("vl_a_empenhar")} placeholder="Ex: 50000,00" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600">Vl. Empenhado (R$)</label>
-              <input {...fld("vl_empenhado")} placeholder="Ex: 100000,00" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600">Vl. Liquidado (R$)</label>
-              <input {...fld("vl_liquidado")} placeholder="Ex: 80000,00" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600">Saldo (R$)</label>
-              <input {...fld("saldo")} placeholder="Ex: 20000,00" />
-            </div>
+            {/* Empenhado, liquidado e saldos não são digitados: saem das NEs do SIAFI ligadas ao contrato */}
             <div>
               <label className="text-xs font-medium text-slate-600">Ação</label>
               <input {...fld("acao")} placeholder="Ex: D" />
@@ -1561,16 +1481,26 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                         {c.vl_contratual != null && (
                           <div className="font-semibold text-slate-700">{fmtMoney(c.vl_contratual)}</div>
                         )}
-                        {c.vl_a_empenhar != null && (
-                          <div className={c.vl_a_empenhar > 0 ? "text-green-700" : "text-red-600"}>
-                            A empenhar: {fmtMoney(c.vl_a_empenhar)}
-                          </div>
-                        )}
-                        {c.saldo != null && (
-                          <div className={c.saldo > 0 ? "text-amber-700" : "text-red-600"}>
-                            A liquidar: {fmtMoney(c.saldo)}
-                          </div>
-                        )}
+                        {(() => {
+                          // Pelas NEs do contrato (SIAFI): os mesmos valores de Dados Gerais e da aba Execução
+                          const f = finDe(c);
+                          if (!f) return estadoSiafi === "carregando" ? <div className="text-slate-400">Empenhos: carregando…</div> : null;
+                          return (
+                            <>
+                              {f.saldo.valor != null && (
+                                <div
+                                  className={f.saldo.valor > 0 ? "text-green-700" : "text-red-600"}
+                                  title={f.saldo.fonte === "SILOMS" ? "Saldo do SILOMS: as NEs de 2024 ou antes não estão completas nas planilhas do SIAFI" : "Valor total − empenhado nas NEs do contrato"}
+                                >
+                                  A empenhar: {fmtMoney(f.saldo.valor)}{f.saldo.fonte === "SILOMS" && <span className="ml-1 text-[9px] text-slate-400">SILOMS</span>}
+                                </div>
+                              )}
+                              <div className={f.t.aLiquidar > 0 ? "text-amber-700" : "text-slate-400"} title="Saldo das NEs do contrato ainda a liquidar (SIAFI)">
+                                A liquidar: {fmtMoney(f.t.aLiquidar)}
+                              </div>
+                            </>
+                          );
+                        })()}
                         {c.status && (
                           <span className={`inline-block rounded-full border px-2 py-0.5 ${
                             (c.status ?? "").toLowerCase().includes("vigent")
@@ -1796,31 +1726,46 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                     <div className="font-semibold text-slate-800 mt-0.5">{fmtMoney(selected.vl_contratual)}</div>
                   )}
                 </div>
-                <div className="rounded-lg bg-amber-50 border border-amber-100 p-2">
-                  <div className="text-amber-700">Valor a Liquidar</div>
-                  <div className="font-semibold text-amber-800 mt-0.5">{fmtMoney(selected.saldo)}</div>
-                </div>
-                <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-2">
-                  <div className="text-indigo-700">Liquidado</div>
-                  <div className="font-semibold text-indigo-700 mt-0.5">{fmtMoney(selected.vl_liquidado)}</div>
-                </div>
-                {/* 4º card — Saldo Atual (mostra vl_atual quando definido, senão vl_a_empenhar) */}
+                {(() => {
+                  // Empenhado, a liquidar, liquidado e pago: das NEs do contrato (as mesmas da aba Execução)
+                  const f = finDe(selected);
+                  const v = (x: number | undefined) => (f ? fmtMoney(x ?? 0) : estadoSiafi === "carregando" ? "carregando…" : "–");
+                  return (
+                    <>
+                      <div className="rounded-lg bg-sky-50 border border-sky-100 p-2">
+                        <div className="text-sky-700">Empenhado</div>
+                        <div className="font-semibold text-sky-700 mt-0.5">{v(f?.t.empenhado)}</div>
+                        {f && <div className="text-[10px] text-sky-600 mt-0.5">em {siafi.anoAtual}: {fmtMoney(f.t.empenhadoAno)} · {f.t.nNE} NE{f.t.nNE !== 1 ? "s" : ""}</div>}
+                      </div>
+                      <div className="rounded-lg bg-amber-50 border border-amber-100 p-2">
+                        <div className="text-amber-700">A liquidar</div>
+                        <div className="font-semibold text-amber-800 mt-0.5">{v(f?.t.aLiquidar)}</div>
+                      </div>
+                      <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-2">
+                        <div className="text-indigo-700">Liquidado a pagar · Pago</div>
+                        <div className="font-semibold text-indigo-700 mt-0.5">{v(f?.t.liquidadoPagar)} · <span className="text-green-700">{v(f?.t.pago)}</span></div>
+                      </div>
+                    </>
+                  );
+                })()}
+                {/* Saldo: o ajustado para reajuste (vl_atual), quando definido; senão valor total − empenhado nas NEs */}
+                {(() => { const saldoSel = finDe(selected)?.saldo; const aEmpSel = saldoSel?.valor ?? null; return (
                 <div className={`rounded-lg border p-2 ${
                   selected.vl_atual != null
                     ? "bg-sky-50 border-sky-200"
-                    : selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0
+                    : aEmpSel != null && aEmpSel > 0
                     ? "bg-green-50 border-green-200"
                     : "bg-red-50 border-red-200"
                 }`}>
                   <div className="flex items-center justify-between gap-1">
                     <div className={
                       selected.vl_atual != null ? "text-sky-700" :
-                      selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0 ? "text-green-700" : "text-red-700"
+                      aEmpSel != null && aEmpSel > 0 ? "text-green-700" : "text-red-700"
                     }>
                       Saldo
                       {selected.vl_atual != null
                         ? <span className="ml-1 text-[9px] bg-sky-100 text-sky-600 rounded px-1 py-0.5 font-semibold align-middle">ajustado ✓</span>
-                        : " (a Empenhar)"}
+                        : " a empenhar"}
                     </div>
                     {canEditBudget && (
                     <button
@@ -1832,10 +1777,17 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   </div>
                   <div className={`font-bold text-base mt-0.5 ${
                     selected.vl_atual != null ? "text-sky-800" :
-                    selected.vl_a_empenhar != null && selected.vl_a_empenhar > 0 ? "text-green-800" : "text-red-800"
+                    aEmpSel != null && aEmpSel > 0 ? "text-green-800" : "text-red-800"
                   }`}>
-                    {fmtMoney(selected.vl_atual ?? selected.vl_a_empenhar)}
+                    {selected.vl_atual != null ? fmtMoney(selected.vl_atual) : estadoSiafi === "carregando" ? "carregando…" : fmtMoney(aEmpSel)}
                   </div>
+                  {selected.vl_atual == null && aEmpSel != null && (
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {saldoSel?.fonte === "SILOMS"
+                        ? "do SILOMS: as NEs de 2024 ou antes não estão completas nas planilhas do SIAFI"
+                        : "valor total − empenhado nas NEs"}
+                    </div>
+                  )}
                   {editandoVlAtual && (
                     <div className="mt-1.5 pt-1.5 border-t border-slate-200 space-y-1">
                       <div className="flex gap-1">
@@ -1882,7 +1834,21 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                     </div>
                   )}
                 </div>
+                ); })()}
               </div>
+              {(() => {
+                const e = finDe(selected)?.e;
+                if (!e) return estadoSiafi === "erro" ? <p className="mt-2 text-[11px] text-red-600">Planilhas do SIAFI indisponíveis agora: os valores de execução não puderam ser lidos.</p> : null;
+                const fora = e.semContratoNoPag.length + e.citamOutro.length;
+                return (
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    Execução pelas notas de empenho do SIAFI — os mesmos valores da aba{" "}
+                    <button onClick={() => setDetailMode("execucao")} className="text-sky-700 underline">Execução</button>.
+                    {e.empenhadoIncompleto && e.totais.nNE > 0 && " NEs de 2024 ou antes entram só com o pago no ano e o RP ainda aberto."}
+                    {fora > 0 && <span className="text-amber-700"> {fora} NE{fora > 1 ? "s" : ""} do PAG ficaram fora (veja na aba Execução).</span>}
+                  </p>
+                );
+              })()}
             </div>
 
             {/* Previsão mensal (regime + ajuste manual) */}
@@ -2066,183 +2032,20 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
             {/* ── Modo: Execução ─────────────────────────────────────────────── */}
             {detailMode === "execucao" && (
-              <div className="space-y-3">
-                {execLoading && <p className="text-xs text-slate-500 text-center py-4">Carregando empenhos...</p>}
-                {!execLoading && !selected.pag_nup && (
-                  <p className="text-xs text-slate-400 italic text-center py-4">
-                    PAG/NUP não preenchido — não é possível vincular empenhos.
-                  </p>
-                )}
-                {!execLoading && selected.pag_nup && execLinhas.length === 0 && (
-                  <p className="text-xs text-slate-400 italic text-center py-4">
-                    Nenhum empenho encontrado para PAG <strong>{selected.pag_nup}</strong>.
-                  </p>
-                )}
-                {!execLoading && execLinhas.length > 0 && (() => {
-                  const rows = execLinhas.flatMap((l) => {
-                    const rp = rpMap.get(normalizeNE(l.nota_empenho));
-                    const execRow = {
-                      l,
-                      isRP:       false as const,
-                      rowKey:     l.nota_empenho + "_exec",
-                      aLiquidar:  l.a_liquidar,
-                      liquidado:  l.liquidado_pagar,
-                      pago:       l.pago,
-                      total:      l.a_liquidar + l.liquidado_pagar + l.pago,
-                      favorecido: l.info_e || l.info_d,
-                      descricao:  l.info_f,
-                    };
-                    if (rp) {
-                      const rpRow = {
-                        l,
-                        isRP:       true as const,
-                        rowKey:     l.nota_empenho + "_rp",
-                        aLiquidar:  rp.rp_nao_proc_a_liq,
-                        liquidado:  rp.rp_nao_proc_liq_pag + rp.rp_proc_a_pagar,
-                        pago:       rp.rp_nao_proc_pago + rp.rp_proc_pagos,
-                        total:      rp.rp_nao_proc_a_liq + rp.rp_nao_proc_liq_pag + rp.rp_nao_proc_pago + rp.rp_proc_a_pagar + rp.rp_proc_pagos,
-                        favorecido: rp.favorecido || l.info_e || l.info_d,
-                        descricao:  rp.descricao  || l.info_f,
-                      };
-                      const execIsZero = l.a_liquidar === 0 && l.liquidado_pagar === 0 && l.pago === 0;
-                      return execIsZero ? [rpRow] : [execRow, rpRow];
-                    }
-                    return [execRow];
-                  });
-
-                  const totalALiq = rows.reduce((s, r) => s + r.aLiquidar, 0);
-                  const totalLiq  = rows.reduce((s, r) => s + r.liquidado, 0);
-                  const totalPago = rows.reduce((s, r) => s + r.pago, 0);
-                  const totalEmp  = totalALiq + totalLiq + totalPago;
-                  const nRP       = rows.filter((r) => r.isRP).length;
-
-                  return (
-                    <>
-                      {/* KPIs */}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {[
-                          { label: "Total Empenhado", val: totalEmp,  bg: "bg-sky-900/30 border-sky-700/40",       txt: "text-sky-300" },
-                          { label: "A Liquidar",      val: totalALiq, bg: "bg-amber-900/30 border-amber-700/40",   txt: "text-amber-300" },
-                          { label: "Liq. a Pagar",    val: totalLiq,  bg: "bg-indigo-900/30 border-indigo-700/40", txt: "text-indigo-300" },
-                          { label: "Pago",            val: totalPago, bg: "bg-green-900/30 border-green-700/40",   txt: "text-green-300" },
-                        ].map(k => (
-                          <div key={k.label} className={`rounded-lg border p-2 ${k.bg}`}>
-                            <div className="text-slate-500">{k.label}</div>
-                            <div className={`font-semibold mt-0.5 ${k.txt}`}>{fmtMoney(k.val)}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {nRP > 0 && (
-                        <div className="rounded-lg border border-orange-700/40 bg-orange-950/20 px-3 py-2 text-[11px] text-orange-300 flex items-center gap-2">
-                          <span>⚠️</span>
-                          <span><strong>{nRP} NE{nRP > 1 ? "s" : ""}</strong> com Restos a Pagar — histórico completo exibido (ano de origem + RP).</span>
-                        </div>
-                      )}
-
-                      {/* ── Tabela de NEs ── */}
-                      <div className="overflow-x-auto rounded-xl border border-slate-700/40">
-                        <table className="w-full text-[11px]">
-                          <thead>
-                            <tr className="bg-slate-800/60 border-b border-slate-700/40 text-slate-500 text-left">
-                              <th className="px-3 py-2 whitespace-nowrap font-semibold">NE</th>
-                              <th className="px-3 py-2 font-semibold">Favorecido</th>
-                              <th className="px-2 py-2 text-right whitespace-nowrap font-semibold">A Liquidar</th>
-                              <th className="px-2 py-2 text-right whitespace-nowrap font-semibold">Liq. a Pagar</th>
-                              <th className="px-2 py-2 text-right whitespace-nowrap font-semibold">Pago</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-700/20">
-                            {rows.map((r) => (
-                              <tr key={r.rowKey} className={r.isRP ? "bg-orange-950/20" : ""}>
-                                <td className="px-3 py-2 whitespace-nowrap">
-                                  <span className="font-mono font-bold text-sky-400">{r.l.nota_empenho}</span>
-                                  {r.isRP && <span className="ml-1.5 rounded px-1 py-0.5 text-[9px] font-bold bg-orange-800/60 text-orange-300">RP</span>}
-                                </td>
-                                <td className="px-3 py-2 text-slate-400 max-w-[160px] truncate" title={r.favorecido || r.descricao}>
-                                  {r.favorecido || r.descricao || "–"}
-                                </td>
-                                <td className="px-2 py-2 text-right font-mono">
-                                  {r.aLiquidar > 0 ? <span className="text-amber-400">{fmtMoney(r.aLiquidar)}</span> : <span className="text-slate-700">–</span>}
-                                </td>
-                                <td className="px-2 py-2 text-right font-mono">
-                                  {r.liquidado > 0 ? <span className="text-indigo-400">{fmtMoney(r.liquidado)}</span> : <span className="text-slate-700">–</span>}
-                                </td>
-                                <td className="px-2 py-2 text-right font-mono">
-                                  {r.pago > 0 ? <span className="text-green-400">{fmtMoney(r.pago)}</span> : <span className="text-slate-700">–</span>}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* ── Itens empenhados: valor de cada item e os lançamentos da NE ── */}
-                      {(() => {
-                        // A planilha traz uma linha por lançamento da NE (empenho original, reforços e
-                        // anulações, negativas), cada uma repetindo o valor atual do item. Agrupa por NE:
-                        // item com o valor do lançamento mais recente e a lista de lançamentos.
-                        const porNE = new Map<string, { itens: Map<string, { data: string; valor: number }>; lanc: Array<{ data: string; valor: number }> }>();
-                        for (const r of rows) {
-                          if (r.isRP) continue;
-                          const nfItens = execNFMap.get(normalizeNE(r.l.nota_empenho));
-                          if (!nfItens) continue;
-                          const g = porNE.get(r.l.nota_empenho)
-                            ?? { itens: new Map<string, { data: string; valor: number }>(), lanc: [] as Array<{ data: string; valor: number }> };
-                          for (const it of nfItens) {
-                            const iso = it.data.split("/").reverse().join("-");
-                            if (it.item_valor > 0) {
-                              const k = it.item_num || "–";
-                              const atual = g.itens.get(k);
-                              if (!atual || iso >= atual.data) g.itens.set(k, { data: iso, valor: it.item_valor });
-                            }
-                            if (Math.abs(it.valor) > 0.005 && !g.lanc.some((l) => l.data === iso && l.valor === it.valor)) g.lanc.push({ data: iso, valor: it.valor });
-                          }
-                          porNE.set(r.l.nota_empenho, g);
-                        }
-                        if (!porNE.size) return null;
-                        const dataBR = (iso: string) => iso.split("-").reverse().join("/");
-                        return (
-                          <div>
-                            <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide mb-1.5 px-0.5">
-                              Itens Empenhados
-                            </div>
-                            <div className="rounded-xl border border-slate-700/40 overflow-hidden divide-y divide-slate-700/20">
-                              {[...porNE].map(([ne, g]) => (
-                                <div key={ne} className="px-3 py-1.5 text-[11px] space-y-0.5">
-                                  {[...g.itens].map(([num, it]) => (
-                                    <div key={num} className="flex items-center gap-3">
-                                      <span className="font-mono text-sky-400/70 text-[10px] whitespace-nowrap shrink-0 w-28">{ne}</span>
-                                      {num !== "–" && <span className="text-slate-500 text-[10px] whitespace-nowrap shrink-0">Item {num}</span>}
-                                      <span className="text-indigo-400 font-mono text-[10px] whitespace-nowrap ml-auto">{fmtMoney(it.valor)}</span>
-                                    </div>
-                                  ))}
-                                  {g.lanc.length > 1 && (
-                                    <div className="text-[10px] text-slate-500">
-                                      Lançamentos: {[...g.lanc].sort((a, b) => a.data.localeCompare(b.data)).map((l, i) => (
-                                        <span key={i}>
-                                          {i > 0 && " · "}
-                                          <span className={l.valor < 0 ? "text-red-400" : undefined}>
-                                            {dataBR(l.data)} {l.valor < 0 ? "anulação" : i === 0 ? "original" : "reforço"} {fmtMoney(l.valor)}
-                                          </span>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </>
-                  );
-                })()}
+              <ExecucaoContrato
+                exec={siafi.porContrato.get(selected.id)}
+                estado={siafi.estado}
+                saldo={siafi.saldo(selected)}
+                temPag={!!selected.pag_nup}
+                anoAtual={siafi.anoAtual}
+                motivoDe={(ne) => siafi.vinculos.get(ne)?.motivo}
+                itens={siafi.itens?.itens ?? null}
+                lancamentos={siafi.itens?.lancamentos ?? new Map()}
+                carregandoItens={siafi.estado === "carregando"}
+              >
                 {/* Previsão do contrato — aparece também sem NEs (contrato novo) */}
-                {!execLoading && (
-                  <PrevisaoResumoContrato prev={previsoes.get(selected.id)} hoje={hoje} dataFinal={selected.data_final} siafi={estadoSiafi} />
-                )}
-              </div>
+                <PrevisaoResumoContrato prev={previsoes.get(selected.id)} hoje={hoje} dataFinal={selected.data_final} siafi={estadoSiafi} />
+              </ExecucaoContrato>
             )}
 
             {/* ── Modo: Reajustes ────────────────────────────────────────────── */}

@@ -559,6 +559,8 @@ export interface LinhaRPNE {
   ugr_code:    string;
   ugr_nome:    string;
   ne:          string;
+  /** código do favorecido (CNPJ, UG ou CPF) */
+  favorecido_codigo: string;
   favorecido:  string;
   descricao:   string;
   processo:    string;
@@ -587,6 +589,12 @@ export interface LinhaRPNE {
  */
 export function toRPNEs(rows: string[][]): LinhaRPNE[] {
   const result: LinhaRPNE[] = [];
+  // As colunas de valor são achadas pelo código da conta no cabeçalho: a planilha já mudou de colunas
+  // (hoje não traz a 632100000 e a 632200000, RP processado PAGO, ficou na coluna M). Sem cabeçalho, J–N.
+  const contas: Record<string, number> = { "631100000": 9, "631300000": 10, "631400000": 11, "632100000": 12, "632200000": 13 };
+  const cab = rows.slice(0, 8).find((r) => r.some((c) => c.trim() === "631100000"));
+  if (cab) for (const k of Object.keys(contas)) contas[k] = cab.findIndex((c) => c.trim() === k);
+  const val = (row: string[], conta: string) => (contas[conta] >= 0 ? toNum((row[contas[conta]] ?? "").trim()) : 0);
   let lastPi = "";
   let lastPiDesc = "";
   let lastUgrCode = "";
@@ -613,11 +621,11 @@ export function toRPNEs(rows: string[][]): LinhaRPNE[] {
     const ne = neMatch ? neMatch[1] : (neRaw.length > 11 ? neRaw.slice(11) : neRaw);
     if (!ne) continue;
 
-    const rpNaoProcALiq   = toNum((row[9]  ?? "").trim()); // J
-    const rpNaoProcLiqPag = toNum((row[10] ?? "").trim()); // K
-    const rpNaoProcPago   = toNum((row[11] ?? "").trim()); // L
-    const rpProcAPagar    = toNum((row[12] ?? "").trim()); // M
-    const rpProcPagos     = toNum((row[13] ?? "").trim()); // N
+    const rpNaoProcALiq   = val(row, "631100000"); // RP não processado a liquidar
+    const rpNaoProcLiqPag = val(row, "631300000"); // RP não processado liquidado a pagar
+    const rpNaoProcPago   = val(row, "631400000"); // RP não processado pago
+    const rpProcAPagar    = val(row, "632100000"); // RP processado a pagar
+    const rpProcPagos     = val(row, "632200000"); // RP processado pago
 
     if (rpNaoProcALiq + rpNaoProcLiqPag + rpNaoProcPago + rpProcAPagar + rpProcPagos === 0) continue;
 
@@ -627,6 +635,7 @@ export function toRPNEs(rows: string[][]): LinhaRPNE[] {
       ugr_code:    lastUgrCode,
       ugr_nome:    lastUgrNome,
       ne,
+      favorecido_codigo: (row[5] ?? "").trim(),
       favorecido:  (row[6] ?? "").trim(),
       descricao:   (row[7] ?? "").trim(),
       processo:    (row[8] ?? "").trim(),

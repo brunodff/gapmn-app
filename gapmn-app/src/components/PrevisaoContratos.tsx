@@ -270,7 +270,7 @@ export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi }: { prev?
               <div className="rounded-lg border bg-white p-2">
                 <div className="text-slate-500">Empenhado em {ano0}</div>
                 <div className="font-semibold text-slate-800">{fmtMoney(e.empenhado)}</div>
-                <div className="text-[10px] text-slate-400">a liquidar {fmtMoney(e.aLiquidar)}{prev.pagContratos > 1 ? " · rateado no PAG" : ""}</div>
+                <div className="text-[10px] text-slate-400">a liquidar {fmtMoney(e.aLiquidar)}</div>
               </div>
               <div className="rounded-lg border bg-white p-2">
                 <div className="text-slate-500">Empenho cobre até</div>
@@ -584,11 +584,12 @@ export function PrevisaoOrcamentaria({
 
           {verMetodo && (
             <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-slate-700 space-y-1">
-              <p><strong>Valor mensal</strong> (📅 parcela fixa e ⚡ estimativo): <em>liquidado/pago nas NEs do contrato ÷ meses já faturados</em>. A fatura do mês só é liquidada no mês seguinte, então conta até o fim do mês retrasado. Contrato com mais de 12 meses: só os últimos 12, que mostram a fatura de hoje, com reajustes. Contrato que ainda não tem nada liquidado/pago: <em>valor do contrato ÷ meses de vigência</em> (no estimativo, só daqui para frente).</p>
-              <p>As NEs do contrato são as do seu PAG, com os restos a pagar (o que foi liquidado depois do ano da NE). O liquidado conta pelo ano em que foi liquidado: em cada ano ele paga as faturas de dezembro do ano anterior a novembro. Se o PAG já pagava um contrato anterior, os meses de antes do início deste não entram.</p>
-              <p><strong>🏗️ Saldo</strong> (obras, aquisições): saldo a empenhar distribuído até o fim da vigência.</p>
+              <p><strong>📅 Parcela fixa</strong>: <em>valor total do contrato ÷ meses de vigência</em>. Se o liquidado nas NEs ficar muito longe dessa parcela, o contrato mostra um aviso para conferir o valor e a vigência cadastrados.</p>
+              <p><strong>⚡ Estimativo</strong>: <em>liquidado/pago nas NEs do contrato ÷ meses já faturados</em>. A fatura do mês só é liquidada no mês seguinte, então conta até o fim do mês retrasado. Contrato com mais de 12 meses: só os últimos 12, que mostram a fatura de hoje, com reajustes. Ainda sem nada liquidado/pago: <em>valor do contrato ÷ meses de vigência</em>, só daqui para frente.</p>
+              <p>As NEs de cada contrato são as mesmas da aba Execução: as que citam o número do contrato, e as do seu PAG (pelo fornecedor, quando o PAG tem mais de um contrato), com os restos a pagar. O liquidado conta pelo ano em que foi liquidado: em cada ano ele paga as faturas de dezembro do ano anterior a novembro. Se o PAG já pagava um contrato anterior, os meses de antes do início deste não entram.</p>
+              <p><strong>🏗️ Saldo</strong> (obras, aquisições): saldo a empenhar (valor total − empenhado nas NEs) distribuído até o fim da vigência.</p>
               <p><strong>Crédito necessário</strong> em cada exercício = faturas ainda não liquidadas até o fim do período − saldo a liquidar dos empenhos do ano (NEs do ano). As competências já liquidadas entram pelo valor pago, não pela previsão. O <em>pendente</em> é a parte de competências que já passaram sem empenho suficiente, como a fatura do mês passado que ainda vai ser liquidada. Restos a pagar não entram: pagam competências de anos anteriores.</p>
-              <p>O regime é deduzido do objeto. Contratos do mesmo PAG dividem o liquidado pelo valor mensal de cada um. Tudo pode ser ajustado em <em>Dados Gerais → Previsão mensal</em>.</p>
+              <p>O regime é deduzido do objeto. Tudo pode ser ajustado em <em>Dados Gerais → Previsão mensal</em>.</p>
             </div>
           )}
         </div>

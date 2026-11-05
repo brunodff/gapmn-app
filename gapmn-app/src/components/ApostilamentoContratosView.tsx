@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../lib/supabase";
+import { useExecucaoContratos } from "../lib/contratos/useExecucaoContratos";
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 type Contrato = {
@@ -425,9 +426,18 @@ export default function ApostilamentoContratosView() {
   const fiscais = useMemo(() => [...new Set(contratos.map(c => c.fiscal).filter(Boolean))].sort() as string[], [contratos]);
   const statuses= useMemo(() => [...new Set(contratos.map(c => c.status).filter(Boolean))].sort() as string[], [contratos]);
 
+  // A empenhar, a liquidar e liquidado vêm das NEs do SIAFI ligadas a cada contrato — os mesmos números de
+  // Contratos › Execução (lib/contratos/execucao.ts). Enquanto as planilhas carregam, ficam em branco.
+  const siafi = useExecucaoContratos(contratos);
+  const contratosNE = useMemo(() => contratos.map((c) => {
+    const t = siafi.estado === "ok" ? siafi.porContrato.get(c.id)?.totais : undefined;
+    // saldo a empenhar: pelas NEs; com NEs de 2024 ou antes (incompletas nas planilhas), o do SILOMS
+    return { ...c, vl_a_empenhar: siafi.saldo(c).valor, saldo: t ? t.aLiquidar : null, vl_liquidado: t ? t.liquidadoPagar + t.pago : null };
+  }), [contratos, siafi]);
+
   const filtrados = useMemo(() => {
     const q = filtroTexto.trim().toLowerCase();
-    return contratos.filter(c => {
+    return contratosNE.filter(c => {
       if (filtroAno !== "todos" && !c.data_inicio?.startsWith(filtroAno)) return false;
       if (filtroUgr !== "todos" && c.ugr !== filtroUgr) return false;
       if (filtroFiscal !== "todos" && c.fiscal !== filtroFiscal) return false;
@@ -455,7 +465,7 @@ export default function ApostilamentoContratosView() {
       }
       return true;
     });
-  }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal, filtroReajuste]);
+  }, [contratosNE, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal, filtroReajuste]);
 
   const sorted = useMemo(() => {
     const arr = [...filtrados];
