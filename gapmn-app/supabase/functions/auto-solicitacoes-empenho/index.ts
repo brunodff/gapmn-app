@@ -85,11 +85,8 @@ Deno.serve(async (req) => {
     if (!resp.ok) throw new Error(`Planilha de empenhos respondeu ${resp.status}.`);
     const texto = await resp.text();
     if (/^\s*<(!doctype|html)/i.test(texto)) throw new Error("A planilha de empenhos não está publicada por link.");
-    const linhas = parseCSV(texto);
-    // a trava conta a planilha inteira (todos os anos): no começo de janeiro o ano corrente tem poucas NEs
-    const total = lerNEs(linhas, null).length;
-    if (total < 100) throw new Error(`A planilha veio com só ${total} lançamentos: leitura suspensa por segurança.`);
-    const nes = lerNEs(linhas); // só as NEs do ano corrente geram e-mail ao fiscal
+    const nes = lerNEs(parseCSV(texto));
+    if (nes.length < 100) throw new Error(`A planilha veio com só ${nes.length} lançamentos: leitura suspensa por segurança.`);
 
     const solicitacoes = (await lerTudo(admin, "solicitacoes_empenho", COLUNAS)).map((s) => ({ ...s, valor: s.valor === null ? null : Number(s.valor) }));
     const { data: modelo } = await admin.from("email_templates").select("assunto, corpo").eq("tipo", "FISCAL").maybeSingle();
