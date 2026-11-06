@@ -7,7 +7,7 @@ export const PARA_QUE_SERVE = (ano: number) =>
   `O PTA (Programa de Trabalho Anual) é o plano do GAP-MN para ${ano}. O que não estiver no PTA aprovado não pode ser executado como planejamento nem lançado no GPAer, o sistema da Aeronáutica onde a DIRAD acompanha o PTA (Of nº 37/CGOV/17513, item 4).`;
 
 export const COMO_FUNCIONA = [
-  "Cadastre um projeto ou uma atividade por vez, do começo ao fim. No final, você pode cadastrar outro.",
+  "Cadastre um projeto, uma atividade ou uma lista de necessidades por vez, do começo ao fim. No final, você pode cadastrar outro.",
   "Escreva com as suas palavras. Ninguém precisa saber códigos, natureza de despesa ou PI: a APLG completa essa parte.",
   "Depois de enviar, você pode voltar por este mesmo link para editar ou excluir o que cadastrou.",
 ];
@@ -17,6 +17,11 @@ export const PROJETO_OU_ATIVIDADE: ItemGuia[] = [
   { rotulo: "Atividade", texto: "É rotina: continua o ano todo e se repete. Exemplos: manutenção preventiva dos aparelhos de ar-condicionado, pagamento de fornecedores, atendimento a veteranos e pensionistas, controle do almoxarifado." },
   { rotulo: "Dica", texto: "Se tem data para terminar, é projeto. Se continua todo mês, é atividade. Na dúvida, escolha o que achar melhor e explique em \"Observações\"." },
 ];
+
+export const LISTA_NECESSIDADES: ItemGuia = {
+  rotulo: "Lista de necessidades",
+  texto: "Material ou serviço de que a sua seção precisa e que não faz parte de nenhum projeto ou atividade. Exemplos: cadeiras para a sala de reuniões, manutenção do portão eletrônico.",
+};
 
 export const GUIA: SecaoGuia[] = [
   {
@@ -51,6 +56,14 @@ export const GUIA: SecaoGuia[] = [
       { rotulo: "Item de controle", texto: "O resultado da rotina que vamos acompanhar. Ex.: \"aparelhos de ar-condicionado com manutenção preventiva em dia\"." },
       { rotulo: "Indicador", texto: "O número que mostra se a rotina vai bem: nome, como calcular, unidade, meta e de quanto em quanto tempo será medido. Todo item de controle precisa de um indicador (Instruções para Lançamento no GPAer)." },
       { rotulo: "Tarefas", texto: "O que é feito na rotina, começando com verbo, com a frequência, o prazo (\"até o 5º dia útil\"), o responsável e como comprovar que foi feito (relatório, ordem de serviço, publicação em boletim)." },
+    ],
+  },
+  {
+    titulo: "Lista de necessidades",
+    itens: [
+      { texto: "Use só para o material ou serviço que não faz parte de um projeto ou atividade. O que já está num projeto ou numa atividade fica no cadastro deles: não repita na lista." },
+      { rotulo: "Cada necessidade", texto: "Diga se é material ou serviço, o que é e a quantidade. O valor estimado e o motivo são opcionais, mas ajudam a APLG a incluir no PTA." },
+      { rotulo: "Sem marca", texto: "Descreva o que precisa sem citar marca de produto nem nome de empresa." },
     ],
   },
   {

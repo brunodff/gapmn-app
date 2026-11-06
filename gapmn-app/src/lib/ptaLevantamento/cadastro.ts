@@ -3,7 +3,7 @@
 // Fontes: Of nº 37/CGOV/17513 (DIRAD, 03/11/2026), Instruções para Lançamento no GPAer – PTA 2027 (Anexo C),
 // Matriz de Atividades e Tarefas Comuns – PTA 2027 (Anexo D) e DCA 11-1/2020, Anexo G.
 
-export type Tipo = "projeto" | "atividade";
+export type Tipo = "projeto" | "atividade" | "necessidade";
 
 /** Divisões e assessorias que respondem (espelho de pta_lev_setor_valido, na migração 20261104). */
 export const SETORES: { sigla: string; nome: string }[] = [
@@ -42,6 +42,7 @@ export const FREQUENCIA = ["Diária", "Semanal", "Quinzenal", "Mensal", "Bimestr
 export const UNIDADE = ["%", "dias", "horas", "quantidade", "R$", "nota de 0 a 10"] as const;
 export const MATRIZ_OPC = ["Não, é uma atividade nova", "Sim, quero acrescentar tarefas", "Sim, quero mudar algo nela", "Não sei"] as const;
 export const jaExisteNaMatriz = (opcao: string) => opcao.startsWith("Sim");
+export const NATUREZA_NECESSIDADE = ["Material", "Serviço"] as const;
 
 // ── o que se cadastra ────────────────────────────────────────────────────────
 
@@ -75,6 +76,16 @@ export type DadosAtividade = {
   responsavel: string; ramal: string; precisaDinheiro: string; valor: number | null; compra: string; observacoes: string;
 };
 
+/** Um item da lista de necessidades: material ou serviço fora de projeto ou atividade. */
+export type Necessidade = {
+  natureza: string;   // "Material" ou "Serviço"
+  descricao: string;
+  quantidade: string;
+  valor: number | null;
+  justificativa: string;
+};
+export type DadosNecessidade = { observacoes: string };
+
 type Base = {
   id: string | null;
   setor: string; secao: string; nome: string;
@@ -83,7 +94,8 @@ type Base = {
 };
 export type CadastroProjeto = Base & { tipo: "projeto"; dados: DadosProjeto; etapas: Etapa[] };
 export type CadastroAtividade = Base & { tipo: "atividade"; dados: DadosAtividade; etapas: TarefaRotina[] };
-export type Cadastro = CadastroProjeto | CadastroAtividade;
+export type CadastroNecessidade = Base & { tipo: "necessidade"; dados: DadosNecessidade; etapas: Necessidade[] };
+export type Cadastro = CadastroProjeto | CadastroAtividade | CadastroNecessidade;
 
 export const PROJETO_VAZIO: DadosProjeto = {
   entrega: "", porque: "", seNaoFizer: "", inicio: "", termino: "", responsavel: "", ramal: "",
@@ -95,12 +107,27 @@ export const ATIVIDADE_VAZIA: DadosAtividade = {
 };
 export const etapaVazia = (tipo: Etapa["tipo"], responsavel = ""): Etapa => ({ tipo, descricao: "", inicio: "", fim: "", responsavel, comprova: "" });
 export const tarefaVazia = (responsavel = ""): TarefaRotina => ({ tarefa: "", frequencia: "", quando: "", responsavel, comprova: "" });
+export const necessidadeVazia = (): Necessidade => ({ natureza: "", descricao: "", quantidade: "", valor: null, justificativa: "" });
 
 export function novoCadastro(tipo: Tipo, quem: { setor?: string; secao?: string; posto?: string; nomeGuerra?: string } = {}): Cadastro {
   const base = { id: null, setor: quem.setor ?? "", secao: quem.secao ?? "", nome: "", posto: quem.posto ?? "", nomeGuerra: quem.nomeGuerra ?? "" };
-  return tipo === "projeto"
-    ? { ...base, tipo, dados: { ...PROJETO_VAZIO }, etapas: [] }
-    : { ...base, tipo, dados: { ...ATIVIDADE_VAZIA }, etapas: [] };
+  if (tipo === "projeto") return { ...base, tipo, dados: { ...PROJETO_VAZIO }, etapas: [] };
+  if (tipo === "atividade") return { ...base, tipo, dados: { ...ATIVIDADE_VAZIA }, etapas: [] };
+  return { ...base, tipo, dados: { observacoes: "" }, etapas: [necessidadeVazia()] };
+}
+
+/** A lista não tem nome próprio: o banco guarda este, para aparecer nas listas e no painel. */
+export const nomeDaLista = (secao: string, setor: string) =>
+  `Lista de necessidades — ${secao.replace(/\s+/g, " ").trim() || setor}`.slice(0, 200);
+
+/** Soma dos valores estimados de uma lista. */
+export const totalNecessidades = (itens: readonly Necessidade[]) =>
+  itens.reduce((s, n) => s + (typeof n.valor === "number" ? n.valor : 0), 0);
+
+/** Valor estimado do cadastro, qualquer que seja o tipo. */
+export function valorDoCadastro(c: Cadastro): number {
+  if (c.tipo === "necessidade") return totalNecessidades(c.etapas);
+  return c.dados.precisaDinheiro === "Sim" && typeof c.dados.valor === "number" ? c.dados.valor : 0;
 }
 
 // ── exemplos (os mesmos da planilha; valores e nomes ilustrativos) ───────────
@@ -149,6 +176,18 @@ export function exemploAtividade(): CadastroAtividade {
   };
 }
 
+export function exemploNecessidade(): CadastroNecessidade {
+  return {
+    id: null, tipo: "necessidade", setor: "DA", secao: "Seção de Exemplo", nome: "Lista de necessidades — Seção de Exemplo",
+    posto: "2S", nomeGuerra: "EXEMPLO",
+    dados: { observacoes: "" },
+    etapas: [
+      { natureza: "Material", descricao: "Cadeiras giratórias para a sala de reuniões", quantidade: "12 unidades", valor: 9600, justificativa: "As cadeiras atuais estão quebradas." },
+      { natureza: "Serviço", descricao: "Manutenção do portão eletrônico da garagem", quantidade: "1 serviço", valor: 4500, justificativa: "O portão falha e fica aberto." },
+    ],
+  };
+}
+
 // ── conferência ──────────────────────────────────────────────────────────────
 
 const vazio = (s: string | null | undefined) => !s || !s.trim();
@@ -188,10 +227,26 @@ export function avisosTarefa(t: TarefaRotina): string[] {
   return a;
 }
 
+/** O que falta num item da lista de necessidades (valor e justificativa são opcionais). */
+export function avisosNecessidade(n: Necessidade): string[] {
+  const a: string[] = [];
+  if (vazio(n.natureza)) a.push("Diga se é material ou serviço");
+  if (vazio(n.descricao)) a.push("Falta descrever a necessidade");
+  if (vazio(n.quantidade)) a.push("Falta a quantidade");
+  return a;
+}
+
 /** Pendências do cadastro, na ordem em que aparecem no formulário (lista vazia = completo). */
 export function pendencias(c: Cadastro): string[] {
   const p: string[] = [];
   if (vazio(c.setor)) p.push("Falta a divisão ou assessoria");
+  if (c.tipo === "necessidade") {
+    if (vazio(c.secao)) p.push("Falta a seção");
+    if (!c.etapas.some((n) => !vazio(n.descricao))) p.push("Falta cadastrar as necessidades");
+    const comAviso = c.etapas.filter((n) => avisosNecessidade(n).length).length;
+    if (comAviso) p.push(comAviso === 1 ? "1 necessidade com aviso" : `${comAviso} necessidades com aviso`);
+    return p;
+  }
   if (vazio(c.nome)) p.push(c.tipo === "projeto" ? "Falta o nome do projeto" : "Falta o nome da atividade");
   if (c.tipo === "projeto") {
     const d = c.dados;
@@ -279,6 +334,12 @@ export function doBanco(i: ItemDoBanco): Cadastro {
     }));
     return { ...base, tipo: "projeto", dados, etapas };
   }
+  if (i.tipo === "necessidade") {
+    const etapas: Necessidade[] = lista.map((n) => ({
+      natureza: texto(n.natureza), descricao: texto(n.descricao), quantidade: texto(n.quantidade), valor: numero(n.valor), justificativa: texto(n.justificativa),
+    }));
+    return { ...base, tipo: "necessidade", dados: { observacoes: texto(d.observacoes) }, etapas };
+  }
   const dados = Object.fromEntries(Object.keys(ATIVIDADE_VAZIA).map((k) => [k, k === "valor" ? numero(d[k]) : texto(d[k])])) as DadosAtividade;
   const etapas: TarefaRotina[] = lista.map((t) => ({
     tarefa: texto(t.tarefa), frequencia: texto(t.frequencia), quando: texto(t.quando), responsavel: texto(t.responsavel), comprova: texto(t.comprova),
@@ -294,10 +355,14 @@ export function paraBanco(c: Cadastro) {
   const etapas = c.tipo === "projeto"
     ? c.etapas.filter((e) => !vazio(e.descricao) || !vazio(e.fim) || !vazio(e.inicio))
       .map((e) => ({ ...e, descricao: limpo(e.descricao), inicio: e.tipo === "Marco" ? "" : e.inicio, responsavel: limpo(e.responsavel), comprova: limpo(e.comprova) }))
-    : c.etapas.filter((t) => !vazio(t.tarefa))
-      .map((t) => ({ ...t, tarefa: limpo(t.tarefa), quando: limpo(t.quando), responsavel: limpo(t.responsavel), comprova: limpo(t.comprova) }));
+    : c.tipo === "atividade"
+      ? c.etapas.filter((t) => !vazio(t.tarefa))
+        .map((t) => ({ ...t, tarefa: limpo(t.tarefa), quando: limpo(t.quando), responsavel: limpo(t.responsavel), comprova: limpo(t.comprova) }))
+      : c.etapas.filter((n) => !vazio(n.descricao))
+        .map((n) => ({ ...n, descricao: limpo(n.descricao), quantidade: limpo(n.quantidade), justificativa: limpo(n.justificativa) }));
   return {
-    tipo: c.tipo, setor: c.setor, secao: limpo(c.secao), nome: limpo(c.nome), posto: c.posto, nome_guerra: limpo(c.nomeGuerra).toUpperCase(),
+    tipo: c.tipo, setor: c.setor, secao: limpo(c.secao), nome: c.tipo === "necessidade" ? nomeDaLista(c.secao, c.setor) : limpo(c.nome),
+    posto: c.posto, nome_guerra: limpo(c.nomeGuerra).toUpperCase(),
     dados, etapas,
   };
 }

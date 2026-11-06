@@ -3,7 +3,7 @@
 // a distribuição das entregas por trimestre e baixa as planilhas da APLG para montar a minuta.
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  entregasPorTrimestre, moeda, nomeSetor, pendencias, SETORES, trimestreDe, type Cadastro,
+  entregasPorTrimestre, moeda, nomeSetor, pendencias, SETORES, totalNecessidades, trimestreDe, valorDoCadastro, type Cadastro, type Tipo,
 } from "../lib/ptaLevantamento/cadastro.ts";
 import { abasDoLevantamento, resumo } from "../lib/ptaLevantamento/exportar.ts";
 import {
@@ -21,7 +21,10 @@ const dataHora = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Manaus", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
 const dataBR = (iso: string | null | undefined) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—");
 
-type Filtro = { setor: string; tipo: "" | "projeto" | "atividade"; busca: string; soPendentes: boolean; excluidos: boolean };
+type Filtro = { setor: string; tipo: "" | Tipo; busca: string; soPendentes: boolean; excluidos: boolean };
+
+const ROTULO_TIPO: Record<Tipo, string> = { projeto: "projeto", atividade: "atividade", necessidade: "necessidades" };
+const COR_TIPO: Record<Tipo, string> = { projeto: C.ciano, atividade: C.verde, necessidade: C.ambar };
 
 export default function PtaLevantamento({ ano }: { ano: number }) {
   const [lev, setLev] = useState<LevantamentoAdmin | null>(null);
@@ -109,7 +112,7 @@ export default function PtaLevantamento({ ano }: { ano: number }) {
           <div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Levantamento dos setores — PTA {ano}</div>
             <div style={{ fontSize: 12, color: C.fraco, marginTop: 2 }}>
-              Formulário aberto por link, sem login. Cada pessoa cadastra os seus projetos e atividades e pode editar ou excluir o que cadastrou.
+              Formulário aberto por link, sem login. Cada pessoa cadastra os seus projetos, atividades e listas de necessidades e pode editar ou excluir o que cadastrou.
             </div>
           </div>
           <span style={{ fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "3px 10px", color: lev?.aberta ? C.verde : C.ambar, border: `1px solid ${lev?.aberta ? C.verde : C.ambar}55` }}>
@@ -147,7 +150,7 @@ export default function PtaLevantamento({ ano }: { ano: number }) {
       {/* ── números ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
         {([
-          ["Projetos", r.projetos, C.ciano], ["Atividades", r.atividades, C.verde],
+          ["Projetos", r.projetos, C.ciano], ["Atividades", r.atividades, C.verde], ["Itens de necessidade", r.itensNecessidade, C.ambar],
           ["Setores com envio", `${setoresComEnvio} de ${SETORES.length}`, C.roxo],
           ["Com pendência", r.pendentes, r.pendentes ? C.ambar : C.verde], ["Valor estimado", moeda(r.valor), C.texto],
         ] as const).map(([rot, v, cor]) => (
@@ -162,7 +165,7 @@ export default function PtaLevantamento({ ano }: { ano: number }) {
         <div style={cartao}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Por divisão ou assessoria</div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead><tr style={{ color: C.fraco, textAlign: "left" }}><th style={{ padding: "4px 6px" }}>Setor</th><th>Proj.</th><th>Ativ.</th><th>Pend.</th><th style={{ textAlign: "right" }}>Valor</th></tr></thead>
+            <thead><tr style={{ color: C.fraco, textAlign: "left" }}><th style={{ padding: "4px 6px" }}>Setor</th><th>Proj.</th><th>Ativ.</th><th title="Itens da lista de necessidades">Nec.</th><th>Pend.</th><th style={{ textAlign: "right" }}>Valor</th></tr></thead>
             <tbody>
               {SETORES.map((s) => {
                 const x = r.porSetor.get(s.sigla);
@@ -170,7 +173,7 @@ export default function PtaLevantamento({ ano }: { ano: number }) {
                   <tr key={s.sigla} style={{ borderTop: `1px solid ${C.grade}`, color: x ? C.texto : C.fraco, cursor: "pointer" }} onClick={() => setF((v) => ({ ...v, setor: v.setor === s.sigla ? "" : s.sigla }))}
                     title="Clique para filtrar a lista">
                     <td style={{ padding: "4px 6px", fontWeight: f.setor === s.sigla ? 700 : 400 }}>{s.sigla}{!x && <span style={{ color: C.ambar }}> · sem envio</span>}</td>
-                    <td>{x?.projetos ?? 0}</td><td>{x?.atividades ?? 0}</td>
+                    <td>{x?.projetos ?? 0}</td><td>{x?.atividades ?? 0}</td><td>{x?.necessidades ?? 0}</td>
                     <td style={{ color: x?.pendentes ? C.ambar : undefined }}>{x?.pendentes ?? 0}</td>
                     <td style={{ textAlign: "right" }}>{x?.valor ? moeda(x.valor) : "—"}</td>
                   </tr>
@@ -205,7 +208,7 @@ export default function PtaLevantamento({ ano }: { ano: number }) {
             {SETORES.map((s) => <option key={s.sigla} value={s.sigla}>{s.sigla}</option>)}
           </select>
           <select value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value as Filtro["tipo"] })} style={entrada} aria-label="Tipo">
-            <option value="">Projetos e atividades</option><option value="projeto">Só projetos</option><option value="atividade">Só atividades</option>
+            <option value="">Todos os tipos</option><option value="projeto">Só projetos</option><option value="atividade">Só atividades</option><option value="necessidade">Só listas de necessidades</option>
           </select>
           <label style={{ fontSize: 12, color: C.fraco, display: "flex", gap: 5, alignItems: "center" }}><input type="checkbox" checked={f.soPendentes} onChange={(e) => setF({ ...f, soPendentes: e.target.checked })} /> só com pendência</label>
           <label style={{ fontSize: 12, color: C.fraco, display: "flex", gap: 5, alignItems: "center" }}><input type="checkbox" checked={f.excluidos} onChange={(e) => setF({ ...f, excluidos: e.target.checked })} /> mostrar excluídos</label>
@@ -219,20 +222,21 @@ export default function PtaLevantamento({ ano }: { ano: number }) {
         {visiveis.map((c) => {
           const p = pendencias(c);
           const aberto = abertos.has(c.id ?? "");
-          const valor = c.dados.precisaDinheiro === "Sim" && c.dados.valor ? moeda(c.dados.valor) : null;
+          const v = valorDoCadastro(c);
+          const valor = v ? moeda(v) : null;
           return (
             <div key={c.id} style={{ border: `1px solid ${C.borda}`, borderRadius: 10, opacity: c.excluidoEm ? 0.55 : 1 }}>
               <button type="button" aria-expanded={aberto}
                 onClick={() => setAbertos((s) => { const n = new Set(s); if (n.has(c.id ?? "")) n.delete(c.id ?? ""); else n.add(c.id ?? ""); return n; })}
                 style={{ all: "unset", cursor: "pointer", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, padding: "9px 12px", width: "100%", boxSizing: "border-box" }}>
                 <span>
-                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", borderRadius: 5, padding: "1px 6px", marginRight: 6, color: c.tipo === "projeto" ? C.ciano : C.verde, border: `1px solid ${c.tipo === "projeto" ? C.ciano : C.verde}55` }}>{c.tipo}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", borderRadius: 5, padding: "1px 6px", marginRight: 6, color: COR_TIPO[c.tipo], border: `1px solid ${COR_TIPO[c.tipo]}55` }}>{ROTULO_TIPO[c.tipo]}</span>
                   <span style={{ fontWeight: 700, fontSize: 13 }}>{c.nome}</span>
                   {c.excluidoEm && <span style={{ color: C.vermelho, fontSize: 11 }}> · excluído em {dataHora(c.excluidoEm)}</span>}
                   <span style={{ display: "block", fontSize: 11.5, color: C.fraco, marginTop: 2 }}>
-                    {c.setor}{c.secao ? ` · ${c.secao}` : ""} · resp. {c.dados.responsavel || "—"}
-                    {c.tipo === "projeto" ? ` · ${c.dados.inicio || "?"} a ${c.dados.termino || "?"}` : c.dados.medicao ? ` · ${c.dados.medicao}` : ""}
-                    {valor ? ` · ${valor}` : ""} · {c.tipo === "projeto" ? `${c.etapas.length} etapa(s)` : `${c.etapas.length} tarefa(s)`}
+                    {c.setor}{c.secao ? ` · ${c.secao}` : ""}{c.tipo === "necessidade" ? ` · por ${c.posto} ${c.nomeGuerra}` : ` · resp. ${c.dados.responsavel || "—"}`}
+                    {c.tipo === "projeto" ? ` · ${c.dados.inicio || "?"} a ${c.dados.termino || "?"}` : c.tipo === "atividade" && c.dados.medicao ? ` · ${c.dados.medicao}` : ""}
+                    {valor ? ` · ${valor}` : ""} · {c.tipo === "projeto" ? `${c.etapas.length} etapa(s)` : c.tipo === "atividade" ? `${c.etapas.length} tarefa(s)` : `${c.etapas.length} item(ns)`}
                   </span>
                 </span>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: p.length ? C.ambar : C.verde, whiteSpace: "nowrap" }}>{p.length ? `${p.length} pendência(s)` : "completo"} {aberto ? "▴" : "▾"}</span>
@@ -254,7 +258,9 @@ function Detalhe({ c }: { c: Cadastro }) {
       ["Precisa de dinheiro?", c.dados.precisaDinheiro], ["Valor estimado", c.dados.valor !== null ? moeda(c.dados.valor) : ""], ["O que será comprado", c.dados.compra],
       ["Situação da contratação", c.dados.contratacao], ["Prioridade", c.dados.prioridade], ["Observações", c.dados.observacoes],
       ["Entregas por trimestre", entregasPorTrimestre(c.etapas).map((n, i) => `${i + 1}º: ${n}`).join(" · ")]]
-    : [["Divisão", nomeSetor(c.setor)], ["O que é feito", c.dados.oQueE], ["Já existe na Matriz?", `${c.dados.matriz}${c.dados.matrizAtividade ? ` — ${c.dados.matrizAtividade}` : ""}`],
+    : c.tipo === "necessidade"
+      ? [["Divisão", nomeSetor(c.setor)], ["Seção", c.secao], ["Total estimado", moeda(totalNecessidades(c.etapas))], ["Observações", c.dados.observacoes]]
+      : [["Divisão", nomeSetor(c.setor)], ["O que é feito", c.dados.oQueE], ["Já existe na Matriz?", `${c.dados.matriz}${c.dados.matrizAtividade ? ` — ${c.dados.matrizAtividade}` : ""}`],
       ["Item de controle", c.dados.itemControle], ["Indicador", c.dados.indicador], ["Como calcular", c.dados.calculo],
       ["Unidade e meta", [c.dados.unidade, c.dados.meta && `meta ${c.dados.meta}`].filter(Boolean).join(" · ")], ["Medição", c.dados.medicao],
       ["De onde vêm os dados", c.dados.fonteDados], ["Responsável", `${c.dados.responsavel}${c.dados.ramal ? ` · ramal ${c.dados.ramal}` : ""}`],
@@ -277,6 +283,13 @@ function Detalhe({ c }: { c: Cadastro }) {
                 <td style={td}>{e.tipo === "Marco" ? e.fim : `${e.inicio} a ${e.fim}`}</td><td style={td}>{trimestreDe(e.fim) || "—"}</td>
                 <td style={td}>{e.responsavel}</td><td style={td}>{e.comprova}</td>
               </tr>
+            ))}</tbody>
+          </table>
+        ) : c.tipo === "necessidade" ? (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr style={{ color: C.fraco, textAlign: "left" }}><th style={td}>#</th><th style={td}>Tipo</th><th style={td}>Necessidade</th><th style={td}>Quantidade</th><th style={td}>Valor estimado</th><th style={td}>Por que é necessário</th></tr></thead>
+            <tbody>{c.etapas.map((n, i) => (
+              <tr key={i}><td style={td}>{i + 1}</td><td style={td}>{n.natureza}</td><td style={td}>{n.descricao}</td><td style={td}>{n.quantidade}</td><td style={td}>{moeda(n.valor)}</td><td style={td}>{n.justificativa}</td></tr>
             ))}</tbody>
           </table>
         ) : (

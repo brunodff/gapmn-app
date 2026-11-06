@@ -12,7 +12,7 @@
 .pl-status-fechado { background: var(--critico-fundo); color: var(--critico); }
 
 /* escolha projeto × atividade */
-.pl-escolha { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.pl-escolha { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 10px; }
 .pl-opcao {
   display: grid; gap: 6px; text-align: left; font: inherit; color: var(--texto); background: #f8fafd; cursor: pointer;
   border: 2px solid var(--borda); border-radius: 12px; padding: 14px;
@@ -40,6 +40,7 @@
 .pl-tipo { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; border-radius: 6px; padding: 1px 7px; margin-right: 6px; vertical-align: 1px; }
 .pl-tipo-projeto { background: #e3ecf9; color: var(--azul-2); }
 .pl-tipo-atividade { background: #ecf5ea; color: #2f6b3f; }
+.pl-tipo-necessidade { background: #fbf0dc; color: #8a5a00; }
 .pl-confirma { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; background: var(--critico-fundo); color: var(--critico); border-radius: 8px; padding: 8px 10px; }
 .pl-btn-perigo { color: var(--critico); border-color: #f0b4b4; }
 .pl-btn-perigo-cheio { background: var(--critico); border-color: var(--critico); color: #fff; }

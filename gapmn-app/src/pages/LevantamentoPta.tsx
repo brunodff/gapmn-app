@@ -4,12 +4,12 @@
 // link pessoal) e pode editar ou excluir o que cadastrou. Tudo é gravado pelo banco, que confere o código do link.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CONTRATACAO, FREQUENCIA, MATRIZ_OPC, POSTOS, PRIORIDADE, SETORES, SIM_NAO, UNIDADE,
-  avisosEtapa, avisosTarefa, entregasPorTrimestre, etapaVazia, exemploAtividade, exemploProjeto, jaExisteNaMatriz, lerReais,
-  mesesDoAno, moeda, nomeSetor, novoCadastro, pendencias, tarefaVazia, trimestreDe,
-  type Cadastro, type CadastroAtividade, type CadastroProjeto, type DadosAtividade, type DadosProjeto, type Etapa, type TarefaRotina, type Tipo,
+  CONTRATACAO, FREQUENCIA, MATRIZ_OPC, NATUREZA_NECESSIDADE, POSTOS, PRIORIDADE, SETORES, SIM_NAO, UNIDADE,
+  avisosEtapa, avisosNecessidade, avisosTarefa, entregasPorTrimestre, etapaVazia, exemploAtividade, exemploNecessidade, exemploProjeto, jaExisteNaMatriz, lerReais,
+  mesesDoAno, moeda, necessidadeVazia, nomeSetor, novoCadastro, pendencias, tarefaVazia, totalNecessidades, trimestreDe,
+  type Cadastro, type CadastroAtividade, type CadastroNecessidade, type CadastroProjeto, type DadosAtividade, type DadosProjeto, type Etapa, type Necessidade, type TarefaRotina, type Tipo,
 } from "../lib/ptaLevantamento/cadastro.ts";
-import { COMO_FUNCIONA, FONTES, GUIA, PARA_QUE_SERVE, PROJETO_OU_ATIVIDADE } from "../lib/ptaLevantamento/guia.ts";
+import { COMO_FUNCIONA, FONTES, GUIA, LISTA_NECESSIDADES, PARA_QUE_SERVE, PROJETO_OU_ATIVIDADE } from "../lib/ptaLevantamento/guia.ts";
 import { MATRIZ_PREVISTA } from "../lib/ptaLevantamento/matrizPrevista.ts";
 import {
   carregarFormulario, chaveDoNavegador, excluirCadastro, linkPessoal, salvarCadastro, type Levantamento,
@@ -30,6 +30,7 @@ type Tela =
 const PASSOS: Record<Tipo, string[]> = {
   projeto: ["Quem preenche", "O projeto", "Prazo e responsável", "Dinheiro e prioridade", "Etapas", "Revisão e envio"],
   atividade: ["Quem preenche", "A atividade", "Como acompanhar", "Responsável e dinheiro", "Tarefas", "Revisão e envio"],
+  necessidade: ["Quem preenche", "Necessidades", "Revisão e envio"],
 };
 
 function lerJson<T>(chave: string): T | null {
@@ -44,12 +45,12 @@ const dataHora = (iso: string | null | undefined) =>
 const dataBR = (iso: string | null | undefined) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
 const DIAS = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
 const prazoExtenso = (iso: string) => `${dataBR(iso)} (${DIAS[new Date(`${iso}T12:00:00`).getDay()]})`;
-const umOuOutro = (c: Cadastro) => (c.tipo === "projeto" ? "projeto" : "atividade");
+const comArtigo = (t: Tipo) => (t === "projeto" ? "o projeto" : t === "atividade" ? "a atividade" : "a lista de necessidades");
 
 // ── campos que cada passo pede ───────────────────────────────────────────────
-// Só a identificação, a divisão e o nome são exigidos para enviar (o banco precisa deles). O resto é aviso:
-// a pessoa pode avançar e completar depois.
-const ESSENCIAIS = ["posto", "nomeGuerra", "setor", "nome"];
+// Só a identificação, a divisão e o nome são exigidos para enviar (o banco precisa deles); na lista de
+// necessidades, a seção e pelo menos um item. O resto é aviso: a pessoa pode avançar e completar depois.
+const ESSENCIAIS = ["posto", "nomeGuerra", "setor", "nome", "secao", "necessidades"];
 
 function faltasDoPasso(c: Cadastro, passo: number): string[] {
   const f: string[] = [];
@@ -58,6 +59,14 @@ function faltasDoPasso(c: Cadastro, passo: number): string[] {
     if (v(c.posto)) f.push("posto");
     if (v(c.nomeGuerra) || c.nomeGuerra.trim().length < 2) f.push("nomeGuerra");
     if (v(c.setor)) f.push("setor");
+    if (c.tipo === "necessidade" && v(c.secao)) f.push("secao");
+  }
+  if (c.tipo === "necessidade") {
+    if (passo === 1) {
+      if (!c.etapas.some((n) => !v(n.descricao))) f.push("necessidades");
+      else if (c.etapas.some((n) => avisosNecessidade(n).length)) f.push("itensAviso");
+    }
+    return f;
   }
   if (c.tipo === "projeto") {
     const d = c.dados;
@@ -120,6 +129,7 @@ const ROTULO_FALTA: Record<string, string> = {
   compra: "o que será comprado ou contratado", contratacao: "situação da contratação", prioridade: "prioridade",
   tarefas: "pelo menos uma tarefa", marcos: "pelo menos um marco", etapasAviso: "avisos nas etapas",
   oQueE: "o que é feito", itemControle: "item de controle", indicador: "nome do indicador", calculo: "como calcular", meta: "meta",
+  secao: "seção", necessidades: "pelo menos uma necessidade", itensAviso: "avisos nas necessidades",
 };
 
 // ── página ───────────────────────────────────────────────────────────────────
@@ -197,7 +207,7 @@ export default function LevantamentoPta() {
   };
   const abrir = (c: Cadastro, soLeitura: boolean) => {
     setErroEnvio(null);
-    setTela({ qual: "editor", cad: c, passo: soLeitura ? 5 : 1, original: JSON.stringify(c), soLeitura });
+    setTela({ qual: "editor", cad: c, passo: soLeitura ? PASSOS[c.tipo].length - 1 : 1, original: JSON.stringify(c), soLeitura });
     subir();
   };
   const continuarRascunho = () => {
@@ -317,8 +327,8 @@ function Inicio({ lev, meus, rascunho, link, guardada, aoComecar, aoAbrir, aoExc
       {lev.aberta && rascunho && (
         <div className="pl-faixa pl-faixa-info" role="status">
           <span>
-            Você começou a {rascunho.cad.id ? "editar" : "cadastrar"} {rascunho.cad.tipo === "projeto" ? "o projeto" : "a atividade"}{" "}
-            <b>{rascunho.cad.nome.trim() || "sem nome"}</b> e não enviou ({dataHora(rascunho.em)}).
+            Você começou a {rascunho.cad.id ? "editar" : "cadastrar"} {comArtigo(rascunho.cad.tipo)}
+            {rascunho.cad.tipo === "necessidade" ? null : <>{" "}<b>{rascunho.cad.nome.trim() || "sem nome"}</b></>} e não enviou ({dataHora(rascunho.em)}).
           </span>
           <span className="pl-botoes">
             <button type="button" className="ci-btn ci-btn-primario" onClick={aoContinuar}>Continuar</button>
@@ -339,6 +349,12 @@ function Inicio({ lev, meus, rascunho, link, guardada, aoComecar, aoAbrir, aoExc
               <span className="pl-opcao-acao">Cadastrar {t === "projeto" ? "projeto" : "atividade"} →</span>
             </button>
           ))}
+          <button type="button" className="pl-opcao" disabled={!lev.aberta} onClick={() => aoComecar("necessidade")}>
+            <span className="pl-opcao-tit">{LISTA_NECESSIDADES.rotulo}</span>
+            <span className="pl-opcao-desc">{LISTA_NECESSIDADES.texto.split(" Exemplos:")[0]}</span>
+            <span className="pl-opcao-ex">Exemplos: {LISTA_NECESSIDADES.texto.split(" Exemplos: ")[1]}</span>
+            <span className="pl-opcao-acao">Cadastrar lista →</span>
+          </button>
         </div>
         <p className="ci-sub" style={{ marginTop: 10 }}><b>Dica:</b> {PROJETO_OU_ATIVIDADE[2].texto}</p>
       </section>
@@ -355,7 +371,7 @@ function Inicio({ lev, meus, rascunho, link, guardada, aoComecar, aoAbrir, aoExc
               return (
                 <div key={c.id} className="pl-item">
                   <div>
-                    <div className="pl-item-nome"><span className={`pl-tipo pl-tipo-${c.tipo}`}>{c.tipo}</span>{c.nome}</div>
+                    <div className="pl-item-nome"><span className={`pl-tipo pl-tipo-${c.tipo}`}>{c.tipo === "necessidade" ? "necessidades" : c.tipo}</span>{c.nome}</div>
                     <div className="pl-item-meta">
                       {nomeSetor(c.setor)} · {p.length ? <span className="ci-alerta-texto">{p.length === 1 ? "1 pendência" : `${p.length} pendências`}</span> : <span style={{ color: "var(--ok)", fontWeight: 600 }}>completo</span>}
                       {c.atualizadoEm ? ` · salvo em ${dataHora(c.atualizadoEm)}` : ""}
@@ -373,7 +389,7 @@ function Inicio({ lev, meus, rascunho, link, guardada, aoComecar, aoAbrir, aoExc
                   </div>
                   {confirmar === c.id && (
                     <div className="pl-confirma" role="alert">
-                      <span>Excluir {c.tipo === "projeto" ? "o projeto" : "a atividade"} <b>{c.nome}</b>? Ele sai do levantamento.</span>
+                      <span>Excluir {c.tipo === "necessidade" ? "a" : comArtigo(c.tipo)} <b>{c.nome}</b>? O cadastro sai do levantamento.</span>
                       <button type="button" className="ci-btn pl-btn-perigo-cheio" disabled={excluindo} onClick={async () => {
                         setExcluindo(true);
                         try { await aoExcluir(c); setConfirmar(null); } catch (e) { setErroExcluir(e instanceof Error ? e.message : String(e)); } finally { setExcluindo(false); }
@@ -529,12 +545,13 @@ function Editor({ cad, passo, ano, soLeitura, enviando, erroEnvio, aoMudar, aoIr
   const mudarBase = (p: Partial<Cadastro>) => aoMudar({ ...cad, ...p } as Cadastro);
   const mudarDados = (p: Partial<DadosProjeto> | Partial<DadosAtividade>) => aoMudar({ ...cad, dados: { ...cad.dados, ...p } } as Cadastro);
 
-  const nomeTipo = cad.tipo === "projeto" ? "projeto" : "atividade";
+  const nomeTipo = cad.tipo === "necessidade" ? "necessidades" : cad.tipo;
+  const novo = cad.tipo === "projeto" ? "Novo projeto" : cad.tipo === "atividade" ? "Novo cadastro de atividade" : "Nova lista de necessidades";
   return (
     <>
       <section className="ci-cartao ci-cabecalho">
         <div className="ci-quem">
-          <span><span className={`pl-tipo pl-tipo-${cad.tipo}`}>{nomeTipo}</span>{soLeitura ? "Ver cadastro" : cad.id ? "Editar cadastro" : `Novo ${cad.tipo === "projeto" ? "projeto" : "cadastro de atividade"}`}{cad.nome.trim() ? `: ${cad.nome.trim()}` : ""}</span>
+          <span><span className={`pl-tipo pl-tipo-${cad.tipo}`}>{nomeTipo}</span>{soLeitura ? "Ver cadastro" : cad.id ? "Editar cadastro" : novo}{cad.nome.trim() ? `: ${cad.nome.trim()}` : ""}</span>
           <button type="button" className="ci-btn ci-btn-texto" onClick={aoSair}>← Voltar ao início</button>
         </div>
         {!soLeitura && (
@@ -568,6 +585,7 @@ function Editor({ cad, passo, ano, soLeitura, enviando, erroEnvio, aoMudar, aoIr
         {passo > 0 && passo < ultimo && cad.tipo === "atividade" && (
           <PassosAtividade cad={cad} passo={passo} inv={inv} mudarBase={mudarBase} mudarDados={mudarDados} aoMudar={aoMudar} />
         )}
+        {passo > 0 && passo < ultimo && cad.tipo === "necessidade" && <PassoNecessidades cad={cad} ano={ano} inv={inv} aoMudar={aoMudar} />}
         {passo === ultimo && <Revisao cad={cad} ano={ano} irPara={soLeitura ? undefined : ir} />}
 
         {mostrarFaltas && faltas.size > 0 && (
@@ -603,8 +621,10 @@ function BotaoEnviar({ cad, enviando, aoEnviar }: { cad: Cadastro; enviando: boo
   const faltaEssencial = [0, 1].some((p) => faltasDoPasso(cad, p).some((f) => ESSENCIAIS.includes(f)));
   return (
     <button type="button" className="ci-btn ci-btn-primario" disabled={enviando || faltaEssencial} onClick={() => aoEnviar(cad)}
-      title={faltaEssencial ? "Preencha a identificação, a divisão e o nome antes de enviar" : undefined}>
-      {enviando ? "Enviando…" : cad.id ? "Salvar alterações" : `Enviar ${cad.tipo === "projeto" ? "projeto" : "atividade"}`}
+      title={faltaEssencial
+        ? (cad.tipo === "necessidade" ? "Preencha a identificação, a divisão, a seção e pelo menos uma necessidade antes de enviar" : "Preencha a identificação, a divisão e o nome antes de enviar")
+        : undefined}>
+      {enviando ? "Enviando…" : cad.id ? "Salvar alterações" : `Enviar ${cad.tipo === "necessidade" ? "lista" : cad.tipo}`}
     </button>
   );
 }
@@ -665,11 +685,13 @@ const Pares = ({ pares }: { pares: [string, string | number | null | undefined][
   <dl>{pares.map(([r, v]) => <Fragment key={r}><dt>{r}</dt><dd>{v === null || v === undefined || v === "" ? "—" : v}</dd></Fragment>)}</dl>
 );
 
-function CampoValor({ valor, mudar, invalido, rotulo }: { valor: number | null; mudar: (v: number | null) => void; invalido?: boolean; rotulo: string }) {
+function CampoValor({ valor, mudar, invalido, rotulo, opcional }: { valor: number | null; mudar: (v: number | null) => void; invalido?: boolean; rotulo: string; opcional?: boolean }) {
   const [texto, setTexto] = useState(valor === null ? "" : String(valor).replace(".", ","));
+  // se o valor mudou por fora (item removido da lista), vale o valor, não o que estava digitado
+  const mostrado = lerReais(texto) === valor ? texto : valor === null ? "" : String(valor).replace(".", ",");
   return (
-    <Campo rotulo={rotulo} obrigatorio dica={valor !== null ? `= ${moeda(valor)}` : "Só números. Uma estimativa aproximada já serve. Ex.: 35000"}>
-      <input inputMode="decimal" value={texto} aria-invalid={invalido || undefined} placeholder="Ex.: 35000"
+    <Campo rotulo={rotulo} obrigatorio={!opcional} dica={valor !== null ? `= ${moeda(valor)}` : "Só números. Uma estimativa aproximada já serve. Ex.: 35000"}>
+      <input inputMode="decimal" value={mostrado} aria-invalid={invalido || undefined} placeholder="Ex.: 35000"
         onChange={(e) => { setTexto(e.target.value); mudar(lerReais(e.target.value)); }} />
     </Campo>
   );
@@ -680,7 +702,7 @@ function CampoValor({ valor, mudar, invalido, rotulo }: { valor: number | null; 
 function PassoQuem({ cad, inv, mudar }: { cad: Cadastro; inv: (c: string) => boolean; mudar: (p: Partial<Cadastro>) => void }) {
   return (
     <>
-      <p className="ci-sub" style={{ margin: 0 }}>Quem está cadastrando e de que setor é {cad.tipo === "projeto" ? "o projeto" : "a atividade"}. A APLG usa estes dados se precisar tirar alguma dúvida.</p>
+      <p className="ci-sub" style={{ margin: 0 }}>Quem está cadastrando e de que setor é {comArtigo(cad.tipo)}. A APLG usa estes dados se precisar tirar alguma dúvida.</p>
       <div className="pl-grade">
         <Campo rotulo="Seu posto ou graduação" obrigatorio>
           <select value={cad.posto} onChange={(e) => mudar({ posto: e.target.value })} aria-invalid={inv("posto") || undefined}>
@@ -691,15 +713,21 @@ function PassoQuem({ cad, inv, mudar }: { cad: Cadastro; inv: (c: string) => boo
         <Campo rotulo="Seu nome de guerra" obrigatorio>
           <input value={cad.nomeGuerra} maxLength={40} onChange={(e) => mudar({ nomeGuerra: e.target.value })} aria-invalid={inv("nomeGuerra") || undefined} autoComplete="off" />
         </Campo>
-        <Campo rotulo="Divisão ou assessoria" obrigatorio dica={`A que responde pel${cad.tipo === "projeto" ? "o projeto" : "a atividade"}.`}>
+        <Campo rotulo="Divisão ou assessoria" obrigatorio dica={cad.tipo === "necessidade" ? "A que a sua seção pertence." : `A que responde pel${cad.tipo === "projeto" ? "o projeto" : "a atividade"}.`}>
           <select value={cad.setor} onChange={(e) => mudar({ setor: e.target.value })} aria-invalid={inv("setor") || undefined}>
             <option value="">Escolha</option>
             {SETORES.map((s) => <option key={s.sigla} value={s.sigla}>{s.nome} ({s.sigla})</option>)}
           </select>
         </Campo>
-        <Campo rotulo="Seção (se houver)" dica="Opcional. Ex.: Seção de Transporte de Superfície.">
-          <input value={cad.secao} maxLength={120} onChange={(e) => mudar({ secao: e.target.value })} />
-        </Campo>
+        {cad.tipo === "necessidade" ? (
+          <Campo rotulo="Sua seção" obrigatorio dica="Ex.: Seção de Transporte de Superfície.">
+            <input value={cad.secao} maxLength={120} onChange={(e) => mudar({ secao: e.target.value })} aria-invalid={inv("secao") || undefined} />
+          </Campo>
+        ) : (
+          <Campo rotulo="Seção (se houver)" dica="Opcional. Ex.: Seção de Transporte de Superfície.">
+            <input value={cad.secao} maxLength={120} onChange={(e) => mudar({ secao: e.target.value })} />
+          </Campo>
+        )}
       </div>
     </>
   );
@@ -1042,6 +1070,65 @@ function TarefasAtividade({ cad, ex, inv, aoMudar }: { cad: CadastroAtividade; e
   );
 }
 
+// lista de necessidades ──────────────────────────────────────────────────────
+
+function PassoNecessidades({ cad, ano, inv, aoMudar }: { cad: CadastroNecessidade; ano: number; inv: (c: string) => boolean; aoMudar: (c: Cadastro) => void }) {
+  const ex = useMemo(() => exemploNecessidade(), []);
+  const mudar = (etapas: Necessidade[]) => aoMudar({ ...cad, etapas });
+  const mudarUma = (i: number, p: Partial<Necessidade>) => mudar(cad.etapas.map((n, j) => (j === i ? { ...n, ...p } : n)));
+  const total = totalNecessidades(cad.etapas);
+  return (
+    <>
+      <div className="pl-faixa pl-faixa-info" role="note">
+        <span><b>Só o que não faz parte de um projeto ou atividade.</b> O material ou serviço ligado a um projeto ou atividade fica no cadastro deles: não repita aqui.</span>
+      </div>
+      <Exemplo>
+        <ol className="pl-exemplo-etapas">
+          {ex.etapas.map((n) => <li key={n.descricao}><b>{n.natureza}:</b> {n.descricao} — {n.quantidade} · {moeda(n.valor)} · {n.justificativa}</li>)}
+        </ol>
+      </Exemplo>
+      {inv("necessidades") && <p className="ci-erro-texto" style={{ margin: 0 }}>Cadastre pelo menos uma necessidade.</p>}
+      <div className="pl-etapas">
+        {!cad.etapas.length && <div className="pl-vazio">Nenhuma necessidade ainda.</div>}
+        {cad.etapas.map((n, i) => {
+          const av = avisosNecessidade(n);
+          return (
+            <div key={i} className="pl-etapa">
+              <div className="pl-etapa-cab">
+                <span className="pl-etapa-tit">{i + 1}. {n.natureza || "Necessidade"}</span>
+                <span className="pl-etapa-acoes">
+                  <button type="button" className="pl-mini ci-remover" onClick={() => mudar(cad.etapas.filter((_, j) => j !== i))} aria-label={`Remover necessidade ${i + 1}`}>Remover</button>
+                </span>
+              </div>
+              <Pilulas nome={`natureza-${i}`} legenda="É material ou serviço?" opcoes={NATUREZA_NECESSIDADE} valor={n.natureza} mudar={(v) => mudarUma(i, { natureza: v })} />
+              <Campo rotulo="Qual é a necessidade" obrigatorio largo dica="Descreva sem citar marca nem empresa.">
+                <input value={n.descricao} maxLength={300} onChange={(x) => mudarUma(i, { descricao: x.target.value })} aria-invalid={(inv("necessidades") && i === 0) || undefined} placeholder={n.natureza === "Serviço" ? "Ex.: Manutenção do portão eletrônico da garagem" : "Ex.: Cadeiras giratórias para a sala de reuniões"} />
+              </Campo>
+              <div className="pl-grade">
+                <Campo rotulo="Quantidade" obrigatorio dica="Ex.: 12 unidades; 1 serviço; 4 manutenções no ano.">
+                  <input value={n.quantidade} maxLength={80} onChange={(x) => mudarUma(i, { quantidade: x.target.value })} />
+                </Campo>
+                <CampoValor opcional rotulo={`Valor estimado para ${ano} (R$), se souber`} valor={n.valor} mudar={(v) => mudarUma(i, { valor: v })} />
+                <Campo rotulo="Por que é necessário" largo dica="Opcional, mas ajuda a APLG a priorizar.">
+                  <input value={n.justificativa} maxLength={300} onChange={(x) => mudarUma(i, { justificativa: x.target.value })} />
+                </Campo>
+              </div>
+              {av.length > 0 && <ul className="pl-avisos" aria-label="Avisos">{av.map((a) => <li key={a}>{a}</li>)}</ul>}
+            </div>
+          );
+        })}
+      </div>
+      <div className="pl-botoes">
+        <button type="button" className="ci-btn" disabled={cad.etapas.length >= 80} onClick={() => mudar([...cad.etapas, necessidadeVazia()])}>+ Necessidade</button>
+      </div>
+      {total > 0 && <p className="ci-sub" style={{ margin: 0 }}>Total estimado da lista: <b>{moeda(total)}</b></p>}
+      <Campo rotulo="Observações" largo>
+        <textarea rows={2} value={cad.dados.observacoes} onChange={(e) => aoMudar({ ...cad, dados: { observacoes: e.target.value } })} />
+      </Campo>
+    </>
+  );
+}
+
 // revisão ────────────────────────────────────────────────────────────────────
 
 function Sec({ titulo, passo, irPara, children }: { titulo: string; passo: number; irPara?: (p: number) => void; children: React.ReactNode }) {
@@ -1079,7 +1166,25 @@ function Revisao({ cad, ano, irPara }: { cad: Cadastro; ano: number; irPara?: (p
         <div className="pl-faixa pl-faixa-ok" role="status"><b>Tudo preenchido.</b>{irPara ? " Confira e envie." : ""}</div>
       )}
       {quem}
-      {cad.tipo === "projeto" ? (
+      {cad.tipo === "necessidade" && (
+        <Sec irPara={irPara} titulo={`Necessidades (${cad.etapas.length})`} passo={1}>
+          {cad.etapas.length ? (
+            <div className="pl-rev-tab-wrap">
+              <table className="pl-rev-tab">
+                <thead><tr><th>#</th><th>Tipo</th><th>Necessidade</th><th>Quantidade</th><th>Valor estimado</th><th>Por que é necessário</th></tr></thead>
+                <tbody>{cad.etapas.map((n, i) => (
+                  <tr key={i}><td>{i + 1}</td><td>{n.natureza || "—"}</td><td>{n.descricao || "—"}</td><td>{n.quantidade || "—"}</td><td>{moeda(n.valor)}</td><td>{n.justificativa || "—"}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <p className="pl-rev-falta" style={{ margin: "6px 0 0" }}>nenhuma necessidade</p>}
+          <dl>
+            <dt>Total estimado</dt><dd>{moeda(totalNecessidades(cad.etapas))}</dd>
+            {cad.dados.observacoes && <><dt>Observações</dt><dd>{cad.dados.observacoes}</dd></>}
+          </dl>
+        </Sec>
+      )}
+      {cad.tipo === "projeto" && (
         <>
           <Sec irPara={irPara} titulo="O projeto" passo={1}>
             <dl>
@@ -1121,7 +1226,8 @@ function Revisao({ cad, ano, irPara }: { cad: Cadastro; ano: number; irPara?: (p
             ) : <p className="pl-rev-falta" style={{ margin: "6px 0 0" }}>nenhuma etapa</p>}
           </Sec>
         </>
-      ) : (
+      )}
+      {cad.tipo === "atividade" && (
         <>
           <Sec irPara={irPara} titulo="A atividade" passo={1}>
             <dl>
@@ -1175,10 +1281,10 @@ function Enviado({ cad, novo, primeiro, link, aoComecar, aoInicio, aoEditar }: {
   cad: Cadastro; novo: boolean; primeiro: boolean; link: string; aoComecar: (t: Tipo) => void; aoInicio: () => void; aoEditar: () => void;
 }) {
   const p = pendencias(cad);
-  const o = umOuOutro(cad);
+  const enviado = cad.tipo === "projeto" ? "Projeto enviado" : cad.tipo === "atividade" ? "Atividade enviada" : "Lista de necessidades enviada";
   return (
     <section className="ci-cartao ci-cabecalho" aria-labelledby="pl-env-tit" style={{ display: "grid", gap: 12 }}>
-      <h2 id="pl-env-tit" className="ci-h2">{novo ? `${o === "projeto" ? "Projeto enviado" : "Atividade enviada"}!` : "Alterações salvas!"}</h2>
+      <h2 id="pl-env-tit" className="ci-h2">{novo ? `${enviado}!` : "Alterações salvas!"}</h2>
       <div className="pl-faixa pl-faixa-ok" role="status"><span><b>{cad.nome}</b> já está com a APLG.</span></div>
       {p.length > 0 && (
         <div className="pl-faixa pl-faixa-alerta">
@@ -1191,6 +1297,7 @@ function Enviado({ cad, novo, primeiro, link, aoComecar, aoInicio, aoEditar }: {
         <div className="pl-botoes" style={{ marginTop: 6 }}>
           <button type="button" className="ci-btn ci-btn-primario" onClick={() => aoComecar("projeto")}>Cadastrar outro projeto</button>
           <button type="button" className="ci-btn ci-btn-primario" onClick={() => aoComecar("atividade")}>Cadastrar uma atividade</button>
+          <button type="button" className="ci-btn ci-btn-primario" onClick={() => aoComecar("necessidade")}>Cadastrar lista de necessidades</button>
           <button type="button" className="ci-btn" onClick={aoInicio}>Ver meus cadastros</button>
         </div>
       </div>

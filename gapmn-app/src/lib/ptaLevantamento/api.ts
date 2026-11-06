@@ -11,6 +11,7 @@ const MENSAGENS: Record<string, string> = {
   chave_invalida: "Não consegui reconhecer este navegador. Recarregue a página e tente de novo.",
   cadastro_invalido: "O cadastro está incompleto. Recarregue a página e tente de novo.",
   setor_invalido: "Escolha a divisão ou assessoria.",
+  secao_obrigatoria: "Informe a sua seção.",
   nome_invalido: "Escreva o nome (pelo menos 3 letras).",
   identificacao_incompleta: "Preencha o seu posto ou graduação e o nome de guerra.",
   cadastro_grande_demais: "O cadastro ficou grande demais. Divida as etapas ou encurte os textos.",

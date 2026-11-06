@@ -1,7 +1,7 @@
 // Planilhas do levantamento para a APLG: as mesmas abas e colunas da planilha que o formulário substituiu
 // (com as colunas da APLG em branco), para montar a minuta do PTA.
 
-import { entregasPorTrimestre, nomeSetor, pendencias, trimestreDe, type Cadastro, type CadastroAtividade, type CadastroProjeto } from "./cadastro.ts";
+import { entregasPorTrimestre, nomeSetor, pendencias, trimestreDe, valorDoCadastro, type Cadastro, type CadastroAtividade, type CadastroNecessidade, type CadastroProjeto } from "./cadastro.ts";
 
 type Linha = Record<string, string | number>;
 
@@ -59,22 +59,30 @@ export function abasDoLevantamento(itens: Cadastro[]): Record<string, Linha[]> {
     "Nº da atividade": nA.get(c)!, "Atividade": c.nome, "Ordem": i + 1, "Tarefa": t.tarefa, "Frequência": t.frequencia,
     "Prazo ou quando": t.quando, "Responsável": t.responsavel, "Como comprovar": t.comprova, "Código da tarefa (APLG)": "",
   })));
-  return { "Projetos": Projetos, "Etapas dos projetos": Etapas, "Atividades": Atividades, "Tarefas das atividades": Tarefas };
+  const necessidades = ativos.filter((c): c is CadastroNecessidade => c.tipo === "necessidade");
+  const Necessidades = necessidades.flatMap((c, l) => c.etapas.map((n, i) => ({
+    "Nº da lista": `N${String(l + 1).padStart(2, "0")}`, "Item": i + 1, "Divisão ou assessoria": nomeSetor(c.setor), "Seção": c.secao,
+    "Material ou serviço": n.natureza, "Necessidade": n.descricao, "Quantidade": n.quantidade, "Valor estimado (R$)": n.valor ?? "", "Por que é necessário": n.justificativa,
+    "Observações da lista": c.dados.observacoes, "Preenchido por": `${c.posto} ${c.nomeGuerra}`.trim(), "Atualizado em": quando(c.atualizadoEm), "Versão": c.versao ?? 1,
+    "Natureza de despesa, ação e PI (APLG)": "", "Código da tarefa (APLG)": "",
+  })));
+  return { "Projetos": Projetos, "Etapas dos projetos": Etapas, "Atividades": Atividades, "Tarefas das atividades": Tarefas, "Lista de necessidades": Necessidades };
 }
 
 /** Resumo do levantamento: por setor e por trimestre (só os cadastros ativos). */
 export function resumo(itens: Cadastro[]) {
   const ativos = itens.filter((c) => !c.excluidoEm);
-  const porSetor = new Map<string, { projetos: number; atividades: number; pendentes: number; valor: number }>();
+  const porSetor = new Map<string, { projetos: number; atividades: number; necessidades: number; pendentes: number; valor: number }>();
   const trimestres: [number, number, number, number] = [0, 0, 0, 0];
-  let valor = 0, pendentes = 0;
+  let valor = 0, pendentes = 0, itensNecessidade = 0;
   for (const c of ativos) {
-    const s = porSetor.get(c.setor) ?? { projetos: 0, atividades: 0, pendentes: 0, valor: 0 };
+    const s = porSetor.get(c.setor) ?? { projetos: 0, atividades: 0, necessidades: 0, pendentes: 0, valor: 0 };
     if (c.tipo === "projeto") {
       s.projetos++;
       entregasPorTrimestre(c.etapas).forEach((n, i) => { trimestres[i] += n; });
-    } else s.atividades++;
-    const v = c.dados.precisaDinheiro === "Sim" && typeof c.dados.valor === "number" ? c.dados.valor : 0;
+    } else if (c.tipo === "atividade") s.atividades++;
+    else { s.necessidades += c.etapas.length; itensNecessidade += c.etapas.length; }
+    const v = valorDoCadastro(c);
     s.valor += v; valor += v;
     if (pendencias(c).length) { s.pendentes++; pendentes++; }
     porSetor.set(c.setor, s);
@@ -82,6 +90,7 @@ export function resumo(itens: Cadastro[]) {
   return {
     projetos: ativos.filter((c) => c.tipo === "projeto").length,
     atividades: ativos.filter((c) => c.tipo === "atividade").length,
+    itensNecessidade,
     pendentes, valor, trimestres, porSetor,
     excluidos: itens.length - ativos.length,
   };

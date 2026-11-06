@@ -5,8 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  avisosEtapa, avisosTarefa, doBanco, entregasPorTrimestre, exemploAtividade, exemploProjeto, lerReais, novoCadastro,
-  paraBanco, pendencias, SETORES, trimestreDe, type CadastroAtividade, type CadastroProjeto,
+  avisosEtapa, avisosNecessidade, avisosTarefa, doBanco, entregasPorTrimestre, exemploAtividade, exemploNecessidade, exemploProjeto, lerReais, necessidadeVazia, novoCadastro,
+  paraBanco, pendencias, SETORES, totalNecessidades, trimestreDe, valorDoCadastro, type CadastroAtividade, type CadastroNecessidade, type CadastroProjeto,
 } from "./cadastro.ts";
 import { abasDoLevantamento, resumo } from "./exportar.ts";
 import { MATRIZ_PREVISTA } from "./matrizPrevista.ts";
@@ -14,6 +14,60 @@ import { MATRIZ_PREVISTA } from "./matrizPrevista.ts";
 test("os exemplos estão completos (sem pendência)", () => {
   assert.deepEqual(pendencias(exemploProjeto(2027)), []);
   assert.deepEqual(pendencias(exemploAtividade()), []);
+  assert.deepEqual(pendencias(exemploNecessidade()), []);
+});
+
+test("lista de necessidades: o que falta, ida e volta ao banco e nome gerado", () => {
+  const nova = novoCadastro("necessidade") as CadastroNecessidade;
+  assert.equal(nova.etapas.length, 1, "já abre com um item em branco");
+  assert.deepEqual(pendencias(nova), ["Falta a divisão ou assessoria", "Falta a seção", "Falta cadastrar as necessidades", "1 necessidade com aviso"]);
+  assert.deepEqual(avisosNecessidade(necessidadeVazia()), ["Diga se é material ou serviço", "Falta descrever a necessidade", "Falta a quantidade"]);
+  // valor e justificativa são opcionais
+  assert.deepEqual(avisosNecessidade({ natureza: "Material", descricao: "Cadeiras", quantidade: "12", valor: null, justificativa: "" }), []);
+
+  const c: CadastroNecessidade = {
+    ...nova, id: "9", setor: "DIE", secao: "  Seção   de Transporte ", posto: "2S", nomeGuerra: " silva ",
+    dados: { observacoes: " urgente " },
+    etapas: [
+      { natureza: "Material", descricao: " Pneus  para viatura ", quantidade: "8 unidades", valor: 4000.5, justificativa: " desgaste " },
+      { natureza: "Serviço", descricao: "Alinhamento", quantidade: "1 serviço", valor: null, justificativa: "" },
+      necessidadeVazia(), // item em branco não vai para o banco
+    ],
+  };
+  const b = paraBanco(c);
+  assert.equal(b.tipo, "necessidade");
+  assert.equal(b.nome, "Lista de necessidades — Seção de Transporte");
+  assert.equal(b.secao, "Seção de Transporte");
+  assert.equal(b.nome_guerra, "SILVA");
+  assert.deepEqual(b.dados, { observacoes: "urgente" });
+  assert.equal(b.etapas.length, 2);
+  assert.equal((b.etapas[0] as { descricao: string }).descricao, "Pneus para viatura");
+
+  const volta = doBanco({ id: "9", tipo: "necessidade", setor: b.setor, secao: b.secao, nome: b.nome, posto: b.posto, nome_guerra: b.nome_guerra, dados: b.dados, etapas: b.etapas }) as CadastroNecessidade;
+  assert.equal(volta.tipo, "necessidade");
+  assert.deepEqual(volta.etapas[0], { natureza: "Material", descricao: "Pneus para viatura", quantidade: "8 unidades", valor: 4000.5, justificativa: "desgaste" });
+  assert.equal(volta.etapas[1].valor, null);
+  assert.deepEqual(pendencias(volta), []);
+  assert.equal(totalNecessidades(volta.etapas), 4000.5);
+  assert.equal(valorDoCadastro(volta), 4000.5);
+});
+
+test("planilhas da APLG: a lista de necessidades tem aba própria, um item por linha", () => {
+  const n = { ...exemploNecessidade(), id: "1", versao: 3 };
+  const fora = { ...exemploNecessidade(), id: "2", excluidoEm: "2026-11-05T10:00:00Z" };
+  const p = { ...exemploProjeto(2027), id: "3" };
+  const abas = abasDoLevantamento([n, fora, p]);
+  assert.equal(abas["Lista de necessidades"].length, 2);
+  assert.equal(abas["Lista de necessidades"][1]["Nº da lista"], "N01");
+  assert.equal(abas["Lista de necessidades"][1]["Item"], 2);
+  assert.equal(abas["Lista de necessidades"][1]["Material ou serviço"], "Serviço");
+  assert.equal(abas["Lista de necessidades"][0]["Valor estimado (R$)"], 9600);
+  assert.equal(abas.Projetos.length, 1, "os projetos não mudam");
+  const r = resumo([n, fora, p]);
+  assert.equal(r.itensNecessidade, 2);
+  assert.equal(r.projetos, 1);
+  assert.equal(r.valor, 350000 + 9600 + 4500);
+  assert.equal(r.porSetor.get("DA")?.necessidades, 2);
 });
 
 test("trimestres e entregas por trimestre", () => {
@@ -112,7 +166,7 @@ test("planilhas da APLG: abas, numeração e excluídos fora", () => {
   const a = { ...exemploAtividade(), id: "2" };
   const x = { ...exemploProjeto(2027), id: "3", nome: "Excluído", excluidoEm: "2026-11-05T10:00:00Z" };
   const abas = abasDoLevantamento([p, a, x]);
-  assert.deepEqual(Object.keys(abas), ["Projetos", "Etapas dos projetos", "Atividades", "Tarefas das atividades"]);
+  assert.deepEqual(Object.keys(abas), ["Projetos", "Etapas dos projetos", "Atividades", "Tarefas das atividades", "Lista de necessidades"]);
   assert.equal(abas.Projetos.length, 1);
   assert.equal(abas.Projetos[0]["Nº"], "P01");
   assert.equal(abas.Projetos[0]["Situação"], "OK");
