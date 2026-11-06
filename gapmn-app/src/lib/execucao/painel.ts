@@ -27,8 +27,12 @@ export type ProcessoResumo = {
   pagChave: string | null;
 };
 
-/** Liquidação e pagamento da NE (planilha "Situação de empenhos"). */
-export type Financeiro = { aLiquidar: number; liquidadoPagar: number; pago: number };
+/**
+ * Liquidação e pagamento da NE. O pagamento conta no ano em que saiu: `pago` é o que saiu no próprio ano da NE
+ * (planilha "Situação de empenhos"), `pagoRP` é o RP pago no exercício corrente (planilha de RP) e `pagoMeio` é o
+ * que saiu ou foi cancelado nos anos do meio, que nenhuma planilha detalha.
+ */
+export type Financeiro = { aLiquidar: number; liquidadoPagar: number; pago: number; pagoRP?: number; pagoMeio?: number };
 
 export type Vinculo = { contrato: ContratoResumo | null; processo: ProcessoResumo | null };
 
@@ -183,7 +187,7 @@ export function financeiroDo(r: Recorte, fin: ReadonlyMap<string, Financeiro>): 
   if (!f) return { aLiquidar: 0, liquidadoPagar: 0, pago: 0 };
   if (!r.parcial || r.nota.valor <= 0) return f;
   const p = r.valor / r.nota.valor;
-  return { aLiquidar: f.aLiquidar * p, liquidadoPagar: f.liquidadoPagar * p, pago: f.pago * p };
+  return { aLiquidar: f.aLiquidar * p, liquidadoPagar: f.liquidadoPagar * p, pago: f.pago * p, pagoRP: (f.pagoRP ?? 0) * p, pagoMeio: (f.pagoMeio ?? 0) * p };
 }
 
 export type Resumo = {
@@ -193,6 +197,9 @@ export type Resumo = {
   aLiquidar: number;
   liquidadoPagar: number;
   pago: number;
+  /** destas NEs, o RP pago no exercício corrente e o pago ou cancelado nos anos do meio */
+  pagoRP: number;
+  pagoMeio: number;
   /** NEs sem linha na planilha de situação (liquidação desconhecida). */
   semSituacao: number;
   valorComContrato: number;
@@ -201,7 +208,7 @@ export type Resumo = {
 };
 
 export function resumir(rs: readonly Recorte[], fin: ReadonlyMap<string, Financeiro>, vinculos: ReadonlyMap<string, Vinculo>): Resumo {
-  const r: Resumo = { valor: 0, nes: rs.length, itens: 0, aLiquidar: 0, liquidadoPagar: 0, pago: 0, semSituacao: 0, valorComContrato: 0, contratos: 0, parcial: false };
+  const r: Resumo = { valor: 0, nes: rs.length, itens: 0, aLiquidar: 0, liquidadoPagar: 0, pago: 0, pagoRP: 0, pagoMeio: 0, semSituacao: 0, valorComContrato: 0, contratos: 0, parcial: false };
   const ctrs = new Set<string>();
   for (const x of rs) {
     r.valor += x.valor;
@@ -212,6 +219,8 @@ export function resumir(rs: readonly Recorte[], fin: ReadonlyMap<string, Finance
     r.aLiquidar += f.aLiquidar;
     r.liquidadoPagar += f.liquidadoPagar;
     r.pago += f.pago;
+    r.pagoRP += f.pagoRP ?? 0;
+    r.pagoMeio += f.pagoMeio ?? 0;
     const c = vinculos.get(x.nota.ne)?.contrato;
     if (c) { r.valorComContrato += x.valor; ctrs.add(c.id); }
   }
@@ -290,20 +299,63 @@ export function porFornecedor(rs: readonly Recorte[]): (Fatia & { cnpj: string }
     .sort((a, b) => b.valor - a.valor);
 }
 
-export type LinhaContrato = { contrato: ContratoResumo; valor: number; nes: number; pago: number; aLiquidar: number };
+export type LinhaContrato = { contrato: ContratoResumo; valor: number; nes: number; pago: number; pagoRP: number; aLiquidar: number };
 
-/** Contratos mais empenhados no ano, com o que já foi pago. */
-export function porContrato(rs: readonly Recorte[], vinculos: ReadonlyMap<string, Vinculo>, fin: ReadonlyMap<string, Financeiro>): LinhaContrato[] {
+/** Contratos mais empenhados no ano, com o que já foi pago e, de `restos`, o RP pago no exercício. */
+export function porContrato(
+  rs: readonly Recorte[], vinculos: ReadonlyMap<string, Vinculo>, fin: ReadonlyMap<string, Financeiro>, restos: readonly Recorte[] = [],
+): LinhaContrato[] {
   const m = new Map<string, LinhaContrato>();
   for (const r of rs) {
     const c = vinculos.get(r.nota.ne)?.contrato;
     if (!c) continue;
-    const x = m.get(c.id) ?? { contrato: c, valor: 0, nes: 0, pago: 0, aLiquidar: 0 };
+    const x = m.get(c.id) ?? { contrato: c, valor: 0, nes: 0, pago: 0, pagoRP: 0, aLiquidar: 0 };
     const f = financeiroDo(r, fin);
     x.valor += r.valor; x.nes++; x.pago += f.pago; x.aLiquidar += f.aLiquidar;
     m.set(c.id, x);
   }
+  for (const r of restos) {
+    const x = m.get(vinculos.get(r.nota.ne)?.contrato?.id ?? "");
+    if (x) x.pagoRP += pagoRPDo(r, fin);
+  }
   return [...m.values()].sort((a, b) => b.valor - a.valor);
+}
+
+// ─── Restos a pagar pagos no exercício ─────────────────
+
+/** RP pago no exercício corrente, na proporção dos itens que passaram nos filtros. */
+export function pagoRPDo(r: Recorte, fin: ReadonlyMap<string, Financeiro>): number {
+  return financeiroDo(r, fin).pagoRP ?? 0;
+}
+
+/**
+ * NEs de anos anteriores com RP pago no exercício, com os filtros do painel: a fatura de energia de 2026 paga com
+ * NE de 2025 é pagamento de 2026. O filtro de mês é o da emissão, então com ele só entram NEs emitidas naquele mês.
+ */
+export function restosPagos(
+  nes: readonly NotaEmpenho[], ano: string, f: Filtros, vinculos: ReadonlyMap<string, Vinculo>, fin: ReadonlyMap<string, Financeiro>,
+): Recorte[] {
+  if (f.soPendentesAssinatura) return []; // as NEs antigas não trazem a situação da assinatura
+  const antigas = nes.filter((n) => n.ne.slice(0, 4) < ano && (fin.get(n.ne)?.pagoRP ?? 0) > 0.005);
+  return filtrar(antigas, f, vinculos, fin);
+}
+
+/** RP pago por categoria do objeto, repartido pelo valor dos itens de cada NE. */
+export function restosPorCategoria(rs: readonly Recorte[], fin: ReadonlyMap<string, Financeiro>): Fatia[] {
+  const m = new Map<CategoriaId, { valor: number; nes: Set<string>; itens: number }>();
+  for (const r of rs) {
+    const pago = pagoRPDo(r, fin);
+    for (const i of r.itens) {
+      const parte = r.valor > 0 ? i.valor / r.valor : 1 / r.itens.length;
+      const x = m.get(i.categoria) ?? { valor: 0, nes: new Set<string>(), itens: 0 };
+      x.valor += pago * parte; x.nes.add(r.nota.ne); x.itens++;
+      m.set(i.categoria, x);
+    }
+  }
+  return ordenar(CATEGORIAS.filter((c) => m.has(c.id)).map((c) => {
+    const x = m.get(c.id)!;
+    return { chave: c.id, nome: c.nome, valor: x.valor, nes: x.nes.size, itens: x.itens, cor: c.cor };
+  }));
 }
 
 /** Situação (liquidação e pagamento) por NE, somando as linhas da mesma NE. */

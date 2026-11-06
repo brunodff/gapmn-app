@@ -130,7 +130,11 @@ export async function buscarExecucao(): Promise<DadosExecucao> {
     const financeiro = new Map<string, Financeiro>();
     if (situacao.length) {
       for (const [ne, n] of juntarNEs(toExecucaoLinhas(situacao).linhas, toRPNEs(rp), nes.map(notaItensDe))) {
-        financeiro.set(ne, { aLiquidar: n.aLiquidar, liquidadoPagar: n.liquidadoPagar, pago: n.pago });
+        // o pagamento conta no ano em que saiu: separa o do próprio ano da NE do RP pago no exercício
+        financeiro.set(ne, {
+          aLiquidar: n.aLiquidar, liquidadoPagar: n.liquidadoPagar, pago: n.exercicio.pago,
+          pagoRP: n.rp ? n.rp.naoProcPago + n.rp.procPago : 0, pagoMeio: n.pagoAnterior,
+        });
       }
     }
     return {
