@@ -13,7 +13,7 @@ import { fmtCNPJ, type ItemEmpenho, type NotaEmpenho } from "../lib/execucao/emp
 import { buscarExecucao, type DadosExecucao } from "../lib/execucao/fonte.ts";
 import {
   FILTROS_VAZIOS, filtrar, financeiroDo, hojeEm, omDe, pagoRPDo, pendenciaAssinatura, porCategoria, porContrato, porFornecedor, porMes, porOM,
-  porObjeto, restosPagos, restosPorCategoria, resumir, ultimaDataDaPlanilha, vincular, type Filtros, type Financeiro, type Recorte, type Vinculo,
+  porObjeto, restosDoExercicio, resumir, ultimaDataDaPlanilha, vincular, type Filtros, type Financeiro, type Recorte, type Vinculo,
 } from "../lib/execucao/painel.ts";
 
 // ─── Aparência (mesmos tons dos outros painéis escuros) ──────────────────────
@@ -154,7 +154,9 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
-type Ordem = "valor" | "aLiquidar" | "liquidadoPagar" | "emissao" | "assinatura" | "ne";
+type Ordem = "valor" | "aLiquidar" | "liquidadoPagar" | "pago" | "emissao" | "assinatura" | "ne";
+/** No ano corrente, a lista mostra as NEs do ano e as de restos a pagar. */
+type Origem = "todas" | "ano" | "rp";
 
 export default function PainelExecucao() {
   const [dados, setDados] = useState<DadosExecucao | null>(null);
@@ -163,7 +165,7 @@ export default function PainelExecucao() {
   const [f, setF] = useState<Filtros>(FILTROS_VAZIOS);
   const [ordem, setOrdem] = useState<Ordem>("valor");
   const [limite, setLimite] = useState(30);
-  const [limiteRestos, setLimiteRestos] = useState(10);
+  const [origem, setOrigem] = useState<Origem>("todas");
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
   const [telaCheia, setTelaCheia] = useState(false);
   const [setor, setSetor] = useState<string | null>(null);
@@ -231,18 +233,18 @@ export default function PainelExecucao() {
   const hoje = useMemo(() => hojeEm(), [dados]);
   const ultimaData = useMemo(() => ultimaDataDaPlanilha(dados?.nes ?? []), [dados]);
   // pendência de assinatura só no ano corrente: as NEs antigas não trazem a situação da assinatura
-  const pendencia = useCallback((n: NotaEmpenho) => (anoCorrente ? pendenciaAssinatura(n, hoje) : null), [anoCorrente, hoje]);
+  const pendencia = useCallback((n: NotaEmpenho) => (anoCorrente && n.ne.startsWith(ano) ? pendenciaAssinatura(n, hoje) : null), [anoCorrente, ano, hoje]);
   const pendentesTotal = useMemo(() => (anoCorrente ? nesDoAno.filter((n) => !n.assinada).length : 0), [nesDoAno, anoCorrente]);
   const recortes = useMemo(() => filtrar(nesDoAno, f, vinculos, fin), [nesDoAno, f, vinculos, fin]);
   const resumo = useMemo(() => resumir(recortes, fin, vinculos), [recortes, fin, vinculos]);
   const categorias = useMemo(() => porCategoria(recortes), [recortes]);
   const meses = useMemo(() => porMes(recortes), [recortes]);
   const objetos = useMemo(() => porObjeto(recortes), [recortes]);
-  // RP pago no exercício (NEs de anos anteriores): entra no pago do ano corrente, que é quando o dinheiro saiu
-  const restos = useMemo(() => (anoCorrente ? restosPagos(dados?.nes ?? [], ano, f, vinculos, fin) : []), [anoCorrente, dados, ano, f, vinculos, fin]);
+  // Restos a pagar do exercício (NEs de anos anteriores): o pago entra no ano corrente, que é quando o dinheiro saiu
+  const restos = useMemo(() => (anoCorrente ? restosDoExercicio(dados?.nes ?? [], ano, f, vinculos, fin) : []), [anoCorrente, dados, ano, f, vinculos, fin]);
   const totalRestos = useMemo(() => restos.reduce((s, r) => s + pagoRPDo(r, fin), 0), [restos, fin]);
-  const restosCategorias = useMemo(() => restosPorCategoria(restos, fin), [restos, fin]);
-  const restosOrdenados = useMemo(() => [...restos].sort((a, b) => pagoRPDo(b, fin) - pagoRPDo(a, fin)), [restos, fin]);
+  const ehResto = useCallback((r: Recorte) => r.nota.ne.slice(0, 4) < ano, [ano]);
+  const pagoNoAno = useCallback((r: Recorte) => (ehResto(r) ? pagoRPDo(r, fin) : financeiroDo(r, fin).pago), [ehResto, fin]);
   const contratos = useMemo(() => porContrato(recortes, vinculos, fin, restos), [recortes, vinculos, fin, restos]);
   const oms = useMemo(() => porOM(recortes), [recortes]);
   const fornecedores = useMemo(() => porFornecedor(recortes), [recortes]);
@@ -274,10 +276,11 @@ export default function PainelExecucao() {
   }, [nesDoAno, dados, f.om, f.mes, f.natureza, f.pis]);
 
   const ordenados = useMemo(() => {
-    const a = [...recortes];
+    const a = origem === "ano" ? [...recortes] : origem === "rp" ? [...restos] : [...recortes, ...restos];
     if (ordem === "valor") a.sort((x, y) => y.valor - x.valor);
     else if (ordem === "aLiquidar") a.sort((x, y) => financeiroDo(y, fin).aLiquidar - financeiroDo(x, fin).aLiquidar || y.valor - x.valor);
     else if (ordem === "liquidadoPagar") a.sort((x, y) => financeiroDo(y, fin).liquidadoPagar - financeiroDo(x, fin).liquidadoPagar || y.valor - x.valor);
+    else if (ordem === "pago") a.sort((x, y) => pagoNoAno(y) - pagoNoAno(x) || y.valor - x.valor);
     else if (ordem === "emissao") a.sort((x, y) => y.nota.emissao.localeCompare(x.nota.emissao) || y.valor - x.valor);
     else if (ordem === "assinatura") {
       const dias = (r: Recorte) => pendencia(r.nota)?.dias ?? -1;
@@ -285,9 +288,9 @@ export default function PainelExecucao() {
     }
     else a.sort((x, y) => x.nota.ne.localeCompare(y.nota.ne));
     return a;
-  }, [recortes, ordem, fin, pendencia]);
+  }, [recortes, restos, origem, ordem, fin, pendencia, pagoNoAno]);
 
-  useEffect(() => setLimite(30), [f, ordem]);
+  useEffect(() => setLimite(30), [f, ordem, origem]);
 
   const mudar = (p: Partial<Filtros>) => setF((atual) => ({ ...atual, ...p }));
   const alternar = <K extends keyof Filtros>(k: K, v: Filtros[K]) => setF((atual) => ({ ...atual, [k]: atual[k] === v ? FILTROS_VAZIOS[k] : v }));
@@ -306,6 +309,7 @@ export default function PainelExecucao() {
         PAG: n.pag, Contrato: v?.contrato?.numero ?? "", "Processo licitatório": v?.processo ? `${v.processo.modalidade} ${v.processo.numero}` : "",
         Fornecedor: n.favorecido.nome, CNPJ: n.favorecido.tipo === "empresa" && n.favorecido.documento ? fmtCNPJ(n.favorecido.documento) : "",
         "Item da compra": i.itemCompra ?? "", Item: semPrefixo(i.descricao), Categoria: catDe(i.categoria).nome, "Valor do item": Number(i.valor.toFixed(2)),
+        Origem: n.ne.startsWith(ano) ? `Empenho de ${ano}` : `Restos a pagar (NE de ${n.ne.slice(0, 4)})`,
         Solicitação: n.solicitacao ?? "",
         Assinatura: n.assinada ? "Assinada" : "Pendente",
         "Pendente há (dias)": pendencia(n)?.dias ?? "",
@@ -398,11 +402,16 @@ export default function PainelExecucao() {
               {a}
             </button>
           ))}
-          {!anoCorrente && (
-            <span style={{ fontSize: 11, color: DK.muted }}>
-              NEs de {ano}: a liquidar e liquidado a pagar são os restos a pagar de hoje; o pago é só o que saiu em {ano}.
-            </span>
-          )}
+          <details className="pe-como-ler" style={{ marginLeft: "auto", fontSize: 11, color: DK.muted, maxWidth: "100%" }}>
+            <summary style={{ cursor: "pointer", textAlign: "right" }}>Como ler os números</summary>
+            <div style={{ marginTop: 6, maxWidth: 560, lineHeight: 1.5 }}>
+              {anoCorrente
+                ? `Pago em ${ano} soma os empenhos de ${ano} e os restos a pagar (RP) de anos anteriores pagos em ${ano}. A lista mostra essas NEs com a marca RP; o valor delas não entra no empenhado de ${ano}. A liquidar e liquidado a pagar são só dos empenhos de ${ano}. `
+                : `O empenhado de ${ano} se divide em: pago em ${ano}, pago depois como RP, a liquidar e liquidado a pagar (estes dois, os RP de hoje). Pago em ${ano} não inclui RP de empenhos mais antigos pago naquele ano, porque isso não está nas planilhas. Em "pago depois", o que não saiu em ${anos[0]} pode ter sido pago ou cancelado em anos que as planilhas não detalham. `}
+              {resumo.parcial && "Com filtro de item, liquidação e pagamento são proporcionais ao valor dos itens filtrados. "}
+              {resumo.semSituacao > 0 && `${resumo.semSituacao} NE${resumo.semSituacao > 1 ? "s" : ""} ainda sem linha na planilha de situação.`}
+            </div>
+          </details>
         </div>
       )}
 
@@ -463,7 +472,7 @@ export default function PainelExecucao() {
       </div>
 
       {/* ── Números ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+      <div className={`grid grid-cols-2 md:grid-cols-3 gap-3 ${anoCorrente ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}>
         <Kpi rotulo={`Empenhado em ${ano}`} valor={fmtCurto(resumo.valor)} sub={`${resumo.nes.toLocaleString("pt-BR")} NEs · ${resumo.itens.toLocaleString("pt-BR")} itens`} cor={DK.cyan} />
         <Kpi rotulo="A liquidar" valor={fmtCurto(resumo.aLiquidar)} sub={pct(resumo.aLiquidar, resumo.valor) + " do empenhado"} cor={DK.amber} />
         <Kpi rotulo="Liquidado a pagar" valor={fmtCurto(resumo.liquidadoPagar)} sub={pct(resumo.liquidadoPagar, resumo.valor) + " do empenhado"} cor={DK.teal} />
@@ -471,22 +480,15 @@ export default function PainelExecucao() {
           rotulo={`Pago em ${ano}`}
           valor={fmtCurto(resumo.pago + totalRestos)}
           sub={totalRestos > 0.005
-            ? `${fmtCurto(resumo.pago)} de empenhos de ${ano} · ${fmtCurto(totalRestos)} de restos a pagar`
-            : `${pct(resumo.pago, resumo.valor)} do empenhado em ${ano}`}
+            ? `${fmtCurto(resumo.pago)} do ano + ${fmtCurto(totalRestos)} de RP`
+            : `${pct(resumo.pago, resumo.valor)} do empenhado`}
           cor={DK.green}
         />
+        {!anoCorrente && (
+          <Kpi rotulo="Pago depois (RP)" valor={fmtCurto(resumo.pagoRP + resumo.pagoMeio)} sub={pct(resumo.pagoRP + resumo.pagoMeio, resumo.valor) + " do empenhado"} cor={DK.green} />
+        )}
         <Kpi rotulo="Com contrato" valor={pct(resumo.valorComContrato, resumo.valor)} sub={`${fmtCurto(resumo.valorComContrato)} em ${resumo.contratos} contratos`} cor={DK.purple} />
       </div>
-      {(resumo.parcial || resumo.semSituacao > 0 || !anoCorrente) && (
-        <p style={{ fontSize: 11, color: DK.muted, margin: 0 }}>
-          {!anoCorrente && `Pago em ${ano}: só o que saiu no próprio ano, de empenhos de ${ano}. Os restos a pagar de empenhos mais antigos pagos em ${ano} não estão nas planilhas, então o total pago naquele ano foi maior. `}
-          {!anoCorrente && resumo.pagoRP > 0.005 && `Destas NEs, ${fmtCurto(resumo.pagoRP)} foram pagos em ${anos[0]} como restos a pagar. `}
-          {!anoCorrente && resumo.pagoMeio > 0.005 && `Outros ${fmtCurto(resumo.pagoMeio)} foram pagos ou cancelados depois de ${ano}, em anos que as planilhas não detalham. `}
-          {resumo.parcial && "Liquidação e pagamento proporcionais ao valor dos itens filtrados. "}
-          {resumo.semSituacao > 0 && `${resumo.semSituacao} NE${resumo.semSituacao > 1 ? "s" : ""} ainda sem linha na planilha de situação.`}
-        </p>
-      )}
-
       {/* ── Categoria e mês ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         <Cartao titulo="Empenhado por categoria do objeto" dica="Clique numa categoria para filtrar. A categoria vem da natureza de despesa e do nome do item.">
@@ -575,65 +577,34 @@ export default function PainelExecucao() {
         </Cartao>
       </div>
 
-      {/* ── Restos a pagar pagos no exercício ── */}
-      {restos.length > 0 && (
-        <Cartao
-          titulo={`Restos a pagar pagos em ${ano}`}
-          dica={`Empenhos de anos anteriores pagos em ${ano}. Já estão somados no pago de ${ano}, lá em cima. Clique numa categoria para filtrar.`}
-          extra={<span style={{ fontFamily: "monospace", fontSize: 12, color: DK.green }}>{fmtMoeda(totalRestos)} · {restos.length} NEs</span>}
-        >
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <ListaBarras
-              limite={8}
-              ativo={f.categoria}
-              corPadrao={DK.green}
-              onEscolher={(k) => alternar("categoria", k as CategoriaId)}
-              linhas={restosCategorias.map((c) => ({ chave: c.chave, nome: c.nome, valor: c.valor, cor: c.cor, sub: `${pct(c.valor, totalRestos)} · ${c.nes} NEs` }))}
-            />
-            <div style={{ minWidth: 0, overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${DK.dim}`, color: DK.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    <th style={{ textAlign: "left", padding: "6px 8px" }}>NE</th>
-                    <th style={{ textAlign: "left", padding: "6px 8px" }}>Fornecedor</th>
-                    <th style={{ textAlign: "right", padding: "6px 8px" }}>Pago em {ano}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {restosOrdenados.slice(0, limiteRestos).map((r) => (
-                    <tr key={r.nota.ne} style={{ borderBottom: `1px solid ${DK.grid}` }}>
-                      <td style={{ padding: "6px 8px", fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.nota.ne}</td>
-                      <td style={{ padding: "6px 8px", overflowWrap: "anywhere" }}>{r.nota.favorecido.nome}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right", fontFamily: "monospace", whiteSpace: "nowrap", color: DK.green }}>{fmtMoeda(pagoRPDo(r, fin))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {restosOrdenados.length > limiteRestos && (
-                <button type="button" onClick={() => setLimiteRestos((l) => l + 30)} style={{ ...estiloBotao, marginTop: 10 }}>
-                  Mostrar mais ({restosOrdenados.length - limiteRestos} restantes)
-                </button>
-              )}
-            </div>
-          </div>
-        </Cartao>
-      )}
-
       {/* ── Tabela de NEs ── */}
       <Cartao
-        titulo={`Notas de empenho${f.soPendentesAssinatura ? " pendentes de assinatura" : ""} (${recortes.length.toLocaleString("pt-BR")})`}
+        titulo={`Notas de empenho${f.soPendentesAssinatura ? " pendentes de assinatura" : ""} (${ordenados.length.toLocaleString("pt-BR")})`}
         dica={f.soPendentesAssinatura
           ? `Assinatura do Gestor de Licitação e/ou do Ordenador de Despesa, contada do último lançamento (emissão, reforço ou anulação) até hoje. A planilha tem lançamentos até ${fmtData(ultimaData)}.`
           : "Clique numa NE para ver os itens, o contrato, a licitação e os lançamentos."}
         extra={
+          <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {restos.length > 0 && (
+            <span role="group" aria-label="Origem das NEs" style={{ display: "inline-flex", gap: 4 }}>
+              {([["todas", "Todas"], ["ano", `De ${ano} (${recortes.length.toLocaleString("pt-BR")})`], ["rp", `Restos a pagar (${restos.length.toLocaleString("pt-BR")})`]] as const).map(([k, rot]) => (
+                <button key={k} type="button" aria-pressed={origem === k} onClick={() => setOrigem(k)}
+                  style={{ ...estiloBotao, padding: "5px 10px", fontSize: 11, background: origem === k ? `${DK.cyan}22` : "transparent", borderColor: origem === k ? DK.cyan : DK.cardBorder, color: origem === k ? DK.cyan : DK.text }}>
+                  {rot}
+                </button>
+              ))}
+            </span>
+          )}
           <select value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)} style={estiloSelect} aria-label="Ordenar">
             <option value="valor">Maior valor</option>
             <option value="aLiquidar">Maior a liquidar</option>
             <option value="liquidadoPagar">Maior liquidado a pagar</option>
+            <option value="pago">Maior pago em {ano}</option>
             <option value="emissao">Mais recentes</option>
             <option value="assinatura">Há mais tempo sem assinatura</option>
             <option value="ne">Número da NE</option>
           </select>
+          </span>
         }
       >
         <div style={{ overflowX: "auto" }}>
@@ -659,6 +630,7 @@ export default function PainelExecucao() {
                 const fr = financeiroDo(r, fin);
                 const principal = r.itens.reduce((m, i) => (i.valor > m.valor ? i : m), r.itens[0]);
                 const pend = pendencia(n);
+                const resto = ehResto(r);
                 return (
                   <Fragment key={n.ne}>
                     <tr
@@ -668,6 +640,7 @@ export default function PainelExecucao() {
                       <td style={{ padding: "8px", whiteSpace: "nowrap", verticalAlign: "top" }}>
                         <div style={{ fontFamily: "monospace", fontWeight: 700 }}>{aberta ? "▾" : "▸"} {n.ne}</div>
                         <div style={{ fontSize: 10, color: DK.muted }}>{fmtData(n.emissao)}{n.lancamentos.length > 1 ? ` · ${n.lancamentos.length} lanç.` : ""}</div>
+                        {resto && <span title={`Empenho de ${n.ne.slice(0, 4)} com restos a pagar em ${ano}. O valor dele não entra no empenhado de ${ano}.`} style={{ display: "inline-block", marginTop: 3, fontSize: 10, fontWeight: 700, color: DK.amber, border: `1px solid ${DK.amber}55`, borderRadius: 5, padding: "0 5px" }}>RP {n.ne.slice(0, 4)}</span>}
                         {pend && <SeloAssinatura pend={pend} />}
                       </td>
                       <td style={{ padding: "8px", verticalAlign: "top", maxWidth: 320 }}>
@@ -687,15 +660,15 @@ export default function PainelExecucao() {
                           ? <span style={{ color: DK.purple, fontWeight: 600 }}>{v.contrato.numero}</span>
                           : <span style={{ color: DK.muted, fontFamily: "monospace", fontSize: 11 }}>{n.pag || "—"}</span>}
                       </td>
-                      <td style={{ padding: "8px", verticalAlign: "top", textAlign: "right", fontFamily: "monospace", whiteSpace: "nowrap" }}>{fmtMoeda(r.valor)}</td>
+                      <td style={{ padding: "8px", verticalAlign: "top", textAlign: "right", fontFamily: "monospace", whiteSpace: "nowrap", color: resto ? DK.muted : undefined }}>{fmtMoeda(r.valor)}</td>
                       <CelulaFinanceira tem={fin.has(n.ne)} valor={fr.aLiquidar} cor={DK.amber} />
                       <CelulaFinanceira tem={fin.has(n.ne)} valor={fr.liquidadoPagar} cor={DK.teal} />
-                      <CelulaFinanceira tem={fin.has(n.ne)} valor={fr.pago} cor={DK.green} />
+                      <CelulaFinanceira tem={fin.has(n.ne)} valor={pagoNoAno(r)} cor={DK.green} />
                     </tr>
                     {aberta && (
                       <tr style={{ borderBottom: `1px solid ${DK.grid}`, background: `${DK.cyan}08` }}>
                         <td colSpan={9} style={{ padding: "4px 12px 14px" }}>
-                          <DetalheNE nota={n} itens={n.itens} recorte={r} vinculo={v} financeiro={fin.get(n.ne) ?? null} hoje={hoje} assinatura={anoCorrente} anoAtual={anos[0]} />
+                          <DetalheNE nota={n} itens={n.itens} recorte={r} vinculo={v} financeiro={fin.get(n.ne) ?? null} hoje={hoje} assinatura={anoCorrente && !resto} anoAtual={anos[0]} />
                         </td>
                       </tr>
                     )}

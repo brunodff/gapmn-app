@@ -321,7 +321,7 @@ export function porContrato(
   return [...m.values()].sort((a, b) => b.valor - a.valor);
 }
 
-// ─── Restos a pagar pagos no exercício ─────────────────
+// ─── Restos a pagar do exercício ─────────────────
 
 /** RP pago no exercício corrente, na proporção dos itens que passaram nos filtros. */
 export function pagoRPDo(r: Recorte, fin: ReadonlyMap<string, Financeiro>): number {
@@ -329,33 +329,20 @@ export function pagoRPDo(r: Recorte, fin: ReadonlyMap<string, Financeiro>): numb
 }
 
 /**
- * NEs de anos anteriores com RP pago no exercício, com os filtros do painel: a fatura de energia de 2026 paga com
- * NE de 2025 é pagamento de 2026. O filtro de mês é o da emissão, então com ele só entram NEs emitidas naquele mês.
+ * NEs de anos anteriores com restos a pagar no exercício (pagos ou ainda em aberto), com os filtros do painel: a
+ * fatura de energia de 2026 paga com NE de 2025 é pagamento de 2026. O filtro de mês é o da emissão, então com ele
+ * só entram NEs emitidas naquele mês.
  */
-export function restosPagos(
+export function restosDoExercicio(
   nes: readonly NotaEmpenho[], ano: string, f: Filtros, vinculos: ReadonlyMap<string, Vinculo>, fin: ReadonlyMap<string, Financeiro>,
 ): Recorte[] {
   if (f.soPendentesAssinatura) return []; // as NEs antigas não trazem a situação da assinatura
-  const antigas = nes.filter((n) => n.ne.slice(0, 4) < ano && (fin.get(n.ne)?.pagoRP ?? 0) > 0.005);
+  const antigas = nes.filter((n) => {
+    if (n.ne.slice(0, 4) >= ano) return false;
+    const x = fin.get(n.ne);
+    return !!x && ((x.pagoRP ?? 0) > 0.005 || x.aLiquidar > 0.005 || x.liquidadoPagar > 0.005);
+  });
   return filtrar(antigas, f, vinculos, fin);
-}
-
-/** RP pago por categoria do objeto, repartido pelo valor dos itens de cada NE. */
-export function restosPorCategoria(rs: readonly Recorte[], fin: ReadonlyMap<string, Financeiro>): Fatia[] {
-  const m = new Map<CategoriaId, { valor: number; nes: Set<string>; itens: number }>();
-  for (const r of rs) {
-    const pago = pagoRPDo(r, fin);
-    for (const i of r.itens) {
-      const parte = r.valor > 0 ? i.valor / r.valor : 1 / r.itens.length;
-      const x = m.get(i.categoria) ?? { valor: 0, nes: new Set<string>(), itens: 0 };
-      x.valor += pago * parte; x.nes.add(r.nota.ne); x.itens++;
-      m.set(i.categoria, x);
-    }
-  }
-  return ordenar(CATEGORIAS.filter((c) => m.has(c.id)).map((c) => {
-    const x = m.get(c.id)!;
-    return { chave: c.id, nome: c.nome, valor: x.valor, nes: x.nes.size, itens: x.itens, cor: c.cor };
-  }));
 }
 
 /** Situação (liquidação e pagamento) por NE, somando as linhas da mesma NE. */
