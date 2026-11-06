@@ -11,13 +11,16 @@ O resto — **todos** os processos da UASG 120630 (2019 em diante), objeto, NUP,
 vencedores publicados — o app busca sozinho no PNCP e nos Dados Abertos do Compras.gov.br,
 às 07:00 e 13:00 (função `sync-processos`). A extensão não é necessária para isso.
 
-## Instalar (Chrome ou Edge)
+## Instalar (Chrome, Edge ou Firefox)
 
 1. Baixe `processos-ao-vivo-<versão>.zip` (tela Processos do app → link da extensão) e descompacte
    numa pasta que não vá ser apagada (ex.: `Documentos\processos-ao-vivo`).
 2. Abra `chrome://extensions` (no Edge: `edge://extensions`), ligue **Modo do desenvolvedor**.
 3. **Carregar sem compactação** → escolha a pasta descompactada.
 4. Clique no ícone da extensão e entre com o **login do app GAP-MN** (perfis SLIC, ADMIN ou DEV).
+
+**Firefox (128 ou mais novo):** extraia o zip, abra `about:debugging` → Este Firefox → Carregar extensão temporária e
+escolha o `manifest.json`. Instalação permanente só depois de assinada no AMO (addons.mozilla.org).
 
 ## Uso
 

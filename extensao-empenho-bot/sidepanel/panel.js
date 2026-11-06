@@ -13,6 +13,7 @@ import {
 } from './sicaf.js';
 import { guardarPdf, chaveSolicitacao, chaveSicaf } from '../runner/arquivos.js';
 import { setupSubprocessos, abrirSubprocessos } from './subprocessos.js';
+import './uso.js';
 
 // ── Lista de unidades da FAB ──────────────────────────────────────────────────
 const FAB_UNITS = [
@@ -95,15 +96,18 @@ let port          = null;
 let uploadDest    = null;   // destino escolhido no menu: 'siloms' | 'contratosgov'
 let solicitacoesParsed = []; // [ { ok, solicitacao, fornecedorNome, ... } ] — review queue
 
-// Unidade da compra usada no fluxo "Compra" do Contratos.gov.br: vem da UG da
-// OM do perfil (ugPorUnidade.js). Se o usuário corrigir na revisão, a correção
-// fica salva para aquela OM e passa a ter prioridade.
+// Unidade da compra usada no fluxo "Compra" do Contratos.gov.br: a UASG da OM do
+// perfil (ugPorUnidade.js), a mesma em que a pessoa está logada no CNET. Corrigir na
+// revisão vale só para aquela solicitação (compra de outro órgão, por exemplo). Antes
+// a correção virava o padrão da OM: uma compra isolada da UASG 788810 passou a ir
+// para todas as compras do GAP-MN, que o CNET recusava. Só OM fora da lista guarda
+// a UASG informada.
 const UNIDADE_COMPRA_KEY = 'empenho_unidade_compra_por_om';
-let unidadesCompraSalvas = {}; // { 'GAP-XX': '1200NN' } informadas pelo usuário
+let unidadesCompraSalvas = {}; // { 'OM fora da lista': 'UASG' } informadas pelo usuário
 
 function unidadeCompraDoPerfil() {
   const om = userProfile?.unidade ?? '';
-  return unidadesCompraSalvas[om] || UG_POR_UNIDADE[om] || '';
+  return UG_POR_UNIDADE[om] || unidadesCompraSalvas[om] || '';
 }
 
 // Modalidades de compra do Contratos.gov.br (o robô casa pelo código inicial)
@@ -144,11 +148,20 @@ async function init() {
   setupFeedbackWidget();
   setupEmpenhosGerados();
   setupSubprocessos({ el, showScreen, escHtml, voltar: showMenuScreen });
+  el('dev-trigger').textContent = 'v' + chrome.runtime.getManifest().version;
   el('btn-subprocessos').addEventListener('click', () => abrirSubprocessos());
 
   const data = await chrome.storage.local.get(['empenho_profile', UNIDADE_COMPRA_KEY]);
   userProfile = data.empenho_profile ?? null;
   unidadesCompraSalvas = data[UNIDADE_COMPRA_KEY] ?? {};
+  // Limpa o que as versões 2.8.20–2.8.24 gravaram para OM da lista (a UASG certa é a dela)
+  const gravadasErradas = Object.keys(unidadesCompraSalvas).filter(om => UG_POR_UNIDADE[om]);
+  if (gravadasErradas.length) {
+    for (const om of gravadasErradas) delete unidadesCompraSalvas[om];
+    chrome.storage.local.set({ [UNIDADE_COMPRA_KEY]: unidadesCompraSalvas });
+  }
+
+  globalThis.registrarUsoExtensao('robo-empenhos', unidadeCompraDoPerfil() || null);
 
   if (!userProfile) {
     showScreen('profile');
@@ -1043,8 +1056,9 @@ function bindReviewInputs() {
           if (l.nextElementSibling === inp) l.querySelector('.rf-aviso')?.remove();
         });
       }
-      // A unidade informada vira o padrão da OM do perfil
-      if (key === 'unidadeCompra' && valor && userProfile?.unidade) {
+      // A unidade informada vale só para esta solicitação. Vira padrão apenas para OM
+      // fora da lista, que não tem UASG conhecida
+      if (key === 'unidadeCompra' && valor && userProfile?.unidade && !UG_POR_UNIDADE[userProfile.unidade]) {
         unidadesCompraSalvas[userProfile.unidade] = valor;
         chrome.storage.local.set({ [UNIDADE_COMPRA_KEY]: unidadesCompraSalvas });
       }
@@ -1926,7 +1940,7 @@ function buildCnetPayload(sol) {
     contrato:          String(sol.contrato ?? '').replace(/^(?:DESPESA\s+)?CRED(?:ENCIAMENTO)?\.?\s+(?=\d)/i, ''),
     credenciamento:    /^(?:DESPESA\s+)?CRED(?:ENCIAMENTO)?\.?\s+\d/i.test(String(sol.contrato ?? '')),
     tipoOrigem:        sol.contrato ? 'contrato' : 'compra',
-    unidadeCompra:     sol.ugCred ?? '120630',
+    unidadeCompra:     unidadeCompraDoPerfil() || sol.ugCred || '',
     tipoEmpenho:       tipoEmpenhoPadrao({ tipoOrigem: sol.contrato ? 'contrato' : 'compra', obs: sol.obs, itens: sol.items }),
     nd:                sol.nd ?? '',
     ptres:             sol.ptres ?? '',

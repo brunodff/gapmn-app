@@ -14,7 +14,10 @@ export function paginaMinutas() {
   const titulo = txt(document.querySelector('.content-header h1, section.content-header, h1')?.textContent);
   const temAdicionar = !!document.querySelector('a[href*="buscacompra"]') ||
     Array.from(document.querySelectorAll('a')).some(a => /adicionar\s+minuta/i.test(a.textContent ?? ''));
-  const naLista = /minutas?\s+de\s+empenho/i.test(titulo) && temAdicionar && !!document.querySelector('table');
+  // Sem o botão "Adicionar Minuta" (perfil sem permissão de criar) vale o endereço da
+  // lista com o título no plural; a tela de UMA minuta também diz "Minuta de Empenho"
+  const naLista = !!document.querySelector('table') && /minutas?\s+de\s+empenho/i.test(titulo) &&
+    (temAdicionar || (/\/empenho\/minuta\/?$/i.test(location.pathname) && /minutas\s+de\s+empenho/i.test(titulo)));
   const menu = Array.from(document.querySelectorAll('a[href]'))
     .find(a => /\/empenho\/minuta\/?(?:[?#]|$)/i.test(a.getAttribute('href') ?? '') || /^minutas?(\s+de\s+empenho)?$/i.test(txt(a.textContent)));
   return { naLista, menuHref: menu?.href ?? null, titulo, url: location.href };
@@ -99,6 +102,22 @@ export function adicionarAlteracao() {
   if (btn.tagName === 'A' && href && !/^(#|javascript:)/i.test(href)) return { ok: true, href: btn.href };
   btn.click();
   return { ok: true, clicou: true };
+}
+
+/**
+ * Abriu o formulário do Subelemento da alteração? No CNET ele tem o mesmo título da
+ * lista ("Alteração do empenho"): vale o formulário #formSubElemento, o endereço
+ * .../alteracao/create (ou alteracaoFonte/…/subelemento) ou um select de Tipo Operação.
+ */
+export function telaSubelementoAlteracao() {
+  const txt = s => String(s ?? '').replace(/\s+/g, ' ').trim();
+  const norm = s => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const titulo = txt(document.querySelector('.content-header h1, section.content-header, h1')?.textContent).slice(0, 80);
+  const form = !!document.querySelector('#formSubElemento');
+  const caminho = /\/alteracao\/create\b|\/alteracaoFonte\/\d+\/subelemento\b/i.test(location.pathname);
+  const operacao = Array.from(document.querySelectorAll('select'))
+    .some(s => Array.from(s.options).some(o => /^(ANULACAO|REFORCO)/.test(norm(o.text))));
+  return { ok: form || caminho || operacao, form, caminho, operacao, titulo, url: location.href };
 }
 
 /**

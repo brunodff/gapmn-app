@@ -9,11 +9,13 @@
  * Clica em "Adicionar Minuta de Empenho" na lista de minutas.
  */
 export function step0ClickAdicionarMinuta() {
-  // Tenta por href (mais confiável)
-  let btn = document.querySelector('a[href*="buscacompra"]');
+  // Pelo texto do botão; senão, só o link do formulário NOVO (".../buscacompra" sem número
+  // de minuta). Qualquer "buscacompra" podia ser a Etapa 1 de uma minuta já aberta.
+  let btn = Array.from(document.querySelectorAll('a, button'))
+    .find(a => /adicionar\s+minuta/i.test(a.textContent ?? ''));
   if (!btn) {
-    btn = Array.from(document.querySelectorAll('a'))
-      .find(a => (a.textContent ?? '').trim().toLowerCase().includes('adicionar minuta'));
+    btn = Array.from(document.querySelectorAll('a[href*="buscacompra"]'))
+      .find(a => /\/empenho\/buscacompra\/?(?:[?#].*)?$/i.test(a.getAttribute('href') ?? ''));
   }
   if (!btn) {
     const links = Array.from(document.querySelectorAll('a.btn, a.ladda-button'))

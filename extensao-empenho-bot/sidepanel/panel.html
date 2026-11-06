@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GAPMN Empenho Bot</title>
+  <title>Robô de Empenhos</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -145,6 +145,10 @@
       cursor: pointer; text-align: left; transition: opacity 0.15s;
     }
     .action-btn:hover { opacity: 0.85; }
+    .action-btn:disabled, .action-btn:disabled:hover { opacity: 0.45; cursor: not-allowed; }
+    .chip-dev { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 8.5px;
+      font-weight: 700; letter-spacing: .04em; vertical-align: middle; color: #fbbf24;
+      background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.35); }
     .action-icon { font-size: 22px; flex-shrink: 0; }
     .action-title { font-size: 13px; font-weight: 700; }
     .action-sub   { font-size: 10px; margin-top: 2px; opacity: 0.75; }
@@ -189,6 +193,14 @@
     .sp-docs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 10.5px; margin-top: 5px; }
     .sp-barra { height: 4px; background: #1e293b; border-radius: 3px; overflow: hidden; }
     .sp-barra > div { height: 100%; width: 0; background: #3b82f6; transition: width .3s; }
+    .sp-unidade { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px 10px; }
+    .sp-unidade.sp-unidade-falta { border-color: #78350f; background: rgba(120,53,15,.15); }
+    .sp-unidade-tit { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .5px; text-transform: uppercase; }
+    .sp-unidade .form-group { margin: 6px 0 0; }
+    .sp-unidade .form-input { padding: 6px 8px; font-size: 11.5px; text-transform: none; }
+    .sp-unidade-acoes { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+    #sp-unidade-resumo { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 11px; color: #cbd5e1; }
+    #sp-unidade-resumo > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
     #sp-cfg summary { font-size: 11px; color: #94a3b8; cursor: pointer; }
     #sp-cfg .form-group { margin: 6px 0 0; }
     #sp-cfg .form-input { padding: 6px 8px; font-size: 11.5px; }
@@ -566,7 +578,7 @@
 <!-- ── Header (sempre visível) ──────────────────────────────────────────── -->
 <div class="header">
   <div>
-    <div class="header-title">⚙ GAPMN Empenho Bot</div>
+    <div class="header-title">⚙ Robô de Empenhos</div>
     <div class="header-sub" id="header-sub">Força Aérea Brasileira</div>
   </div>
   <div style="display:flex;align-items:center;gap:8px;">
@@ -636,14 +648,6 @@
 
   <div class="menu-section-label">Selecione a operação:</div>
 
-  <button id="btn-siloms" class="action-btn action-siloms">
-    <span class="action-icon">⚡</span>
-    <div>
-      <div class="action-title">EMPENHAR NO SILOMS</div>
-      <div class="action-sub">Sistema Integrado de Logística</div>
-    </div>
-  </button>
-
   <button id="btn-contratosgov" class="action-btn action-cnet">
     <span class="action-icon">📋</span>
     <div>
@@ -656,7 +660,17 @@
     <span class="action-icon">📁</span>
     <div>
       <div class="action-title">CRIAR SUBPROCESSOS NO SILOMS</div>
-      <div class="action-sub">Das solicitações empenhadas, com a solicitação e o SICAF anexados</div>
+      <div class="action-sub">Depois do empenho emitido: um por solicitação, com a solicitação e o SICAF anexados</div>
+    </div>
+  </button>
+
+  <!-- Empenho direto no SILOMS: em desenvolvimento (botão desligado) -->
+  <button id="btn-siloms" class="action-btn action-siloms" disabled aria-disabled="true"
+    title="O empenho direto no SILOMS está em desenvolvimento. Por enquanto, empenhe pelo Contratos.gov.br.">
+    <span class="action-icon">⚡</span>
+    <div>
+      <div class="action-title">EMPENHAR NO SILOMS <span class="chip-dev">EM DESENVOLVIMENTO</span></div>
+      <div class="action-sub">Próxima versão — por enquanto, empenhe pelo Contratos.gov.br</div>
     </div>
   </button>
 
@@ -788,14 +802,28 @@
       <button id="sp-btn-recarregar" class="eg-btn" title="Lê de novo os empenhos gerados e os PDFs guardados">↻</button>
     </div>
     <button id="sp-btn-sicaf" class="eg-btn" style="display:none;margin:0;padding:5px 8px">🔎 Baixar do SICAF as declarações que faltam</button>
+    <section id="sp-unidade" class="sp-unidade">
+      <div class="sp-unidade-tit">Dados da sua unidade no SILOMS</div>
+      <div id="sp-unidade-form">
+        <div class="form-group"><label class="form-label" for="sp-cfg-epag">Unidade do ePAG (sigla, como aparece no SILOMS)</label>
+          <input id="sp-cfg-epag" class="form-input" placeholder="ex.: GAP-MN" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label" for="sp-cfg-fluxo">Nome do fluxo (como aparece em "Associar Fluxo")</label>
+          <input id="sp-cfg-fluxo" class="form-input" placeholder="ex.: SEO/ACI - SOLICITAÇÃO DE EMPENHO / APOIADAS" autocomplete="off"></div>
+        <div class="sp-unidade-acoes">
+          <button id="sp-cfg-salvar" class="eg-btn" type="button" style="margin:0">💾 Salvar</button>
+          <span id="sp-cfg-msg" class="sp-dica">Preencha uma vez: fica salvo neste navegador.</span>
+        </div>
+      </div>
+      <div id="sp-unidade-resumo" style="display:none">
+        <span id="sp-unidade-texto"></span>
+        <button id="sp-cfg-alterar" class="eg-btn" type="button" style="margin:0">✏ Alterar</button>
+      </div>
+    </section>
+
     <div id="sp-lista"></div>
 
     <details id="sp-cfg">
-      <summary>Configuração (unidade do ePAG, fluxo, responsáveis, planilha)</summary>
-      <div class="form-group"><label class="form-label" for="sp-cfg-epag">Unidade do ePAG (sigla)</label>
-        <input id="sp-cfg-epag" class="form-input"></div>
-      <div class="form-group"><label class="form-label" for="sp-cfg-fluxo">Fluxo a associar</label>
-        <input id="sp-cfg-fluxo" class="form-input"></div>
+      <summary>Mais opções (responsáveis, planilha de controle)</summary>
       <div class="form-group"><label class="form-label">Responsáveis (sorteio por peso)</label>
         <div id="sp-resp-lista"></div>
         <div class="sp-resp-novo">
@@ -877,7 +905,7 @@
 <div id="dev-modal">
   <div class="dev-card">
     <div class="dev-header">
-      <span class="dev-title">🔧 PAINEL DEV — GAPMN Empenho Bot</span>
+      <span class="dev-title">🔧 PAINEL DEV — Robô de Empenhos</span>
       <button class="btn-dev-close" id="btn-dev-close">✕</button>
     </div>
     <div id="dev-info" class="dev-kv"></div>

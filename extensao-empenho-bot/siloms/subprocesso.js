@@ -561,10 +561,15 @@ async function execFormPage(state, item) {
   var ta = findEl('textarea', null, true);
   if (ta) { fill(ta, nomeVal); await delay(200); }
 
-  var epag = (state.config && state.config.epag) || 'GAP-MN';
-  log('  [3] Unidade do ePAG → ' + epag + '…');
-  var epagArrow = findArrowNear('epag', []) || findArrowNear('unidade do epag', []);
-  if (!(await gxSelect(epagArrow, epag, epag, 'Sigla'))) log('  ⚠ ePAG não selecionado — verifique', 'warn');
+  // Cada unidade configura a sua no painel (Dados da sua unidade no SILOMS)
+  var epag = String((state.config && state.config.epag) || '').trim();
+  if (!epag) {
+    log('  ⚠ [3] Unidade do ePAG não configurada no painel — complete-a no SILOMS', 'warn');
+  } else {
+    log('  [3] Unidade do ePAG → ' + epag + '…');
+    var epagArrow = findArrowNear('epag', []) || findArrowNear('unidade do epag', []);
+    if (!(await gxSelect(epagArrow, epag, epag, 'Sigla'))) log('  ⚠ ePAG não selecionado — verifique', 'warn');
+  }
   await delay(1000);
 
   log('  [4] PAG: ' + item.pag + '…');
@@ -629,14 +634,23 @@ async function execAssociarPage(state, item) {
   var docNr = await captureNrDoc();
   log('  Nr. Documento: ' + docNr, 'ok');
 
-  log('  [7] Associando fluxo…');
-  await associarFluxo((state.config && state.config.fluxo) || 'SEO/ACI - SOLICITAÇÃO DE EMPENHO / APOIADAS');
+  var fluxo = String((state.config && state.config.fluxo) || '').trim();
+  if (!fluxo) {
+    log('  ⚠ [7] Nome do fluxo não configurado no painel — associe o fluxo no SILOMS', 'warn');
+  } else {
+    log('  [7] Associando fluxo "' + fluxo + '"…');
+    await associarFluxo(fluxo);
+  }
   await waitPopupClosed(4000);
   await delay(500);
 
   var st = Object.assign({}, state, { step: 'documentos', docNr: docNr, docIdx: 0, docsRes: [] });
   await saveState(st);
   await execDocumentosPage(st, item);
+}
+
+function semAcento(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 async function associarFluxo(fluxoNome) {
@@ -656,18 +670,37 @@ async function associarFluxo(fluxoNome) {
   if (fluxoInp) { fill(fluxoInp, fluxoNome); await delay(300); }
   clickSearchBtn(pd);
   await delay(2000);
-  if (injectClickByText(pd, fluxoNome)) { log('  Fluxo associado ✓', 'ok'); await delay(800); return; }
-  var rows = pd.querySelectorAll('a, tr');
-  for (var ri = 0; ri < rows.length; ri++) {
-    var rt = (rows[ri].textContent || '').toLowerCase();
-    if (rt.indexOf('seo/aci') !== -1 && rt.indexOf('empenho') !== -1) {
-      (rows[ri].tagName === 'TR' ? (rows[ri].querySelector('a') || rows[ri]) : rows[ri]).click();
-      log('  Fluxo associado ✓ (alternativo)', 'ok');
-      await delay(800);
-      return;
-    }
+  // Acha a linha do fluxo lendo o popup (o clique pela página não diz se achou): o
+  // nome igual (sem acento, maiúsculas e espaços extras), depois um que o contenha e,
+  // se o SILOMS abreviar, um com todas as palavras. Entre os candidatos, o de texto
+  // mais curto — o link do fluxo, não a tabela inteira
+  var alvo = semAcento(fluxoNome);
+  var palavras = alvo.split(/[^a-z0-9]+/).filter(function (w) { return w.length >= 3; });
+  var cands = Array.prototype.slice.call(pd.querySelectorAll('a, td[onclick], tr[onclick]'))
+    .map(function (el) { return { el: el, t: semAcento(el.textContent || '') }; })
+    .filter(function (c) { return c.t; });
+  var escolher = function (teste) {
+    var ok = cands.filter(function (c) { return teste(c.t); });
+    ok.sort(function (a, b) { return a.t.length - b.t.length; });
+    return ok[0] || null;
+  };
+  var achado = escolher(function (t) { return t === alvo; }) ||
+    escolher(function (t) { return t.indexOf(alvo) !== -1; }) ||
+    (palavras.length ? escolher(function (t) { return palavras.every(function (w) { return t.indexOf(w) !== -1; }); }) : null);
+  if (!achado) {
+    log('  ⚠ Fluxo "' + fluxoNome + '" não encontrado no popup — confira o nome no painel e associe no SILOMS', 'warn');
+    return;
   }
-  log('  ⚠ Fluxo não encontrado no popup — associe manualmente', 'warn');
+  // Clica na própria linha encontrada, pela página (link javascript: ou onclick do GeneXus)
+  var marca = 'gf' + Date.now() + Math.random().toString(36).slice(2, 7);
+  try { achado.el.setAttribute('data-gapmn-fluxo', marca); } catch (_) {}
+  rodarNaPagina(pd,
+    'var el=document.querySelector(\'[data-gapmn-fluxo="' + marca + '"]\');if(!el)return;' +
+    'var href=el.getAttribute("href")||"";var oc=el.getAttribute("onclick")||"";' +
+    'var code=oc||(href.indexOf("javascript:")===0?href.slice(11):"");' +
+    'if(code){try{(new Function(code)).call(el);}catch(e){el.click();}}else{el.click();}');
+  log('  Fluxo associado ✓ — ' + String(achado.el.textContent || '').replace(/\s+/g, ' ').trim(), 'ok');
+  await delay(800);
 }
 
 // ── Documentos: PDF da solicitação e da declaração do SICAF ──────────────────

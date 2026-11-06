@@ -20,19 +20,29 @@ export async function step5Runner(p) {
   const compra = p.tipoOrigem === 'compra';
   const itensEmp = p.itensEmpenho ?? [];
 
-  // Linhas de item: as que têm o select de subelemento
+  // Linhas de item: as que têm o select de subelemento (não a linha-filha, que
+  // pode ter campos da linha de cima)
   let linhas = [];
   for (let t = 0; t < 15000; t += 500) {
-    linhas = Array.from(document.querySelectorAll('table tbody tr')).filter(tr => tr.querySelector('select'));
+    linhas = Array.from(document.querySelectorAll('table tbody tr')).filter(tr => !tr.classList.contains('child') && tr.querySelector('select'));
     if (linhas.length) break;
     await dorme(500);
   }
   if (!linhas.length) return { ok: false, error: 'Nenhum item carregado na Etapa 5' };
 
+  // Tela estreita (DataTables Responsive): as colunas escondidas e os campos delas
+  // vão para a linha-filha, logo abaixo. Campo ou valor procurado só na linha some.
+  const filhaDe = tr => (tr.nextElementSibling?.classList.contains('child') ? tr.nextElementSibling : null);
+  const textoDe = el => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
   function colunaPorCabecalho(tr, re) {
     const ths = Array.from(tr.closest('table')?.querySelectorAll('thead th') ?? []);
-    const i = ths.findIndex(th => re.test((th.textContent ?? '').replace(/\s+/g, ' ').trim()));
-    return i >= 0 ? tr.cells[i] : null;
+    const i = ths.findIndex(th => re.test(textoDe(th)));
+    const cel = i >= 0 ? tr.cells[i] : null;
+    if (textoDe(cel)) return cel;
+    const filha = filhaDe(tr);
+    const li = filha && ((i >= 0 ? filha.querySelector(`li[data-dt-column="${i}"]`) : null) ??
+      Array.from(filha.querySelectorAll('li')).find(l => re.test(textoDe(l.querySelector('.dtr-title')))));
+    return li?.querySelector('.dtr-data') ?? li ?? cel;
   }
 
   // Trava: a Natureza da Despesa dos itens vem da linha de crédito da Etapa 4
@@ -57,9 +67,20 @@ export async function step5Runner(p) {
 
   const feitos = [];
   for (const tr of linhas) {
-    const cid = tr.querySelector('input[name="contrato_item_id[]"]')?.value ?? '';
+    // 0. Expande a linha (DataTables Responsive): o Valor Total calculado e, em tela
+    // estreita, os campos do item ficam na linha-filha. O controle é a 1ª célula
+    // ("Material", tabindex="0").
+    const controle = tr.cells[0];
+    const ehControle = controle && (controle.getAttribute('tabindex') === '0' || controle.classList.contains('dtr-control'));
+    const expandida = tr.classList.contains('parent') || !!filhaDe(tr);
+    if (ehControle && !expandida) {
+      controle.click();
+      await dorme(400);
+    }
+
+    const naLinha = sel => tr.querySelector(sel) ?? filhaDe(tr)?.querySelector(sel) ?? null;
+    const cid = naLinha('input[name="contrato_item_id[]"]')?.value ?? '';
     const porId = prefixo => (cid ? document.getElementById(prefixo + cid) : null);
-    const naLinha = sel => tr.querySelector(sel);
 
     // Nº do item: campo oculto (contrato) ou coluna "Número"/"N. Item" (compra)
     const numItem =
@@ -74,16 +95,6 @@ export async function step5Runner(p) {
 
     if (compra && itensEmp.length && !empItem) {
       return { ok: false, error: `O ${rotulo} está na tela mas não na solicitação (N.Item na revisão: ${itensEmp.map(i => i.numeroItem).join(', ')}).` };
-    }
-
-    // 0. Expande a linha (DataTables Responsive): o Valor Total calculado fica na
-    // linha-filha. O controle é a 1ª célula ("Material", tabindex="0").
-    const controle = tr.cells[0];
-    const ehControle = controle && (controle.getAttribute('tabindex') === '0' || controle.classList.contains('dtr-control'));
-    const expandida = tr.classList.contains('parent') || tr.nextElementSibling?.classList.contains('child');
-    if (ehControle && !expandida) {
-      controle.click();
-      await dorme(400);
     }
 
     // 1. Subelemento (select2) — o do item, senão o da solicitação; "00" = manter o padrão
@@ -102,9 +113,22 @@ export async function step5Runner(p) {
     }
 
     // Preço unitário pela coluna "Valor Unit." (não pelo último número da linha,
-    // que é o Valor Total do Item)
-    const unit = num(colunaPorCabecalho(tr, /^Valor\s*Unit/i)?.textContent);
+    // que é o Valor Total do Item), na linha ou na linha-filha; senão um campo com o
+    // unitário; senão Valor Total do Item ÷ Qtd. de Item
+    const unit = (() => {
+      const u = num(colunaPorCabecalho(tr, /^(Valor|Vlr\.?|Pre[çc]o)\s*Unit/i)?.textContent);
+      if (u > 0) return u;
+      const campo = num((porId('valor_unitario') ?? porId('vlr_unitario') ??
+        naLinha('input[name*="unitario" i], input[id*="unitario" i], input[name*="vlr_unit" i]'))?.value);
+      if (campo > 0) return campo;
+      const totItem = num(colunaPorCabecalho(tr, /^Valor\s*Total\s*do\s*Item/i)?.textContent) || num(porId('valor_total_item')?.value);
+      const qtdItem = num(colunaPorCabecalho(tr, /^Qtd\.?\s*d[eo]\s*Item/i)?.textContent);
+      return totItem > 0 && qtdItem > 0 ? totItem / qtdItem : NaN;
+    })();
     let valor = num(empItem?.valor);
+    const fmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const campos = () => [tr, filhaDe(tr)].filter(Boolean).flatMap(el => Array.from(el.querySelectorAll('input,select')))
+      .map(e => e.name || e.id || e.type).join(', ');
 
     // 2a. COMPRA: trabalha com a QUANTIDADE do item (coluna QUANT do PDF); o
     // CNET calcula o valor. Digitada como no uso manual ("100"), sem chamar
@@ -151,8 +175,9 @@ export async function step5Runner(p) {
     // solicitação, vale o total dela, mas só com um único item marcado. Nunca o
     // "valor total do item" do contrato: é o saldo inteiro, não o que foi pedido.
     const vrInput  = porId('vrtotal') ?? naLinha('input[id^="vrtotal"]');
-    const qtdInput = porId('qtditem') ?? naLinha('input[id^="qtditem"], input[name*="qtd" i], input[name*="quant" i]')
-      ?? Array.from(tr.querySelectorAll('input[type="text"], input:not([type])')).filter(i => i !== vrInput).pop();
+    // Só um campo de quantidade de verdade: "o último campo de texto da linha" já
+    // pegou outro campo, e a quantidade ficava zerada ou com a do contrato inteiro
+    const qtdInput = porId('qtditem') ?? naLinha('input[id^="qtditem"], input[name*="qtd" i], input[name*="quant" i]');
     if (Number.isNaN(valor)) {
       if (!itensEmp.length && linhas.length === 1) {
         valor = num(p.total);
@@ -168,29 +193,48 @@ export async function step5Runner(p) {
       }
     }
     if (!(valor > 0)) return { ok: false, error: `Sem valor a empenhar para o ${rotulo} — preencha o valor na revisão.` };
+    if (!vrInput && !qtdInput) return { ok: false, error: `Campos de quantidade e valor do ${rotulo} não encontrados (campos da linha: ${campos()})` };
+
+    // Casas decimais e separador que o campo de quantidade usa ("0,00000" → 5 com
+    // vírgula); o degrau dessas casas é a folga entre quantidade × unitário e o valor
+    const qtdAntes = String(qtdInput?.value ?? '').trim();
+    const ponto = /^\d+\.\d+$/.test(qtdAntes);
+    const casas = (qtdAntes.split(ponto ? '.' : ',')[1] ?? '').length || 4;
+    const folga = Math.max(0.01, (unit > 0 ? unit / 10 ** casas : 0) + 0.005);
+    const totalPelaQtd = () => (qtdInput && unit > 0 ? num(qtdInput.value) * unit : NaN);
 
     if (vrInput) {
       preencher(vrInput, valor.toFixed(2).replace('.', ','));
       if (typeof window.calculaQuantidade === 'function') window.calculaQuantidade(vrInput);
       await dorme(400);
     }
-    if (qtdInput && !(num(qtdInput.value) > 0)) {
-      if (!(unit > 0)) return { ok: false, error: `Não achei o Valor Unit. do ${rotulo} para calcular a quantidade` };
-      // Mantém o nº de casas decimais que o campo usa ("0,00000" → 5)
-      const casas = (String(qtdInput.value).split(',')[1] ?? '').length || 4;
-      preencher(qtdInput, (valor / unit).toFixed(casas).replace('.', ','));
+    // Quantidade zerada ou que não dá o valor pedido (o CNET pode trazer a do contrato
+    // inteiro): quantidade = valor ÷ unitário
+    if (qtdInput && (!(num(qtdInput.value) > 0) || Math.abs(totalPelaQtd() - valor) > folga)) {
+      if (!(unit > 0)) return { ok: false, error: `Não achei o Valor Unit. do ${rotulo} para calcular a quantidade (campos da linha: ${campos()})` };
+      const q = (valor / unit).toFixed(casas);
+      preencher(qtdInput, ponto ? q : q.replace('.', ','));
       if (typeof window.calculaVrTotal === 'function') window.calculaVrTotal(qtdInput);
       await dorme(300);
     }
 
-    // Confere: não avança com quantidade/valor zerados
+    // Confere antes de avançar: o CNET recusa quantidade zero ("A quantidade
+    // selecionada não pode ser zero") e quantidade × unitário tem de dar o valor pedido
     const qtdFinal = qtdInput ? num(qtdInput.value) : NaN;
     const vrFinal  = vrInput ? num(vrInput.value) : NaN;
-    if (!(qtdFinal > 0) && !(vrFinal > 0)) {
-      const campos = Array.from(tr.querySelectorAll('input,select')).map(e => e.name || e.id || e.type).join(', ');
-      return { ok: false, error: `Quantidade/valor do ${rotulo} ficaram zerados (campos da linha: ${campos})` };
+    if (qtdInput ? !(qtdFinal > 0) : !(vrFinal > 0)) {
+      return { ok: false, error: `Quantidade/valor do ${rotulo} ficaram zerados (campos da linha: ${campos()})` };
     }
-    feitos.push(`${rotulo}: sub ${subCod}, qtd ${qtdInput?.value ?? '-'}${vrInput ? `, valor ${vrInput.value}` : ''}`);
+    const pelaQtd = qtdFinal > 0 && unit > 0;
+    const totalTela = pelaQtd ? qtdFinal * unit : vrFinal;
+    if (totalTela > 0 && Math.abs(totalTela - valor) > folga) {
+      return {
+        ok: false,
+        error: `O ${rotulo} ficou com ${pelaQtd ? `qtd ${qtdInput.value} × unit. R$ ${fmt(unit)} = ` : ''}R$ ${fmt(totalTela)} na tela, ` +
+          `mas a solicitação pede R$ ${fmt(valor)} — confira o N.Item e o valor na revisão`,
+      };
+    }
+    feitos.push(`${rotulo}: sub ${subCod}, qtd ${qtdInput?.value ?? '-'}${unit > 0 ? ` × R$ ${fmt(unit)}` : ''}${vrInput ? `, valor ${vrInput.value}` : ''}`);
   }
 
   await dorme(600);

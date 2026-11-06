@@ -140,7 +140,8 @@ export async function step1Runner(payload) {
     return ok();
   }
 
-  const { tipoOrigem, modalidade, numeroCompra, contrato, unidadeCompra = '120630', fornecedorCnpj = '', credenciamento = false } = payload;
+  const { tipoOrigem, modalidade, numeroCompra, contrato, fornecedorCnpj = '', credenciamento = false } = payload;
+  const unidadeCompra = String(payload.unidadeCompra ?? '').trim();
 
   const radioEl = tipoOrigem === 'contrato'
     ? document.getElementById('opc_contrato')
@@ -205,6 +206,9 @@ export async function step1Runner(payload) {
     // Unidade da compra: seguir com a unidade errada empenharia na UASG errada,
     // então só avança se a unidade estiver de fato selecionada. Já selecionada (o CNET
     // lembra a última), não mexe; a busca pode demorar: até 3 tentativas.
+    if (!unidadeCompra) {
+      return { ok: false, step: 1, error: 'Unidade (UASG) da compra não informada — escolha a OM no perfil do robô (✏ no menu) ou informe a UASG na revisão' };
+    }
     const unidadeSel = () => {
       const $u = (window.jQuery || window.$)?.('#select2_ajax_unidade_origem_id');
       let txt = '';
@@ -276,19 +280,62 @@ export async function step1Runner(payload) {
     const termos = credenciamento && !Number.isNaN(num)
       ? [`${num}/${ano || '2'}`]
       : [...new Set([numRaw ? numRaw + '/20' : contrato, Number.isNaN(num) ? null : `${num}/20`].filter(Boolean))];
+    // O clique na opção pode não pegar (CNET lento, lista redesenhada no meio): sem
+    // conferir, o robô clicava "Próxima" com o contrato vazio e o CNET respondia
+    // "O campo Contrato é obrigatório quando Tipo é Contrato". Até 3 tentativas.
+    const contratoSel = () => {
+      const $c = (window.jQuery || window.$)?.('#select2_ajax_id');
+      let txt = '';
+      try { txt = ($c?.select2?.('data') ?? []).filter(d => d.id !== '' && d.id != null).map(d => d.text ?? '').join(' '); } catch (_) { /* sem select2 */ }
+      const val = $c?.val?.() ?? document.querySelector('#select2_ajax_id')?.value ?? '';
+      return val ? (txt || String(val)) : '';
+    };
+    // Selecionado e com o número certo (o CNET pode lembrar o contrato da minuta anterior)
+    const rxNum = numRaw && !Number.isNaN(num) ? new RegExp(String.raw`(?:^|[^\d])0*${num}\/`) : null;
+    const contratoCerto = () => { const s = contratoSel(); return !!s && (!rxNum || rxNum.test(s)); };
     let rc = null;
-    for (const termo of termos) {
-      rc = await setSelect2Ajax('#select2_ajax_id', termo, numRaw ? escolherContrato : (fornecedorCnpj || null));
-      if (rc.ok || !(rc.semNumero || /sem resultados/.test(rc.error ?? ''))) break;
+    for (let tentativa = 0; tentativa < 3 && (tentativa === 0 || !contratoCerto()); tentativa++) {
+      if (tentativa) {
+        try { (window.jQuery || window.$)('#select2_ajax_id').select2('close'); } catch (_) { /* já fechado */ }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      for (const termo of termos) {
+        rc = await setSelect2Ajax('#select2_ajax_id', termo, numRaw ? escolherContrato : (fornecedorCnpj || null));
+        if (rc.ok || !(rc.semNumero || /sem resultados/.test(rc.error ?? ''))) break;
+      }
+      if (!rc.ok) return { ok: false, step: 1, error: `Contrato: ${rc.error}` };
+      await hd();
     }
-    if (!rc.ok) return { ok: false, step: 1, error: `Contrato: ${rc.error}` };
-    await hd();
+    if (!contratoCerto()) {
+      const ficou = contratoSel().replace(/\s+/g, ' ').trim().slice(0, 60);
+      return { ok: false, step: 1, error: `Contrato ${contrato} não ficou selecionado no CNET após 3 tentativas (${ficou ? `ficou "${ficou}"` : 'o campo ficou vazio'})` };
+    }
+  } else {
+    return { ok: false, step: 1, error: 'Número do contrato ausente — informe em Contrato na revisão (ex: 028/2024) ou mude o Tipo para Compra' };
+  }
+
+  // Antes de "Próxima": o Tipo marcado tem de ser o da solicitação. Uma compra enviada
+  // com "Contrato" marcado volta com "O campo Contrato é obrigatório quando Tipo é Contrato"
+  const radioCerto = document.getElementById(tipoOrigem === 'contrato' ? 'opc_contrato' : 'opc_compra');
+  const radioOutro = document.getElementById(tipoOrigem === 'contrato' ? 'opc_compra' : 'opc_contrato');
+  if (!radioCerto?.checked || radioOutro?.checked) {
+    const nome = { contrato: 'Contrato', compra: 'Compra' };
+    const outro = tipoOrigem === 'contrato' ? 'compra' : 'contrato';
+    return { ok: false, step: 1, error: `O Tipo no CNET ficou "${radioOutro?.checked ? nome[outro] : 'nenhum'}", mas esta solicitação é ${nome[tipoOrigem === 'contrato' ? 'contrato' : 'compra']}`
+      + (radioCerto?.disabled ? ' — o Tipo está travado: o formulário parece preso a uma minuta anterior' : '') };
   }
 
   const btn =
     document.querySelector('button.submeter') ||
     Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim().includes('Próxima'));
   if (!btn) return { ok: false, step: 1, error: 'Botão Próxima Etapa não encontrado' };
+  // O que vai ser enviado (sem token): se o CNET recusar, o motivo mostra isto
+  let diag = '';
+  try {
+    const form = btn.closest('form');
+    diag = form ? Array.from(new FormData(form)).filter(([k]) => !/token|senha|password|http_referrer|_method/i.test(k))
+      .map(([k, v]) => `${k}=${String(v).slice(0, 25)}`).join(' & ').slice(0, 400) : '';
+  } catch (_) { /* sem formulário */ }
   btn.click();
-  return { ok: true, step: 1, done: true };
+  return { ok: true, step: 1, done: true, diag };
 }

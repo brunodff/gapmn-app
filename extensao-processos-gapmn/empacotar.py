@@ -7,7 +7,7 @@ Uso: python empacotar.py
 import json, os, shutil, zipfile
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-ARQUIVOS = ['manifest.json', 'background.js', 'popup.html', 'popup.js',
+ARQUIVOS = ['manifest.json', 'background.js', 'popup.html', 'popup.js', 'uso.js',
             'icons/icon-16.png', 'icons/icon-32.png', 'icons/icon-48.png', 'icons/icon-128.png']
 
 versao = json.load(open(os.path.join(AQUI, 'manifest.json'), encoding='utf-8'))['version']

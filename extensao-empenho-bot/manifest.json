@@ -1,18 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "GAPMN Empenho Bot",
-  "version": "2.8.18",
-  "description": "Coleta solicitações de empenho no SILOMS, automatiza a emissão no Contratos.gov.br e cria os subprocessos no SILOMS com a solicitação e a declaração do SICAF.",
-
+  "name": "Robô de Empenhos",
+  "version": "2.9.1",
+  "description": "Lê a solicitação de empenho em PDF, preenche a minuta no Contratos.gov.br e cria o subprocesso no SILOMS. Ferramenta não oficial.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "permissions": [
     "storage",
     "sidePanel",
-    "activeTab",
     "scripting",
     "tabs",
     "webNavigation"
   ],
-
   "host_permissions": [
     "https://fychrtyyqbzlfbzbvzqp.supabase.co/*",
     "https://mcp-compras.up.railway.app/*",
@@ -22,10 +25,8 @@
     "https://*.siloms.intraer/*",
     "http://*.siloms.intraer/*",
     "https://*.intraer/*",
-    "*://*.fab.mil.br/*",
-    "*://*.defesa.gov.br/*"
+    "*://*.fab.mil.br/*"
   ],
-
   "externally_connectable": {
     "matches": [
       "https://gapmn.app/*",
@@ -34,47 +35,52 @@
       "http://localhost:4173/*"
     ]
   },
-
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"],
+    "scripts": [
+      "background.js"
+    ],
     "type": "module"
   },
-
   "side_panel": {
     "default_path": "sidepanel/panel.html"
   },
-
   "sidebar_action": {
-    "default_title": "GAPMN Empenho Bot",
+    "default_title": "Robô de Empenhos",
     "default_panel": "sidepanel/panel.html",
-    "open_at_install": false
+    "open_at_install": false,
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
   },
-
   "browser_specific_settings": {
     "gecko": {
       "id": "empenho-bot@gapmn.app",
-      "strict_min_version": "128.0"
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": ["websiteContent"],
+        "optional": ["technicalAndInteraction"]
+      }
     }
   },
-
   "action": {
-    "default_title": "GAPMN Empenho Bot"
+    "default_title": "Robô de Empenhos",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
   },
-
   "content_scripts": [
     {
-      "matches": ["*://*.siloms.intraer/*"],
-      "js": ["siloms/subprocesso.js"],
+      "matches": [
+        "*://*.siloms.intraer/*"
+      ],
+      "js": [
+        "siloms/subprocesso.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
-    }
-  ],
-
-  "web_accessible_resources": [
-    {
-      "resources": ["lib/pdf.min.mjs", "lib/pdf.worker.min.mjs"],
-      "matches": ["<all_urls>"]
     }
   ]
 }

@@ -137,6 +137,7 @@ export function problemasDaSolicitacao(sol) {
       else aviso(`${msg} — confira os itens`);
     }
     if (sol._deduzidos?.itensCalculados) aviso('Valor total de algum item não estava legível; calculei unitário × quantidade — confira');
+    if (sol._deduzidos?.itensUnitario) aviso('Na descrição, o valor de cada item é o unitário: calculei o total de cada um (quantidade × unitário; a soma bate com o TOTAL) — confira');
     if (sol._deduzidos?.itensDivergentes?.length) {
       aviso(`Item ${sol._deduzidos.itensDivergentes.join(', ')}: valor total ≠ unitário × quantidade no PDF — confira`);
     }

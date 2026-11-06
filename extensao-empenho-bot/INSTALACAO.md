@@ -79,6 +79,103 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Preparada para a Chrome Web Store (versão 2.9.0)
+
+- Novo nome: **Robô de Empenhos** (antes "GAPMN Empenho Bot"), com ícone próprio.
+- Permissões enxutas: saíram `activeTab` (sem uso), o acesso a `*.defesa.gov.br` (sem uso) e a
+  exposição dos arquivos do PDF.js aos sites (só o painel usa).
+- Pacote da loja: `python -X utf8 loja/empacotar_loja.py`. Textos e imagens da ficha em `loja/LOJA.md`.
+- Política de privacidade: https://gapmn.app/extensoes/robo-empenhos/privacidade
+
+## Unidade da compra sempre a da OM do perfil (versão 2.8.25)
+
+- Causa das compras recusadas: desde a 2.8.20, corrigir a Unidade Compra na revisão gravava o
+  valor como padrão da OM. Uma compra isolada de outro órgão (UASG 788810) virou a unidade de
+  todas as compras do GAP-MN, e o CNET não achava as compras nessa UASG.
+- Agora a Unidade Compra é sempre a UASG da OM do perfil (GAP-MN → 120630), a mesma em que
+  você está logado no CNET. A correção na revisão vale só para aquele cartão.
+- Ao abrir, a 2.8.25 apaga a unidade que ficou gravada para OM da lista. Só OM fora da lista
+  ainda guarda a UASG informada.
+
+## O motivo real da Etapa 1 da compra (versão 2.8.24)
+
+- O "Contrato é obrigatório" era efeito de um clique extra do próprio robô. O CNET (código
+  público em gitlab.com/comprasnet/contratos) recebe a compra certa (`tipoEmpenho=2`),
+  consulta o SIASG e, se der problema, devolve a Etapa 1 zerada, com "Contrato" marcado e
+  um aviso amarelo. O robô não lia esse aviso, achava que o clique não tinha pegado e
+  clicava "Próxima" de novo, enviando o formulário vazio.
+- Agora o robô lê o aviso (`.flash-message`) e a lista de erros de validação. Quando o CNET
+  devolve a Etapa 1, não clica de novo: registra o aviso real do CNET.
+- Aviso de instabilidade ("Tente novamente em instantes"): refaz a Etapa 1 inteira, até 2
+  vezes.
+
+## Compra travando em "O campo Contrato é obrigatório quando Tipo é Contrato" (versão 2.8.23)
+
+- Causa: a Etapa 0 reaproveitava a tela em que o CNET estivesse. Depois de uma solicitação
+  que falhou, essa tela era a Etapa 1 de uma minuta de contrato que ficou aberta, e todas as
+  compras seguintes caíam nela.
+- Agora toda solicitação começa pela lista de Minutas de Empenho e clica em "Adicionar
+  Minuta de Empenho", como no uso manual (nunca no "Editar" de uma minuta aberta).
+- Antes de "Próxima", a Etapa 1 confere que o Tipo marcado (Compra/Contrato) é o da
+  solicitação. Se o CNET recusar a Etapa 1, o motivo mostra os campos enviados.
+- As minutas que ficaram abertas das falhas anteriores continuam no CNET (Minutas de
+  Empenho): exclua-as à mão se não for usá-las.
+
+## Correções da execução de 13/10 (versão 2.8.22)
+
+- **Etapa 5 de contrato:** os campos de quantidade e valor e a coluna "Valor Unit." agora também são
+  procurados na linha de baixo (tela estreita). O robô não usa mais "o último campo da linha" como
+  quantidade e, se o CNET trouxer a quantidade do contrato inteiro, troca por valor ÷ unitário.
+  Antes de clicar "Próxima", confere quantidade × unitário = valor pedido; se não bater, para na
+  Etapa 5 dizendo o que ficou na tela. Corrige "Não achei o Valor Unit.", "A quantidade selecionada
+  não pode ser zero" e valor na tela diferente do solicitado (ex.: R$ 4.475,00 × R$ 379,10).
+- **Etapa 1 de contrato:** confere que o contrato ficou mesmo selecionado (até 3 tentativas) antes
+  de clicar "Próxima". Antes, com o CNET lento, seguia vazio e o CNET respondia "O campo Contrato é
+  obrigatório quando Tipo é Contrato".
+- **"Ocorreu um erro ao validar os dados. Por favor, tente novamente":** o robô espera e clica
+  "Próxima" de novo até 2 vezes antes de desistir.
+- **Anulação/reforço:** a lista de Minutas de Empenho é esperada por até 45 s (com uma recarga) em
+  vez de ser olhada uma vez só. Três falhas seguidas dessa lista pausam a fila (é o CNET, não a
+  solicitação).
+- **Subprocessos:** o motivo de "não empenhada" aparece inteiro e com a etapa em que parou.
+
+## Itens escritos na descrição, sem rótulos (versão 2.8.21)
+
+- Solicitação com uma linha só na tabela (valor total) e os itens escritos na descrição, como
+  `ITEM 28. CREATININA 6000 UND R$ 7.800,00 ITEM 29. UREIA 4662 UND R$ 13.053,60 …`, agora vira um
+  item por "ITEM n" na revisão: N.Item, quantidade, unidade e valor de cada um.
+- Também lê `ITEM 28 - … - 6.000 UND - R$ 7.800,00`, `6000 UND X R$ 1,30 = R$ 7.800,00` e o
+  formato com rótulos (`QTD:`, `VALOR UNIT:`, `VALOR TOTAL:`) depois de "ITEM n.".
+- Se o valor escrito for o unitário, o robô percebe pela soma (a que bate com o TOTAL da
+  solicitação), calcula o total de cada item e avisa na revisão.
+- A soma dos itens tem de bater com o TOTAL. Se algum valor vier cortado no PDF, o cartão fica
+  vermelho e diz a diferença; corrija o item na revisão.
+- Só entra quando a coluna ITEM da tabela está vazia: solicitação com os itens na tabela
+  continua lida como antes.
+
+## Unidade da compra pela OM do perfil (versão 2.8.20)
+
+- A unidade (UASG) da compra no Contratos.gov.br vem sempre da OM do perfil do robô (ou da que você corrigir
+  na revisão, que fica salva para a sua OM). Não existe mais o padrão 120630 (GAP-MN).
+- Empenho iniciado pela lista coletada do SILOMS segue a mesma regra; a UG da solicitação só entra se o perfil
+  não tiver unidade.
+- Sem unidade nenhuma, a Etapa 1 para e diz onde corrigir — antes seguiria com a unidade que o
+  Contratos.gov.br lembrou da última vez.
+
+## Só Contratos.gov.br; subprocesso para qualquer unidade (versão 2.8.19)
+
+- O menu deixa só **Empenhar no Contratosgov** ativo. **Empenhar no SILOMS** aparece desligado, com a
+  etiqueta "Em desenvolvimento".
+- **Criar subprocessos no SILOMS** (depois do empenho emitido) não traz mais os dados do GAP-MN: no quadro
+  **Dados da sua unidade no SILOMS** cada unidade preenche uma vez a **unidade do ePAG** (sigla, como aparece
+  no SILOMS) e o **nome do fluxo** (como aparece em "Associar Fluxo") e clica em **Salvar**. Fica salvo no
+  navegador; para trocar, **Alterar**.
+- Sem esses dados, o robô avisa e pergunta: OK cria os subprocessos e deixa ePAG/fluxo para completar no
+  SILOMS.
+- O fluxo é achado pelo nome configurado mesmo com diferença de acento, maiúsculas ou espaços; o log mostra
+  qual fluxo foi associado. Antes o robô dizia "Fluxo associado ✓" mesmo quando não achava o nome.
+- O cabeçalho do painel mostra a versão instalada.
+
 ## Sanção e impedimento só avisam (versão 2.8.18)
 
 - O robô **não impede mais** nenhum empenho por causa do fornecedor. Sanção, impedimento de licitar

@@ -13,9 +13,11 @@ import { abaDoSicaf, conferirNoSicaf, fmtCnpj } from './sicaf.js';
 
 const REGISTRO_KEY = 'empenhosGerados';            // o mesmo de runner/stateMachine.js
 const CONFIG_KEY = 'subproc_config';
+// Unidade do ePAG e fluxo mudam de uma unidade para outra: cada uma preenche os seus
+// na tela de subprocessos (não há padrão)
 const PADRAO = {
-  epag: 'GAP-MN',
-  fluxo: 'SEO/ACI - SOLICITAÇÃO DE EMPENHO / APOIADAS',
+  epag: '',
+  fluxo: '',
   planilha: '',          // endereço do Apps Script da planilha de controle (opcional)
   responsaveis: [],      // [{ nome, peso }] — sorteado por peso para cada subprocesso
 };
@@ -26,6 +28,7 @@ let itens = [];
 let config = { ...PADRAO };
 let rodando = false;
 let abaSiloms = null;
+let editandoUnidade = false;
 
 const el = id => ctx.el(id);
 const esc = s => ctx.escHtml(String(s ?? ''));
@@ -77,7 +80,10 @@ async function carregarItens() {
     const padrao = nomePadrao(r.solicitacao, r.ugCred, neReal);
     return {
       id: r.id, numero: r.solicitacao, ne, neReal, empenhada,
-      motivo: empenhada ? '' : String(r.motivo ?? '').replace(/\s+/g, ' ').slice(0, 110),
+      // Motivo inteiro, com a etapa: cortado em 110 caracteres sumia o principal
+      // ("…tente n —") e não dava para saber em que etapa parou
+      motivo: empenhada ? '' : (r.etapa != null && r.etapa !== '' && !/^Etapa\b/i.test(String(r.motivo ?? '')) ? `Etapa ${r.etapa}: ` : '') +
+        String(r.motivo ?? '').replace(/\s+/g, ' ').trim().slice(0, 400),
       fornecedor: r.fornecedor ?? '', cnpj: String(r.cnpj ?? '').replace(/\D/g, ''),
       pag: ja?.pag ?? r.pag ?? '', nome: ja && ja.nome !== ja.padrao ? ja.nome : padrao, padrao,
       subprocesso: r.subprocesso ?? '', data: r.data,
@@ -178,9 +184,38 @@ async function salvarConfig() {
   await chrome.storage.local.set({ [CONFIG_KEY]: config });
 }
 
+// ── Dados da unidade (ePAG e fluxo) ─────────────────────────────────────────
+const unidadeOk = () => !!(config.epag && config.fluxo);
+const faltaUnidade = () => [!config.epag && 'a unidade do ePAG', !config.fluxo && 'o nome do fluxo'].filter(Boolean).join(' e ');
+
+function renderUnidade(salvoAgora = false) {
+  const resumo = unidadeOk() && !editandoUnidade;
+  el('sp-unidade-form').style.display = resumo ? 'none' : '';
+  el('sp-unidade-resumo').style.display = resumo ? '' : 'none';
+  el('sp-unidade').classList.toggle('sp-unidade-falta', !unidadeOk());
+  if (resumo) {
+    el('sp-unidade-texto').innerHTML = `ePAG <b>${esc(config.epag)}</b> · fluxo <b>${esc(config.fluxo)}</b>` +
+      (salvoAgora ? ' <span class="sp-ok">✓ salvo</span>' : '');
+  }
+}
+
+async function salvarUnidade() {
+  config.epag = el('sp-cfg-epag').value.replace(/\s+/g, ' ').trim();
+  config.fluxo = el('sp-cfg-fluxo').value.replace(/\s+/g, ' ').trim();
+  await salvarConfig();
+  if (unidadeOk()) {
+    editandoUnidade = false;
+    renderUnidade(true);
+  } else {
+    el('sp-cfg-msg').textContent = `Salvo. Falta preencher ${faltaUnidade()}.`;
+    renderUnidade();
+  }
+}
+
 function renderConfig() {
   el('sp-cfg-epag').value = config.epag;
   el('sp-cfg-fluxo').value = config.fluxo;
+  renderUnidade();
   el('sp-cfg-planilha').value = config.planilha;
   const total = config.responsaveis.reduce((s, r) => s + (r.peso || 0), 0);
   el('sp-resp-lista').innerHTML = config.responsaveis.length
@@ -200,6 +235,17 @@ async function criar() {
   if (semDoc.length && !confirm(`${semDoc.length} subprocesso(s) vão sem algum dos documentos:\n\n` +
       semDoc.map(i => `• ${i.numero}: ${[!i.temSol && 'solicitação', !i.temSicaf && 'SICAF'].filter(Boolean).join(' e ')}`).join('\n') +
       '\n\nOK: criar assim mesmo · Cancelar: voltar')) return;
+  // O que foi digitado e não salvo vale para esta rodada (e fica salvo)
+  if (el('sp-unidade-form').style.display !== 'none') await salvarUnidade();
+  // Sem ePAG ou fluxo: só avisa — o robô cria e deixa o campo para completar no SILOMS
+  if (!unidadeOk() && !confirm(`Falta preencher ${faltaUnidade()} no quadro "Dados da sua unidade no SILOMS".\n\n` +
+      `O robô cria os subprocessos e deixa ${!config.epag && !config.fluxo ? 'esses campos' : 'esse campo'} para você completar no SILOMS.\n\n` +
+      'OK: criar assim mesmo · Cancelar: voltar e preencher')) {
+    editandoUnidade = true;
+    renderUnidade();
+    el(!config.epag ? 'sp-cfg-epag' : 'sp-cfg-fluxo').focus();
+    return;
+  }
   await conferirSiloms();
   if (!abaSiloms) { alert(el('sp-siloms').textContent); return; }
 
@@ -309,9 +355,17 @@ export function setupSubprocessos(contexto) {
     renderResumo();
   });
 
-  for (const [id, campo] of [['sp-cfg-epag', 'epag'], ['sp-cfg-fluxo', 'fluxo'], ['sp-cfg-planilha', 'planilha']]) {
-    el(id).addEventListener('change', () => { config[campo] = el(id).value.trim() || PADRAO[campo]; salvarConfig(); });
+  el('sp-cfg-planilha').addEventListener('change', () => { config.planilha = el('sp-cfg-planilha').value.trim(); salvarConfig(); });
+  el('sp-cfg-salvar').addEventListener('click', salvarUnidade);
+  for (const id of ['sp-cfg-epag', 'sp-cfg-fluxo']) {
+    el(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); salvarUnidade(); } });
   }
+  el('sp-cfg-alterar').addEventListener('click', () => {
+    editandoUnidade = true;
+    renderUnidade();
+    el('sp-cfg-msg').textContent = 'Altere e clique em Salvar.';
+    el('sp-cfg-epag').focus();
+  });
   el('sp-resp-add').addEventListener('click', () => {
     const nome = el('sp-resp-nome').value.trim().toUpperCase();
     const peso = Math.max(1, parseInt(el('sp-resp-peso').value, 10) || 0);

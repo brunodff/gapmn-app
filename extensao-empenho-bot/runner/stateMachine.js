@@ -34,7 +34,7 @@ import { step5Runner } from './steps/step5.js';
 import { step6Runner } from './steps/step6.js';
 import {
   paginaMinutas, buscarNEnaLista, removerFiltros, adicionarAlteracao,
-  alteracaoSubelementoRunner, alteracaoPassivo, lerListaAlteracoes,
+  alteracaoSubelementoRunner, alteracaoPassivo, lerListaAlteracoes, telaSubelementoAlteracao,
 } from './steps/alteracao.js';
 import {
   step0ClickAdicionarMinuta,
@@ -608,15 +608,56 @@ async function runColetaStep(s) {
 async function impressaoDaPagina(tabId) {
   const ler = execInPage(tabId, () => {
     const visivel = e => e && e.offsetParent !== null && (e.textContent ?? '').trim();
-    const erros = Array.from(document.querySelectorAll(
-      '.alert-danger, .has-error .help-block, .invalid-feedback, .swal2-html-container, .toast-message, .error'
-    )).filter(visivel).map(e => e.textContent.replace(/\s+/g, ' ').trim()).slice(0, 3);
+    // Também os avisos que o CNET devolve na própria tela (.flash-message: "Compra não
+    // encontrada…", "serviço externo instável…") e a lista de erros de validação
+    // (.callout-danger). Sem eles, a Etapa 1 parecia "sem erro" e o robô clicava de novo.
+    const erros = [...new Set(Array.from(document.querySelectorAll(
+      '.flash-message .alert, .callout-danger li, .alert-danger, .has-error .help-block, .invalid-feedback, .swal2-html-container, .toast-message, .error'
+    )).filter(visivel).map(e => e.textContent.replace(/\s+/g, ' ').trim()))].slice(0, 3);
     const titulo = (document.querySelector('.content-header h1, section.content-header, h1')?.textContent ?? '')
       .replace(/\s+/g, ' ').trim().slice(0, 80);
-    return { caminho: location.pathname, titulo, erros };
+    return { caminho: location.pathname, titulo, erros, oculta: document.visibilityState === 'hidden' };
   }).catch(() => null);
   const limite = new Promise(r => setTimeout(() => r({ bloqueada: true }), 6000));
   return (await Promise.race([ler, limite])) ?? { bloqueada: true };
+}
+
+// Por que a página não respondeu, em palavras do usuário (para o log)
+function motivoSemResposta(tela) {
+  if (!tela || tela.bloqueada) return 'a página do CNET não responde: há um aviso aberto nela, ou o navegador parou a aba por estar em segundo plano — deixe a aba do CNET visível e feche avisos';
+  if (tela.oculta) return `a aba do CNET está em segundo plano e o navegador desacelera a página — deixe-a visível durante a execução (tela: ${tela.titulo || tela.caminho || '?'})`;
+  return `tela: ${tela.titulo || tela.caminho || '?'}`;
+}
+
+// Mensagens do CNET que pedem só para repetir (instabilidade, não dado errado)
+const RX_TENTE_DE_NOVO = /tente\s+(?:novamente|de\s+novo|mais\s+tarde)|erro\s+ao\s+validar\s+os\s+dados|erro\s+inesperado/i;
+
+// Clica "Próxima Etapa" de novo na mesma tela e espera a resposta (tela nova ou
+// aviso de arredondamento, que é tratado aqui)
+async function clicarProximaDeNovo(tabId, step) {
+  const idAntesDeNovo = await idDoDocumento(tabId);
+  const nav = idAntesDeNovo ? null : waitForNavigation(tabId, 25000).then(() => true, () => false);
+  await execInPage(tabId, () => {
+    const b = document.querySelector('button.submeter') ||
+      Array.from(document.querySelectorAll('button, a.btn')).find(x => /pr[óo]xima/i.test(x.textContent ?? ''));
+    b?.click();
+    return !!b;
+  }).catch(() => null);
+  const clicouDeNovo = Date.now();
+  const e2 = idAntesDeNovo
+    ? await esperarNovaTela(tabId, idAntesDeNovo, step, { comAviso: true, desde: clicouDeNovo })
+    : await esperarNavegacaoOuAviso(tabId, 25000, nav);
+  if (e2 === 'aviso') {
+    const r3 = await handleRoundingModal(tabId);
+    if (r3?.handled) {
+      const degrau = await concluirArredondamento(tabId, r3);
+      const st = await getState();
+      await setState({ arredondado: true, degrauArredondamento: Math.round(((st.degrauArredondamento ?? 0) + degrau) * 100) / 100 || null });
+    }
+  } else {
+    if (e2 === 'tempo' && !idAntesDeNovo) await esperarAbaCarregar(tabId, step, clicouDeNovo);
+    await delay(e2 === 'navegou' ? 300 : 800);
+  }
 }
 
 async function runEmpenhoStep(s) {
@@ -625,6 +666,9 @@ async function runEmpenhoStep(s) {
   notifySidePanel({ type: 'STEP', step });
   // Etapas 1–7 terminam clicando "Próxima"; guardo a tela para conferir o avanço
   const antes = step >= 1 && step <= 7 ? await impressaoDaPagina(tabId) : null;
+  // Etapa 1: o documento antes do envio — outro documento na mesma tela depois do clique
+  // é a resposta do servidor (formulário devolvido), não um clique que não pegou
+  const idAntesDaEtapa = step === 1 ? await idDoDocumento(tabId) : null;
 
   try {
     let result;
@@ -707,6 +751,26 @@ async function runEmpenhoStep(s) {
       if (antes && !antes.bloqueada) {
         let depois = await impressaoDaPagina(tabId);
         const naMesmaTela = d => !d.bloqueada && d.caminho === antes.caminho && d.titulo === antes.titulo;
+        // Etapa 1 devolvida pelo CNET (documento novo, mesma tela): o formulário volta
+        // zerado, com "Contrato" marcado. Clicar "Próxima" de novo enviava esse formulário
+        // vazio, e o motivo real (ex.: "Compra não encontrada") sumia atrás de "O campo
+        // Contrato é obrigatório quando Tipo é Contrato" (13/10, todas as compras)
+        if (step === 1 && idAntesDaEtapa && naMesmaTela(depois)) {
+          const idAgora = await idDoDocumento(tabId);
+          if (idAgora && idAgora !== idAntesDaEtapa) {
+            const msg = (depois.erros ?? []).join(' | ').replace(/[.\s]+$/, '');
+            const st = await getState();
+            const vezes = st.refazerEtapa1 ?? 0;
+            if (RX_TENTE_DE_NOVO.test(msg) && vezes < 2) {
+              await logVisivel(`⚠ [Etapa 1] CNET: "${msg.slice(0, 120)}" — preenchendo a Etapa 1 de novo (${vezes + 1}/2)…`, 'warn');
+              await setState({ step: 1, refazerEtapa1: vezes + 1 });
+              await delay(5000 * (vezes + 1));
+              return true;   // o laço roda a Etapa 1 outra vez
+            }
+            return pularSolicitacao(tabId, 1, (msg ? `o CNET recusou a Etapa 1: ${msg}` : 'o CNET devolveu a Etapa 1 sem dizer o motivo')
+              + (st.diagEtapa1 ? ` [formulário enviado: ${st.diagEtapa1}]` : ''));
+          }
+        }
         // Ficou na mesma tela sem erro do CNET: o aviso de arredondamento pode ter voltado,
         // ou o clique não pegou — trata o aviso ou clica "Próxima" mais uma vez
         if (naMesmaTela(depois) && !depois.erros?.length) {
@@ -718,30 +782,16 @@ async function runEmpenhoStep(s) {
             await setState({ arredondado: true, degrauArredondamento: Math.round(((st.degrauArredondamento ?? 0) + degrau) * 100) / 100 || null });
           } else {
             await logVisivel(`⚠ [Etapa ${step}] A página não avançou — clicando "Próxima Etapa" mais uma vez…`, 'warn');
-            const idAntesDeNovo = await idDoDocumento(tabId);
-            const nav = idAntesDeNovo ? null : waitForNavigation(tabId, 25000).then(() => true, () => false);
-            await execInPage(tabId, () => {
-              const b = document.querySelector('button.submeter') ||
-                Array.from(document.querySelectorAll('button, a.btn')).find(x => /pr[óo]xima/i.test(x.textContent ?? ''));
-              b?.click();
-              return !!b;
-            }).catch(() => null);
-            const clicouDeNovo = Date.now();
-            const e2 = idAntesDeNovo
-              ? await esperarNovaTela(tabId, idAntesDeNovo, step, { comAviso: true, desde: clicouDeNovo })
-              : await esperarNavegacaoOuAviso(tabId, 25000, nav);
-            if (e2 === 'aviso') {
-              const r3 = await handleRoundingModal(tabId);
-              if (r3?.handled) {
-                const degrau = await concluirArredondamento(tabId, r3);
-                const st = await getState();
-                await setState({ arredondado: true, degrauArredondamento: Math.round(((st.degrauArredondamento ?? 0) + degrau) * 100) / 100 || null });
-              }
-            } else {
-              if (e2 === 'tempo' && !idAntesDeNovo) await esperarAbaCarregar(tabId, step, clicouDeNovo);
-              await delay(e2 === 'navegou' ? 300 : 800);
-            }
+            await clicarProximaDeNovo(tabId, step);
           }
+          depois = await impressaoDaPagina(tabId);
+        }
+        // Erro passageiro do CNET ("Ocorreu um erro ao validar os dados. Por favor, tente
+        // novamente"): os campos continuam preenchidos — espera e clica "Próxima" de novo
+        for (let t = 1; t <= 2 && naMesmaTela(depois) && RX_TENTE_DE_NOVO.test((depois.erros ?? []).join(' ')); t++) {
+          await logVisivel(`⚠ [Etapa ${step}] CNET: "${depois.erros.join(' | ').slice(0, 90)}" — tentando de novo (${t}/2)…`, 'warn');
+          await delay(4000 * t);
+          await clicarProximaDeNovo(tabId, step);
           depois = await impressaoDaPagina(tabId);
         }
         const parada = depois.bloqueada
@@ -749,7 +799,10 @@ async function runEmpenhoStep(s) {
           : naMesmaTela(depois)
             ? `a página não avançou${depois.erros?.length ? ` — CNET: ${depois.erros.join(' | ').replace(/[.\s]+$/, '')}` : ' (nem tentando de novo; sem mensagem do CNET na tela)'}`
             : null;
-        if (parada) return pularSolicitacao(tabId, step, `cliquei em "Próxima", mas ${parada}`);
+        if (parada) {
+          const diag = step === 1 ? (await getState()).diagEtapa1 : null;
+          return pularSolicitacao(tabId, step, `cliquei em "Próxima", mas ${parada}${diag ? ` [formulário enviado: ${diag}]` : ''}`);
+        }
       }
     }
 
@@ -775,7 +828,7 @@ function limparMotivo(m) {
 
 // Falha "do sistema" (aba, sessão, CNET fora do ar) e não da solicitação: se
 // repetir, pular só criaria uma falha atrás da outra na fila inteira
-const RX_SISTEMICO = /Script não retornou|Exceção|timeout|não carregaram|não trouxe|bloqueada por um aviso|Não consegui ler a tela|sem resposta|sessão expirou/i;
+const RX_SISTEMICO = /Script não retornou|Exceção|timeout|não carregaram|não trouxe|não achei a lista de Minutas|bloqueada por um aviso|Não consegui ler a tela|sem resposta|sessão expirou/i;
 const RX_SESSAO = /\/login\b|acesso\.gov\.br|\bsso\./i;
 const LIMITE_FALHAS_SISTEMA = 3;
 
@@ -843,18 +896,27 @@ async function pularSolicitacao(tabId, etapa, erro, { status = 'falhou', url = n
 // As listas do CNET mostram 10 linhas por padrão; o que estiver na página 2 não
 // existe para o robô. Toda etapa que procura linha numa tabela chama isto antes.
 async function maximizarTabelas(tabId, etapa, esperaMs = 8000) {
-  const r = await execInPage(tabId, maximizarTabelasRunner, [esperaMs]);
+  // Com limite: o script espera dentro da página; página saindo ou parada não responde
+  const r = await comLimite(execInPage(tabId, maximizarTabelasRunner, [esperaMs]), esperaMs + 40000);
   if (r?.ajustes?.length) await appendLog(`[Etapa ${etapa}] Tabela ampliada (${r.ajustes.join(', ')})`, 'info');
+  else if (!r) await appendLog(`[Etapa ${etapa}] A página não respondeu ao ampliar a tabela — seguindo`, 'warn');
 }
 
 async function runStep0(tabId, payload) {
-  // Nova minuta pelo botão "Adicionar Minuta de Empenho", como o usuário faz. Aberto
-  // pelo endereço logo depois de um empenho, o formulário pode vir preso à minuta
-  // anterior, com o Número/Ano bloqueado.
-  // Com tempo limite: depois de uma solicitação que falhou, um alert() do CNET pode
-  // ter ficado aberto e travaria o script; aí abre o formulário pelo endereço
+  // Nova minuta SEMPRE pela lista de Minutas → "Adicionar Minuta de Empenho", como o
+  // usuário faz. Antes valia o primeiro link "buscacompra" da tela em que o CNET
+  // estivesse — ou a própria tela, se já fosse o formulário. Depois de uma solicitação
+  // que falhou, essa tela é a Etapa 1 de uma minuta que ficou aberta: as compras
+  // seguintes caíam nela e o CNET respondia "O campo Contrato é obrigatório quando Tipo
+  // é Contrato" (13/10, cinco seguidas). Aberto pelo endereço logo depois de um empenho,
+  // o formulário também pode vir preso à minuta anterior (Número/Ano bloqueado).
+  // Ir para a lista também tira da frente um alert() que tenha ficado aberto.
+  await appendLog('[Pré] Abrindo a lista de Minutas de Empenho…', 'info');
+  await setState({ refazerEtapa1: 0, diagEtapa1: null });
+  await navegarPara(tabId, MINUTAS_URL);
+  const lista = await esperarListaMinutas(tabId, MINUTAS_URL);
   const idAntes = await idDoDocumento(tabId);
-  const r = await comLimite(execInPage(tabId, step0ClickAdicionarMinuta), 8000);
+  const r = lista?.naLista ? await comLimite(execInPage(tabId, step0ClickAdicionarMinuta), 8000) : null;
   if (r?.ok) {
     await appendLog('[Pré] Abrindo nova minuta ("Adicionar Minuta de Empenho")…', 'info');
     notifySidePanel({ type: 'LOG', msg: '[Pré] Abrindo nova minuta…', level: 'info' });
@@ -865,13 +927,7 @@ async function runStep0(tabId, payload) {
     return { ok: true };
   }
 
-  const pageUrl = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? '';
-  if (pageUrl.includes('buscacompra')) {
-    await appendLog('[Pré] Já está no formulário de empenho (buscacompra).', 'info');
-    return { ok: true };
-  }
-
-  // Sem o botão nesta tela: abre o formulário pelo endereço
+  // Sem a lista ou sem o botão: abre o formulário novo pelo endereço
   await appendLog('[Pré] Botão "Adicionar Minuta" não está nesta tela — abrindo o formulário pelo endereço…', 'warn');
   const navegou = waitForNavigation(tabId, 30000).catch(() => {});
   const abriuEm = Date.now();
@@ -894,7 +950,9 @@ async function runStep1(tabId, payload) {
   const result = await execInPage(tabId, step1Runner, [payload]);
   if (!result) return { ok: false, error: 'Script não retornou — aba pode ter recarregado ou sessão expirou' };
   if (result.ok) {
-    await appendLog('[Etapa 1] Preenchido ✓', 'info');
+    // Campos enviados: entram no motivo se o CNET recusar a Etapa 1
+    await setState({ diagEtapa1: result.diag || null });
+    await appendLog('[Etapa 1] Preenchido ✓' + (result.diag ? ` (enviado: ${result.diag})` : ''), 'info');
     notifySidePanel({ type: 'LOG', msg: `[Etapa 1] ${payload.tipoOrigem === 'compra' ? 'Compra' : 'Contrato'} selecionado ✓`, level: 'success' });
   }
   return result;
@@ -1092,7 +1150,8 @@ async function runStep6(tabId, payload) {
 // quantidade × unitário). A escolha é um clique de verdade (marcar `checked` antes do
 // clique não dispara o "change").
 async function handleRoundingModal(tabId) {
-  return execInPage(tabId, () => {
+  // Com limite: página saindo ou parada não responde ao script
+  return comLimite(execInPage(tabId, () => {
     const bodyText = document.body?.textContent ?? '';
     if (!bodyText.toLowerCase().includes('arredondamento')) return { handled: false };
 
@@ -1170,7 +1229,7 @@ async function handleRoundingModal(tabId) {
 
     return { handled: true, totalEmpenhado, totalMais, count: escolhidos.length, escolhas, itens,
       acao: btnCorrigir ? 'corrigir' : btnAvancar ? 'avancar' : null };
-  });
+  }), 15000);
 }
 
 // O aviso de arredondamento está aberto na tela? (função da página)
@@ -1412,13 +1471,18 @@ async function clicarEConfirmar(tabId, fonte) {
   const navegou = e => /destroyed|navigat|unload|removed|no frame|closed/i.test(String(e?.message ?? e));
   let r;
   try {
-    r = await execInPage(tabId, clicarBotaoEtapa8, [fonte]);
+    // Com limite: página bloqueada (aviso aberto) não responde. Sem resposta, o clique
+    // pode ter acontecido depois: quem chama trata como "conferir", nunca como "falhou"
+    // (a corrida mantém o erro de "página navegou", que aqui significa clique feito)
+    r = await Promise.race([execInPage(tabId, clicarBotaoEtapa8, [fonte]), new Promise(res => setTimeout(() => res(null), 30000))]);
   } catch (e) {
     return navegou(e) ? { ok: true, navegou: true } : { ok: false, error: e.message };
   }
-  if (!r?.ok) return r ?? { ok: false, error: 'sem resposta da página' };
+  if (!r) return { ok: false, semResposta: true, error: `a página não respondeu ao clique (${motivoSemResposta(await impressaoDaPagina(tabId))})` };
+  if (!r?.ok) return r;
   await delay(300);
-  await execInPage(tabId, confirmarModalEtapa8).catch(() => null);
+  // Com limite: se a página navegar enquanto procura o modal, o script não responde
+  await comLimite(execInPage(tabId, confirmarModalEtapa8).catch(() => null), 8000);
   return r;
 }
 
@@ -1428,7 +1492,7 @@ async function runStep8(tabId, payload, dryRun) {
     await appendLog('[DRY-RUN] Simulação completa. Emissão NÃO foi efetuada.', 'warn');
     return { ok: true, ne: 'DRY-RUN', summary: { dryRun: true } };
   }
-  const tela = await execInPage(tabId, lerEtapa8).catch(() => null);
+  const tela = await comLimite(execInPage(tabId, lerEtapa8).catch(() => null), 20000);
   if (!tela) return { ok: false, error: 'Não consegui ler a tela da Etapa 8' };
 
   const motivos = [];
@@ -1499,11 +1563,8 @@ async function atualizarRegistro(id, patch) {
 
 // Recarrega a minuta por GET (nunca reenvia formulário) e lê a tela
 async function recarregarMinuta(tabId, url) {
-  const navegou = waitForNavigation(tabId, 30000).catch(() => {});
-  try { await chrome.tabs.update(tabId, { url }); } catch { return null; }
-  await navegou;
-  await delay(800);
-  return execInPage(tabId, lerEtapa8).catch(() => null);
+  try { await navegarPara(tabId, url, 8, 35000); } catch { return null; }
+  return comLimite(execInPage(tabId, lerEtapa8).catch(() => null), 15000);
 }
 
 /**
@@ -1511,7 +1572,7 @@ async function recarregarMinuta(tabId, url) {
  * Retorna { ok, status } — status: 'emitido' | 'pendente' | 'erro'.
  */
 async function emitirEFinalizar(tabId, payload) {
-  const antes = await execInPage(tabId, lerEtapa8).catch(() => null);
+  const antes = await comLimite(execInPage(tabId, lerEtapa8).catch(() => null), 20000);
   if (!antes) return { ok: false, error: 'Não consegui ler a tela da Etapa 8' };
   const url = antes.url;
 
@@ -1523,7 +1584,7 @@ async function emitirEFinalizar(tabId, payload) {
   } else {
     await logVisivel('[Etapa 8] Emitindo empenho no SIAFI…', 'info');
     const r = await clicarEConfirmar(tabId, 'Emitir\\s+Empenho');
-    if (!r?.ok) return { ok: false, url, error: `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}` };
+    if (!r?.ok) return { ok: false, url, talvezEmitido: !!r?.semResposta, error: `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}` };
   }
 
   // O SIAFI devolve o número depois ("EM PROCESSAMENTO"): relê a minuta por ~1,5 min.
@@ -1548,7 +1609,7 @@ async function emitirEFinalizar(tabId, payload) {
     }
     const r = i % 2 === 0
       ? await recarregarMinuta(tabId, url)
-      : await execInPage(tabId, lerEtapa8).catch(() => null);
+      : await comLimite(execInPage(tabId, lerEtapa8).catch(() => null), 15000);
     if (!r) continue;
     situacao = r.situacao ?? situacao;
     mensagem = r.mensagem || mensagem;
@@ -1783,11 +1844,29 @@ function estadoInicialDoPayload(payload) {
   };
 }
 
-async function navegarPara(tabId, url) {
-  const navegou = waitForNavigation(tabId, 30000).catch(() => {});
+/**
+ * Abre um endereço na aba e espera o DOCUMENTO NOVO montar. Não usa o "complete" da
+ * aba: no CNET ele chega 30–50 s depois (recursos de fora) e o "complete" atrasado da
+ * tela ANTERIOR, chegando logo após o clique, fazia o robô seguir antes da tela nova;
+ * o script seguinte caía na página que estava saindo e nunca respondia (o robô parava
+ * em "Alteração do empenho aberta" sem erro). Ver esperarNovaTela.
+ */
+async function navegarPara(tabId, url, etapa = 'A', maxMs = 90000) {
+  const idAntes = await idDoDocumento(tabId);
+  const desde = Date.now();
+  const nav = idAntes ? null : waitForNavigation(tabId, 30000).catch(() => {});
   await chrome.tabs.update(tabId, { url });
-  await navegou;
-  await delay(900);
+  if (idAntes) await esperarNovaTela(tabId, idAntes, etapa, { desde, maxMs });
+  else await nav;
+  await delay(600);
+}
+
+/** Depois de um clique que navega: espera o documento novo (idAntes = antes do clique) */
+async function esperarTelaDoClique(tabId, idAntes, etapa, maxMs = 90000) {
+  if (!idAntes) { try { await waitForNavigation(tabId, 20000); } catch {} await delay(800); return 'tempo'; }
+  const r = await esperarNovaTela(tabId, idAntes, etapa, { maxMs });
+  await delay(r === 'navegou' ? 300 : 800);
+  return r;
 }
 
 // Clique que pode navegar: a página sumir junto com o script não é falha
@@ -1805,9 +1884,7 @@ async function runAlteracaoStep(s) {
   notifySidePanel({ type: 'STEP', step: STEP_PAINEL_ALT[passo] ?? 8 });
   await appendLog(`━ ${a.operacao} da ${a.ne} — ${ROTULO_ALT[passo]}`, 'info');
   const antes = passo === 2 || passo === 3 ? await impressaoDaPagina(tabId) : null;
-  // Ouve a navegação ANTES do clique: numa tela rápida ela termina antes de o
-  // robô começar a esperar, e a espera ia até o tempo limite
-  const navegacao = passo === 2 || passo === 3 ? waitForNavigation(tabId, 25000).then(() => true, () => false) : null;
+  const etiqueta = ROTULO_ALT[passo].split(' ')[0];   // A1…A5, para os avisos de CNET lento
   try {
     let r;
     if (passo === 0) r = await altAbrirNE(tabId, a);
@@ -1820,9 +1897,18 @@ async function runAlteracaoStep(s) {
     await setState({ altStep: passo + 1, ...(r.patch ?? {}) });
     if (r.esperarNavegacao) {
       await appendLog('⏳ Aguardando a próxima tela…', 'info');
-      // tela do Subelemento: o aviso de arredondamento pode abrir nela mesma
-      if (passo === 2) { if (await esperarNavegacaoOuAviso(tabId, 25000, navegacao) === 'navegou') await delay(800); }
-      else { await navegacao; await delay(800); }
+      // A tela seguinte é o documento novo depois do clique em "Próxima" (r.idAntes);
+      // na tela do Subelemento o aviso de arredondamento pode abrir nela mesma. O CNET
+      // valida o formulário por AJAX antes de enviar: enquanto valida, não é "parado".
+      if (r.idAntes) {
+        const e = await esperarNovaTela(tabId, r.idAntes, etiqueta, { comAviso: passo === 2, maxMs: 180000 });
+        await delay(e === 'navegou' ? 500 : 800);
+      } else if (passo === 2) {
+        if (await esperarNavegacaoOuAviso(tabId, 25000) === 'navegou') await delay(800);
+      } else {
+        try { await waitForNavigation(tabId, 25000); } catch {}
+        await delay(800);
+      }
     }
     if (passo === 2) {
       // O robô já digitou o "para menos". Se o CNET ainda abrir o modal de
@@ -1840,7 +1926,7 @@ async function runAlteracaoStep(s) {
     if (antes && !antes.bloqueada && r.esperarNavegacao) {
       const depois = await impressaoDaPagina(tabId);
       const parada = depois.bloqueada
-        ? 'a página está bloqueada por um aviso (alert) do CNET'
+        ? motivoSemResposta(depois)
         : (depois.caminho === antes.caminho && depois.titulo === antes.titulo)
           ? `a página não avançou${depois.erros?.length ? ` — CNET: ${depois.erros.join(' | ').replace(/[.\s]+$/, '')}` : ''}`
           : null;
@@ -1852,6 +1938,22 @@ async function runAlteracaoStep(s) {
   }
 }
 
+// CNET lento: a lista de Minutas (título, botão e tabela) monta depois do
+// carregamento — olha por até 45 s e recarrega uma vez no meio (se souber o endereço)
+async function esperarListaMinutas(tabId, url) {
+  let p = null;
+  for (let t = 0; t < 45000; t += 1500) {
+    if (t === 21000 && url) {
+      await logVisivel('A lista de Minutas de Empenho ainda não apareceu — recarregando a página…', 'warn');
+      await navegarPara(tabId, url, 'A1');
+    }
+    p = await comLimite(execInPage(tabId, paginaMinutas).catch(() => null), 6000);
+    if (p?.naLista) return p;
+    await delay(1500);
+  }
+  return p;
+}
+
 /** A1: lista de minutas → pesquisa a NE → "Alterar Empenho" */
 async function altAbrirNE(tabId, a) {
   if (!/^\d{4}NE\d{6}$/.test(a.ne ?? '')) return { ok: false, error: `NE a alterar inválida ("${a.ne ?? ''}") — informe na revisão (ex: 2026NE000552)` };
@@ -1861,64 +1963,104 @@ async function altAbrirNE(tabId, a) {
     await logVisivel(`[Alteração] ${a.ne}: já na lista de alterações ✓`, 'info');
     return { ok: true };
   }
-  let p = await execInPage(tabId, paginaMinutas).catch(() => null);
+  let p = await comLimite(execInPage(tabId, paginaMinutas).catch(() => null), 6000);
   if (!p?.naLista) {
     const url = p?.menuHref || MINUTAS_URL;
     await logVisivel('[Alteração] Abrindo a lista de Minutas de Empenho…', 'info');
-    await navegarPara(tabId, url);
-    p = await execInPage(tabId, paginaMinutas).catch(() => null);
-    if (!p?.naLista) return { ok: false, error: `não achei a lista de Minutas de Empenho (abri ${url}) — abra Gestão Orçamentária › Minuta Empenho › Minutas no CNET e use Retomar` };
+    await navegarPara(tabId, url, 'A1');
+    p = await esperarListaMinutas(tabId, url);
+    if (!p?.naLista) {
+      const aba = await chrome.tabs.get(tabId).catch(() => null);
+      const ondeFicou = p?.titulo ? `a tela ficou em "${p.titulo.slice(0, 60)}"` : `a tela ficou em ${aba?.url ?? '?'}`;
+      return { ok: false, error: `não achei a lista de Minutas de Empenho em 45 s (abri ${url}; ${ondeFicou}) — abra Gestão Orçamentária › Minuta Empenho › Minutas no CNET e use Retomar` };
+    }
   }
+  // A busca é no servidor e espera dentro da página (até 20 s): com limite
+  const buscar = () => comLimite(execInPage(tabId, buscarNEnaLista, [a.ne]).catch(e => ({ ok: false, error: e.message })), 45000);
   await logVisivel(`[Alteração] Pesquisando a ${a.ne} nas minutas…`, 'info');
-  let r = await execInPage(tabId, buscarNEnaLista, [a.ne]).catch(e => ({ ok: false, error: e.message }));
+  let idAntes = await idDoDocumento(tabId);
+  let r = await buscar();
   if (!r?.ok && r?.removerFiltros) {
     await logVisivel('[Alteração] A NE não apareceu — removendo os filtros da lista e pesquisando de novo…', 'warn');
-    const f = await execQuePodeNavegar(tabId, removerFiltros);
-    if (f?.href) await navegarPara(tabId, f.href);
-    else { try { await waitForNavigation(tabId, 8000); } catch {} await delay(1500); }
-    r = await execInPage(tabId, buscarNEnaLista, [a.ne]).catch(e => ({ ok: false, error: e.message }));
+    const idFiltro = await idDoDocumento(tabId);
+    const f = await comLimite(execQuePodeNavegar(tabId, removerFiltros), 15000);
+    if (f?.href) await navegarPara(tabId, f.href, 'A1');
+    else await esperarTelaDoClique(tabId, idFiltro, 'A1', 30000);
+    await esperarListaMinutas(tabId, f?.href ?? null);
+    idAntes = await idDoDocumento(tabId);
+    r = await buscar();
   }
-  if (!r?.ok) return { ok: false, error: (r?.error ?? 'sem resposta da lista de minutas') + dicaRestosAPagar(a.ne) };
-  if (r.href) await navegarPara(tabId, r.href);
-  else { try { await waitForNavigation(tabId, 20000); } catch {} await delay(800); }
+  if (!r) return { ok: false, error: `a lista de minutas não respondeu à pesquisa (${motivoSemResposta(await impressaoDaPagina(tabId))})` };
+  if (!r.ok) return { ok: false, error: (r.error ?? 'sem resposta da lista de minutas') + dicaRestosAPagar(a.ne) };
+  if (r.href) await navegarPara(tabId, r.href, 'A1');
+  else await esperarTelaDoClique(tabId, idAntes, 'A1');
   const tela = await impressaoDaPagina(tabId);
   if (!/altera/i.test(`${tela.titulo ?? ''} ${tela.caminho ?? ''}`)) {
-    return { ok: false, error: `cliquei em "Alterar Empenho", mas a tela é "${tela.titulo || tela.caminho || '?'}"` };
+    return { ok: false, error: `cliquei em "Alterar Empenho", mas a tela é "${tela.titulo || tela.caminho || '?'}"${tela.bloqueada || tela.oculta ? ` (${motivoSemResposta(tela)})` : ''}` };
   }
   await logVisivel(`[Alteração] ${a.ne}: "Alteração do empenho" aberta ✓`, 'info');
   return { ok: true };
 }
 
-/** A2: "Adicionar Alteração do empenho" */
+/**
+ * A2: "Adicionar Alteração do empenho". Confere que o formulário do Subelemento abriu
+ * (no CNET ele tem o mesmo título da lista, "Alteração do empenho"); se a tela ficou na
+ * lista, volta e clica mais uma vez.
+ */
 async function altAdicionar(tabId) {
   // A lista de antes: depois de emitir, a alteração nova é a linha emitida a mais
   const lista = await comLimite(execInPage(tabId, lerListaAlteracoes));
   const patch = lista?.naLista ? { altListaAntes: resumoLista(lista), altListaUrl: lista.url } : { altListaAntes: null, altListaUrl: null };
-  const r = await execQuePodeNavegar(tabId, adicionarAlteracao);
-  if (!r?.ok) return r ?? { ok: false, error: 'sem resposta da página' };
-  if (r.href) await navegarPara(tabId, r.href);
-  else { try { await waitForNavigation(tabId, 20000); } catch {} await delay(800); }
-  return { ok: true, patch };
+  const urlLista = lista?.url ?? (await chrome.tabs.get(tabId).catch(() => null))?.url ?? null;
+  let tela = null;
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    await logVisivel(`[Alteração] Clicando em "Adicionar Alteração do empenho"${tentativa > 1 ? ' (segunda tentativa)' : ''}…`, 'info');
+    const idAntes = await idDoDocumento(tabId);
+    const r = await comLimite(execQuePodeNavegar(tabId, adicionarAlteracao), 15000);
+    if (r && !r.ok) return r;
+    if (r?.href) await navegarPara(tabId, r.href, 'A2');
+    else if (r) await esperarTelaDoClique(tabId, idAntes, 'A2');
+    tela = await comLimite(execInPage(tabId, telaSubelementoAlteracao).catch(() => null), 10000);
+    if (tela?.ok) {
+      await logVisivel('[Alteração] Formulário do Subelemento aberto ✓', 'info');
+      return { ok: true, patch };
+    }
+    if (tentativa === 1 && urlLista) {
+      const porque = r ? `a tela ficou em "${tela?.titulo || tela?.url || 'sem resposta'}"` : motivoSemResposta(await impressaoDaPagina(tabId));
+      await logVisivel(`⚠ [Alteração] O formulário do Subelemento não abriu (${porque}) — reabrindo a lista e tentando de novo…`, 'warn');
+      await navegarPara(tabId, urlLista, 'A2');
+    }
+  }
+  const final = tela ? `a tela ficou em "${tela.titulo || tela.url || '?'}"` : motivoSemResposta(await impressaoDaPagina(tabId));
+  return { ok: false, error: `cliquei em "Adicionar Alteração do empenho" duas vezes, mas o formulário do Subelemento não abriu (${final})` };
 }
 
 /**
  * A3: Tipo Operação + valor/quantidade + Próxima Etapa. O valor que não fecha com
  * quantidade (5 casas) × unitário já vai "para menos"; a diferença (e o degrau,
  * que limita o irrisório) fica no estado para o irrisório logo depois da emissão.
+ * O script espera dentro da página (itens por AJAX): com limite. Sem resposta, a tela
+ * é recarregada (o script preso morre com ela) e o robô tenta mais uma vez.
  */
 async function altSubelemento(tabId, a) {
-  await maximizarTabelas(tabId, 'da alteração');
-  const rodar = () => execInPage(tabId, alteracaoSubelementoRunner, [a]).catch(e => ({ ok: false, error: `erro ao rodar na tela da alteração: ${e.message}` }));
-  let r = await rodar();
-  let navegacao = null;
+  await logVisivel('[Alteração] Preenchendo Tipo Operação e valor…', 'info');
+  const rodar = async () => {
+    await maximizarTabelas(tabId, 'da alteração');
+    const idAntes = await idDoDocumento(tabId);
+    const r = await comLimite(
+      execInPage(tabId, alteracaoSubelementoRunner, [a]).catch(e => ({ ok: false, error: `erro ao rodar na tela da alteração: ${e.message}` })),
+      90000,
+    );
+    return { r, idAntes };
+  };
+  let { r, idAntes } = await rodar();
   if (!r) {
-    // A tela recarregou no meio (ou o script morreu sem resposta): mais uma vez
     const tela = await impressaoDaPagina(tabId);
-    await logVisivel(`⚠ [Alteração] A tela não respondeu (${tela.titulo || tela.caminho || '?'}) — tentando de novo…`, 'warn');
-    await delay(2500);
-    navegacao = waitForNavigation(tabId, 25000).then(() => true, () => false);
-    r = await rodar();
-    if (!r) return { ok: false, error: `a tela da alteração não respondeu (duas tentativas; tela: ${tela.titulo || tela.caminho || '?'})` };
+    const aba = await chrome.tabs.get(tabId).catch(() => null);
+    await logVisivel(`⚠ [Alteração] A tela da alteração não respondeu (${motivoSemResposta(tela)}) — recarregando e tentando de novo…`, 'warn');
+    if (aba?.url) await navegarPara(tabId, aba.url, 'A3');
+    ({ r, idAntes } = await rodar());
+    if (!r) return { ok: false, error: `a tela da alteração não respondeu (duas tentativas; ${motivoSemResposta(await impressaoDaPagina(tabId))})` };
   }
   if (!r.ok) return { ...r, error: `${r.error}${r.semOperacao ? dicaRestosAPagar(a.ne) : ''}` };
   for (const f of r.feitos ?? []) await logVisivel(`[Alteração] ${f}`, 'info');
@@ -1931,22 +2073,18 @@ async function altSubelemento(tabId, a) {
     altDegrau: r.degrau > 0 ? r.degrau : null,
     altRestos: r.restos?.length ? r.restos : null,
   };
-  if (navegacao) {
-    await setState(patch);
-    await navegacao;
-    await delay(800);
-    return { ok: true, patch };
-  }
-  return { ok: true, esperarNavegacao: true, patch };
+  return { ok: true, esperarNavegacao: true, patch, idAntes };
 }
 
 /** A4: Passivo Anterior (pula se a tela já é a de emitir) */
 async function altPassivo(tabId) {
-  const r = await execQuePodeNavegar(tabId, alteracaoPassivo);
-  if (!r?.ok) return r ?? { ok: false, error: 'sem resposta no Passivo Anterior' };
+  const idAntes = await idDoDocumento(tabId);
+  const r = await comLimite(execQuePodeNavegar(tabId, alteracaoPassivo), 15000);
+  if (!r) return { ok: false, error: `o Passivo Anterior não respondeu (${motivoSemResposta(await impressaoDaPagina(tabId))})` };
+  if (!r.ok) return r;
   if (r.jaNoFinal) return { ok: true };
   await logVisivel('[Alteração] Passivo Anterior — avançando…', 'info');
-  return { ok: true, esperarNavegacao: true };
+  return { ok: true, esperarNavegacao: true, idAntes };
 }
 
 /** A5: confere e emite (ou para no checkpoint, se a confirmação manual estiver ligada) */
@@ -1956,8 +2094,8 @@ async function altFinalizar(tabId, s) {
     await logVisivel(`[DRY-RUN] ${a.operacao} da ${a.ne} preenchido — emissão NÃO feita`, 'warn');
     return seguirFila(tabId);
   }
-  const tela = await execInPage(tabId, lerEtapa8).catch(() => null);
-  if (!tela) return falhaAlteracao(tabId, s, 4, 'Não consegui ler a tela de emissão da alteração');
+  const tela = await comLimite(execInPage(tabId, lerEtapa8).catch(() => null), 20000);
+  if (!tela) return falhaAlteracao(tabId, s, 4, `Não consegui ler a tela de emissão da alteração (${motivoSemResposta(await impressaoDaPagina(tabId))})`);
   // Com arredondamento, a tela mostrando ainda o valor pedido = o "para menos" não
   // pegou, e o SIAFI recusaria (ER0462): não emite
   const naTela = numBR(tela.valor);
@@ -1984,8 +2122,8 @@ async function altFinalizar(tabId, s) {
 async function emitirAlteracao(tabId, s) {
   const a = s.alteracao;
   const payload = s.payload ?? {};
-  const antes = await execInPage(tabId, lerEtapa8).catch(() => null);
-  if (!antes) return falhaAlteracao(tabId, s, 4, 'Não consegui ler a tela de emissão da alteração');
+  const antes = await comLimite(execInPage(tabId, lerEtapa8).catch(() => null), 20000);
+  if (!antes) return falhaAlteracao(tabId, s, 4, `Não consegui ler a tela de emissão da alteração (${motivoSemResposta(await impressaoDaPagina(tabId))})`);
   const url = antes.url;
 
   if (RX_JA_ENVIADO.test(antes.situacao ?? '')) {
@@ -1995,7 +2133,8 @@ async function emitirAlteracao(tabId, s) {
   } else {
     await logVisivel(`[Alteração] Emitindo ${a.operacao} de R$ ${fmtR$(s.altValorFeito || a.valor)} na ${a.ne} no SIAFI…`, 'info');
     const r = await clicarEConfirmar(tabId, 'Emitir\\s+Empenho');
-    if (!r?.ok) return falhaAlteracao(tabId, s, 4, `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}`, { url });
+    // Sem resposta, o clique pode ter pegado depois: "conferir", para ninguém emitir de novo às cegas
+    if (!r?.ok) return falhaAlteracao(tabId, s, 4, `Não consegui clicar em "Emitir Empenho SIAFI": ${r?.error ?? 'sem resposta'}`, { url, status: r?.semResposta ? 'conferir' : 'falhou' });
   }
 
   // O SIAFI responde depois ("EM PROCESSAMENTO"): relê por ~1,5 min. O CNET pode
@@ -2008,7 +2147,7 @@ async function emitirAlteracao(tabId, s) {
     if (lista?.naLista) {
       naLista = true;
       if (i % 3 === 0) {   // relê do servidor
-        await comLimite(navegarPara(tabId, lista.url), 35000);
+        await comLimite(navegarPara(tabId, lista.url, 'A5', 30000), 35000);
         const nova = await comLimite(execInPage(tabId, lerListaAlteracoes));
         if (nova?.naLista) lista = nova;
       }

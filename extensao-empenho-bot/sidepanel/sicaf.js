@@ -508,7 +508,7 @@ async function consultarNaAba(cnpj, aoAvancar, ctl) {
 // Mensagem do navegador → instrução para o usuário
 function explicarErro(msg) {
   if (/host permission|Missing host|permission to access|Cannot access contents/i.test(msg)) {
-    return 'a extensão não tem permissão para acessar o SICAF — no Firefox: about:addons › GAPMN Empenho Bot › Permissões › ative "www3.comprasnet.gov.br" (no Chrome, recarregue a extensão)';
+    return 'a extensão não tem permissão para acessar o SICAF — no Firefox: about:addons › Robô de Empenhos › Permissões › ative "www3.comprasnet.gov.br" (no Chrome, recarregue a extensão)';
   }
   return msg;
 }

@@ -433,7 +433,7 @@ export function parseSolicitacaoEmpenho(text) {
     // QUANTIDADE: 500KG; VALOR TOTAL: R$ 5.350,00.ITEM 46: …". Cada "ITEM n:" abre
     // um trecho até o próximo; a soma dos itens tem de dar o TOTAL (a revisão confere).
     let itensDaDescricao = false;
-    const naDescricao = (() => {
+    let naDescricao = (() => {
       const corrido = t.replace(/\s*\n\s*/g, ' ');
       // "ITEM" pode vir colado ao ano do contrato ("045/GAP-MN/2025ITEM 07:"): vale
       // qualquer coisa antes, menos letra (SUBITEM)
@@ -471,6 +471,116 @@ export function parseSolicitacaoEmpenho(text) {
         });
       });
       return lista;
+    })();
+
+    // Itens escritos SEM rótulos na descrição (comum em contrato, com a coluna ITEM
+    // vazia e uma linha só com o total): "ITEM 28. CREATININA 6000 UND R$ 7.800,00
+    // ITEM 29. UREIA 4662 UND R$ 13.053,60 … - ITEM 35. D DIMERO 102 UND R$ 5.433,54.
+    // - Ref a REQ:…". Cada "ITEM n" abre um trecho até o próximo; a quantidade é o
+    // último número com unidade antes do valor. Se o valor de cada item é o total ou
+    // o unitário, decide a soma: a que bate com o TOTAL da solicitação.
+    if (!naDescricao.length && !itens.some(it => it.item)) naDescricao = (() => {
+      const valorBR = s => parseFloat(String(s ?? '').replace(/\./g, '').replace(',', '.'));
+      const NUM = String.raw`\d{1,3}(?:\.\d{3})+(?:,\d{1,5})?|\d+(?:,\d{1,5})?`;
+      // "6.000" é seis mil (o robô leria 6,000)
+      const semMilhar = s => /^\d{1,3}(?:\.\d{3})+$/.test(s) ? s.replace(/\./g, '') : s;
+      const fmtBR = (v, min = 2) => v.toLocaleString('pt-BR', { minimumFractionDigits: min, maximumFractionDigits: 4 });
+      const UNID_DESC = String.raw`UNIDADES?|UNID\.?|UND\.?|UNS?\.?|KGS?|GR?|MG|LTS?|L|ML|MTS?|M[23²³]?|CXS?|CAIXAS?|PCTS?|PACOTES?|P[CÇ]S?|PE[CÇ]AS?|FRS?|FRASCOS?|AMPS?|AMPOLAS?|TBS?|TUBOS?|GL|GAL[ÕO]ES|SCS?|SACOS?|RLS?|ROLOS?|RESMAS?|PARE?S?|JGS?|JOGOS?|KITS?|SV|SERV\.?|SERVI[ÇC]OS?|M[EÊ]S|MESES|DIAS?|DI[ÁA]RIAS?|HRS?|HORAS?|TESTES?|EXAMES?|DETS?|DOSES?|LITROS?|QUILOS?|METROS?|FD|FARDOS?|DZ|D[ÚU]ZIAS?|CJ|CONJ\.?|CONJUNTOS?|BLS?|BLOCOS?|TON|VB|VERBA`;
+
+      let corrido = t.replace(/\s*\n\s*/g, ' ')
+        // colunas QUANT UNID PRC UNITARIO PRC TOTAL da linha da tabela, que caem no
+        // meio da descrição ("1,00 UN 33391,94 33.391,9400")
+        .replace(/\s\d{1,3}(?:\.\d{3})*,\d{2,5}\s+[A-Z]{1,4}\.?\s+-?\d[\d.]*,\d{2,5}\s+-?\d{1,3}(?:\.\d{3})*,\d{4}(?![\d,])/g, ' ')
+        // cabeçalho/rodapé de página no meio da descrição (solicitação de várias páginas)
+        .replace(/Documento:\s*\S+\s*-\s*P[áa]gina\s*\d+\/\d+(?:\s*-\s*Hash\s+MD5:\s*\w+)?/gi, ' ')
+        .replace(/Data\s+Impress[ãa]o:\s*\S+|AQS\d+\w*|\bFl\s+\d+\b/gi, ' ');
+      // Só a área da tabela: do cabeçalho até o quadro de baixo (PAG, OBS, TOTAL)
+      const cab = /PRC\s+TOTAL/i.exec(corrido);
+      const ini = cab ? cab.index + cab[0].length : 0;
+      const fimRel = corrido.slice(ini).search(/\b(?:PAG|OBS|Licit|PTRES):|(?<!(?:VALOR|VLR?\.?|PRE[ÇC]O)\s{0,3})\bTOTAL:/);
+      corrido = corrido.slice(ini, fimRel >= 0 ? ini + fimRel : undefined);
+
+      const marcas = [...corrido.matchAll(/(?<![A-Za-zÀ-ú])I\s?TEM\s*(?:N[º°oO]\.?\s*)?(\d{1,5})(?!\d|[.,]\d)\s*[.:\-–)]?/gi)];
+      if (!marcas.length) return [];
+      const linhasTabela = itens.map(it => ({ it, pos: corrido.indexOf(it.requisicao) })).filter(x => x.pos >= 0);
+      const RX_QTD = new RegExp(String.raw`(?<![\w.,\/$])(${NUM})\s*(${UNID_DESC})(?![A-Za-zÀ-ú0-9])`, 'gi');
+      const RX_QTD_ROT = new RegExp(String.raw`(?<![A-Za-zÀ-ú])(?:QUANTIDADE|QTDE?|QUANT)\.?\s*:?\s*(${NUM})\s*(?:(${UNID_DESC})(?![A-Za-zÀ-ú0-9]))?`, 'i');
+      const RX_UNIT_ROT = new RegExp(String.raw`(?<![A-Za-zÀ-ú])(?:(?:VALOR|VLR?|PRE[ÇC]O)\.?\s+)?UNIT(?:[ÁA]RIO)?\.?\s*:?\s*(?:R\$)?\s*(${NUM})`, 'i');
+      const RX_TOTAL_ROT = new RegExp(String.raw`(?<![A-Za-zÀ-ú])(?:(?:VALOR|VLR?|PRE[ÇC]O)\.?\s+)?TOTAL\s*:?\s*(?:R\$)?\s*(${NUM})`, 'i');
+      const RX_REAIS = new RegExp(String.raw`R\$\s*(${NUM})(?!\d)`, 'gi');
+
+      const lista = [];
+      marcas.forEach((m, i) => {
+        const trecho = corrido.slice(m.index + m[0].length, i + 1 < marcas.length ? marcas[i + 1].index : corrido.length)
+          .split(/\s[-–]?\s*Ref\.?\s+a\s+REQ/i)[0];
+        const reais = [...trecho.matchAll(RX_REAIS)];
+        // Quantidade: com rótulo; senão o último "número + unidade" antes do 1º valor
+        const qRot = RX_QTD_ROT.exec(trecho);
+        const antesValor = reais.length ? trecho.slice(0, reais[0].index) : trecho;
+        const qLivre = qRot ? null : [...antesValor.matchAll(RX_QTD)].pop();
+        const qm = qRot ?? qLivre;
+        // Sem "R$", vale número monetário ("7.800,00") logo depois da quantidade
+        const valores = reais.length ? reais.map(r => r[1])
+          : qm ? [...trecho.slice(qm.index + qm[0].length).matchAll(/(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d,])/g)].map(r => r[1]) : [];
+        const mTotalRot = RX_TOTAL_ROT.exec(trecho), mUnitRot = RX_UNIT_ROT.exec(trecho);
+        const totalRot = mTotalRot?.[1] ?? '';
+        const unitRot = mUnitRot?.[1] ?? '';
+        if (!valores.length && !totalRot) return;   // "ITEM 5 DO TR" e afins
+        const quant = semMilhar(qm?.[1] ?? '');
+        const q = valorBR(quant);
+
+        let valorTotal = totalRot, valorUnit = unitRot, ambiguo = false;
+        if (!valorTotal && valorUnit && q > 0) valorTotal = fmtBR(Math.round(valorBR(valorUnit) * q * 100) / 100);
+        if (!valorTotal) {
+          if (valores.length === 1) ambiguo = true;
+          else {
+            // Dois valores ou mais: o maior é o total; o unitário, o que × qtd dá ele
+            const maior = valores.reduce((a, b) => valorBR(b) > valorBR(a) ? b : a);
+            valorTotal = maior;
+            valorUnit ||= valores.find(v => v !== maior && q > 0 && Math.abs(valorBR(v) * q - valorBR(maior)) <= 0.05) ?? '';
+          }
+        }
+        const confere = !(valorUnit && valorTotal && q > 0) ||
+          Math.abs(valorBR(valorUnit) * q - valorBR(valorTotal)) <= Math.max(0.05, valorBR(valorTotal) * 0.005);
+        const dono = [...linhasTabela].reverse().find(x => x.pos < m.index)?.it ?? itens[0];
+        // Descrição: do "ITEM n" até a quantidade, o primeiro valor ou o primeiro rótulo
+        const fimDesc = Math.min(trecho.length, ...[qm, reais[0], mTotalRot, mUnitRot].filter(Boolean).map(x => x.index));
+        const descricao = trecho.slice(0, fimDesc)
+          .replace(/(?<![A-Za-zÀ-ú])(?:VALOR|VLR?|PRE[ÇC]O)\.?\s*$/i, '')
+          .replace(/^[\s.:\-–)]+|[\s.,;:\-–]+$/g, '').replace(/\s+/g, ' ').slice(0, 120);
+        lista.push({
+          confere, ambiguo, v: ambiguo ? valores[0] : '', q,
+          item: m[1], requisicao: dono?.requisicao ?? '', subelemento: dono?.subelemento ?? '',
+          descricao, quant, unid: (qm?.[2] ?? '').toUpperCase(), valorUnit, valorTotal,
+        });
+      });
+      if (!lista.length) return [];
+
+      // Valor único por item: total ou unitário? O que fizer a soma bater com o
+      // TOTAL da solicitação (ou com a coluna PRC TOTAL da tabela)
+      const ambiguos = lista.filter(x => x.ambiguo);
+      if (ambiguos.length) {
+        const referencia = Math.abs(valorBR(totalLido)) ||
+          itens.reduce((s, it) => s + (Math.abs(valorBR(it.valorTotal)) || 0), 0);
+        const fixos = lista.filter(x => !x.ambiguo).reduce((s, x) => s + (valorBR(x.valorTotal) || 0), 0);
+        const comoTotal = fixos + ambiguos.reduce((s, x) => s + valorBR(x.v), 0);
+        const comoUnit = ambiguos.every(x => x.q > 0)
+          ? fixos + ambiguos.reduce((s, x) => s + Math.round(valorBR(x.v) * x.q * 100) / 100, 0) : NaN;
+        const bate = v => referencia > 0 && Math.abs(v - referencia) <= Math.max(0.02, lista.length * 0.005);
+        const unitario = !bate(comoTotal) && bate(comoUnit);
+        if (unitario) deduzidos.itensUnitario = true;
+        for (const x of ambiguos) {
+          if (unitario) {
+            x.valorUnit = x.v;
+            x.valorTotal = fmtBR(Math.round(valorBR(x.v) * x.q * 100) / 100);
+          } else {
+            // Sem bater de nenhum jeito, fica como total: a revisão aponta a diferença
+            x.valorTotal = x.v;
+            if (x.q > 0) x.valorUnit = fmtBR(Math.round(valorBR(x.v) / x.q * 10000) / 10000);
+          }
+        }
+      }
+      return lista.map(({ ambiguo, v, q, ...it }) => it);
     })();
     // Coluna PRC TOTAL das linhas da tabela: com os itens na descrição, é o valor
     // oficial da solicitação (e a referência para conferir a soma deles)
