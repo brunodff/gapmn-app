@@ -241,10 +241,11 @@ export default function PainelExecucao() {
   const oms = useMemo(() => porOM(recortes), [recortes]);
   const fornecedores = useMemo(() => porFornecedor(recortes), [recortes]);
 
-  // Opções dos filtros (do conjunto inteiro, para não sumirem ao filtrar)
+  // Opções dos filtros (do ano inteiro, para não sumirem ao filtrar). O que já está escolhido continua na
+  // lista ao trocar de ano, mesmo que não exista no ano novo (ex.: um PI que só existiu em 2026).
   const opcoes = useMemo(() => {
     const nes = nesDoAno;
-    const om = [...new Set(nes.map(omDe))].sort();
+    const om = new Set(nes.map(omDe));
     const nd = new Map<string, string>();
     const pis = new Map<string, string>();
     const ms = new Set<string>();
@@ -253,13 +254,18 @@ export default function PainelExecucao() {
       if (n.pi) pis.set(n.pi, n.piNome);
       ms.add(n.emissao.slice(0, 7));
     }
+    if (f.om) om.add(f.om);
+    if (f.mes) ms.add(f.mes);
+    const todas = dados?.nes ?? [];
+    if (f.natureza && !nd.has(f.natureza)) nd.set(f.natureza, todas.find((n) => n.natureza === f.natureza)?.naturezaNome ?? "");
+    for (const pi of f.pis) if (!pis.has(pi)) pis.set(pi, todas.find((n) => n.pi === pi)?.piNome ?? "");
     return {
-      om,
+      om: [...om].sort(),
       nd: [...nd].sort(([a], [b]) => a.localeCompare(b)),
       pis: [...pis].map(([codigo, desc]) => ({ codigo, desc })).sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })),
       meses: [...ms].sort(),
     };
-  }, [nesDoAno]);
+  }, [nesDoAno, dados, f.om, f.mes, f.natureza, f.pis]);
 
   const ordenados = useMemo(() => {
     const a = [...recortes];
@@ -370,7 +376,18 @@ export default function PainelExecucao() {
           <span style={{ fontSize: 12, color: DK.muted }}>Ano:</span>
           {anos.map((a) => (
             <button key={a} type="button" aria-pressed={a === ano}
-              onClick={() => { if (a !== ano) { setAnoEscolhido(a); setF(FILTROS_VAZIOS); setAbertas(new Set()); } }}
+              onClick={() => {
+                if (a === ano) return;
+                setAnoEscolhido(a);
+                // os filtros acompanham a troca de ano: o mês vai para o mesmo mês do ano novo, e a pendência
+                // de assinatura só existe no ano corrente
+                setF((atual) => ({
+                  ...atual,
+                  mes: atual.mes ? `${a}${atual.mes.slice(4)}` : "",
+                  soPendentesAssinatura: a === anos[0] ? atual.soPendentesAssinatura : false,
+                }));
+                setAbertas(new Set());
+              }}
               style={{ ...estiloBotao, padding: "5px 12px", fontSize: 12, background: a === ano ? `${DK.cyan}22` : "transparent", borderColor: a === ano ? DK.cyan : DK.cardBorder, color: a === ano ? DK.cyan : DK.text }}>
               {a}
             </button>
