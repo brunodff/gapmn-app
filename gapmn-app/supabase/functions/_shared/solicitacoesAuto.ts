@@ -17,6 +17,11 @@
 
 export const INICIO_AUTOMATICO = "2026-08-03";
 
+/** Ano corrente no fuso de Manaus (UTC−4, sem horário de verão). */
+export function anoCorrente(agora = Date.now()): number {
+  return new Date(agora - 4 * 3_600_000).getUTCFullYear();
+}
+
 export type Status = "IMPORTADA" | "EMITIDA" | "ASSINADA" | "ENCERRADA";
 export type TipoEnvio = "EMITIDA" | "ASSINADA";
 
@@ -143,20 +148,18 @@ export function parseCSV(texto: string): string[][] {
  * lançamento), C item, G valor atual do item, H observação, I UG, K natureza, O PAG, P/Q favorecido,
  * T situação da assinatura. As colunas R e S (assinante) não são lidas.
  */
-export function lerNEs(linhas: string[][]): LinhaNE[] {
+export function lerNEs(linhas: string[][], ano: number | null = anoCorrente()): LinhaNE[] {
   const saida: LinhaNE[] = [];
   const itens = new Map<string, Map<string, number>>();
-  // Desde 05/11/2026 a planilha traz as NEs de 2022 em diante: só interessam as do exercício (ano mais
-  // recente). Linhas de item seguem a NE de cima.
-  let anoAlvo = 0;
-  for (const c of linhas) { const ne = c.length >= 21 && dataISO(c[0]) ? neCurta(c[1]) : null; if (ne) anoAlvo = Math.max(anoAlvo, Number(ne.slice(0, 4))); }
+  // Desde 05/11/2026 a planilha traz as NEs de 2022 em diante: o e-mail ao fiscal é só das NEs do ano
+  // corrente (pedido do Bruno, 05/11/2026). `ano` null lê todos os anos. Linhas de item seguem a NE de cima.
   let neAtual = "", dia = "", item = "", doAno = false;
   for (const c of linhas) {
     if (c.length < 21) continue;
     const iso = dataISO(c[0]);
     if (!iso) continue;
     const ne = neCurta(c[1]);
-    if (ne) doAno = Number(ne.slice(0, 4)) === anoAlvo;
+    if (ne) doAno = ano === null || Number(ne.slice(0, 4)) === ano;
     if (!doAno) continue;
     if (ne) { neAtual = ne; dia = c[0].trim(); item = ""; }
     if (neAtual && c[0].trim() === dia) {

@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { aplicarModelo, extrairEmail, extrairResponsavel, lerNEs, pedidoDeEmail, planejar, type LinhaNE, type Solicitacao } from "./solicitacoesAuto.ts";
+import { anoCorrente, aplicarModelo, extrairEmail, extrairResponsavel, lerNEs, pedidoDeEmail, planejar, type LinhaNE, type Solicitacao } from "./solicitacoesAuto.ts";
 
 const OBS = "SOLICITACAO DE EMPENHO 26S0500. OBS: CONTRATO 010. CTT: 1T SILVA silva@fab.mil.br TELEFONE: (92) 3654-1234";
 
@@ -34,7 +34,7 @@ test("leitura: NE, solicitação, situação e valor atual pela soma dos itens",
     linha("10/09/2026", "NE001000", "1", "600", "PENDENTE"),
     linha("10/09/2026", "", "2", "400", "PENDENTE"),
     linha("20/09/2026", "NE001000", "1", "600", "ASSINADA"),
-  ]);
+  ], 2026);
   assert.equal(nes.length, 2);
   assert.deepEqual(nes.map((n) => [n.ne, n.solicitacao, n.assinada, n.valorNE, n.dataISO]), [
     ["2026NE001000", "26S0500", false, 1000, "2026-09-10"],
@@ -42,17 +42,26 @@ test("leitura: NE, solicitação, situação e valor atual pela soma dos itens",
   ]);
 });
 
-test("leitura: com os anos anteriores na planilha, só as NEs do exercício (o ano mais recente) entram", () => {
+test("leitura: com os anos anteriores na planilha, só as NEs do ano corrente entram", () => {
   const antiga = linha("15/03/2025", "NE000900", "1", "5000", "ASSINADA", "SOLICITACAO DE EMPENHO 25S0300. CTT: fiscal@fab.mil.br");
   antiga[1] = "120630000012025NE000900";
   const itemAntigo = linha("15/03/2025", "", "2", "700");
-  const nes = lerNEs([
+  const planilha = [
     ["Notas de Empenho"],
     antiga, itemAntigo,
     linha("10/09/2026", "NE001000", "1", "600", "PENDENTE"),
     linha("10/09/2026", "", "2", "400", "PENDENTE"),
-  ]);
-  assert.deepEqual(nes.map((n) => [n.ne, n.valorNE]), [["2026NE001000", 1000]]);
+  ];
+  assert.deepEqual(lerNEs(planilha, 2026).map((n) => [n.ne, n.valorNE]), [["2026NE001000", 1000]]);
+  // virada do ano: em janeiro de 2027, antes da 1ª NE de 2027, nenhuma NE de 2026 gera e-mail
+  assert.deepEqual(lerNEs(planilha, 2027), []);
+  // null lê todos os anos (a trava de segurança conta a planilha inteira)
+  assert.deepEqual(lerNEs(planilha, null).map((n) => [n.ne, n.valorNE]), [["2025NE000900", 5700], ["2026NE001000", 1000]]);
+});
+
+test("ano corrente no fuso de Manaus", () => {
+  assert.equal(anoCorrente(Date.parse("2027-01-01T03:30:00Z")), 2026); // 31/12/2026 23:30 em Manaus
+  assert.equal(anoCorrente(Date.parse("2027-01-01T04:00:00Z")), 2027); // 01/01/2027 00:00 em Manaus
 });
 
 test("contato do fiscal tirado da observação", () => {
