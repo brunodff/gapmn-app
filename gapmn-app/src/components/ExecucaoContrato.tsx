@@ -1,6 +1,6 @@
 // Aba "Execução" do contrato: as NEs ligadas a ele (lib/contratos/execucao.ts), com os mesmos totais da
 // lista e de Dados Gerais, e os itens de cada NE com a soma.
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ExecucaoContrato as Exec, MotivoVinculo, NotaContrato, SaldoAEmpenhar } from "../lib/contratos/execucao.ts";
 import type { Lancamento } from "../lib/contratos/useExecucaoContratos";
 import type { NotaEmpenho } from "../lib/execucao/empenhos.ts";
@@ -16,6 +16,67 @@ const MOTIVO: Partial<Record<MotivoVinculo, { rotulo: string; dica: string }>> =
   "PAG do contrato": { rotulo: "PAG", dica: "NE do PAG do contrato (único contrato do PAG)" },
   "mesmo fornecedor no PAG": { rotulo: "CNPJ", dica: "PAG de vários contratos: ligada pelo fornecedor" },
 };
+
+type ItemDoContrato = { chave: string; itemCompra: string | null; nome: string; valor: number; nes: Set<string>; ultima: string };
+
+/** Cartão "Empenhado por item": quanto foi empenhado em cada item do contrato, somando todas as NEs. */
+function EmpenhadoPorItem({ itens, nesSemItens }: { itens: ItemDoContrato[]; nesSemItens: number }) {
+  const [todos, setTodos] = useState(false);
+  const total = itens.reduce((s, i) => s + i.valor, 0);
+  const max = Math.max(...itens.map((i) => i.valor), 0);
+  const lista = todos ? itens : itens.slice(0, 8);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <div className="text-xs font-semibold text-slate-700">Empenhado por item</div>
+        <div className="text-[11px] text-slate-500">{itens.length} {itens.length === 1 ? "item" : "itens"} · total <strong className="text-sky-700">{fmt(total)}</strong></div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-slate-500 text-left border-b border-slate-200">
+              <th className="px-2 py-1 font-semibold w-12">Item</th>
+              <th className="px-2 py-1 font-semibold">Descrição</th>
+              <th className="px-2 py-1 font-semibold text-right w-12">NEs</th>
+              <th className="px-2 py-1 font-semibold text-right">Empenhado</th>
+              <th className="px-2 py-1 font-semibold w-28 hidden sm:table-cell"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {lista.map((i) => (
+              <tr key={i.chave} title={`Último lançamento: ${dataBR(i.ultima)}`}>
+                <td className="px-2 py-1 font-mono text-slate-500">{i.itemCompra ?? "–"}</td>
+                <td className="px-2 py-1 text-slate-700">{i.nome}</td>
+                <td className="px-2 py-1 text-right text-slate-500">{i.nes.size}</td>
+                <td className={`px-2 py-1 text-right font-mono ${i.valor < 0 ? "text-red-600" : "text-sky-700"}`}>{fmt(i.valor)}</td>
+                <td className="px-2 py-1 hidden sm:table-cell">
+                  <div className="h-1.5 rounded bg-slate-100">
+                    <div className="h-1.5 rounded bg-sky-600" style={{ width: `${max > 0 ? Math.max(2, (Math.max(0, i.valor) / max) * 100) : 0}%` }} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-slate-200 font-semibold">
+              <td colSpan={3} className="px-2 py-1 text-right text-slate-600">Total dos itens</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-800">{fmt(total)}</td>
+              <td className="hidden sm:table-cell" />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+        <span>{nesSemItens > 0 ? `${nesSemItens} NE${nesSemItens > 1 ? "s" : ""} sem itens na planilha (anteriores a 2022) não ${nesSemItens > 1 ? "entram" : "entra"} aqui.` : "Soma de todas as NEs do contrato."}</span>
+        {itens.length > 8 && (
+          <button onClick={() => setTodos((v) => !v)} className="text-sky-700 border border-sky-200 rounded px-2 py-0.5 hover:bg-sky-50">
+            {todos ? "Mostrar só os 8 maiores" : `Ver todos os ${itens.length} itens`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function Valor({ v, cor }: { v: number; cor: string }) {
   return v > 0.004 ? <span className={cor}>{fmt(v)}</span> : <span className="text-slate-300">–</span>;
@@ -60,6 +121,15 @@ export default function ExecucaoContrato({
   children?: ReactNode;
 }) {
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
+  // largura visível da tabela de NEs, para o detalhe da NE aberta caber nela
+  const [caixaTabela, setCaixaTabela] = useState<HTMLDivElement | null>(null);
+  const [larguraVisivel, setLarguraVisivel] = useState(0);
+  useEffect(() => {
+    if (!caixaTabela) return;
+    const ro = new ResizeObserver(() => setLarguraVisivel(caixaTabela.clientWidth));
+    ro.observe(caixaTabela);
+    return () => ro.disconnect();
+  }, [caixaTabela]);
   const nes = useMemo(() => exec?.nes ?? [], [exec]);
   const resumoItens = useMemo(() => {
     let n = 0, soma = 0, comItens = 0;
@@ -69,6 +139,24 @@ export default function ExecucaoContrato({
       comItens++; n += it.itens.length; soma += it.valor;
     }
     return { n, soma, comItens };
+  }, [nes, itens]);
+  // Empenhado por item do contrato: soma de cada item em todas as NEs (pelo número do item da compra;
+  // sem ele, pelo nome)
+  const porItem = useMemo(() => {
+    const m = new Map<string, ItemDoContrato>();
+    for (const ne of nes) {
+      const it = itens?.get(ne.ne);
+      if (!it) continue;
+      for (const i of it.itens) {
+        const chave = i.itemCompra ? `#${i.itemCompra}` : `n:${i.nome}`;
+        const x = m.get(chave) ?? { chave, itemCompra: i.itemCompra, nome: i.nome, valor: 0, nes: new Set<string>(), ultima: "" };
+        x.valor += i.valor;
+        x.nes.add(ne.ne);
+        if (it.ultimoLancamento > x.ultima) x.ultima = it.ultimoLancamento;
+        m.set(chave, x);
+      }
+    }
+    return [...m.values()].sort((a, b) => b.valor - a.valor);
   }, [nes, itens]);
 
   if (estado === "carregando") return <p className="text-xs text-slate-500 text-center py-4">Carregando empenhos do SIAFI…</p>;
@@ -130,6 +218,8 @@ export default function ExecucaoContrato({
         <p className="text-xs text-slate-400 italic text-center py-4">Nenhuma NE ligada a este contrato nas planilhas do SIAFI.</p>
       )}
 
+      {porItem.length > 0 && <EmpenhadoPorItem itens={porItem} nesSemItens={nes.filter((n) => !itens?.has(n.ne)).length} />}
+
       {nes.length > 0 && (
         <div>
           <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
@@ -143,7 +233,7 @@ export default function ExecucaoContrato({
               <button onClick={() => setAbertas(new Set())} className="text-[11px] text-slate-500 border rounded px-2 py-0.5 hover:bg-slate-50">Fechar</button>
             </div>
           </div>
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <div ref={setCaixaTabela} className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-[11px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-left">
@@ -162,7 +252,7 @@ export default function ExecucaoContrato({
                   const mot = MOTIVO[motivoDe(n.ne) ?? "sem contrato"];
                   const lanc = lancamentos.get(n.ne) ?? [];
                   return [
-                    <tr key={n.ne} onClick={() => alternar(n.ne)} className={`cursor-pointer hover:bg-sky-50/60 ${aberta ? "bg-sky-50/60" : ""}`}>
+                    <tr key={n.ne} onClick={() => alternar(n.ne)} className={`cursor-pointer hover:bg-sky-50 ${aberta ? "bg-sky-50" : ""}`}>
                       <td className="px-2 py-1.5 whitespace-nowrap">
                         <span className="text-slate-400 mr-1">{aberta ? "▾" : "▸"}</span>
                         <span className="font-mono font-semibold text-sky-700">{n.ne}</span>
@@ -177,8 +267,10 @@ export default function ExecucaoContrato({
                       <td className="px-2 py-1.5 text-right font-mono"><Valor v={n.pago} cor="text-green-700" /></td>
                     </tr>,
                     aberta && (
-                      <tr key={n.ne + "_det"} className="bg-slate-50/70">
-                        <td colSpan={6} className="px-3 py-2 space-y-2">
+                      <tr key={n.ne + "_det"} className="bg-slate-50">
+                        <td colSpan={6} className="px-3 py-2">
+                          {/* o detalhe fica na largura visível da tabela (que rola para o lado), sem cortar o valor */}
+                          <div className="space-y-2" style={{ position: "sticky", left: 12, width: larguraVisivel ? larguraVisivel - 26 : undefined }}>
                           {it ? (
                             <table className="w-full text-[11px] bg-white rounded border border-slate-200">
                               <thead>
@@ -245,6 +337,7 @@ export default function ExecucaoContrato({
                             </p>
                           )}
                           {n.descricao && <p className="text-[11px] text-slate-400">{n.descricao}</p>}
+                          </div>
                         </td>
                       </tr>
                     ),

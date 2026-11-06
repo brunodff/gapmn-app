@@ -1463,11 +1463,11 @@ export default function AppChat() {
           border-color: rgba(255,255,255,0.10) !important;
         }
         .svdark td                { border-color: rgba(255,255,255,0.07) !important; color: #eaf1fb !important; }
-        .svdark .bg-slate-50\/40   { background: rgba(255,255,255,0.07) !important; }
-        .svdark .bg-slate-50\/70   { background: rgba(255,255,255,0.04) !important; }
-        .svdark .bg-amber-50\/60   { background: rgba(251,191,36,0.12) !important; }
-        .svdark .bg-sky-50\/60     { background: rgba(56,189,248,0.10) !important; }
-        .svdark .bg-green-50\/60, .svdark .bg-emerald-50\/60 { background: rgba(52,211,153,0.10) !important; }
+        .svdark .bg-slate-50\\/40   { background: rgba(255,255,255,0.07) !important; }
+        .svdark .bg-slate-50\\/70   { background: rgba(255,255,255,0.04) !important; }
+        .svdark .bg-amber-50\\/60   { background: rgba(251,191,36,0.12) !important; }
+        .svdark .bg-sky-50\\/60     { background: rgba(56,189,248,0.10) !important; }
+        .svdark .bg-green-50\\/60, .svdark .bg-emerald-50\\/60 { background: rgba(52,211,153,0.10) !important; }
         .svdark .bg-indigo-50      { background: rgba(99,102,241,0.10) !important; }
         .svdark .border-amber-300  { border-color: rgba(251,191,36,0.45) !important; }
         .svdark .border-amber-200  { border-color: rgba(251,191,36,0.30) !important; }
@@ -1483,10 +1483,10 @@ export default function AppChat() {
         .svdark .hover\\:bg-violet-50:hover  { background: rgba(167,139,250,0.08) !important; }
         .svdark .hover\\:bg-slate-50:hover   { background: rgba(255,255,255,0.04) !important; }
         .svdark .hover\\:bg-blue-50:hover    { background: rgba(56,189,248,0.10) !important; }
-        .svdark .bg-gray-50\/50    { background: rgba(255,255,255,0.03) !important; }
-        .svdark .bg-gray-50\/40    { background: rgba(255,255,255,0.025) !important; }
-        .svdark .bg-sky-50\/40     { background: rgba(56,189,248,0.06) !important; }
-        .svdark .bg-sky-50\/50     { background: rgba(56,189,248,0.08) !important; }
+        .svdark .bg-gray-50\\/50    { background: rgba(255,255,255,0.03) !important; }
+        .svdark .bg-gray-50\\/40    { background: rgba(255,255,255,0.025) !important; }
+        .svdark .bg-sky-50\\/40     { background: rgba(56,189,248,0.06) !important; }
+        .svdark .bg-sky-50\\/50     { background: rgba(56,189,248,0.08) !important; }
         .svdark .hover\\:bg-white:hover { background: rgba(255,255,255,0.05) !important; }
         .svdark tr:hover td, .svdark tbody tr:hover { background: rgba(56,189,248,0.08) !important; }
         .svdark .bg-sky-600       { background: #0ea5e9 !important; }
