@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { classificar, nomeDoItem } from "./categorias.ts";
-import { anoMaisRecente, chavePAG, favorecidoDe, lerEmpenhos, linhasDoAno, type NotaEmpenho } from "./empenhos.ts";
+import { anoMaisRecente, chavePAG, favorecidoDe, juntarAnos, lerEmpenhos, linhasDoAno, type NotaEmpenho } from "./empenhos.ts";
 import {
   FILTROS_VAZIOS, diasEntre, filtrar, financeiroDo, financeiroPorNE, hojeEm, pendenciaAssinatura, porCategoria, porContrato, porMes,
   porObjeto, resumir, ultimaDataDaPlanilha, vincular, type ContratoResumo, type Financeiro, type ProcessoResumo,
@@ -253,6 +253,28 @@ test("ano das NEs: o mais recente da planilha; filtrar deixa só as linhas dele 
   assert.ok(!so2026.some((l) => l[6] === "50" && l[0] === "27/01/2025"), "item da NE de 2025 também sai");
   assert.deepEqual(lerEmpenhos(so2026).map((n) => n.ne).sort(), lerEmpenhos(PLANILHA).map((n) => n.ne).sort());
   assert.equal(lerEmpenhos(linhasDoAno(misturada, 2025)).map((n) => n.ne).join(), "2025NE000013");
+});
+
+test("duas abas: anos anteriores entram antes do exercício, sem contar em dobro", () => {
+  const titulo = ["Notas de Empenho", ...Array(20).fill("")];
+  const cabecalho = ["Emissão - Dia", "NE", ...Array(19).fill("")];
+  const antiga = [
+    linha({ data: "27/01/2025", ne: "2025NE000013", seq: "1", item: "Diarias", valor: "100" }),
+    linha({ data: "27/01/2025", seq: "2", item: "Diarias", valor: "50" }),
+  ];
+  const anteriores = [titulo, ...antiga, cabecalho];
+  const juntas = juntarAnos(PLANILHA, anteriores);
+  const nes = lerEmpenhos(juntas);
+  assert.equal(nes.length, lerEmpenhos(PLANILHA).length + 1);
+  assert.equal(nes.find((n) => n.ne === "2025NE000013")?.valor, 150);
+  assert.equal(juntas[0][0], PLANILHA[0][0], "o título segue no topo");
+  assert.equal(juntas[1][1], antiga[0][1], "os anos anteriores vêm antes do exercício");
+  assert.equal(juntas.filter((c) => c[0] === "Emissão - Dia").length, PLANILHA.filter((c) => c[0] === "Emissão - Dia").length, "cabeçalho da outra aba não entra");
+  // se o relatório voltar a trazer 2025 na aba do exercício, a outra aba não repete esse ano
+  const comDoisAnos = [titulo, ...antiga, ...PLANILHA.slice(1)];
+  assert.equal(lerEmpenhos(juntarAnos(comDoisAnos, anteriores)).length, nes.length);
+  // sem a aba dos anos anteriores, fica o exercício
+  assert.deepEqual(juntarAnos(PLANILHA, []), PLANILHA);
 });
 
 // Uso de tipo só para o TS não reclamar de import não usado em alguns editores

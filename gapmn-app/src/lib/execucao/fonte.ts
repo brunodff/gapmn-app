@@ -9,7 +9,7 @@ import { supabase } from "../supabase";
 import { SHEET_URLS, toExecucaoLinhas, toRPNEs } from "../gsheets";
 import { parseCSV } from "../orcamento/leitura.ts";
 import { juntarNEs, notaItensDe } from "../contratos/execucao.ts";
-import { chavePAG, lerEmpenhos, type NotaEmpenho } from "./empenhos.ts";
+import { chavePAG, juntarAnos, lerEmpenhos, type NotaEmpenho } from "./empenhos.ts";
 import type { ContratoResumo, Financeiro, ProcessoResumo } from "./painel.ts";
 
 export type DadosExecucao = {
@@ -100,8 +100,12 @@ export async function buscarExecucao(): Promise<DadosExecucao> {
   const relogio = setTimeout(() => ctl.abort(), TEMPO_LIMITE_MS);
   const avisos: string[] = [];
   try {
-    const [itens, situacao, rp, contratos, processos] = await Promise.all([
+    const [itens, anteriores, situacao, rp, contratos, processos] = await Promise.all([
       baixarCSV(SHEET_URLS.empenhosNF, ctl.signal),
+      baixarCSV(SHEET_URLS.empenhosNFAnteriores, ctl.signal).catch(() => {
+        avisos.push("A aba dos anos anteriores não respondeu: o painel mostra só o ano corrente.");
+        return [] as string[][];
+      }),
       baixarCSV(SHEET_URLS.execucao, ctl.signal).catch(() => {
         avisos.push("A planilha de situação não respondeu: a liquidação e o pagamento aparecem zerados.");
         return [] as string[][];
@@ -119,7 +123,7 @@ export async function buscarExecucao(): Promise<DadosExecucao> {
         return [] as ProcessoResumo[];
       }),
     ]);
-    const nes = lerEmpenhos(itens);
+    const nes = lerEmpenhos(juntarAnos(itens, anteriores));
     if (!nes.length) throw new Error("A planilha de empenhos veio sem notas de empenho.");
     // liquidação e pagamento de cada NE (situação + restos a pagar + valor dos itens), como em Contratos
     // (sem a planilha de situação, nada de liquidação e pagamento: o aviso acima já diz que aparecem zerados)

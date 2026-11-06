@@ -20,6 +20,8 @@ export const SHEET_URLS = {
   rpNE:       "https://docs.google.com/spreadsheets/d/1-_2ZqIaKjuzCf5dbujD9V3wP3gt3vtGanjxXqUGLlZ8/export?format=csv&gid=792698456",
   empenhos:   "https://docs.google.com/spreadsheets/d/1Gb-2Q1b6VJQff-MHTZyzwUIKvQI-sZnYwNB0ZU__Vb4/export?format=csv&gid=0",
   empenhosNF: "https://docs.google.com/spreadsheets/d/1XQ5CGcB0dTVADeEGfKjtXRhqtHxsNf1J1H_9VKjBklM/export?format=csv&gid=1297815245",
+  // anos anteriores (só Painel de Execução e Contratos): aba à parte para a aba acima continuar leve
+  empenhosNFAnteriores: "https://docs.google.com/spreadsheets/d/1XQ5CGcB0dTVADeEGfKjtXRhqtHxsNf1J1H_9VKjBklM/export?format=csv&gid=2022025",
   execucao:   "https://docs.google.com/spreadsheets/d/1WXiRR3_QnjgYJHWeBQ5QPivF5z6bJsooqAw7BdH00JI/export?format=csv&gid=837657910",
 } as const;
 
@@ -430,8 +432,8 @@ export function toControleEmpenhos(rows: string[][]): ControleEmpenho[] {
  * NEs que não são de compra (contratos, diárias, taxas) não têm "Item compra:" em D,
  * mas seguem o mesmo layout de 21 colunas, com texto livre em D.
  *
- * A planilha traz as NEs de 2022 em diante; sem `todosOsAnos`, só as do ano mais recente (o exercício),
- * que é o que os painéis de empenhos usam.
+ * Com as linhas de vários anos (ver juntarAnos), sem `todosOsAnos` ficam só as do ano mais recente (o
+ * exercício), que é o que os painéis de empenhos usam.
  */
 export function toEmpenhosNF(todas: string[][], opcoes: { todosOsAnos?: boolean } = {}): EmpenhoNF[] {
   const rows = opcoes.todosOsAnos ? todas : linhasDoAno(todas);

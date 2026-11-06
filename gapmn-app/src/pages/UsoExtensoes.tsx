@@ -23,6 +23,11 @@ const NOMES: Record<string, string> = {
   "painel-comprasnet": "Painel ComprasNet",
   "robo-empenhos": "Robô de Empenhos",
   "ob-siloms": "Extensão de OB",
+  "processos-ao-vivo": "Processos ao Vivo",
+  "ne-fornecedor": "Envio NE ao Fornecedor",
+  "fornecedores-siloms": "E-mails dos Fornecedores (SILOMS)",
+  "siloms-nomes": "SILOMS — Nome dos Documentos",
+  "robo-nc-siloms": "Robô de Notas de Crédito",
 };
 
 // "1.15.0" > "1.9.2"

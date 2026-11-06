@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { fetchCSV, toEmpenhosNF, toExecucaoLinhas, toRPNEs, SHEET_URLS, type ExecucaoLinha, type LinhaRPNE } from "../gsheets";
-import { lerEmpenhos, type NotaEmpenho } from "../execucao/empenhos.ts";
+import { juntarAnos, lerEmpenhos, type NotaEmpenho } from "../execucao/empenhos.ts";
 import {
   execucaoPorContrato, juntarNEs, neCanonica, notaItensDe, primeiraNE, saldoAEmpenhar, vincularNEs,
   type ContratoVinculo, type ExecucaoContrato, type NotaContrato, type SaldoAEmpenhar, type Vinculo,
@@ -57,7 +57,9 @@ function baixar(): Promise<Planilhas> {
   const promessa = Promise.all([
     fetchCSV(SHEET_URLS.execucao).then((rows) => toExecucaoLinhas(rows).linhas),
     fetchCSV(SHEET_URLS.rpNE).then(toRPNEs).catch(() => [] as LinhaRPNE[]),
-    fetchCSV(SHEET_URLS.empenhosNF).then(lerItens).catch(() => null),
+    // sem a aba dos anos anteriores, os contratos seguem com o exercício e o saldo antigo vem do SILOMS
+    Promise.all([fetchCSV(SHEET_URLS.empenhosNF), fetchCSV(SHEET_URLS.empenhosNFAnteriores).catch(() => [] as string[][])])
+      .then(([atual, anteriores]) => lerItens(juntarAnos(atual, anteriores))).catch(() => null),
   ]).then(([situacao, rps, itens]) => ({ situacao, rps, itens }));
   cache = { em: Date.now(), promessa };
   promessa.catch(() => { cache = null; }); // falhou: a próxima tela tenta de novo

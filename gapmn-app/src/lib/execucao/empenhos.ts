@@ -83,9 +83,10 @@ export function neCurta(v: string): string | null {
 }
 
 // ─── Ano das NEs ─────────────────────────────────────────────────────────────
-// Desde 05/11/2026 a planilha traz as NEs de 2022 em diante. Os painéis do exercício (Orçamentário,
-// Empenhos, Gerenciais, e-mail ao fiscal) usam só o ano corrente — o mais recente da planilha; o Painel de
-// Execução e os Contratos usam todos os anos.
+// A aba "Dados" da planilha traz só o exercício; 2022 a 2025 ficam na aba "Dados 2022-2025" (separadas em
+// 06/11/2026: a planilha inteira numa aba só derrubava a função do e-mail ao fiscal). Os painéis do exercício
+// (Orçamentário, Empenhos, Gerenciais, e-mail ao fiscal) leem só a primeira; o Painel de Execução e os
+// Contratos leem as duas, com juntarAnos.
 
 const NE_ANO = /(\d{4})NE\d+/i;
 
@@ -112,6 +113,29 @@ export function linhasDoAno(linhas: readonly string[][], ano: number | null = an
     if (m) manter = Number(m[1]) === ano;
     return manter;
   });
+}
+
+/**
+ * Junta a aba do exercício com a dos anos anteriores, na ordem da planilha original. Ano que já está na aba
+ * do exercício não é lido da outra, para não contar em dobro se o relatório voltar a trazer anos anteriores.
+ */
+export function juntarAnos(atual: readonly string[][], anteriores: readonly string[][]): string[][] {
+  const ehDado = (c: readonly string[]) => DATA.test((c[0] ?? "").trim());
+  const jaTem = new Set<number>();
+  for (const c of atual) {
+    const m = NE_ANO.exec(c[1] ?? "");
+    if (m && ehDado(c)) jaTem.add(Number(m[1]));
+  }
+  let manter = false;
+  const antigas = anteriores.filter((c) => {
+    if (!ehDado(c)) return false;
+    const m = NE_ANO.exec(c[1] ?? "");
+    if (m) manter = !jaTem.has(Number(m[1]));
+    return manter;
+  });
+  const i = atual.findIndex(ehDado);
+  const corte = i < 0 ? atual.length : i;
+  return [...atual.slice(0, corte), ...antigas, ...atual.slice(corte)];
 }
 
 /** Parte fixa do PAG: 5 dígitos do órgão + 6 do sequencial + 4 do ano. Os dígitos verificadores às vezes vêm cortados. */
