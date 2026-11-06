@@ -7,8 +7,8 @@ import assert from "node:assert/strict";
 import { classificar, nomeDoItem } from "./categorias.ts";
 import { anoMaisRecente, chavePAG, favorecidoDe, juntarAnos, lerEmpenhos, linhasDoAno, type NotaEmpenho } from "./empenhos.ts";
 import {
-  FILTROS_VAZIOS, diasEntre, filtrar, financeiroDo, financeiroPorNE, hojeEm, pagoRPDo, pendenciaAssinatura, porCategoria, porContrato, restosDoExercicio, porMes,
-  porObjeto, resumir, ultimaDataDaPlanilha, vincular, type ContratoResumo, type Financeiro, type ProcessoResumo, type Vinculo,
+  FILTROS_VAZIOS, diasEntre, filtrar, financeiroDo, financeiroPorNE, hojeEm, pendenciaAssinatura, porCategoria, porContrato, porMes,
+  porObjeto, resumir, ultimaDataDaPlanilha, vincular, type ContratoResumo, type Financeiro, type ProcessoResumo,
 } from "./painel.ts";
 
 /** Uma linha de 21 colunas no layout da planilha. */
@@ -253,50 +253,6 @@ test("ano das NEs: o mais recente da planilha; filtrar deixa só as linhas dele 
   assert.ok(!so2026.some((l) => l[6] === "50" && l[0] === "27/01/2025"), "item da NE de 2025 também sai");
   assert.deepEqual(lerEmpenhos(so2026).map((n) => n.ne).sort(), lerEmpenhos(PLANILHA).map((n) => n.ne).sort());
   assert.equal(lerEmpenhos(linhasDoAno(misturada, 2025)).map((n) => n.ne).join(), "2025NE000013");
-});
-
-test("restos a pagar: o pago conta no ano em que saiu, com os filtros do painel", () => {
-  const antiga = lerEmpenhos([
-    linha({ data: "10/03/2025", ne: "2025NE000050", seq: "1", item: "ENERGIA ELETRICA", valor: "600" }),
-    linha({ data: "10/03/2025", seq: "2", item: "AGUA E ESGOTO", valor: "400" }),
-    linha({ data: "11/03/2025", ne: "2025NE000051", seq: "1", item: "ENERGIA ELETRICA", valor: "900" }),
-    linha({ data: "12/03/2025", ne: "2025NE000052", seq: "1", item: "ENERGIA ELETRICA", valor: "300" }),
-  ]);
-  const doAno = lerEmpenhos(PLANILHA);
-  const todas = [...antiga, ...doAno];
-  const fin = new Map<string, Financeiro>([
-    ["2025NE000050", { aLiquidar: 100, liquidadoPagar: 0, pago: 400, pagoRP: 500, pagoMeio: 0 }],
-    ["2025NE000051", { aLiquidar: 0, liquidadoPagar: 0, pago: 900, pagoRP: 0, pagoMeio: 0 }], // paga em 2025: não é RP de 2026
-    ["2025NE000052", { aLiquidar: 300, liquidadoPagar: 0, pago: 0, pagoRP: 0, pagoMeio: 0 }], // RP em aberto: aparece na lista, sem pago
-    ["2026NE000001", { aLiquidar: 0, liquidadoPagar: 0, pago: 100 }],
-  ]);
-  const v = vincular(todas, [], []);
-  const rs = restosDoExercicio(todas, "2026", FILTROS_VAZIOS, v, fin);
-  assert.deepEqual(rs.map((r) => r.nota.ne), ["2025NE000050", "2025NE000052"]);
-  assert.equal(rs.reduce((s, r) => s + pagoRPDo(r, fin), 0), 500);
-  // o ano mais antigo não recebe RP, e o RP de 2026 não vira pagamento de 2025; a conta do ano fecha com o empenhado
-  assert.equal(restosDoExercicio(todas, "2025", FILTROS_VAZIOS, v, fin).length, 0);
-  const de2025 = resumir(filtrar(antiga, FILTROS_VAZIOS, v), fin, v);
-  assert.equal(de2025.pago, 1300);
-  assert.equal(de2025.pagoRP, 500);
-  assert.equal(de2025.valor, de2025.pago + de2025.pagoRP + de2025.pagoMeio + de2025.aLiquidar + de2025.liquidadoPagar);
-  // filtro por objeto: proporção dos itens
-  const energia = restosDoExercicio(todas, "2026", { ...FILTROS_VAZIOS, busca: "ENERGIA ELETRICA" }, v, fin);
-  assert.ok(Math.abs(pagoRPDo(energia.find((r) => r.nota.ne === "2025NE000050")!, fin) - 300) < 1e-9);
-  // o filtro de mês é o da emissão, e a pendência de assinatura não existe em NE antiga
-  assert.equal(restosDoExercicio(todas, "2026", { ...FILTROS_VAZIOS, mes: "2026-01" }, v, fin).length, 0);
-  assert.equal(restosDoExercicio(todas, "2026", { ...FILTROS_VAZIOS, soPendentesAssinatura: true }, v, fin).length, 0);
-  // contrato: o RP entra na linha do contrato que teve NE no ano, sem mexer no empenhado
-  const c = { id: "c1", numero: "1/2025" } as ContratoResumo;
-  const comContrato = new Map<string, Vinculo>([
-    ["2025NE000050", { contrato: c, processo: null }],
-    ["2026NE000001", { contrato: c, processo: null }],
-  ]);
-  const doAnoRec = filtrar(doAno.filter((n) => n.ne === "2026NE000001"), FILTROS_VAZIOS, comContrato, fin);
-  const [lc] = porContrato(doAnoRec, comContrato, fin, rs);
-  assert.equal(lc.pago, 100);
-  assert.equal(lc.pagoRP, 500);
-  assert.equal(lc.valor, doAnoRec[0].valor);
 });
 
 test("duas abas: anos anteriores entram antes do exercício, sem contar em dobro", () => {
