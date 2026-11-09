@@ -1839,7 +1839,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
               {(() => {
                 const e = finDe(selected)?.e;
                 if (!e) return estadoSiafi === "erro" ? <p className="mt-2 text-[11px] text-red-600">Planilhas do SIAFI indisponíveis agora: os valores de execução não puderam ser lidos.</p> : null;
-                const fora = e.semContratoNoPag.length + e.citamOutro.length;
+                const fora = e.citamOutro.length;
                 return (
                   <p className="mt-2 text-[11px] text-slate-500">
                     Execução pelas notas de empenho do SIAFI — os mesmos valores da aba{" "}

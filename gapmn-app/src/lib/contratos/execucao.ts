@@ -63,6 +63,9 @@ export type ContratoVinculo = {
   numero_contrato: string;
   pag_nup: string | null;
   cnpj: string | null;
+  /** vigência (desempata contratos do mesmo fornecedor no mesmo PAG) */
+  data_inicio?: string | null;
+  data_final?: string | null;
 };
 
 // ─── NE com situação e restos a pagar ───────────────────────────────────────
@@ -312,8 +315,8 @@ export type MotivoVinculo =
   | "cita o contrato"
   | "PAG do contrato"
   | "mesmo fornecedor no PAG"
+  | "vigência no PAG"
   | "cita outro contrato"
-  | "PAG compartilhado"
   | "sem contrato";
 
 export type Vinculo = {
@@ -329,7 +332,29 @@ const cnpjDe = (s: string | null | undefined) => {
   return d.length >= 12 && d.length <= 14 ? d.padStart(14, "0") : null;
 };
 
-export function vincularNEs(contratos: readonly ContratoVinculo[], nes: Iterable<NotaContrato>): Map<string, Vinculo> {
+const DIA = 86_400_000;
+/**
+ * Entre contratos do mesmo PAG e fornecedor, o vigente na data da NE; fora de todas as vigências, o de vigência
+ * mais próxima; sem data, o mais recente. Cada NE vai para um contrato só, para não contar em dobro.
+ */
+export function contratoVigente<T extends ContratoVinculo>(lista: readonly T[], data: string | null): T {
+  const longe = (c: T) => {
+    if (!data || !c.data_inicio) return 1e9;
+    const d = Date.parse(data);
+    if (d < Date.parse(c.data_inicio)) return (Date.parse(c.data_inicio) - d) / DIA;
+    if (c.data_final && d > Date.parse(c.data_final)) return (d - Date.parse(c.data_final)) / DIA;
+    return 0;
+  };
+  return [...lista].sort((a, b) => longe(a) - longe(b) || (b.data_inicio ?? "").localeCompare(a.data_inicio ?? "") || a.id.localeCompare(b.id))[0];
+}
+
+/**
+ * Liga cada NE a um contrato. `emissaoDe` (data ISO da emissão, da planilha de itens) desempata contratos do mesmo
+ * fornecedor no mesmo PAG pela vigência.
+ */
+export function vincularNEs(
+  contratos: readonly ContratoVinculo[], nes: Iterable<NotaContrato>, emissaoDe: (ne: string) => string | null = () => null,
+): Map<string, Vinculo> {
   type C = ContratoVinculo & { chave: ChaveContrato | null; cnpj14: string | null };
   // contrato de receita não tem empenho: fica fora (o RECEITA 001/BAMN-HAMN/2022 recebia R$ 1 mi do PAG)
   const lista: C[] = contratos
@@ -341,11 +366,13 @@ export function vincularNEs(contratos: readonly ContratoVinculo[], nes: Iterable
     if (k) porPag.set(k, [...(porPag.get(k) ?? []), c]);
   }
   const out = new Map<string, Vinculo>();
-  // PAGs com NE que cita outro contrato (não cadastrado): o processo serve a mais de um contrato, então NE
-  // sem citação nesse PAG não é, por certo, do único contrato cadastrado (ex.: 009/BAMN-HAMN/2022, cujo PAG
-  // também paga os contratos 005, 007 e 010 do laboratório)
+  // PAGs com NE que cita outro contrato (não cadastrado): o processo serve a mais de um contrato (ex.: o PAG do
+  // 009/BAMN-HAMN/2022 também paga os contratos 005, 007 e 010 do laboratório). Nesses PAGs, a NE sem citação só
+  // fica com o único contrato cadastrado se o fornecedor não for outro.
   const pagComOutro = new Set<string>();
-  const pagDaNE = new Map<string, string>();
+  /** NE ligada só pelo PAG → PAG e raiz do CNPJ do fornecedor (conferidos no fim, quando já se sabe se o PAG paga outro contrato) */
+  const pagDaNE = new Map<string, { pag: string; fornecedor: string | null }>();
+  const raiz = (s: string | null | undefined) => cnpjDe(s)?.slice(0, 8) ?? null;
   for (const n of nes) {
     const cand = n.pagChave ? porPag.get(n.pagChave) ?? [] : [];
     const ids = cand.map((c) => c.id);
@@ -375,20 +402,30 @@ export function vincularNEs(contratos: readonly ContratoVinculo[], nes: Iterable
       continue;
     }
 
-    // 4. sem citação útil: pelo PAG e, se preciso, pelo fornecedor
-    if (cand.length === 1) { liga(cand[0], "PAG do contrato"); if (n.pagChave) pagDaNE.set(n.ne, n.pagChave); continue; }
+    // 4. sem citação útil: pelo PAG e, se preciso, pelo fornecedor e pela vigência
+    if (cand.length === 1) {
+      liga(cand[0], "PAG do contrato");
+      if (n.pagChave) pagDaNE.set(n.ne, { pag: n.pagChave, fornecedor: raiz(n.favorecidoCodigo) });
+      continue;
+    }
     if (cand.length > 1) {
       const doc = cnpjDe(n.favorecidoCodigo);
       const mesmo = doc ? cand.filter((c) => c.cnpj14 === doc) : [];
       if (mesmo.length === 1) { liga(mesmo[0], "mesmo fornecedor no PAG"); continue; }
-      out.set(n.ne, { contratoId: null, motivo: "PAG compartilhado", candidatos: (mesmo.length ? mesmo : cand).map((c) => c.id) });
-      continue;
+      // vários contratos do mesmo fornecedor (ou NE sem fornecedor): o vigente na emissão; fornecedor de nenhum
+      // contrato do PAG: só os contratos sem CNPJ cadastrado podem ser dele
+      const pool = mesmo.length ? mesmo : !doc ? cand : cand.filter((c) => !c.cnpj14);
+      if (pool.length) { liga(contratoVigente(pool, emissaoDe(n.ne)), pool.length === 1 ? "PAG do contrato" : "vigência no PAG"); continue; }
     }
     out.set(n.ne, { contratoId: null, motivo: "sem contrato", candidatos: [] });
   }
-  for (const [ne, pag] of pagDaNE) {
+  // PAG que também paga outro contrato: a NE sem citação de outro fornecedor (raiz do CNPJ) não é do contrato cadastrado
+  const porIdC = new Map(lista.map((c) => [c.id, c]));
+  for (const [ne, { pag, fornecedor }] of pagDaNE) {
     const v = out.get(ne);
-    if (v && pagComOutro.has(pag)) out.set(ne, { contratoId: null, motivo: "PAG compartilhado", candidatos: v.candidatos });
+    if (!v?.contratoId || !pagComOutro.has(pag)) continue;
+    const doContrato = raiz(porIdC.get(v.contratoId)?.cnpj);
+    if (fornecedor && doContrato && fornecedor !== doContrato) out.set(ne, { contratoId: null, motivo: "sem contrato", candidatos: [] });
   }
   return out;
 }
@@ -411,8 +448,6 @@ export type ExecucaoContrato = {
   totais: Totais;
   /** NEs do PAG que ficaram de fora por citar outro contrato */
   citamOutro: NotaContrato[];
-  /** NEs do PAG que podem ser deste contrato ou de outro do mesmo PAG (mesmo fornecedor, sem citação) */
-  semContratoNoPag: NotaContrato[];
   /** o empenhado do contrato pode estar a menor: a vigência começou antes da cobertura das planilhas, ou há NE sem itens (2021) */
   empenhadoIncompleto: boolean;
 };
@@ -440,7 +475,7 @@ export function execucaoPorContrato(
   const out = new Map<string, ExecucaoContrato>();
   for (const c of contratos) {
     out.set(c.id, {
-      nes: [], citamOutro: [], semContratoNoPag: [],
+      nes: [], citamOutro: [],
       totais: totalizar([], anoAtual),
       empenhadoIncompleto: !!c.data_inicio && c.data_inicio < coberturaDesde,
     });
@@ -449,15 +484,11 @@ export function execucaoPorContrato(
     const v = vinculos.get(n.ne);
     if (!v) continue;
     if (v.contratoId) { out.get(v.contratoId)?.nes.push(n); continue; }
-    for (const id of v.candidatos) {
-      const e = out.get(id);
-      if (!e) continue;
-      if (v.motivo === "cita outro contrato") e.citamOutro.push(n);
-      else if (v.motivo === "PAG compartilhado") e.semContratoNoPag.push(n);
-    }
+    if (v.motivo !== "cita outro contrato") continue;
+    for (const id of v.candidatos) out.get(id)?.citamOutro.push(n);
   }
   for (const e of out.values()) {
-    e.nes.sort(porNE); e.citamOutro.sort(porNE); e.semContratoNoPag.sort(porNE);
+    e.nes.sort(porNE); e.citamOutro.sort(porNE);
     e.totais = totalizar(e.nes, anoAtual);
     if (e.nes.some((n) => !n.completo)) e.empenhadoIncompleto = true;
   }

@@ -115,7 +115,11 @@ export function useExecucaoContratos(contratos: readonly ContratoExec[]): Execuc
     () => juntarNEs(dados.situacao, dados.rps, [...(dados.itens?.itens.values() ?? [])].map(notaItensDe), anoAtual),
     [dados, anoAtual],
   );
-  const vinculos = useMemo(() => vincularNEs(contratos, nes.values()), [contratos, nes]);
+  // a emissão da NE desempata, pela vigência, contratos do mesmo fornecedor no mesmo PAG
+  const vinculos = useMemo(
+    () => vincularNEs(contratos, nes.values(), (ne) => dados.itens?.emissao.get(ne) ?? null),
+    [contratos, nes, dados],
+  );
   // valor das NEs completo desde o primeiro ano da planilha de itens (sem ela, só o ano e o anterior)
   const cobertura = dados.itens && Number.isFinite(dados.itens.desde) ? `${dados.itens.desde}-01-01` : undefined;
   const porContrato = useMemo(

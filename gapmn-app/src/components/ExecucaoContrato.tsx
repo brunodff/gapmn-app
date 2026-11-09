@@ -15,6 +15,7 @@ const MOTIVO: Partial<Record<MotivoVinculo, { rotulo: string; dica: string }>> =
   "cita o contrato": { rotulo: "cita", dica: "A observação da NE cita o número deste contrato" },
   "PAG do contrato": { rotulo: "PAG", dica: "NE do PAG do contrato (único contrato do PAG)" },
   "mesmo fornecedor no PAG": { rotulo: "CNPJ", dica: "PAG de vários contratos: ligada pelo fornecedor" },
+  "vigência no PAG": { rotulo: "vigência", dica: "PAG com mais de um contrato do mesmo fornecedor: ligada ao contrato vigente na emissão da NE" },
 };
 
 type ItemDoContrato = { chave: string; itemCompra: string | null; nome: string; valor: number; nes: Set<string>; ultima: string };
@@ -190,16 +191,10 @@ export default function ExecucaoContrato({
       <p className="text-[11px] text-slate-500">
         Valores das notas de empenho do SIAFI — os mesmos da lista e de Dados Gerais.
         {nes.length > 0 && <> {nes.length} NE{nes.length > 1 ? "s" : ""} ligada{nes.length > 1 ? "s" : ""} ao contrato
-          {[...motivos].map(([m, k]) => ` · ${k} ${m === "cita o contrato" ? "citam o número do contrato" : m === "PAG do contrato" ? "pelo PAG" : "pelo fornecedor"}`).join("")}.</>}
+          {[...motivos].map(([m, k]) => ` · ${k} ${m === "cita o contrato" ? "citam o número do contrato" : m === "PAG do contrato" ? "pelo PAG" : m === "vigência no PAG" ? "pela vigência" : "pelo fornecedor"}`).join("")}.</>}
         {saldo != null && saldo < 0 && <span className="text-red-600"> O empenhado passa do valor total do contrato: confira o valor e a vigência cadastrados.</span>}
       </p>
 
-      {exec && exec.semContratoNoPag.length > 0 && (
-        <ListaNEs titulo="NEs do PAG sem contrato identificado (fora dos totais)" nes={exec.semContratoNoPag}>
-          O PAG tem mais de um contrato com o mesmo fornecedor e estas NEs não citam o número do contrato. Se forem deste, peça
-          para citar o contrato na observação das próximas NEs.
-        </ListaNEs>
-      )}
       {exec && exec.citamOutro.length > 0 && (
         <ListaNEs titulo="NEs do PAG que citam outro contrato (fora dos totais)" nes={exec.citamOutro} />
       )}

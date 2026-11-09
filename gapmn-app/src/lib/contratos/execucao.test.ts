@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  aEmpenhar, chaveContrato, citacoes, execucaoPorContrato, juntarNEs, neCanonica, primeiraNE, saldoAEmpenhar, unidadeNorm, vincularNEs,
+  aEmpenhar, chaveContrato, citacoes, contratoVigente, execucaoPorContrato, juntarNEs, neCanonica, primeiraNE, saldoAEmpenhar, unidadeNorm, vincularNEs,
   type LinhaRP, type LinhaSituacao,
 } from "./execucao.ts";
 import { mesHoje, projetarContratos, montarHistorico, type ContratoBase } from "../previsaoContratos.ts";
@@ -60,8 +60,8 @@ test("situação + restos a pagar se completam; RP processado pago entra como pa
 
 test("vínculo: citação vale até em outro PAG; PAG de laboratório com outros contratos do processo", () => {
   const contratos = [
-    { id: "054", numero_contrato: "DESPESA 054/GAPMN-DACTAIV/2024", pag_nup: "67615.013639/2024-83", cnpj: "02.341.467/0001-20" },
-    { id: "055", numero_contrato: "DESPESA 055/GAPMN-DACTAIV/2024", pag_nup: "67615.013639/2024-83", cnpj: "02.341.467/0001-20" },
+    { id: "054", numero_contrato: "DESPESA 054/GAPMN-DACTAIV/2024", pag_nup: "67615.013639/2024-83", cnpj: "02.341.467/0001-20", data_inicio: "2024-10-03", data_final: "2025-10-02" },
+    { id: "055", numero_contrato: "DESPESA 055/GAPMN-DACTAIV/2024", pag_nup: "67615.013639/2024-83", cnpj: "02.341.467/0001-20", data_inicio: "2025-10-03", data_final: "2026-10-02" },
     { id: "009", numero_contrato: "DESPESA 009/BAMN-HAMN/2022", pag_nup: "67436.006543/2021-24", cnpj: "11.111.111/0001-11" },
     { id: "cred", numero_contrato: "CREDENCIAMENTO 001/2021", pag_nup: "67436.001396/2021-04", cnpj: "22.222.222/0001-22" },
     { id: "019", numero_contrato: "DESPESA 019/GAPMN-BAMN/2024", pag_nup: "67298.001000/2024-10", cnpj: "33.333.333/0001-33" },
@@ -73,20 +73,24 @@ test("vínculo: citação vale até em outro PAG; PAG de laboratório com outros
     sit("2026NE009999", "67615.013639/2024-83", "SOL. PARA ATENDER O CINDACTA IV"), // sem citação, mesmo CNPJ dos dois
     sit("2026NE000030", "67436.006543/2021-24", "REQUISICAO GERADA A PARTIR DO CONTRATO DESPESA 005/BAMN-HAMN/2022."),
     sit("2024NE001439", "67436.006543/2021-24", "REQUISICAO GERADA A PARTIR DO CONTRATO DESPESA 009/BAMN-HAMN/2022."),
-    sit("2022NE000099", "67436.006543/2021-24", "EM FAVOR DO LABORATORIO"),
+    sit("2022NE000099", "67436.006543/2021-24", "EM FAVOR DO LABORATORIO"), // fornecedor de outro contrato do PAG
+    sit("2023NE000100", "67436.006543/2021-24", "EXAMES", { info_d: "11111111000111" }), // fornecedor do 009
     sit("2021NE000269", "67436.001396/2021-04", "APLIC.: CREDENCIAMENTO 001/2020 PAG: 67436.001396/2021-04"),
     sit("2026NE000500", "67298.000783/2025-71", "PARA ATENDER O CONTRATO DESPESA 019/GAPMN-BAMN/2024"), // outro PAG
   ]);
-  const v = vincularNEs(contratos, nes.values());
+  const emissao = new Map([["2026NE009999", "2026-03-10"]]);
+  const v = vincularNEs(contratos, nes.values(), (ne) => emissao.get(ne) ?? null);
   assert.deepEqual([v.get("2026NE000091")!.contratoId, v.get("2026NE000091")!.motivo], ["055", "cita o contrato"]);
   assert.equal(v.get("2026NE000441")!.contratoId, "054");
   assert.equal(v.get("2026NE001268")!.contratoId, "055");
-  assert.deepEqual([v.get("2026NE009999")!.contratoId, v.get("2026NE009999")!.motivo], [null, "PAG compartilhado"]);
-  assert.deepEqual(v.get("2026NE009999")!.candidatos, ["054", "055"]);
+  // sem citação, mesmo fornecedor dos dois contratos do PAG: vai para o vigente na emissão
+  assert.deepEqual([v.get("2026NE009999")!.contratoId, v.get("2026NE009999")!.motivo], ["055", "vigência no PAG"]);
   assert.deepEqual([v.get("2026NE000030")!.contratoId, v.get("2026NE000030")!.motivo], [null, "cita outro contrato"]);
   assert.equal(v.get("2024NE001439")!.contratoId, "009");
-  // o PAG também paga outros contratos do laboratório (a 2026NE000030 cita o 005): NE sem citação fica sem contrato
-  assert.deepEqual([v.get("2022NE000099")!.contratoId, v.get("2022NE000099")!.motivo, v.get("2022NE000099")!.candidatos], [null, "PAG compartilhado", ["009"]]);
+  // o PAG também paga outros contratos do laboratório (a 2026NE000030 cita o 005): a NE sem citação é do 009 se o
+  // fornecedor for o dele; de outro fornecedor, não é de nenhum contrato cadastrado (e não fica como aviso)
+  assert.deepEqual([v.get("2023NE000100")!.contratoId, v.get("2023NE000100")!.motivo], ["009", "PAG do contrato"]);
+  assert.deepEqual([v.get("2022NE000099")!.contratoId, v.get("2022NE000099")!.motivo], [null, "sem contrato"]);
   assert.equal(v.get("2021NE000269")!.contratoId, "cred"); // "001/2020" no PAG do 001/2021: erro de digitação
   assert.deepEqual([v.get("2026NE000500")!.contratoId, v.get("2026NE000500")!.motivo], ["019", "cita o contrato"]);
 });
@@ -108,12 +112,23 @@ test("vínculo: PAG compartilhado se resolve pelo CNPJ do fornecedor", () => {
   ]);
   const v = vincularNEs(contratos, nes.values());
   assert.deepEqual([v.get("2026NE000010")!.contratoId, v.get("2026NE000010")!.motivo], ["fogas", "mesmo fornecedor no PAG"]);
-  assert.equal(v.get("2026NE000011")!.contratoId, null);
+  // fornecedor de nenhum dos contratos do PAG: não entra em contrato de outra empresa
+  assert.deepEqual([v.get("2026NE000011")!.contratoId, v.get("2026NE000011")!.motivo], [null, "sem contrato"]);
 });
 
-test("execução por contrato: totais só das NEs dele; avisos das que ficaram de fora; a empenhar", () => {
+test("vínculo: contrato vigente na emissão; fora das vigências, o mais próximo; sem data, o mais recente", () => {
+  const a = { id: "a", numero_contrato: "DESPESA 062/GAPMN/2025", pag_nup: null, cnpj: null, data_inicio: "2025-01-01", data_final: "2025-12-31" };
+  const b = { id: "b", numero_contrato: "DESPESA 009/GAPMN/2026", pag_nup: null, cnpj: null, data_inicio: "2026-01-01", data_final: "2026-12-31" };
+  assert.equal(contratoVigente([a, b], "2025-06-10").id, "a");
+  assert.equal(contratoVigente([a, b], "2026-02-01").id, "b");
+  assert.equal(contratoVigente([a, b], "2024-12-20").id, "a"); // antes dos dois: o que começa primeiro está mais perto
+  assert.equal(contratoVigente([a, b], "2027-01-05").id, "b");
+  assert.equal(contratoVigente([a, b], null).id, "b");
+});
+
+test("execução por contrato: totais só das NEs dele; NE sem citação vai para o contrato vigente; a empenhar", () => {
   const contratos = [
-    { id: "054", numero_contrato: "DESPESA 054/GAPMN-DACTAIV/2024", pag_nup: "67615.013639/2024-83", cnpj: "02341467000120", data_inicio: "2025-10-03" },
+    { id: "054", numero_contrato: "DESPESA 054/GAPMN-DACTAIV/2024", pag_nup: "67615.013639/2024-83", cnpj: "02341467000120", data_inicio: "2025-10-03", data_final: "2026-01-31" },
     { id: "055", numero_contrato: "DESPESA 055/GAPMN-DACTAIV/2024", pag_nup: "67615.013639/2024-83", cnpj: "02341467000120", data_inicio: "2025-10-03" },
   ];
   const nes = juntarNEs(
@@ -124,12 +139,13 @@ test("execução por contrato: totais só das NEs dele; avisos das que ficaram d
     ],
     [],
   );
-  const ex = execucaoPorContrato(contratos, nes, vincularNEs(contratos, nes.values()), 2026);
+  const emissao = (ne: string) => (ne === "2026NE009999" ? "2026-03-10" : null);
+  const ex = execucaoPorContrato(contratos, nes, vincularNEs(contratos, nes.values(), emissao), 2026);
   const e54 = ex.get("054")!, e55 = ex.get("055")!;
   assert.deepEqual([e54.totais.nNE, e54.totais.empenhado, e54.totais.aLiquidar, e54.totais.empenhadoAno], [1, 10573, 1000, 10573]);
-  assert.deepEqual([e55.totais.aLiquidar, e55.totais.liquidadoPagar, e55.totais.pago], [3000, 500, 240372]);
-  assert.equal(e54.semContratoNoPag.length, 1);
-  assert.equal(e55.semContratoNoPag[0].ne, "2026NE009999");
+  // a 2026NE009999 (sem citação) é de março/2026: só o 055 está vigente
+  assert.deepEqual([e55.totais.nNE, e55.totais.aLiquidar, e55.totais.liquidadoPagar, e55.totais.pago], [2, 3077, 500, 240372]);
+  assert.equal(e54.citamOutro.length + e55.citamOutro.length, 0);
   assert.equal(e54.empenhadoIncompleto, false);
   assert.equal(aEmpenhar(651076.9, e54.totais)!.toFixed(2), "640503.90");
   assert.equal(aEmpenhar(null, e54.totais), null);
