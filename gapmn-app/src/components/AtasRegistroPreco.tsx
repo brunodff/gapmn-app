@@ -21,7 +21,11 @@ interface Ata {
   vigencia_final: string | null;
   pdf_url: string | null;
   registrado_em: string | null;
+  link_pncp?: string | null;      // sync-atas (PNCP)
 }
+
+// Última rodada da sync-atas (processos_sync_log, fonte 'atas')
+interface SyncAtas { inicio: string; fim: string | null; ok: boolean | null; resumo: any; erro: string | null }
 
 interface ItemAta {
   id: number;
@@ -218,6 +222,9 @@ export default function AtasRegistroPreco({ canSync }: Props) {
   const [descMap, setDescMap]   = useState<Map<string, string>>(new Map()); // ata_numero → descs concat
   const [ipcaMap, setIpcaMap]   = useState<Map<string, IpcaResult | null>>(new Map());
   const [sortByReajuste, setSortByReajuste] = useState(false);
+  const [ultimaSync, setUltimaSync] = useState<SyncAtas | null>(null);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [msgSync, setMsgSync] = useState<{ tipo: "info" | "ok" | "erro"; texto: string } | null>(null);
   const [previewAta, setPreviewAta] = useState<string | null>(null);
 
   // upload de Termo de Referência
@@ -287,9 +294,41 @@ export default function AtasRegistroPreco({ canSync }: Props) {
     loadCompraMap();
     loadComprasTrMap();
     loadDescMap();
+    // última atualização automática (PNCP + Compras.gov.br)
+    supabase.from("processos_sync_log").select("inicio, fim, ok, resumo, erro")
+      .eq("fonte", "atas").not("fim", "is", null).order("inicio", { ascending: false }).limit(1)
+      .then(({ data: log }) => setUltimaSync((log?.[0] as SyncAtas) ?? null));
   }, [loadCompraMap, loadComprasTrMap, loadDescMap]);
 
   useEffect(() => { loadAtas(); }, [loadAtas]);
+
+  async function atualizarAgora() {
+    setSincronizando(true);
+    setMsgSync({ tipo: "info", texto: "Buscando no PNCP e no Compras.gov.br… pode levar até 2 minutos." });
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-atas", { body: { origem: "manual" } });
+      if (error) {
+        let texto = error.message;
+        try { const corpo = await (error as any).context?.json?.(); if (corpo?.error) texto = corpo.error; } catch { /* sem corpo */ }
+        throw new Error(texto);
+      }
+      if (!data?.ok) throw new Error(data?.error ?? "A atualização não terminou.");
+      const partes = [
+        data.novas ? `${data.novas} ata(s) nova(s)` : "",
+        data.vigencia?.length ? `${data.vigencia.length} vigência(s) prorrogada(s)` : "",
+        data.canceladas?.length ? `${data.canceladas.length} cancelada(s)` : "",
+        data.itens_novos ? `${data.itens_novos} item(ns) de ${data.atas_com_itens_novos} ata(s)` : "",
+      ].filter(Boolean);
+      setMsgSync({
+        tipo: "ok",
+        texto: (partes.length ? "✅ " + partes.join(" · ") : "✅ Nada mudou desde a última atualização") +
+          (data.aguardando_itens?.length ? ` — ${data.aguardando_itens.length} ata(s) ainda sem itens na base pública (${data.aguardando_itens.slice(0, 5).join(", ")}${data.aguardando_itens.length > 5 ? "…" : ""}).` : "."),
+      });
+      await loadAtas();
+    } catch (e: any) {
+      setMsgSync({ tipo: "erro", texto: "❌ " + (e?.message ?? "Erro ao atualizar.") });
+    } finally { setSincronizando(false); }
+  }
 
   // Carrega IPCA ao abrir o card de prévia
   useEffect(() => {
@@ -498,8 +537,22 @@ export default function AtasRegistroPreco({ canSync }: Props) {
               {loading ? "Carregando…"
                 : `${atas.length} ATA(s) · ${ativas} ativas · ${encerradas} encerradas/canceladas`}
             </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">
+              Atualizadas sozinhas pelo PNCP e pelo Compras.gov.br, às 07:10 e 13:10 dos dias úteis
+              {ultimaSync?.fim && <> · última: {new Date(ultimaSync.fim).toLocaleString("pt-BR", { timeZone: "America/Manaus", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}{ultimaSync.ok === false ? " (com erro)" : ""}</>}
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {canSync && (
+              <button
+                onClick={atualizarAgora} disabled={sincronizando}
+                title="Buscar agora no PNCP e no Compras.gov.br: atas novas, prorrogações, cancelamentos e itens"
+                className="flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 transition-colors"
+              >
+                <span className={sincronizando ? "animate-spin inline-block" : ""}>⟳</span>
+                {sincronizando ? "Atualizando…" : "Atualizar agora"}
+              </button>
+            )}
             <button
               onClick={loadAtas} disabled={loading}
               title="Buscar dados atualizados do banco"
@@ -564,10 +617,20 @@ export default function AtasRegistroPreco({ canSync }: Props) {
           </div>
         )}
 
-        {/* Link discreto para ferramentas */}
+        {/* Resultado do "Atualizar agora" */}
+        {msgSync && (
+          <div className={`text-xs rounded-lg px-3 py-2 border ${
+            msgSync.tipo === "ok" ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+              : msgSync.tipo === "erro" ? "text-red-700 bg-red-50 border-red-200"
+              : "text-sky-700 bg-sky-50 border-sky-200"}`}>
+            {msgSync.texto}
+          </div>
+        )}
+
+        {/* Bookmarklet: só para adiantar os itens de ata recém-assinada */}
         {canSync && (
-          <div className="text-[11px] text-slate-400 flex items-center gap-1">
-            <span>Robô de ATAs disponível em</span>
+          <div className="text-[11px] text-slate-400 flex items-center gap-1 flex-wrap">
+            <span>Ata recém-assinada ainda sem itens? A base pública demora a publicá-los; o Robô de ATAs (bookmarklet do Contratos.gov.br) completa antes:</span>
             <a href="/app?vista=ferramentas" className="text-violet-600 hover:underline font-medium">🔧 Ferramentas & Catálogo</a>
           </div>
         )}
@@ -579,7 +642,7 @@ export default function AtasRegistroPreco({ canSync }: Props) {
       ) : filtradas.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <div className="text-slate-400 text-sm">
-            {atas.length === 0 ? "Nenhuma ATA registrada. Use o bookmarklet acima para sincronizar." : "Nenhuma ATA para o filtro aplicado."}
+            {atas.length === 0 ? "Nenhuma ATA registrada ainda." : "Nenhuma ATA para o filtro aplicado."}
           </div>
         </div>
       ) : (
@@ -644,6 +707,16 @@ export default function AtasRegistroPreco({ canSync }: Props) {
                         className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2 py-1 text-xs text-sky-700 hover:bg-sky-100 font-medium whitespace-nowrap"
                       >
                         📄 TR
+                      </a>
+                    )}
+                    {a.link_pncp && (
+                      <a
+                        href={a.link_pncp}
+                        target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 font-medium whitespace-nowrap"
+                        title="Abrir a ata no PNCP"
+                      >
+                        PNCP ↗
                       </a>
                     )}
                     {canSync && (
