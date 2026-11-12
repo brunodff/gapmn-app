@@ -102,18 +102,18 @@ test("códigos de tarefa: ano do PTA, sequencial por setor na ordem do documento
 
 test("códigos da Matriz da DIRAD ficam fixos; tarefas próprias continuam depois deles", () => {
   const doc = DOC
-    .replace("26DIE001", "27INF901").replace("26DIE002", "27FIN003") // projeto: própria (INF) e uma da Matriz
-    .replace("26DIE004", "27TIC777");
+    .replace("26DIE001", "27SAD901").replace("26DIE002", "27SFI003") // projeto: própria (SAD) e uma da Matriz
+    .replace("26DIE004", "27STI777");
   const m = minuta();
-  m.artigos[0].tarefas[0].codigo = "27INF950"; // cap. VII: própria de infraestrutura
+  m.artigos[0].tarefas[0].codigo = "27SAD950"; // cap. VII: própria de manutenção das instalações
   m.artigos[1].tarefas[0].codigo = "27SAD003"; // a mesma tarefa da Matriz no cap. VII
   const r = aplicarCap7(doc, m);
   const t = textos(r.xml).join("|");
-  assert.match(t, /27INF007Fazer o projeto/, "INF: a Matriz vai até 006, a primeira própria é 007");
-  assert.match(t, /27FIN003Executar a obra/, "código da Matriz não muda");
-  assert.match(t, /27TIC007SoftwarePacote de escritório/);
+  assert.match(t, /27SAD031Fazer o projeto/, "SAD: a Matriz vai até 030, a primeira própria é 031");
+  assert.match(t, /27SFI003Executar a obra/, "código da Matriz não muda");
+  assert.match(t, /27STI008SoftwarePacote de escritório/);
   const codigos = r.conteudo.artigos.flatMap((a) => a.tarefas.map((x) => x.codigo));
-  assert.equal(codigos[0], "27INF008");
+  assert.equal(codigos[0], "27SAD032");
   assert.equal(codigos[2], "27SAD003");
 });
 

@@ -1,8 +1,9 @@
-// Matriz de Atividades e Tarefas Comuns dos Grupamentos de Apoio para o PTA 2027, versão atualizada (Anexo D do
-// Ofício nº 37/CGOV/17513, da DIRAD, de 3 nov. 2026), que substitui a Matriz de Atividades e Tarefas Mínimas
-// (Anexo B do Ofício nº 35/CGOV/17011). O código de tarefa é ano + trigrama do macroprocesso + sequencial
-// (27FIN001), no lugar do ano + setor + sequencial da DCA 11-1, Anexo G, item VI. Na versão atualizada, ADM,
-// PAG e CMP viraram SAD, SPP e SCP (mesmas tarefas) e vários macroprocessos ganharam tarefas novas.
+// Matriz de Atividades, Itens de Controle e Tarefas Comuns dos Grupamentos de Apoio para o PTA 2027, revisada e
+// atualizada pela DIRAD em 12 nov. 2026 (planilha "Matriz_PTA_2027_GAP_Revisada_e_Atualizada", aba CODIFICAÇÃO),
+// que substitui a versão do Anexo D do Ofício nº 37/CGOV/17513. O código de tarefa é ano + trigrama do
+// macroprocesso + sequencial (27SFI001), no lugar do ano + setor + sequencial da DCA 11-1, Anexo G, item VI.
+// Nesta versão os trigramas passaram a ser os dos Sistemas do COMAER: FIN, PES, TIC, ARQ, GOV, JUS, SES e ACS viraram
+// SFI, SPE, STI, SDC, SGI, SJU, SSS e SCS, e PAT, INF, CON e SAD foram reunidos em SAD (SISADM).
 // As tarefas da Matriz têm código e denominação fixos (001 até o último de cada macroprocesso); as tarefas
 // próprias do GAP-MN continuam a numeração do macroprocesso a que pertencem.
 
@@ -12,29 +13,25 @@ export type Macroprocesso = { nome: string; ultimoDaMatriz: number };
 
 /** Trigramas da Matriz (aba CODIFICAÇÃO) e o último sequencial de tarefa da Matriz em cada um. */
 export const MACROPROCESSOS: Readonly<Record<string, Macroprocesso>> = {
-  FIN: { nome: "Finanças e Orçamento", ultimoDaMatriz: 7 },
-  PES: { nome: "Pessoal", ultimoDaMatriz: 7 },
-  PAT: { nome: "Patrimônio e Suprimentos", ultimoDaMatriz: 5 },
-  INF: { nome: "Infraestrutura", ultimoDaMatriz: 6 },
-  TIC: { nome: "Tecnologia da Informação", ultimoDaMatriz: 6 },
-  // a aba CODIFICAÇÃO chama de DOC, mas as tarefas da Matriz usam ARQ (27ARQ001)
-  ARQ: { nome: "Documental e Arquivo", ultimoDaMatriz: 5 },
-  GOV: { nome: "Governança e Controle", ultimoDaMatriz: 9 },
-  JUS: { nome: "Investigação e Justiça", ultimoDaMatriz: 5 },
-  SES: { nome: "Serviço Social", ultimoDaMatriz: 5 },
-  SVP: { nome: "Veteranos e Pensionistas", ultimoDaMatriz: 5 },
-  ACS: { nome: "Atendimento e Comunicação Social", ultimoDaMatriz: 6 },
-  CON: { nome: "Planejamento e Gerenciamento das Contratações", ultimoDaMatriz: 7 },
-  SAD: { nome: "Suporte Administrativo (SISADM)", ultimoDaMatriz: 7 },
-  SPP: { nome: "Pagamento de Pessoal (SISPAGAER)", ultimoDaMatriz: 7 },
+  SFI: { nome: "Finanças e Orçamento (SISFINAER)", ultimoDaMatriz: 7 },
+  SPE: { nome: "Administração de Pessoal (SISPAER)", ultimoDaMatriz: 7 },
+  // manutenção das instalações, contratações e parcerias e suporte administrativo: um trigrama só
+  SAD: { nome: "Manutenção das Instalações, Contratações e Suporte Administrativo (SISADM)", ultimoDaMatriz: 30 },
+  STI: { nome: "Tecnologia da Informação (STI)", ultimoDaMatriz: 7 },
+  SDC: { nome: "Documental e Arquivo (SISDOC)", ultimoDaMatriz: 5 },
+  SGI: { nome: "Governança e Controle (SISGI)", ultimoDaMatriz: 9 },
+  SJU: { nome: "Investigação e Justiça (SISJUR)", ultimoDaMatriz: 5 },
+  SSS: { nome: "Serviço Social (SISESO)", ultimoDaMatriz: 5 },
+  SVP: { nome: "Veteranos e Pensionistas (SAVPAR)", ultimoDaMatriz: 6 },
+  SCS: { nome: "Atendimento e Comunicação Social (SISCOMSAE)", ultimoDaMatriz: 6 },
+  SPP: { nome: "Pagamento de Pessoal (SISPAGAER)", ultimoDaMatriz: 8 },
   SUB: { nome: "Subsistência (SISUB)", ultimoDaMatriz: 8 },
   SFR: { nome: "Fardamento Reembolsável (SIFARE)", ultimoDaMatriz: 7 },
-  SPV: { nome: "Provisões da Aeronáutica (SISPROV)", ultimoDaMatriz: 16 },
+  SPV: { nome: "Provisões da Aeronáutica (SISPROV)", ultimoDaMatriz: 15 },
   SHT: { nome: "Hotéis de Trânsito (SISHT)", ultimoDaMatriz: 8 },
   SPN: { nome: "Próprios Nacionais Residenciais (SISPNR)", ultimoDaMatriz: 8 },
   STR: { nome: "Transporte de Superfície (SISTRAN)", ultimoDaMatriz: 6 },
-  // a aba CODIFICAÇÃO chama de SIC (Intendência em Campanha), mas as tarefas da Matriz usam SCP (27SCP001)
-  SCP: { nome: "Logística de Campanha (SISICAMP)", ultimoDaMatriz: 4 },
+  SCP: { nome: "Intendência em Campanha (SISICAMP)", ultimoDaMatriz: 5 },
 };
 
 /** Último sequencial reservado à Matriz no trigrama (0 quando o trigrama não é da Matriz). */
@@ -58,18 +55,14 @@ export function macroSugerido(nd: string, cat: CategoriaId, pi = ""): string {
   const peloPI = macroDoPI(pi);
   if (peloPI) return peloPI;
   if (/^319/.test(nd) || /^3390(08|93)$/.test(nd) || cat === "pessoal") return "SPP";
-  if (/^3390(14|15|33)$/.test(nd) || cat === "deslocamento" || cat === "capacitacao") return "PES";
-  if (nd === "339092" || cat === "exercicios-anteriores" || cat === "tributos" || /^3390(47|36)$/.test(nd)) return "FIN";
-  if (cat === "tic") return "TIC";
-  if (/^449/.test(nd)) return "PAT";
+  if (/^3390(14|15|33)$/.test(nd) || cat === "deslocamento" || cat === "capacitacao") return "SPE";
+  if (nd === "339092" || cat === "exercicios-anteriores" || cat === "tributos" || /^3390(47|36)$/.test(nd)) return "SFI";
+  if (cat === "tic") return "STI";
+  if (/^449/.test(nd)) return "SAD";
   if (cat === "veiculos") return "STR";
-  if (cat === "engenharia") return "INF";
+  if (cat === "engenharia") return "SAD";
   if (cat === "alimentacao") return "SUB";
-  if (nd === "339030") {
-    if (cat === "equipamentos") return "SPV";
-    if (cat === "limpeza" || cat === "utilidades") return "SAD";
-    return "PAT";
-  }
+  if (nd === "339030" && cat === "equipamentos") return "SPV";
   return "SAD";
 }
 
@@ -84,19 +77,13 @@ export function macroDaTarefa(nd: string, descricao: string, pi = ""): string {
   if (peloPI) return peloPI;
   const d = sem(descricao);
   if (/^319/.test(nd) || /^3390(08|93)$/.test(nd)) return "SPP";
-  if (/diaria|passage|desloca|capacita|curso/.test(d) || /^3390(14|15|33)$/.test(nd)) return "PES";
-  if (/exercicios? anteriores/.test(d) || nd === "339092" || /^3390(47|36)$/.test(nd)) return "FIN";
-  if (/pesquisas? de preco|\birp|siasg|publicac(ao|oes) em jorna/.test(d)) return "CON";
-  if (/correios|\bebct\b/.test(d)) return "ARQ";
-  if (/almoxarifado/.test(d)) return "PAT";
-  if (/informatica|tecnologia da informacao|telefon|software|internet|impress|servico movel/.test(d) || nd === "339040") return "TIC";
-  if (/^449/.test(nd)) return "PAT";
+  if (/diaria|passage|desloca|capacita|curso/.test(d) || /^3390(14|15|33)$/.test(nd)) return "SPE";
+  if (/exercicios? anteriores/.test(d) || nd === "339092" || /^3390(47|36)$/.test(nd)) return "SFI";
+  if (/correios|\bebct\b/.test(d)) return "SDC";
+  if (/informatica|tecnologia da informacao|telefon|software|internet|impress|servico movel/.test(d) || nd === "339040") return "STI";
+  if (/^449/.test(nd)) return "SAD"; // material permanente fica no patrimônio (SISADM)
   if (/viatura|combust|veicul|lubrificante|frota/.test(d)) return "STR";
-  if (/energia|agua e esgoto|esgoto|servicos publicos|concession/.test(d)) return "SAD";
-  if (/predial|infraestrutura|engenharia|obra|reforma|eletric|hidraul|climatiz|ar condicionado|construcao/.test(d)) return "INF";
   if (/alimenti|generos|rancho|copa e cozinha|refeic|hortifrut|carne|padaria|agricultura familiar/.test(d)) return "SUB";
   if (nd === "339030" && /fardamento|uniform/.test(d)) return "SPV";
-  if (/limpeza|higiene|conservacao|lavanderia|residuo|vigilancia|energia|agua|esgoto|gas\b|servicos publicos|concession/.test(d)) return "SAD";
-  if (nd === "339030") return "PAT";
   return "SAD";
 }
