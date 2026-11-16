@@ -79,6 +79,13 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Solicitação com letra depois da 9999 (versão 2.9.2)
+
+- Unidades com mais de 9.999 solicitações no ano passam de 26S9999 para 26SA001, 26SA002…
+  O leitor do PDF só aceitava ano + letra + 4 dígitos e deixava o número em branco
+  ("Número da solicitação não lido"), sem a compradora. Agora aceita também letras no
+  começo do sequencial (26SA001, 26SAA01…), e o mesmo vale para a OC da anulação/reforço.
+
 ## Preparada para a Chrome Web Store (versão 2.9.0)
 
 - Novo nome: **Robô de Empenhos** (antes "GAPMN Empenho Bot"), com ícone próprio.

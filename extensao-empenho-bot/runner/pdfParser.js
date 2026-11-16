@@ -61,6 +61,13 @@ export async function extractPdfText(arrayBuffer) {
  * Parseia o texto extraído de uma Solicitação de Empenho do SILOMS.
  * Retorna objeto com todos os campos ou { ok: false, error } se falhar.
  */
+// Número da solicitação (e da OC): ano + letra do tipo + 4 posições. Passando de 9999 no ano, o
+// SILOMS segue com letra na primeira posição: 26S9999 → 26SA001 (e assim por diante).
+const NUM_SOL = String.raw`\d{2}[A-Z](?:\d{4}|[A-Z]\d{3}|[A-Z]{2}\d{2}|[A-Z]{3}\d)`;
+const RE_NUM_SOL = new RegExp(String.raw`\b${NUM_SOL}\b`);
+const RE_NUM_SOL_G = new RegExp(String.raw`\b(${NUM_SOL})\b`, 'g');
+const RE_COMPRADORA_NUM = new RegExp(String.raw`\b(GAP-[A-Z]+|[A-Z]{2,}-[A-Z]{2,4})\s+${NUM_SOL}`);
+
 export function parseSolicitacaoEmpenho(text) {
   try {
     const t = text.replace(/\r/g, '').replace(/[ \t]+/g, ' ');
@@ -89,7 +96,7 @@ export function parseSolicitacaoEmpenho(text) {
       const linhas = (m?.[1] ?? '').split('\n').map(l => l.trim()).filter(Boolean);
       // Nome de MEI começa com a raiz do CNPJ ("25.283.883 ERICA…"): dígito no início vale
       return linhas.find(l => !/^(CNPJ|CPF|SOLICITA|COMPRADORA|TELEFONE|ITEM)\b/i.test(l) &&
-        !/^\d{2}\/\d{2}\/\d{4}/.test(l) && !/\b\d{2}[A-Z]\d{4}\b/.test(l) && /[A-Za-zÀ-ú]{3}/.test(l)) ?? '';
+        !/^\d{2}\/\d{2}\/\d{4}/.test(l) && !RE_NUM_SOL.test(l) && /[A-Za-zÀ-ú]{3}/.test(l)) ?? '';
     })();
 
     const fornecedorCnpj = (() => {
@@ -128,15 +135,15 @@ export function parseSolicitacaoEmpenho(text) {
     // ── Compradora / Solicitação / Data ─────────────────────────────────────────
     const compradora = (() => {
       const m = /COMPRADORA\s*\n?([A-Z]{2,}-[A-Z]{2,4})\b/.exec(t)
-        ?? /\b(GAP-[A-Z]+|[A-Z]{2,}-[A-Z]{2,4})\s+\d{2}[A-Z]\d{4}/.exec(t);
+        ?? RE_COMPRADORA_NUM.exec(t);
       return m?.[1]?.trim() ?? '';
     })();
 
     const solicitacao = (() => {
-      // Padrão: dois dígitos + letra + quatro dígitos (ex: 26S0885, 26M0431). Na
+      // Padrão: dois dígitos + letra + quatro posições (ex: 26S0885, 26M0431, 26SA001). Na
       // anulação/reforço a OC tem o mesmo formato ("OC Gerada: 25E2065", "Ident/OC
       // 25E2065") e pode vir antes na mesma linha: o número da OC não vale
-      for (const m of t.matchAll(/\b(\d{2}[A-Z]\d{4})\b/g)) {
+      for (const m of t.matchAll(RE_NUM_SOL_G)) {
         if (/\bOC\b(?:\s+Gerada)?\s*:?\s*$/i.test(t.slice(Math.max(0, m.index - 16), m.index))) continue;
         return m[1];
       }
