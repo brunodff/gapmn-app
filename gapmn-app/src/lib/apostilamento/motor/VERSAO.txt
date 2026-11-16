@@ -1,0 +1,3 @@
+Motor de reajuste por apostilamento da SCON (pacote automacao-apostilamento)
+gerar_apostilamento.py original: sha256 4dfc5f3ab277
+importado em 2026-11-16

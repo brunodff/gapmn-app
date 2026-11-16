@@ -13,6 +13,7 @@ import LandingPage from "./pages/LandingPage";
 import PainelOrcamentarioPublico from "./pages/PainelOrcamentarioPublico";
 import ColetaIndicadores from "./pages/ColetaIndicadores";
 import LevantamentoPta from "./pages/LevantamentoPta";
+import Reajustes from "./pages/Reajustes";
 import RequireAuth from "./routes/RequireAuth";
 import RequireDev from "./routes/RequireDev";
 import ManualSite from "./components/ManualSite";
@@ -34,7 +35,7 @@ const AppTitle = () => (
 function Shell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const [showManual, setShowManual] = useState(false);
-  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/ferramentas") || loc.pathname.startsWith("/ordens-bancarias");
+  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/ferramentas") || loc.pathname.startsWith("/ordens-bancarias") || loc.pathname.startsWith("/reajustes");
   if (loc.pathname.startsWith("/cnet") || loc.pathname.startsWith("/app") || loc.pathname.startsWith("/paineis-externos") || loc.pathname.startsWith("/empenho-automatico") || loc.pathname.startsWith("/painel-orcamentario") || loc.pathname.startsWith("/indicadores") || loc.pathname.startsWith("/pta-levantamento")) return <>{children}</>;
 
   // Login/signup: componente controla o próprio layout
@@ -141,6 +142,15 @@ export default function App() {
               <RequireDev>
                 <UsoExtensoes />
               </RequireDev>
+            }
+          />
+
+          <Route
+            path="/reajustes"
+            element={
+              <RequireAuth>
+                <Reajustes />
+              </RequireAuth>
             }
           />
 

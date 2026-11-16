@@ -1127,6 +1127,15 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                 </button>
               </>
             )}
+            {canEditBudget && (
+              <button
+                onClick={() => window.open("/reajustes", "_blank")}
+                title="Cores dos reajustes de todos os contratos e geração da Memória, Declaração, Parecer e Termo"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors"
+              >
+                Painel de reajustes
+              </button>
+            )}
             <button
               onClick={load}
               disabled={loading}
@@ -1933,6 +1942,14 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   >
                     🔖 Gerar Termo de Apostilamento
                   </button>
+                  {canEditBudget && (
+                    <button
+                      onClick={() => window.open(`/reajustes?contrato=${encodeURIComponent(selected.numero_contrato)}`, "_blank")}
+                      className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                    >
+                      📑 Reajuste completo (Memória, Declaração, Parecer e Termo)
+                    </button>
+                  )}
                   {/* Apostilamentos gerados e salvos */}
                   {contratoDocs.filter(d => d.tipo === "apostilamento").map(doc => (
                     <div key={doc.id} className="flex items-start gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs">
