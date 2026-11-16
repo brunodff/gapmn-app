@@ -155,7 +155,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
   const cel = "rounded border border-slate-200 px-1.5 py-1 text-xs";
 
   return (
-    <div className="space-y-4 pb-28">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <button onClick={() => { if (!alterado || confirm("Há alterações não salvas. Sair mesmo assim?")) aoVoltar(); }} className="text-sm text-sky-700 hover:underline">← Painel</button>
         <h2 className="text-lg font-semibold text-slate-800">Contrato {contrato.numero_contrato}</h2>
@@ -385,9 +385,9 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
         </Secao>
       )}
 
-      <div className="fixed bottom-0 inset-x-0 border-t border-slate-200 bg-white/95 backdrop-blur px-4 py-3 z-20">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-2">
-          <button onClick={salvar} disabled={!!ocupado} className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-3 py-2 text-sm disabled:opacity-50">Salvar cadastro</button>
+      <div className="sticky bottom-0 z-20 -mx-4 border-t border-slate-200 px-4 py-3" style={{ background: "rgba(6,14,31,0.97)" }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={salvar} disabled={!!ocupado} className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-3 py-2 text-sm disabled:opacity-50">Salvar cadastro</button>
           <button onClick={checar} disabled={!!ocupado} className="rounded-lg border border-sky-300 text-sky-700 hover:bg-sky-50 px-3 py-2 text-sm disabled:opacity-50">Checar dados</button>
           <button onClick={conferir} disabled={!!ocupado} className="rounded-lg border border-sky-300 text-sky-700 hover:bg-sky-50 px-3 py-2 text-sm disabled:opacity-50">Conferir valores</button>
           <button onClick={gerar} disabled={!!ocupado} className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 text-sm font-medium disabled:opacity-50">

@@ -6,6 +6,7 @@ import { SparklesCore } from "../components/ui/sparkles";
 import FeedNoticias from "../components/FeedNoticias";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
+import Reajustes from "../components/reajustes/Reajustes";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import AtasRegistroPreco from "../components/AtasRegistroPreco";
 import PainelSolicitacoesEmpenho from "../components/PainelSolicitacoesEmpenho";
@@ -50,7 +51,7 @@ type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
   | "calendario" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
-  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics";
+  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes";
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
 type KPIs     = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
@@ -60,6 +61,7 @@ const VIEW_LABELS: Record<View, string> = {
   dashboard:          "Dashboard",
   processos:          "Processos Licitatórios",
   contratos:          "Contratos SCON",
+  reajustes:          "Reajustes (apostilamento)",
   indicadores:        "Indicadores de Lotação",
   atas:               "Atas de Registro de Preço",
   solicitacoes:       "Solicitações de Empenho",
@@ -1208,14 +1210,17 @@ export default function AppChat() {
   const [view,           setViewRaw]    = useState<View>(() => (
     params.get("painel") === "governanca" ? "painel-governanca"
       : params.get("vista") === "ferramentas" ? "ferramentas"
+      : params.get("vista") === "reajustes" ? "reajustes"
       : "dashboard"));
   const [filterTipo,     setFilterTipo] = useState("todos");
 
-  function setView(v: View) {
+  // Reajustes fica no endereço (?vista=reajustes&contrato=…), para o link do contrato abrir direto nele.
+  function setView(v: View, contrato?: string) {
     setViewRaw(v);
     logActivity("page_view", v);
     const p = new URLSearchParams(params);
-    p.delete("vista");
+    p.delete("vista"); p.delete("contrato"); p.delete("aba");
+    if (v === "reajustes") { p.set("vista", "reajustes"); if (contrato) p.set("contrato", contrato); }
     if (v === "painel-governanca") p.set("painel", "governanca");
     else if (p.get("painel") === "governanca") for (const k of ["painel", "div", "cat", "st", "q", "comp"]) p.delete(k);
     if (p.toString() !== params.toString()) setParams(p, { replace: true });
@@ -1718,7 +1723,9 @@ export default function AppChat() {
 
             {/* ── Setor views ── */}
             {view === "processos"     && <div className="svdark"><GerenciamentoProcessos canImport={canImportPrc} canEdit={canEdit} canEditElaboracao={canImportPrc} /></div>}
-            {view === "contratos"     && <div className="svdark"><GerenciamentoContratos canImport={canImportCtr} canEdit={canEdit} canEditBudget={canImportCtr} /></div>}
+            {view === "contratos"     && <div className="svdark"><GerenciamentoContratos canImport={canImportCtr} canEdit={canEdit} canEditBudget={canImportCtr} onAbrirReajuste={(n) => setView("reajustes", n)} /></div>}
+            {/* overflow visível: a barra de ações do reajuste fica presa no rodapé da área rolável */}
+            {view === "reajustes"     && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><Reajustes /></div>}
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}

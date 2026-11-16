@@ -50,8 +50,8 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
           Todos ({linhas.length})
         </button>
         {ORDEM_FILTRO.filter((s) => contagem.get(s)).map((s) => (
-          <button key={s} onClick={() => setFiltro(s)} style={{ background: filtro === s ? undefined : CORES[s] }}
-            className={`rounded-full border px-3 py-1 text-xs ${filtro === s ? "bg-slate-800 text-white border-slate-800" : "border-slate-200 text-slate-700"}`}>
+          <button key={s} onClick={() => setFiltro(s)} style={filtro === s ? undefined : { background: CORES[s], color: "#1e293b" }}
+            className={`rounded-full border px-3 py-1 text-xs ${filtro === s ? "bg-slate-800 text-white border-slate-800" : "border-transparent"}`}>
             {ROTULOS[s]} ({contagem.get(s)})
           </button>
         ))}
@@ -75,7 +75,7 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
           <tbody>
             {visiveis.map((l) => (
               <tr key={l.contrato} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-2"><span className="rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-800" style={{ background: l.cor }}>{ROTULOS[l.status]}</span></td>
+                <td className="px-3 py-2"><span className="rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap" style={{ background: l.cor, color: "#1e293b" }}>{ROTULOS[l.status]}</span></td>
                 <td className="px-3 py-2 font-medium text-slate-800 whitespace-nowrap">{l.contrato}</td>
                 <td className="px-3 py-2 text-slate-600 max-w-[260px] truncate" title={l.c.fornecedor ?? ""}>{l.c.fornecedor ?? "–"}</td>
                 <td className="px-3 py-2 text-slate-600">{l.data_base ?? "–"}</td>

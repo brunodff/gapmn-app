@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "../lib/supabase";
-import { useExecucaoContratos } from "../lib/contratos/useExecucaoContratos";
-import type { ContratoScon } from "../lib/apostilamento/cadastro";
-import { CONFIG_VAZIA, type ConfigApostilamento } from "../lib/apostilamento/tipos";
-import PainelReajustes, { type Cadastro } from "../components/reajustes/PainelReajustes";
-import ConfigReajustes from "../components/reajustes/ConfigReajustes";
-import ReajusteContrato from "../components/reajustes/ReajusteContrato";
+import { supabase } from "../../lib/supabase";
+import { useExecucaoContratos } from "../../lib/contratos/useExecucaoContratos";
+import type { ContratoScon } from "../../lib/apostilamento/cadastro";
+import { CONFIG_VAZIA, type ConfigApostilamento } from "../../lib/apostilamento/tipos";
+import PainelReajustes, { type Cadastro } from "./PainelReajustes";
+import ConfigReajustes from "./ConfigReajustes";
+import ReajusteContrato from "./ReajusteContrato";
 
 type Contrato = ContratoScon & { status: string | null; data_inicio: string | null };
 type Aba = "painel" | "config";
@@ -14,7 +14,7 @@ type Aba = "painel" | "config";
 const SETORES = ["SCON", "ADMIN", "DEV"];
 
 /** Reajuste por apostilamento (SCON): painel de cores, cadastro do reajuste por contrato e geração dos
- *  4 documentos pelo motor da SCON, que roda no navegador. */
+ *  4 documentos pelo motor da SCON, que roda no navegador. Tela do app: /app?vista=reajustes[&contrato=…][&aba=config]. */
 export default function Reajustes() {
   const [params, setParams] = useSearchParams();
   const aberto = params.get("contrato");
@@ -78,9 +78,11 @@ export default function Reajustes() {
 
   const contrato = useMemo(() => contratos.find((c) => c.numero_contrato === aberto) ?? null, [contratos, aberto]);
   const ir = (p: { contrato?: string; aba?: Aba }) => {
-    const q: Record<string, string> = {};
-    if (p.contrato) q.contrato = p.contrato;
-    if (p.aba === "config") q.aba = "config";
+    // mantém o resto do endereço (vista=reajustes)
+    const q = new URLSearchParams(params);
+    q.delete("contrato"); q.delete("aba");
+    if (p.contrato) q.set("contrato", p.contrato);
+    if (p.aba === "config") q.set("aba", "config");
     setParams(q);
   };
 

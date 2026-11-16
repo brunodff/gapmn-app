@@ -410,8 +410,19 @@ function parseReajustePdf(text: string, contrato: Contrato): ReajusteForm {
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
-interface GerContratoProps { canImport?: boolean; canEdit?: boolean; canEditBudget?: boolean; }
-export default function GerenciamentoContratos({ canImport = true, canEdit = true, canEditBudget = false }: GerContratoProps) {
+interface GerContratoProps {
+  canImport?: boolean; canEdit?: boolean; canEditBudget?: boolean;
+  /** abre a tela de Reajustes do app (no contrato, se vier o número) */
+  onAbrirReajuste?: (numeroContrato?: string) => void;
+}
+export default function GerenciamentoContratos({ canImport = true, canEdit = true, canEditBudget = false, onAbrirReajuste }: GerContratoProps) {
+  // fora do app (sem a função), vai para a tela de Reajustes do app pelo endereço
+  const abrirReajuste = (numero?: string) => {
+    if (onAbrirReajuste) { onAbrirReajuste(numero); return; }
+    const q = new URLSearchParams({ vista: "reajustes" });
+    if (numero) q.set("contrato", numero);
+    window.location.assign(`/app?${q}`);
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Dados
@@ -1129,7 +1140,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
             )}
             {canEditBudget && (
               <button
-                onClick={() => window.open("/reajustes", "_blank")}
+                onClick={() => abrirReajuste()}
                 title="Cores dos reajustes de todos os contratos e geração da Memória, Declaração, Parecer e Termo"
                 className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors"
               >
@@ -1935,19 +1946,21 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                       <p className={orcamentoMsg.ok ? "text-green-700" : "text-red-600"}>{orcamentoMsg.text}</p>
                     )}
                   </div>
-                  {/* Botão gerar apostilamento */}
-                  <button
-                    onClick={() => window.open(`/apt?tipo=contrato&id=${selected.id}`, "_blank")}
-                    className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 transition-colors"
-                  >
-                    🔖 Gerar Termo de Apostilamento
-                  </button>
-                  {canEditBudget && (
+                  {/* Reajuste: SCON, ADMIN e DEV usam a tela de Reajustes do app (motor da SCON, 4 documentos);
+                      os outros setores seguem com o gerador antigo do termo (/apt) */}
+                  {canEditBudget ? (
                     <button
-                      onClick={() => window.open(`/reajustes?contrato=${encodeURIComponent(selected.numero_contrato)}`, "_blank")}
+                      onClick={() => abrirReajuste(selected.numero_contrato)}
                       className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
                     >
                       📑 Reajuste completo (Memória, Declaração, Parecer e Termo)
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => window.open(`/apt?tipo=contrato&id=${selected.id}`, "_blank")}
+                      className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 transition-colors"
+                    >
+                      🔖 Gerar Termo de Apostilamento
                     </button>
                   )}
                   {/* Apostilamentos gerados e salvos */}
@@ -2068,6 +2081,15 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
             {/* ── Modo: Reajustes ────────────────────────────────────────────── */}
             {detailMode === "reajustes" && (
               <div className="space-y-3">
+                {/* o próximo reajuste (cálculo e os 4 documentos) é feito na tela de Reajustes do app */}
+                {canEditBudget && (
+                  <button
+                    onClick={() => abrirReajuste(selected.numero_contrato)}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                  >
+                    📑 Calcular o reajuste e gerar Memória, Declaração, Parecer e Termo
+                  </button>
+                )}
                 {/* Upload PDF */}
                 {!reajusteForm && (
                   <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center space-y-2">

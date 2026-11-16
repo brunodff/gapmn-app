@@ -13,7 +13,6 @@ import LandingPage from "./pages/LandingPage";
 import PainelOrcamentarioPublico from "./pages/PainelOrcamentarioPublico";
 import ColetaIndicadores from "./pages/ColetaIndicadores";
 import LevantamentoPta from "./pages/LevantamentoPta";
-import Reajustes from "./pages/Reajustes";
 import RequireAuth from "./routes/RequireAuth";
 import RequireDev from "./routes/RequireDev";
 import ManualSite from "./components/ManualSite";
@@ -35,7 +34,7 @@ const AppTitle = () => (
 function Shell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const [showManual, setShowManual] = useState(false);
-  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/ferramentas") || loc.pathname.startsWith("/ordens-bancarias") || loc.pathname.startsWith("/reajustes");
+  const isApp = loc.pathname.startsWith("/app") || loc.pathname.startsWith("/setor") || loc.pathname.startsWith("/orcamento") || loc.pathname.startsWith("/ferramentas") || loc.pathname.startsWith("/ordens-bancarias");
   if (loc.pathname.startsWith("/cnet") || loc.pathname.startsWith("/app") || loc.pathname.startsWith("/paineis-externos") || loc.pathname.startsWith("/empenho-automatico") || loc.pathname.startsWith("/painel-orcamentario") || loc.pathname.startsWith("/indicadores") || loc.pathname.startsWith("/pta-levantamento")) return <>{children}</>;
 
   // Login/signup: componente controla o próprio layout
@@ -77,6 +76,13 @@ function Shell({ children }: { children: React.ReactNode }) {
       </footer>
     </div>
   );
+}
+
+/** /reajustes?contrato=… → /app?vista=reajustes&contrato=… */
+function ReajustesNoApp() {
+  const q = new URLSearchParams(useLocation().search);
+  q.set("vista", "reajustes");
+  return <Navigate to={`/app?${q}`} replace />;
 }
 
 export default function App() {
@@ -145,14 +151,8 @@ export default function App() {
             }
           />
 
-          <Route
-            path="/reajustes"
-            element={
-              <RequireAuth>
-                <Reajustes />
-              </RequireAuth>
-            }
-          />
+          {/* Reajustes é uma tela do app: o endereço avulso (publicado em 16/11/2026 com o cabeçalho antigo) leva para ela */}
+          <Route path="/reajustes" element={<ReajustesNoApp />} />
 
           <Route path="/apt"  element={<AptPage />} />
           {/* Páginas antigas desativadas em 23/10/2026: o endereço leva para o lugar atual.
