@@ -57,28 +57,62 @@ export function classificarAcordao(sumario: string | null | undefined, titulo = 
 
 // ── CSV do TCU ───────────────────────────────────────────────────────────────
 /** CSV dos Dados Abertos do TCU: campos entre aspas, separados por "|", aspas dobradas dentro do
- *  campo e quebras de linha dentro do texto. Devolve as linhas como objetos pelo cabeçalho. */
-export function lerCsvTcu(texto: string): Record<string, string>[] {
-  const linhas: string[][] = [];
-  let campo = "", linha: string[] = [], aspas = false;
-  for (let i = 0; i < texto.length; i++) {
-    const c = texto[i];
-    if (aspas) {
-      if (c === '"') { if (texto[i + 1] === '"') { campo += '"'; i++; } else aspas = false; }
-      else campo += c;
-    } else if (c === '"') aspas = true;
-    else if (c === "|") { linha.push(campo); campo = ""; }
-    else if (c === "\n" || c === "\r") {
-      if (c === "\r" && texto[i + 1] === "\n") i++;
-      linha.push(campo); campo = "";
-      if (linha.length > 1 || linha[0] !== "") linhas.push(linha);
-      linha = [];
-    } else campo += c;
+ *  campo e quebras de linha dentro do texto. Lê em pedaços (o arquivo do informativo tem 7,8 MB e
+ *  não cabe inteiro na Edge Function): cada `ler` devolve as linhas que ficaram completas. */
+export class LeitorCsvTcu {
+  private cab: string[] | null = null;
+  private campo = "";
+  private linha: string[] = [];
+  private aspas = false;
+  private aspaPendente = false; // pedaço acabou numa aspa: só o próximo diz se é "" ou o fim do campo
+  private crPendente = false;
+
+  ler(pedaco: string): Record<string, string>[] {
+    const prontas: string[][] = [];
+    for (let i = 0; i < pedaco.length; i++) {
+      const c = pedaco[i];
+      if (this.crPendente) { this.crPendente = false; if (c === "\n") continue; }
+      if (this.aspaPendente) {
+        this.aspaPendente = false;
+        if (c === '"') { this.campo += '"'; continue; }
+        this.aspas = false; // a aspa fechou o campo; segue tratando c fora das aspas
+      }
+      if (this.aspas) {
+        if (c === '"') { if (i + 1 < pedaco.length) { if (pedaco[i + 1] === '"') { this.campo += '"'; i++; } else this.aspas = false; } else this.aspaPendente = true; }
+        else this.campo += c;
+      } else if (c === '"') this.aspas = true;
+      else if (c === "|") { this.linha.push(this.campo); this.campo = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r") this.crPendente = true;
+        this.linha.push(this.campo); this.campo = "";
+        if (this.linha.length > 1 || this.linha[0] !== "") prontas.push(this.linha);
+        this.linha = [];
+      } else this.campo += c;
+    }
+    return this.objetos(prontas);
   }
-  if (campo !== "" || linha.length) { linha.push(campo); linhas.push(linha); }
-  const [cab, ...resto] = linhas;
-  if (!cab) return [];
-  return resto.map((l) => Object.fromEntries(cab.map((k, j) => [k.replace(/^﻿/, "").trim(), l[j] ?? ""])));
+
+  /** Fim do arquivo: a última linha, se não terminou em quebra de linha. */
+  fim(): Record<string, string>[] {
+    if (this.aspaPendente) { this.aspaPendente = false; this.aspas = false; }
+    if (this.campo === "" && !this.linha.length) return [];
+    this.linha.push(this.campo); this.campo = "";
+    const l = this.linha; this.linha = [];
+    return this.objetos([l]);
+  }
+
+  private objetos(linhas: string[][]): Record<string, string>[] {
+    if (!this.cab && linhas.length) this.cab = linhas.shift()!.map((k) => k.replace(/^﻿/, "").trim());
+    const cab = this.cab;
+    if (!cab) return [];
+    return linhas.map((l) => Object.fromEntries(cab.map((k, j) => [k, l[j] ?? ""])));
+  }
+}
+
+/** O CSV inteiro de uma vez. */
+export function lerCsvTcu(texto: string): Record<string, string>[] {
+  const l = new LeitorCsvTcu();
+  return [...l.ler(texto), ...l.fim()];
 }
 
 /** Tira as marcas do texto do TCU (<acordao_decisao_tcu …>, <p>…) e junta os espaços. */

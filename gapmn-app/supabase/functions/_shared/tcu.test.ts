@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classificarAcordao, cruzar, dataISO, filaCadirreg, informativoDe, lerCsvTcu, sancaoDe, temasDe, textoFeed } from "./tcu.ts";
+import { classificarAcordao, cruzar, dataISO, filaCadirreg, informativoDe, LeitorCsvTcu, lerCsvTcu, sancaoDe, temasDe, textoFeed } from "./tcu.ts";
 
 test("acórdão de licitação entra, com os temas", () => {
   const c = classificarAcordao("REPRESENTAÇÃO. IRREGULARIDADES EM PREGÃO ELETRÔNICO. ATA DE REGISTRO DE PREÇO. DETERMINAÇÃO PARA NÃO ADESÃO DE NOVOS ÓRGÃOS À ATA.");
@@ -47,6 +47,23 @@ test("CSV do TCU: pipe, aspas dobradas e quebra de linha no campo", () => {
   assert.equal(i.acordao, "Acórdão 2271/2026 Plenário, Representação");
   assert.deepEqual(i.temas, ["Licitação"]);
   assert.equal(informativoDe(r[1]), null); // sem enunciado
+});
+
+test("CSV em pedaços dá o mesmo que inteiro, com o corte em qualquer ponto (aspas, \\r\\n)", () => {
+  const csv = '"KEY"|"TITULO"|"ENUNCIADO"|"NUMERO"\r\n'
+    + '"A"|"Info 2/2026"|"Texto com ""aspas"" e | barra"|"2"\r\n'
+    + '"B"|"Info 1/2026"|"Linha 1\r\nLinha 2"""|"1"\n'
+    + '"C"|"Info 1/2026"|""|"1"';
+  const inteiro = lerCsvTcu(csv);
+  assert.equal(inteiro.length, 3);
+  assert.equal(inteiro[1].ENUNCIADO, 'Linha 1\r\nLinha 2"');
+  for (let tam = 1; tam <= csv.length; tam++) {
+    const l = new LeitorCsvTcu();
+    const out: Record<string, string>[] = [];
+    for (let i = 0; i < csv.length; i += tam) out.push(...l.ler(csv.slice(i, i + tam)));
+    out.push(...l.fim());
+    assert.deepEqual(out, inteiro, `pedaços de ${tam}`);
+  }
 });
 
 test("sanções: só CNPJ, só fornecedor nosso, sem repetir", () => {

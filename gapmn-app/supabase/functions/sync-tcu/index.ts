@@ -24,13 +24,15 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { classificarAcordao, cruzar, dataISO, filaCadirreg, informativoDe, lerCsvTcu, soDigitos, textoFeed } from "../_shared/tcu.ts";
+import { classificarAcordao, cruzar, dataISO, filaCadirreg, informativoDe, LeitorCsvTcu, soDigitos, textoFeed } from "../_shared/tcu.ts";
 
 // ─── Configuração ────────────────────────────────────────────────────────────
 const ACORDAOS      = "https://dados-abertos.apps.tcu.gov.br/api/acordao/recupera-acordaos";
 const SANCOES       = "https://certidoes.apps.tcu.gov.br/api/publico";
 const INFORMATIVO   = "https://sites.tcu.gov.br/dados-abertos/jurisprudencia/arquivos/boletim-informativo-lc/informativo-lc.csv";
 const QTD_ACORDAOS  = 400;
+// o CSV do informativo vem do mais novo para o mais antigo, com inversões de até ~24 números
+const MARGEM_INFORMATIVO = 30;
 const CADIRREG_DIAS = 7;
 const CADIRREG_MAX  = 150;
 const PARALELO      = 3;
@@ -164,22 +166,25 @@ async function sincronizar(admin, ctx) {
     ctx.avisos.push(`Acórdãos: ${msg(e)} — fica para a próxima rodada`);
   }
 
-  // 4) Informativo de Licitações e Contratos (só quando o arquivo muda)
+  // 4) Informativo de Licitações e Contratos (só quando o arquivo muda). O CSV inteiro (7,8 MB)
+  //    estoura o limite da Edge Function: ele vem do mais novo para o mais antigo, então basta ler
+  //    o começo, até passar dos números que já estão no banco. A carga inicial foi feita à parte.
   try {
+    const { data: topo } = await admin.from("tcu_informativos").select("numero").order("numero", { ascending: false }).limit(1);
+    const maior = topo?.[0]?.numero ?? null;
+    if (maior == null) throw new Error("carga inicial ainda não feita");
     const etag = await lerEstado(admin, "informativo_etag");
-    const r = await pedirTexto(ctx, INFORMATIVO, etag);
+    const r = await novosInformativos(ctx, maior - MARGEM_INFORMATIVO, etag);
     if (r) {
       resumo.informativo_mudou = true;
-      const todos = lerCsvTcu(r.texto).map(informativoDe).filter(Boolean);
-      const ja = new Set((await lerTodos(admin, "tcu_informativos", "key")).map((x) => x.key));
-      const novos = todos.filter((i) => !ja.has(i.key));
-      for (const lote of lotes(novos, 300)) {
+      const ja = new Set((await admin.from("tcu_informativos").select("key").gte("numero", maior - MARGEM_INFORMATIVO)).data?.map((x) => x.key) ?? []);
+      const novos = r.candidatos.filter((i) => !ja.has(i.key));
+      for (const lote of lotes(novos, 100)) {
         const { error } = await admin.from("tcu_informativos").upsert(lote, { onConflict: "key", ignoreDuplicates: true });
         if (error) throw new Error(`tcu_informativos: ${error.message}`);
       }
-      resumo.informativos_novos = ja.size ? novos.length : 0;
-      const ult = todos.reduce((m, i) => (!m || i.numero > m.numero ? i : m), null);
-      resumo.informativo_mais_novo = ult?.titulo ?? null;
+      resumo.informativos_novos = novos.length;
+      resumo.informativo_mais_novo = r.candidatos.reduce((m, i) => (!m || i.numero > m.numero ? i : m), null)?.titulo ?? null;
       await gravarEstado(admin, "informativo_etag", r.etag);
       await gravarEstado(admin, "informativo_atualizado", r.modificado);
     }
@@ -359,16 +364,32 @@ async function pedirJson(ctx, url, { metodo = "GET", corpo = undefined, tentativ
   throw new Error(ultimo || "sem resposta");
 }
 
-/** Baixa o CSV só se mudou (If-None-Match). null = igual ao da última vez. */
-async function pedirTexto(ctx, url, etag: string | null) {
+/** Lê o começo do CSV do informativo (só se mudou: If-None-Match) e devolve os enunciados com número
+ *  a partir de `piso`; para de baixar depois de 20 linhas seguidas abaixo dele. null = não mudou. */
+async function novosInformativos(ctx, piso: number, etag: string | null) {
   const ctl = new AbortController();
-  const tm = setTimeout(() => ctl.abort(), Math.max(5_000, Math.min(90_000, ctx.restante() - 30_000)));
+  const tm = setTimeout(() => ctl.abort(), Math.max(5_000, Math.min(60_000, ctx.restante() - 40_000)));
   try {
-    const r = await fetch(url, { headers: { "user-agent": UA, ...(etag ? { "if-none-match": etag } : {}) }, signal: ctl.signal });
-    if (r.status === 304) return null;
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const texto = await r.text();
-    return { texto, etag: r.headers.get("etag"), modificado: r.headers.get("last-modified") };
+    const r = await fetch(INFORMATIVO, { headers: { "user-agent": UA, ...(etag ? { "if-none-match": etag } : {}) }, signal: ctl.signal });
+    if (r.status === 304) { await r.body?.cancel(); return null; }
+    if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+    const leitor = new LeitorCsvTcu();
+    const fluxo = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    const candidatos = [];
+    let abaixo = 0, acabou = false;
+    while (!acabou) {
+      const { value, done } = await fluxo.read();
+      const linhas = done ? leitor.fim() : leitor.ler(value);
+      for (const l of linhas) {
+        const i = informativoDe(l);
+        if (!i) continue;
+        if (i.numero >= piso) { candidatos.push(i); abaixo = 0; }
+        else if (++abaixo >= 20) { acabou = true; break; }
+      }
+      if (done) acabou = true;
+    }
+    await fluxo.cancel().catch(() => {});
+    return { candidatos, etag: r.headers.get("etag"), modificado: r.headers.get("last-modified") };
   } catch (e: any) {
     throw new Error(e?.name === "AbortError" ? "sem resposta (tempo esgotado)" : String(e?.message || e));
   } finally { clearTimeout(tm); }
