@@ -158,7 +158,7 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
     subtitle: "Painel ComprasNet (Chrome Web Store / Firefox)",
     tagline: "Acompanhe processos, fornecedores e habilitação em tempo real no ComprasNet",
     description:
-      "Extensão para Chrome e Firefox que acessa a API interna do ComprasNet usando sua sessão já autenticada. Exibe processos com situação em tempo real, três abas por processo (Itens · Licitantes · Habilitação), busca livre por nome do processo ou por descrição de item, alertas de pendências, checklist de habilitação, frases jurídicas padronizadas e exportação XLS.",
+      "Extensão para Chrome e Firefox que acessa a API interna do ComprasNet usando sua sessão já autenticada. Exibe processos com situação em tempo real, três abas por processo (Itens · Licitantes · Habilitação), busca livre por nome do processo ou por descrição de item, alertas de pendências, checklist de habilitação, kit de habilitação automático (Consolidada do TCU com o PDF e cadastro do Compras.gov.br de cada vencedor), frases jurídicas padronizadas e exportação XLS.",
     steps: [
       "— CHROME (e Edge) —",
       "Clique em 'Chrome Web Store' abaixo e depois em 'Usar no Chrome' — a extensão passa a se atualizar sozinha",
@@ -179,6 +179,7 @@ function writeRows(ss, sheetName, headers, rows, dedupeKey, fields) {
       "Clique em qualquer processo para ver as abas: 📋 Itens · 🏢 Licitantes · ✅ Habilitação",
       "Na aba Licitantes: copie frases jurídicas padronizadas para convocação de habilitação",
       "Na aba Habilitação: marque o checklist de documentos por licitante",
+      "Na aba Habilitação, '📑 Kit de habilitação automático' consulta, para cada vencedor, a Consolidada do TCU (TCU, CNJ, CEIS e CNEP) e o cadastro do Compras.gov.br (SICAF, porte ME/EPP) e baixa um .zip com os PDFs e um resumo. Só avisa, não bloqueia nada. Na primeira vez o navegador pede permissão para acessar esses dois sites",
       "Use '📥 Exportar XLS' no detalhe do processo para baixar a planilha de itens",
     ],
     status: "ativo",
