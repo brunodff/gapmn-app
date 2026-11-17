@@ -7,6 +7,7 @@ import FeedNoticias from "../components/FeedNoticias";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
 import Reajustes from "../components/reajustes/Reajustes";
+import PainelTcu from "../components/tcu/PainelTcu";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import AtasRegistroPreco from "../components/AtasRegistroPreco";
 import PainelSolicitacoesEmpenho from "../components/PainelSolicitacoesEmpenho";
@@ -51,7 +52,7 @@ type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
   | "calendario" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
-  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes";
+  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "tcu";
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
 type KPIs     = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
@@ -62,6 +63,7 @@ const VIEW_LABELS: Record<View, string> = {
   processos:          "Processos Licitatórios",
   contratos:          "Contratos SCON",
   reajustes:          "Reajustes (apostilamento)",
+  tcu:                "TCU — jurisprudência e sanções",
   indicadores:        "Indicadores de Lotação",
   atas:               "Atas de Registro de Preço",
   solicitacoes:       "Solicitações de Empenho",
@@ -331,6 +333,7 @@ const NAV: NavNode[] = [
     { label: "Atas de RP",  path: "view:atas",       icon: "📄" },
     { label: "Planejamento", path: "view:calendario", icon: "📅", slicOnly: true },
     { label: "Pesquisa de Preços", path: "view:pesquisa-precos", icon: "💲" },
+    { label: "TCU: jurisprudência e sanções", path: "view:tcu", icon: "🏛️" },
   ]},
   { id: "ctr",     label: "Contratos",            icon: "📑", path: "view:contratos" },
   { id: "eo",      label: "Exec. Orçamentária",   icon: "💰", children: [
@@ -1211,6 +1214,7 @@ export default function AppChat() {
     params.get("painel") === "governanca" ? "painel-governanca"
       : params.get("vista") === "ferramentas" ? "ferramentas"
       : params.get("vista") === "reajustes" ? "reajustes"
+      : params.get("vista") === "tcu" ? "tcu"
       : "dashboard"));
   const [filterTipo,     setFilterTipo] = useState("todos");
 
@@ -1726,6 +1730,7 @@ export default function AppChat() {
             {view === "contratos"     && <div className="svdark"><GerenciamentoContratos canImport={canImportCtr} canEdit={canEdit} canEditBudget={canImportCtr} onAbrirReajuste={(n) => setView("reajustes", n)} /></div>}
             {/* overflow visível: a barra de ações do reajuste fica presa no rodapé da área rolável */}
             {view === "reajustes"     && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><Reajustes /></div>}
+            {view === "tcu"           && <div className="svdark" style={{ padding: 16 }}><PainelTcu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}
