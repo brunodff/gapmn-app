@@ -7,6 +7,7 @@ import { CONFIG_VAZIA, type ConfigApostilamento } from "../../lib/apostilamento/
 import PainelReajustes, { type Cadastro } from "./PainelReajustes";
 import ConfigReajustes from "./ConfigReajustes";
 import ReajusteContrato from "./ReajusteContrato";
+import ImportarCarga from "./ImportarCarga";
 
 type Contrato = ContratoScon & { status: string | null; data_inicio: string | null };
 type Aba = "painel" | "config";
@@ -28,6 +29,7 @@ export default function Reajustes() {
   const [config, setConfig] = useState<ConfigApostilamento>(CONFIG_VAZIA);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -56,13 +58,13 @@ export default function Reajustes() {
           .select("id, numero_contrato, pag_nup, fornecedor, cnpj, descricao, data_orcamento, data_inicio, data_final, vl_contratual, status")
           .order("numero_contrato"),
         supabase.from("contratos_apostilamento")
-          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em"),
+          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga"),
         supabase.from("apostilamento_config").select("ordenador, aci, cidade, ug_apoio, textos_fixos_om, dias_alerta").eq("id", "padrao").maybeSingle(),
       ]);
       if (!vivo) return;
       const falhas = [c.error && `contratos: ${c.error.message}`, a.error && `cadastros: ${a.error.message}`, g.error && `configuração: ${g.error.message}`].filter(Boolean);
       if (a.error?.code === "42P01" || g.error?.code === "42P01" || /does not exist|schema cache/i.test(`${a.error?.message} ${g.error?.message}`))
-        setErro("As tabelas do reajuste ainda não existem no banco (migração 20261116_reajuste_apostilamento pendente).");
+        setErro("O banco ainda não tem as tabelas ou colunas do reajuste (migração pendente: 20261116_reajuste_apostilamento ou 20261117b_reajuste_carga_siloms).");
       else setErro(falhas.length ? `Não carregou ${falhas.join("; ")}` : null);
       setContratos((c.data ?? []) as Contrato[]);
       setCadastros(new Map(((a.data ?? []) as unknown as Cadastro[]).map((x) => [x.numero_contrato, x])));
@@ -74,7 +76,7 @@ export default function Reajustes() {
       setCarregando(false);
     })();
     return () => { vivo = false; };
-  }, [pode]);
+  }, [pode, recarga]);
 
   const contrato = useMemo(() => contratos.find((c) => c.numero_contrato === aberto) ?? null, [contratos, aberto]);
   const ir = (p: { contrato?: string; aba?: Aba }) => {
@@ -125,7 +127,10 @@ export default function Reajustes() {
           : <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Contrato {aberto} não encontrado. <button className="text-sky-700 hover:underline" onClick={() => ir({})}>Voltar ao painel</button></div>)
         : aba === "config"
           ? <ConfigReajustes config={config} podeEditar={admin} nomeUsuario={nome} aoSalvar={setConfig} />
-          : <PainelReajustes contratos={contratos} cadastros={cadastros} diasAlerta={config.dias_alerta} aoAbrir={(n) => ir({ contrato: n })} />}
+          : <div className="space-y-3">
+              <ImportarCarga contratos={contratos} config={config} nomeUsuario={nome} aoTerminar={() => setRecarga((n) => n + 1)} />
+              <PainelReajustes contratos={contratos} cadastros={cadastros} diasAlerta={config.dias_alerta} aoAbrir={(n) => ir({ contrato: n })} />
+            </div>}
     </div>
   );
 }

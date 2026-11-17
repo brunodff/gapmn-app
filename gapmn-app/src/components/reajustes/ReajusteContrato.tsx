@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { motor } from "../../lib/apostilamento/motor";
-import { buscarIndice, periodoDoReajuste, urlCalculadora } from "../../lib/apostilamento/indice";
-import { dadosIniciais, itensColados, paraMotor, reajustesAplicados, type ContratoScon } from "../../lib/apostilamento/cadastro";
+import { buscarIndice, chaveIndice, periodoDoReajuste, SERIES_SGS, urlCalculadora } from "../../lib/apostilamento/indice";
+import { completarReajustesDevidos, dadosIniciais, itensColados, paraMotor, reajustesAplicados, type ContratoScon } from "../../lib/apostilamento/cadastro";
+import { pendenciasCadastro, proximoApostilamento, situacaoCadastro, type CargaGuardada } from "../../lib/apostilamento/carga";
 import type { ConfigApostilamento, DadosReajuste, ItemContrato, ResultadoChecagem, ResultadoGeracao } from "../../lib/apostilamento/tipos";
 import { Caixa, Campo, CampoNumero, Secao, brl } from "./campos";
 
@@ -13,11 +14,44 @@ type Props = {
   nomeUsuario: string;
   ultimaNE: UltimaNE;
   aoVoltar: () => void;
-  aoSalvar: (r: { numero_contrato: string; data_base: string; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string }) => void;
+  aoSalvar: (r: { numero_contrato: string; data_base: string; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string;
+    situacao_cadastro: string; pendencias: string[] }) => void;
 };
 
 const INDICES = ["IPCA", "INPC", "IGP-M", "IGP-DI", "IPCA-E", "INCC"];
 const ICONE = { OK: "✅", ATENCAO: "⚠️", FALTA: "❌" } as const;
+
+/** Valor para a Calculadora: total dos itens corrigido pelos reajustes anteriores (como no print da SCON). */
+function valorParaCalculadora(d: DadosReajuste, n: number): number {
+  let v = (d.itens ?? []).reduce((s, it) => s + (it.valor_base ?? 0), 0);
+  for (const r of d.reajustes) if (r.n < n && r.indice_pct != null) v = Math.round(v * (1 + r.indice_pct / 100) * 100) / 100;
+  return v;
+}
+
+/** Busca no Banco Central o índice dos reajustes pedidos agora que ainda estão sem percentual
+ *  (só os índices que o BCB publica; INCC e IPCA-E continuam digitados). */
+async function indicesFaltando(d: DadosReajuste): Promise<{ dados: DadosReajuste; achados: string[]; avisos: string[] }> {
+  const achados: string[] = [], avisos: string[] = [];
+  const faltam = d.reajustes.filter((r) => r.novo && r.indice_pct == null);
+  if (!faltam.length || !/^\d{2}\/\d{4}$/.test(d.data_base) || !d.indice.nome) return { dados: d, achados, avisos };
+  if (!SERIES_SGS[chaveIndice(d.indice.nome)]) {
+    avisos.push(`O ${d.indice.nome} não está no Banco Central: digite o índice e anexe o print da fonte.`);
+    return { dados: d, achados, avisos };
+  }
+  let reajustes = d.reajustes;
+  for (const r of faltam) {
+    const per = periodoDoReajuste(d.data_base, r.n);
+    try {
+      const res = await buscarIndice(d.indice.nome, per.inicio, per.fim, valorParaCalculadora({ ...d, reajustes }, r.n));
+      if (!res.completo) { avisos.push(`${r.n}º reajuste: o ${res.indice} de ${per.fim} ainda não saiu.`); continue; }
+      reajustes = reajustes.map((x) => (x.n === r.n ? { ...x, indice_pct: res.percentual } : x));
+      achados.push(`${r.n}º ${res.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 6 })}%`);
+    } catch (e) {
+      avisos.push(`${r.n}º reajuste: não consegui o índice no Banco Central (${e instanceof Error ? e.message : String(e)}).`);
+    }
+  }
+  return { dados: { ...d, reajustes }, achados, avisos };
+}
 
 /** Tela do reajuste de um contrato: cadastro (salvo no banco), índice do Banco Central, prints da Calculadora,
  *  quadro de checagem e geração dos 4 documentos pelo motor da SCON. */
@@ -33,23 +67,37 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [colar, setColar] = useState<string | null>(null);
   const [buscandoIdx, setBuscandoIdx] = useState<number | null>(null);
+  const [carga, setCarga] = useState<CargaGuardada | null>(null);
 
-  // carrega o cadastro (ou começa pelo que o app já sabe do contrato)
+  // carrega o cadastro (ou começa pelo que o app já sabe do contrato) e deixa o reajuste pronto:
+  // reajustes devidos hoje, nº do apostilamento pelos já assinados e índices do Banco Central
   useEffect(() => {
     let vivo = true;
-    supabase.from("contratos_apostilamento").select("dados, dedicacao_exclusiva, versao").eq("numero_contrato", contrato.numero_contrato).maybeSingle()
-      .then(({ data, error }) => {
-        if (!vivo) return;
-        if (error) setMsg({ ok: false, txt: `Não li o cadastro: ${error.message}` });
-        if (data?.dados && Object.keys(data.dados).length) {
-          setD({ ...dadosIniciais(contrato), ...(data.dados as DadosReajuste) });
-          setDedicacao(!!data.dedicacao_exclusiva);
-          setVersao(data.versao);
-        } else {
-          setD(dadosIniciais(contrato));
-          setAlterado(true);
-        }
-      });
+    (async () => {
+      const { data, error } = await supabase.from("contratos_apostilamento").select("dados, dedicacao_exclusiva, versao, carga")
+        .eq("numero_contrato", contrato.numero_contrato).maybeSingle();
+      if (!vivo) return;
+      if (error) setMsg({ ok: false, txt: `Não li o cadastro: ${error.message}` });
+      const c = (data?.carga ?? null) as CargaGuardada | null;
+      setCarga(c);
+      const temCadastro = !!(data?.dados && Object.keys(data.dados).length);
+      let base: DadosReajuste = temCadastro ? { ...dadosIniciais(contrato), ...(data!.dados as DadosReajuste) } : dadosIniciais(contrato);
+      if (temCadastro) { setDedicacao(!!data!.dedicacao_exclusiva); setVersao(data!.versao); }
+      const feitos: string[] = [];
+      const devidos = completarReajustesDevidos(base);
+      if (devidos) { base = { ...base, reajustes: devidos }; feitos.push("reajustes devidos hoje incluídos"); }
+      if (base.numero_instrumento == null && c?.documentos) {
+        base = { ...base, numero_instrumento: proximoApostilamento(c.documentos) };
+        feitos.push(`nº do apostilamento ${base.numero_instrumento} (pelos já assinados)`);
+      }
+      setD(base);
+      if (!temCadastro || feitos.length) setAlterado(true);
+      const r = await indicesFaltando(base);
+      if (!vivo) return;
+      if (r.achados.length) { setD((x) => (x ? { ...x, reajustes: r.dados.reajustes } : x)); setAlterado(true); feitos.push(`índice do BCB: ${r.achados.join("; ")}`); }
+      if (feitos.length) setMsg({ ok: true, txt: `Preparado automaticamente: ${feitos.join(" · ")}. Confira e salve.` + (r.avisos.length ? ` ${r.avisos.join(" ")}` : "") });
+      else if (r.avisos.length) setMsg({ ok: false, txt: r.avisos.join(" ") });
+    })();
     // o Python começa a carregar já (na primeira vez demora)
     motor.iniciar().catch(() => undefined);
     return () => { vivo = false; };
@@ -59,7 +107,11 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
   const set = <K extends keyof DadosReajuste>(k: K, v: DadosReajuste[K]) => muda((x) => ({ ...x, [k]: v }));
 
   const totalItens = useMemo(() => (d?.itens ?? []).reduce((s, it) => s + (it.valor_base ?? 0), 0), [d?.itens]);
-  const temTextoFixo = !!config.textos_fixos_om[d?.om_ordenador || config.ordenador.om_sigla || "GAP-MN"];
+  const omAssina = d?.om_ordenador || d?.ordenador?.om_sigla || config.ordenador.om_sigla || "GAP-MN";
+  const temTextoFixo = !!config.textos_fixos_om[omAssina];
+  // pendências para gerar (mesma regra da importação da carga), recalculadas a cada mudança
+  const pendencias = useMemo(() => (d ? pendenciasCadastro(d, { dedicacao, textosFixos: config.textos_fixos_om, omPadrao: config.ordenador.om_sigla || "GAP-MN" }) : []),
+    [d, dedicacao, config]);
   const novos = (d?.reajustes ?? []).filter((r) => r.novo);
   const printsNovos = novos.map((r) => prints[r.n]).filter((f): f is File => !!f);
 
@@ -72,6 +124,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     const linha = {
       numero_contrato: contrato.numero_contrato, dados: d, reajustes_aplicados: reajustesAplicados(d), dedicacao_exclusiva: dedicacao,
       atualizado_por: s.session?.user.id ?? null, atualizado_nome: nomeUsuario, atualizado_em: new Date().toISOString(),
+      editado_no_app_em: new Date().toISOString(), situacao_cadastro: situacaoCadastro(pendencias, dedicacao), pendencias,
     };
     let erro: string | null = null;
     if (versao == null) {
@@ -89,7 +142,8 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     if (erro) { setMsg({ ok: false, txt: `Não salvou: ${erro}` }); return; }
     setAlterado(false);
     setMsg({ ok: true, txt: "Cadastro salvo." });
-    aoSalvar({ numero_contrato: linha.numero_contrato, data_base: d.data_base, reajustes_aplicados: linha.reajustes_aplicados, dedicacao_exclusiva: dedicacao, atualizado_em: linha.atualizado_em });
+    aoSalvar({ numero_contrato: linha.numero_contrato, data_base: d.data_base, reajustes_aplicados: linha.reajustes_aplicados, dedicacao_exclusiva: dedicacao,
+      atualizado_em: linha.atualizado_em, situacao_cadastro: linha.situacao_cadastro, pendencias });
   }
 
   async function rodar<T>(rotulo: string, f: (progresso: (e: string) => void) => Promise<T>): Promise<T | null> {
@@ -128,12 +182,6 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     setMsg({ ok: true, txt: `Documentos gerados: ${r.arquivos.length} arquivos no .zip baixado.` });
   }
 
-  /** Valor para a Calculadora: total dos itens corrigido pelos reajustes anteriores (como no print da SCON). */
-  function valorParaCalculadora(n: number): number {
-    let v = totalItens;
-    for (const r of d!.reajustes) if (r.n < n && r.indice_pct != null) v = Math.round(v * (1 + r.indice_pct / 100) * 100) / 100;
-    return v;
-  }
   async function buscarNoBC(idx: number) {
     const r = d!.reajustes[idx];
     if (!/^\d{2}\/\d{4}$/.test(d!.data_base)) { setMsg({ ok: false, txt: "Informe a data do orçamento (MM/AAAA) antes." }); return; }
@@ -141,7 +189,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     const per = periodoDoReajuste(d!.data_base, r.n);
     setBuscandoIdx(idx); setMsg(null);
     try {
-      const res = await buscarIndice(d!.indice.nome, per.inicio, per.fim, valorParaCalculadora(r.n));
+      const res = await buscarIndice(d!.indice.nome, per.inicio, per.fim, valorParaCalculadora(d!, r.n));
       muda((x) => ({ ...x, reajustes: x.reajustes.map((y, i) => (i === idx ? { ...y, indice_pct: res.percentual } : y)) }));
       setMsg({ ok: res.completo, txt: res.completo
         ? `${res.indice} ${per.inicio} a ${per.fim}: ${res.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 6 })}% (${res.meses} meses, como na Calculadora). Confira e anexe o print da Calculadora.`
@@ -163,13 +211,30 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
         {alterado && <span className="text-xs text-amber-600">alterações não salvas</span>}
       </div>
 
+      {!dedicacao && (pendencias.length
+        ? <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            <b>Faltam {pendencias.length} dado{pendencias.length > 1 ? "s" : ""} para gerar os documentos:</b>
+            <ul className="mt-1 list-disc pl-5 columns-1 md:columns-2">{pendencias.map((p, i) => <li key={i}>{p}</li>)}</ul>
+          </div>
+        : <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700">✓ Cadastro completo: confira o quadro de checagem e gere os documentos.</div>)}
+
+      {carga && <QuadroCarga carga={carga} />}
+
       <Secao titulo="1. Contrato">
         <div className="grid md:grid-cols-3 gap-3">
           <Campo rotulo="NUP / PAG" valor={d.nup} onChange={(v) => set("nup", v)} />
           <Campo rotulo="OM contratante (sigla, vai no cabeçalho)" valor={d.om_contratante_sigla} onChange={(v) => set("om_contratante_sigla", v)} dica="sugerida pelo número do contrato — confira (ex.: 2º GDAAE)" />
           <Campo rotulo="OM contratante (nome por extenso)" valor={d.om_contratante_nome} onChange={(v) => set("om_contratante_nome", v)} placeholder="2º GRUPO DE DEFESA ANTIAÉREA" />
           <Campo rotulo="OM do Ordenador que assina" valor={d.om_ordenador ?? ""} onChange={(v) => set("om_ordenador", v.toUpperCase())} placeholder={config.ordenador.om_sigla || "GAP-MN"} dica="vazio = a da configuração" />
+          <Campo rotulo="Cabeçalho do termo (nome da OM que assina)" valor={d.termo_om_nome ?? ""} onChange={(v) => set("termo_om_nome", v)} placeholder={config.ug_apoio.nome} dica="vazio = o da unidade de apoio (Configurações)" />
         </div>
+        {d.ordenador?.nome
+          ? <div className="mt-3 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">
+              Assina pelo contratante: <b>{[d.ordenador.posto, d.ordenador.nome].filter(Boolean).join(" ")}</b> — {d.ordenador.funcao_assinatura || `Ordenador de Despesas do ${d.ordenador.om_sigla ?? omAssina}`}
+              {d.aci?.funcao ? <> · controle interno: {d.aci.funcao}</> : null} (dados do contrato, vindos da carga).{" "}
+              <button className="text-sky-700 underline" onClick={() => muda((x) => { const y = { ...x }; delete y.ordenador; delete y.aci; return y; })}>usar o Ordenador e o ACI da configuração</button>
+            </div>
+          : <p className="mt-2 text-[11px] text-slate-400">Assinam o Ordenador e o ACI da configuração ({config.ordenador.om_sigla || "GAP-MN"}).</p>}
         <div className="grid md:grid-cols-2 gap-3 mt-3">
           <Campo rotulo="Objeto completo (cláusula do objeto)" valor={d.objeto_completo} onChange={(v) => set("objeto_completo", v)} longo />
           <Campo rotulo="Objeto resumido" valor={d.objeto_resumido} onChange={(v) => set("objeto_resumido", v)} longo placeholder="Contratação de serviços de outsourcing de impressão" />
@@ -182,9 +247,27 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
           <Campo rotulo="Razão social" valor={d.empresa.nome} onChange={(v) => set("empresa", { ...d.empresa, nome: v })} />
           <Campo rotulo="CNPJ" valor={d.empresa.cnpj} onChange={(v) => set("empresa", { ...d.empresa, cnpj: v })} />
           <Campo rotulo="Endereço (como no contrato)" valor={d.empresa.endereco} onChange={(v) => set("empresa", { ...d.empresa, endereco: v })} placeholder="na Alameda…, n° …, Bairro…, em Cidade/UF - CEP: …" />
-          <Campo rotulo="Representante da empresa" valor={d.empresa.representante} onChange={(v) => set("empresa", { ...d.empresa, representante: v })} />
+          {!d.empresa.representantes?.length && <Campo rotulo="Representante da empresa" valor={d.empresa.representante} onChange={(v) => set("empresa", { ...d.empresa, representante: v })} />}
         </div>
-        <Caixa rotulo="Representante do sexo feminino" marcado={!!d.empresa.representante_feminino} onChange={(v) => set("empresa", { ...d.empresa, representante_feminino: v })} />
+        {d.empresa.representantes?.length
+          ? <div className="mt-2 space-y-1">
+              <span className="block text-[11px] font-medium text-slate-600">Representantes da empresa (todos assinam o termo)</span>
+              {d.empresa.representantes.map((r, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input className={`${cel} flex-1`} value={r.nome} placeholder="Nome do representante"
+                    onChange={(e) => set("empresa", repsComo(d.empresa, d.empresa.representantes!.map((x, j) => (j === i ? { ...x, nome: e.target.value } : x))))} />
+                  <label className="text-xs text-slate-600 flex items-center gap-1"><input type="checkbox" checked={!!r.feminino}
+                    onChange={(e) => set("empresa", repsComo(d.empresa, d.empresa.representantes!.map((x, j) => (j === i ? { ...x, feminino: e.target.checked } : x))))} /> feminino</label>
+                  <button className="text-red-400 text-xs" onClick={() => set("empresa", repsComo(d.empresa, d.empresa.representantes!.filter((_, j) => j !== i)))}>✕</button>
+                </div>
+              ))}
+              <button className="text-xs text-sky-700 hover:underline" onClick={() => set("empresa", repsComo(d.empresa, [...d.empresa.representantes!, { nome: "", feminino: false }]))}>+ representante</button>
+            </div>
+          : <div className="flex flex-wrap items-center gap-4">
+              <Caixa rotulo="Representante do sexo feminino" marcado={!!d.empresa.representante_feminino} onChange={(v) => set("empresa", { ...d.empresa, representante_feminino: v })} />
+              <button className="text-xs text-sky-700 hover:underline mt-2" onClick={() => set("empresa", repsComo(d.empresa,
+                [{ nome: d.empresa.representante, feminino: !!d.empresa.representante_feminino }, { nome: "", feminino: false }]))}>+ outro representante</button>
+            </div>}
         <div className="grid md:grid-cols-2 gap-3 mt-3">
           <Campo rotulo="Parágrafo II – CONTRATADA (opcional, use **negrito**)" valor={d.contratada_paragrafo ?? ""} onChange={(v) => set("contratada_paragrafo", v)} longo />
           {temTextoFixo
@@ -208,14 +291,20 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
               <option value="ANUAL">Anual</option><option value="MENSAL">Mensal</option><option value="TOTAL">Total</option>
             </select>
           </label>
-          <div className="md:col-span-2 pt-4"><Caixa rotulo="Mostrar a coluna de valor unitário na memória" marcado={d.mostrar_unitario} onChange={(v) => set("mostrar_unitario", v)} /></div>
+          <label className="block">
+            <span className="block text-[11px] font-medium text-slate-600 mb-0.5">Fator do unitário</span>
+            <CampoNumero valor={d.fator_anual ?? null} casas={0} className="w-24" placeholder={d.base === "MENSAL" ? "1" : d.base === "ANUAL" ? "12" : ""}
+              onChange={(v) => muda((x) => { const y = { ...x }; if (v == null) delete y.fator_anual; else y.fator_anual = v; return y; })} />
+            <span className="block text-[10px] text-slate-400 mt-0.5">conferência: item = unitário × qtd × fator (preço por unidade = 1)</span>
+          </label>
+          <div className="pt-4"><Caixa rotulo="Mostrar a coluna de valor unitário na memória" marcado={d.mostrar_unitario} onChange={(v) => set("mostrar_unitario", v)} /></div>
         </div>
         <table className="w-full text-xs mt-3">
           <thead className="text-slate-500"><tr><th className="text-left py-1">Reajuste</th><th className="text-left">Período (12 índices)</th><th className="text-left">Índice (%)</th><th className="text-left">Situação</th><th className="text-left">Print da Calculadora</th><th /></tr></thead>
           <tbody>
             {d.reajustes.map((r, i) => {
               const per = /^\d{2}\/\d{4}$/.test(d.data_base) ? periodoDoReajuste(d.data_base, r.n) : null;
-              const link = per && d.indice.nome ? urlCalculadora(d.indice.nome, per.inicio, per.fim, valorParaCalculadora(r.n)) : null;
+              const link = per && d.indice.nome ? urlCalculadora(d.indice.nome, per.inicio, per.fim, valorParaCalculadora(d, r.n)) : null;
               return (
                 <tr key={i} className="border-t border-slate-100 align-top">
                   <td className="py-1.5 font-medium">{r.n}º</td>
@@ -397,6 +486,34 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
           {!ocupado && msg && <span className={`text-xs ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.txt}</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Empresa com a lista de representantes; o 1º também fica em "representante" (campo antigo do motor).
+ *  Lista vazia volta ao representante único. */
+function repsComo(emp: DadosReajuste["empresa"], reps: { nome: string; feminino?: boolean }[]): DadosReajuste["empresa"] {
+  const e = { ...emp };
+  if (!reps.length) { delete e.representantes; return e; }
+  return { ...e, representantes: reps, representante: reps[0].nome, representante_feminino: !!reps[0].feminino };
+}
+
+/** O que veio da carga do SILOMS: dados da tela do contrato, documentos assinados e último empenho */
+function QuadroCarga({ carga }: { carga: CargaGuardada }) {
+  const s = carga.siloms ?? {};
+  const ne = carga.ultimo_empenho ?? {};
+  const docs = carga.documentos ?? [];
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 space-y-1">
+      <div><b className="text-slate-700">Carga do SILOMS de {carga.atualizado_em ?? carga.gerado_em ?? "?"}</b>
+        {carga.fora_da_carga && <span className="ml-2 text-amber-700">· não veio na última carga (contrato saiu da lista de ativos?)</span>}</div>
+      <div>{[s.numero_oficial, s.codigo ? `código ${s.codigo}` : "", s.pag ? `PAG ${s.pag}` : "",
+        s.vigencia_inicio ? `vigência ${s.vigencia_inicio} a ${s.vigencia_fim ?? "?"}` : "", s.vigencia_vencida_no_siloms ? "vencida no SILOMS" : ""].filter(Boolean).join(" · ")}</div>
+      {!!docs.length && (
+        <div>Documentos assinados: {docs.map((x) => [x.numero || x.tipo, x.data_assinatura, x.valor_resultante != null ? brl(x.valor_resultante) : ""].filter(Boolean).join(" ")).join(" · ")}</div>
+      )}
+      {!!(ne.ne || ne.fonte_dos_dados) && <div>Último empenho: {[ne.ne, ne.data, ne.fonte_dos_dados].filter(Boolean).map(String).join(" · ")}</div>}
+      {carga.coleta?.etapa && carga.coleta.etapa !== "COMPLETO" && <div className="text-amber-700">Coleta da SCON ainda na etapa "{carga.coleta.etapa}": os documentos do contrato não foram lidos.</div>}
     </div>
   );
 }

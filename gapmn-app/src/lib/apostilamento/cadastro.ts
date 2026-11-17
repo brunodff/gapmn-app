@@ -1,6 +1,6 @@
 // Cadastro do reajuste de um contrato: o que vem pronto do contratos_scon e o que a SCON completa.
-import { dataBaseDe, statusContrato } from "./painel.ts";
-import type { DadosReajuste, ItemContrato } from "./tipos.ts";
+import { dataBaseDe, hojeLocal, statusContrato } from "./painel.ts";
+import type { DadosReajuste, ItemContrato, Reajuste } from "./tipos.ts";
 
 export type ContratoScon = {
   id: string;
@@ -77,6 +77,16 @@ export const reajustesAplicados = (d: DadosReajuste) => d.reajustes.filter((r) =
 export function paraMotor(d: DadosReajuste): DadosReajuste {
   const x = structuredClone(d) as DadosReajuste & Record<string, unknown>;
   for (const k of ["contratante_paragrafo", "contratada_paragrafo", "om_ordenador", "data_declaracao"] as const) if (!x[k]) delete x[k];
+  // por contrato (carga do SILOMS): vazio = o da configuração
+  for (const k of ["termo_om_nome", "fator_anual"] as const) if (x[k] == null || x[k] === "") delete x[k];
+  for (const k of ["ordenador", "aci"] as const) {
+    const o = x[k] as Record<string, unknown> | undefined;
+    if (!o || !Object.values(o).some((v) => v !== "" && v != null && v !== false)) delete x[k];
+  }
+  if (x.empresa.representantes) {
+    x.empresa.representantes = x.empresa.representantes.filter((r) => r.nome.trim());
+    if (!x.empresa.representantes.length) delete x.empresa.representantes;
+  }
   if (!x.orcamento.acao) delete x.orcamento.acao;
   if (!x.orcamento.ug_texto) delete x.orcamento.ug_texto;
   if (x.itens_total_inicial == null) delete (x as Record<string, unknown>).itens_total_inicial;
@@ -90,4 +100,17 @@ export function paraMotor(d: DadosReajuste): DadosReajuste {
   x.reajustes = x.reajustes.map((r) => (r.novo ? { n: r.n, indice_pct: r.indice_pct, novo: true } : r));
   x.observacoes_extras = x.observacoes_extras.filter((s) => s.trim());
   return x;
+}
+
+/** Reajustes devidos hoje (com o índice do último mês já divulgado) que ainda não estão no cadastro entram
+ *  como pedidos agora — é o que falta num contrato que chegou pela carga do SILOMS, que só traz os já
+ *  aplicados. Devolve a lista nova, ou null se não há o que acrescentar (ou sem data do orçamento). */
+export function completarReajustesDevidos(d: Pick<DadosReajuste, "data_base"> & { reajustes?: Reajuste[] },
+  hoje = hojeLocal()): Reajuste[] | null {
+  if (!/^\d{2}\/\d{4}$/.test(d.data_base || "")) return null;
+  const atuais = d.reajustes ?? [];
+  const st = statusContrato({ contrato: "", data_base: d.data_base, reajustes_aplicados: atuais.filter((r) => !r.novo).length }, hoje);
+  const ja = new Set(atuais.map((r) => r.n));
+  const novos: Reajuste[] = st.reajustes_devidos.filter((x) => x.indice_divulgado && !ja.has(x.n)).map((x) => ({ n: x.n, indice_pct: null, novo: true }));
+  return novos.length ? [...atuais, ...novos].sort((a, b) => a.n - b.n) : null;
 }

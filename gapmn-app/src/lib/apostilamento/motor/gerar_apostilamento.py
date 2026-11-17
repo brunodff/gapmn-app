@@ -833,8 +833,13 @@ def gerar_termo(dados, calc, t, caminho):
         run(p, f"II – CONTRATADA: {emp['nome']}", bold=True)
         run(p, f", inscrita no CNPJ/MF sob o n° {emp['cnpj']}, com sede {emp['endereco']}, doravante denominado ")
         run(p, "CONTRATADO", bold=True)
-        run(p, f", neste ato representado pel{'a Sra.' if emp.get('representante_feminino') else 'o Sr.'} ")
-        run(p, emp["representante"], bold=True); run(p, ".")
+        reps = emp.get("representantes") or [{"nome": emp["representante"],
+                                              "feminino": emp.get("representante_feminino", False)}]
+        for k, r in enumerate(reps):
+            run(p, (", neste ato representado " if k == 0 else " e ") +
+                f"pel{'a Sra.' if r.get('feminino') else 'o Sr.'} ")
+            run(p, r["nome"], bold=True)
+        run(p, ".")
 
     par(doc).add_run().add_break(WD_BREAK.PAGE)
 
@@ -900,14 +905,20 @@ def gerar_termo(dados, calc, t, caminho):
     par(doc, f"{dados.get('cidade', DEFAULTS['cidade'])}, data conforme assinatura digital.",
         align=WD_ALIGN_PARAGRAPH.RIGHT, after=12, keep=True)
     linha = "_______________________________________"
-    blocos = [(("Pela CONTRATANTE", "", "", linha, "Gestor do Contrato"),
-               ("Pela CONTRATADA", "", "", linha, emp["representante"], "Representante da Empresa")),
-              (("", "", linha, dados.get("aci", {}).get("funcao", "Agente de Controle Interno")), ("", "", linha, "Testemunha de Assinatura")),
-              (("", "", linha, ordn.get("funcao_assinatura") or f"{tit} de Despesas"), ("", "", linha, "Testemunha de Assinatura"))]
-    for esq, dir_ in blocos:
+    # Lado da CONTRATADA: um bloco por representante (contrato pode ter mais de um), depois as 2 testemunhas
+    nomes_rep = [r["nome"] for r in emp.get("representantes", [])] or [emp["representante"]]
+    dir_col = [("Pela CONTRATADA", "", "", linha, nomes_rep[0], "Representante da Empresa")]
+    dir_col += [("", "", linha, n, "Representante da Empresa") for n in nomes_rep[1:]]
+    dir_col += [("", "", linha, "Testemunha de Assinatura")] * 2
+    esq_col = [("Pela CONTRATANTE", "", "", linha, "Gestor do Contrato"),
+               ("", "", linha, dados.get("aci", {}).get("funcao", "Agente de Controle Interno")),
+               ("", "", linha, ordn.get("funcao_assinatura") or f"{tit} de Despesas")]
+    esq_col += [("",)] * (len(dir_col) - len(esq_col))
+    blocos = list(zip(esq_col, dir_col))
+    for ib, (esq, dir_) in enumerate(blocos):
         tb = doc.add_table(rows=1, cols=2); sem_bordas(tb)
         trPr = tb.rows[0]._tr.get_or_add_trPr(); trPr.append(OxmlElement("w:cantSplit"))
-        ultimo = (esq, dir_) == blocos[-1]
+        ultimo = ib == len(blocos) - 1
         for c, linhas in zip(tb.rows[0].cells, (esq, dir_)):
             c.text = ""
             for k, l in enumerate(linhas):
@@ -950,7 +961,8 @@ def checar(dados, hoje=None):
         add(nome, "OK" if v not in (None, "") else "FALTA", v if v is not None else "",
             "" if v not in (None, "") else "Informar manualmente")
     emp = dados.get("empresa") or {}
-    falt = [k for k in ("nome", "cnpj", "endereco", "representante") if not emp.get(k)]
+    falt = [k for k in ("nome", "cnpj", "endereco", "representante") if not emp.get(k)
+            and not (k == "representante" and emp.get("representantes"))]
     add("Empresa (II – CONTRATADA)", "FALTA" if falt else "OK", emp.get("nome", ""),
         ("Faltam: " + ", ".join(falt)) if falt else "")
     idx = dados.get("indice") or {}

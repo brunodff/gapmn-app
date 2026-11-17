@@ -10,6 +10,14 @@ export interface Empresa {
   endereco: string;
   representante: string;
   representante_feminino?: boolean;
+  /** contrato assinado por mais de um representante (motor de nov/2026) */
+  representantes?: { nome: string; feminino?: boolean }[];
+}
+
+/** Quem assina pelo contratante quando não é o Ordenador da configuração (ex.: contrato de outra OM) */
+export interface OrdenadorContrato {
+  nome?: string; posto?: string; feminino?: boolean; om_sigla?: string; funcao_assinatura?: string;
+  portaria?: string; publicacao?: string; matricula?: string;
 }
 
 export interface Indice {
@@ -76,6 +84,11 @@ export interface DadosReajuste {
   complemento_supressao: boolean;
   orcamento: Orcamento;
   fiscal: { funcao: string };
+  // Por contrato (vêm da carga do SILOMS; vazios = os da configuração)
+  ordenador?: OrdenadorContrato;
+  aci?: { nome?: string; posto?: string; funcao?: string };
+  termo_om_nome?: string;   // 1ª linha do cabeçalho do termo (nome da OM que assina)
+  fator_anual?: number;     // conferência do item: valor = unitário × qtd × fator (vazio: ANUAL = 12, MENSAL = 1; preço por unidade = 1)
   data_declaracao?: string; // AAAA-MM-DD; vazio = "data conforme assinatura eletrônica"
   observacoes_extras: string[];
 }

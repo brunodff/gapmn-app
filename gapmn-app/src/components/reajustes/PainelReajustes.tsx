@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import { painel, dataBaseDe, ROTULOS, CORES, type StatusReajuste } from "../../lib/apostilamento/painel";
 import type { ContratoScon } from "../../lib/apostilamento/cadastro";
 
-export type Cadastro = { numero_contrato: string; data_base: string | null; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string | null };
+export type Cadastro = {
+  numero_contrato: string; data_base: string | null; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string | null;
+  situacao_cadastro?: string | null; pendencias?: string[] | null; carga_em?: string | null; fora?: boolean | null;
+};
 
 type Props = {
   contratos: (ContratoScon & { status: string | null })[];
@@ -16,7 +19,7 @@ const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, 
 
 /** Painel da SCON: cada contrato com a cor do reajuste (regra do painel_reajustes.py da SCON). */
 export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAbrir }: Props) {
-  const [filtro, setFiltro] = useState<StatusReajuste | "TODOS">("TODOS");
+  const [filtro, setFiltro] = useState<StatusReajuste | "TODOS" | "PRONTOS">("TODOS");
   const [busca, setBusca] = useState("");
 
   const linhas = useMemo(() => {
@@ -40,7 +43,10 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
     return m;
   }, [linhas]);
 
-  const visiveis = linhas.filter((l) => (filtro === "TODOS" || l.status === filtro)
+  // reajuste devido e cadastro completo: dá para gerar os documentos agora
+  const pronto = (l: (typeof linhas)[number]) => l.status === "VERMELHO" && l.cad?.situacao_cadastro === "COMPLETO";
+  const nProntos = linhas.filter(pronto).length;
+  const visiveis = linhas.filter((l) => (filtro === "TODOS" || (filtro === "PRONTOS" ? pronto(l) : l.status === filtro))
     && (!busca.trim() || norm(`${l.contrato} ${l.c.fornecedor ?? ""} ${l.c.descricao ?? ""}`).includes(norm(busca))));
 
   return (
@@ -49,6 +55,12 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
         <button onClick={() => setFiltro("TODOS")} className={`rounded-full border px-3 py-1 text-xs ${filtro === "TODOS" ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-600"}`}>
           Todos ({linhas.length})
         </button>
+        {!!nProntos && (
+          <button onClick={() => setFiltro("PRONTOS")}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${filtro === "PRONTOS" ? "bg-slate-800 text-white border-slate-800" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
+            ✓ Prontos para gerar ({nProntos})
+          </button>
+        )}
         {ORDEM_FILTRO.filter((s) => contagem.get(s)).map((s) => (
           <button key={s} onClick={() => setFiltro(s)} style={filtro === s ? undefined : { background: CORES[s], color: "#1e293b" }}
             className={`rounded-full border px-3 py-1 text-xs ${filtro === s ? "bg-slate-800 text-white border-slate-800" : "border-transparent"}`}>
@@ -85,7 +97,7 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
                     : l.motivo ?? "–"}
                 </td>
                 <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{l.proximo_aniversario ? `${l.proximo_aniversario} (${l.dias_para_proximo} d)` : "–"}</td>
-                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{l.cad?.atualizado_em ? new Date(l.cad.atualizado_em).toLocaleDateString("pt-BR") : "não iniciado"}</td>
+                <td className="px-3 py-2 whitespace-nowrap"><Situacao cad={l.cad} /></td>
                 <td className="px-3 py-2 text-right">
                   <button onClick={() => aoAbrir(l.contrato)} className="rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 px-2 py-1">Abrir</button>
                 </td>
@@ -101,4 +113,17 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
       </p>
     </div>
   );
+}
+
+/** Situação do cadastro do reajuste: completo para gerar, pendências (com a lista no título) ou não iniciado */
+function Situacao({ cad }: { cad: Cadastro | undefined }) {
+  if (!cad) return <span className="text-slate-400">não iniciado</span>;
+  const quando = cad.atualizado_em ? new Date(cad.atualizado_em).toLocaleDateString("pt-BR") : "";
+  const pend = cad.pendencias ?? [];
+  if (cad.situacao_cadastro === "COMPLETO") return <span className="text-emerald-700" title={`Atualizado em ${quando}`}>✓ completo</span>;
+  if (cad.situacao_cadastro === "PENDENTE") {
+    return <span className="text-amber-700 cursor-help" title={pend.join("\n")}>⚠ {pend.length} pendência{pend.length === 1 ? "" : "s"}{cad.fora ? " · fora da carga" : ""}</span>;
+  }
+  if (cad.situacao_cadastro === "NAO_SE_APLICA") return <span className="text-slate-500">repactuação</span>;
+  return <span className="text-slate-500">{quando || "iniciado"}</span>;
 }
