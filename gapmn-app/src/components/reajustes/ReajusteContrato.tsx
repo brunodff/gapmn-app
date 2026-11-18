@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../lib/supabase";
+import { armazemBanco, type Armazem } from "../../lib/apostilamento/armazem";
+import type { ContratoGov } from "../../lib/apostilamento/contratosGov";
+import CompletarAutomatico from "./CompletarAutomatico";
 import { motor } from "../../lib/apostilamento/motor";
 import { buscarIndice, chaveIndice, periodoDoReajuste, SERIES_SGS, urlCalculadora } from "../../lib/apostilamento/indice";
 import { completarReajustesDevidos, dadosIniciais, itensColados, paraMotor, reajustesAplicados, type ContratoScon } from "../../lib/apostilamento/cadastro";
@@ -16,6 +18,13 @@ type Props = {
   aoVoltar: () => void;
   aoSalvar: (r: { numero_contrato: string; data_base: string; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string;
     situacao_cadastro: string; pendencias: string[] }) => void;
+  /** onde o cadastro fica: no banco (GAP-MN, padrão) ou no navegador (outras OMs) */
+  armazem?: Armazem;
+  /** UG no Contratos.gov.br para completar o cadastro (GAP-MN = 120630); sem ela, o botão não aparece */
+  ugGov?: string;
+  contratoGov?: ContratoGov;
+  /** valores para o primeiro cadastro (outras OMs: sigla e nome da OM) */
+  padroes?: Partial<DadosReajuste>;
 };
 
 const INDICES = ["IPCA", "INPC", "IGP-M", "IGP-DI", "IPCA-E", "INCC"];
@@ -55,7 +64,7 @@ async function indicesFaltando(d: DadosReajuste): Promise<{ dados: DadosReajuste
 
 /** Tela do reajuste de um contrato: cadastro (salvo no banco), índice do Banco Central, prints da Calculadora,
  *  quadro de checagem e geração dos 4 documentos pelo motor da SCON. */
-export default function ReajusteContrato({ contrato, config, nomeUsuario, ultimaNE, aoVoltar, aoSalvar }: Props) {
+export default function ReajusteContrato({ contrato, config, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes }: Props) {
   const [d, setD] = useState<DadosReajuste | null>(null);
   const [dedicacao, setDedicacao] = useState(false);
   const [versao, setVersao] = useState<number | null>(null);
@@ -74,14 +83,13 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
   useEffect(() => {
     let vivo = true;
     (async () => {
-      const { data, error } = await supabase.from("contratos_apostilamento").select("dados, dedicacao_exclusiva, versao, carga")
-        .eq("numero_contrato", contrato.numero_contrato).maybeSingle();
+      const { registro: data, erro: error } = await armazem.carregar(contrato.numero_contrato);
       if (!vivo) return;
-      if (error) setMsg({ ok: false, txt: `Não li o cadastro: ${error.message}` });
+      if (error) setMsg({ ok: false, txt: `Não li o cadastro: ${error}` });
       const c = (data?.carga ?? null) as CargaGuardada | null;
       setCarga(c);
       const temCadastro = !!(data?.dados && Object.keys(data.dados).length);
-      let base: DadosReajuste = temCadastro ? { ...dadosIniciais(contrato), ...(data!.dados as DadosReajuste) } : dadosIniciais(contrato);
+      let base: DadosReajuste = temCadastro ? { ...dadosIniciais(contrato), ...(data!.dados as DadosReajuste) } : { ...dadosIniciais(contrato), ...padroes };
       if (temCadastro) { setDedicacao(!!data!.dedicacao_exclusiva); setVersao(data!.versao); }
       const feitos: string[] = [];
       const devidos = completarReajustesDevidos(base);
@@ -101,10 +109,22 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     // o Python começa a carregar já (na primeira vez demora)
     motor.iniciar().catch(() => undefined);
     return () => { vivo = false; };
-  }, [contrato]);
+  }, [contrato, armazem, padroes]);
 
   const muda = (f: (x: DadosReajuste) => DadosReajuste) => { setD((x) => (x ? f(x) : x)); setAlterado(true); setChecagem(null); setSimulacao(null); };
   const set = <K extends keyof DadosReajuste>(k: K, v: DadosReajuste[K]) => muda((x) => ({ ...x, [k]: v }));
+  // depois de completar pelo Contratos.gov.br ou pelos PDFs, faz o mesmo da abertura do contrato: inclui os
+  // reajustes devidos hoje (a data-base pode ter acabado de chegar) e busca o índice no Banco Central
+  async function aplicarAutomatico(novo: DadosReajuste) {
+    const devidos = completarReajustesDevidos(novo);
+    const base = devidos ? { ...novo, reajustes: devidos } : novo;
+    muda(() => base);
+    const r = await indicesFaltando(base);
+    if (r.achados.length) setD((x) => (x ? { ...x, reajustes: r.dados.reajustes } : x));
+    const feitos = [...(devidos ? ["reajustes devidos hoje incluídos"] : []), ...(r.achados.length ? [`índice do BCB: ${r.achados.join("; ")}`] : [])];
+    if (feitos.length) setMsg({ ok: true, txt: `Preparado automaticamente: ${feitos.join(" · ")}. Confira e salve.` + (r.avisos.length ? ` ${r.avisos.join(" ")}` : "") });
+    else if (r.avisos.length) setMsg({ ok: false, txt: r.avisos.join(" ") });
+  }
 
   const totalItens = useMemo(() => (d?.itens ?? []).reduce((s, it) => s + (it.valor_base ?? 0), 0), [d?.itens]);
   const omAssina = d?.om_ordenador || d?.ordenador?.om_sigla || config.ordenador.om_sigla || "GAP-MN";
@@ -120,28 +140,17 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
   async function salvar() {
     if (!d) return;
     setOcupado("Salvando…"); setMsg(null);
-    const { data: s } = await supabase.auth.getSession();
     const linha = {
       numero_contrato: contrato.numero_contrato, dados: d, reajustes_aplicados: reajustesAplicados(d), dedicacao_exclusiva: dedicacao,
-      atualizado_por: s.session?.user.id ?? null, atualizado_nome: nomeUsuario, atualizado_em: new Date().toISOString(),
-      editado_no_app_em: new Date().toISOString(), situacao_cadastro: situacaoCadastro(pendencias, dedicacao), pendencias,
+      situacao_cadastro: situacaoCadastro(pendencias, dedicacao), pendencias, atualizado_em: new Date().toISOString(),
     };
-    let erro: string | null = null;
-    if (versao == null) {
-      const { error } = await supabase.from("contratos_apostilamento").insert({ ...linha, versao: 1 });
-      if (error) erro = error.code === "23505" ? "outra pessoa criou o cadastro deste contrato agora — recarregue a página" : error.message;
-      else setVersao(1);
-    } else {
-      const { data, error } = await supabase.from("contratos_apostilamento").update({ ...linha, versao: versao + 1 })
-        .eq("numero_contrato", contrato.numero_contrato).eq("versao", versao).select("versao");
-      if (error) erro = error.message;
-      else if (!data?.length) erro = "outra pessoa salvou este cadastro depois que você abriu — recarregue a página para não apagar o que ela fez";
-      else setVersao(versao + 1);
-    }
+    const r = await armazem.salvar(linha, versao, nomeUsuario);
+    const erro = r.erro ?? null;
+    if (r.versao != null) setVersao(r.versao);
     setOcupado(null);
     if (erro) { setMsg({ ok: false, txt: `Não salvou: ${erro}` }); return; }
     setAlterado(false);
-    setMsg({ ok: true, txt: "Cadastro salvo." });
+    setMsg({ ok: true, txt: armazem.local ? "Cadastro salvo neste navegador." : "Cadastro salvo." });
     aoSalvar({ numero_contrato: linha.numero_contrato, data_base: d.data_base, reajustes_aplicados: linha.reajustes_aplicados, dedicacao_exclusiva: dedicacao,
       atualizado_em: linha.atualizado_em, situacao_cadastro: linha.situacao_cadastro, pendencias });
   }
@@ -217,6 +226,11 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
             <ul className="mt-1 list-disc pl-5 columns-1 md:columns-2">{pendencias.map((p, i) => <li key={i}>{p}</li>)}</ul>
           </div>
         : <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700">✓ Cadastro completo: confira o quadro de checagem e gere os documentos.</div>)}
+
+      {ugGov && !dedicacao && (
+        <CompletarAutomatico numero={contrato.numero_contrato} pag={contrato.pag_nup} inicio={(contrato as ContratoScon & { data_inicio?: string | null }).data_inicio ?? null}
+          ug={ugGov} contratoGov={contratoGov} dados={d} aplicar={(novo) => void aplicarAutomatico(novo)} />
+      )}
 
       {carga && <QuadroCarga carga={carga} />}
 

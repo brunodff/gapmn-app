@@ -3,10 +3,12 @@ import { supabase } from "../../lib/supabase";
 import type { ConfigApostilamento } from "../../lib/apostilamento/tipos";
 import { Campo, Caixa, Secao } from "./campos";
 
-type Props = { config: ConfigApostilamento; podeEditar: boolean; nomeUsuario: string; aoSalvar: (c: ConfigApostilamento) => void };
+type Props = { config: ConfigApostilamento; podeEditar: boolean; nomeUsuario: string; aoSalvar: (c: ConfigApostilamento) => void;
+  /** guarda em outro lugar (outras OMs: no navegador); devolve o erro ou null */
+  guardar?: (c: ConfigApostilamento) => Promise<string | null> };
 
 /** Dados que o motor usa e não ficam no código: Ordenador de Despesas, ACI e textos fixos do "I – CONTRATANTE". */
-export default function ConfigReajustes({ config, podeEditar, nomeUsuario, aoSalvar }: Props) {
+export default function ConfigReajustes({ config, podeEditar, nomeUsuario, aoSalvar, guardar }: Props) {
   const [c, setC] = useState<ConfigApostilamento>(config);
   const [msg, setMsg] = useState<{ ok: boolean; txt: string } | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -15,6 +17,14 @@ export default function ConfigReajustes({ config, podeEditar, nomeUsuario, aoSal
 
   async function salvar() {
     setSalvando(true); setMsg(null);
+    if (guardar) {
+      const e = await guardar(c);
+      setSalvando(false);
+      if (e) { setMsg({ ok: false, txt: `Não salvou: ${e}` }); return; }
+      setMsg({ ok: true, txt: "Configuração salva neste navegador." });
+      aoSalvar(c);
+      return;
+    }
     const { data: s } = await supabase.auth.getSession();
     const { error } = await supabase.from("apostilamento_config").upsert({
       id: "padrao", ordenador: c.ordenador, aci: c.aci, cidade: c.cidade, ug_apoio: c.ug_apoio,

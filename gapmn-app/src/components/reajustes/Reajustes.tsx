@@ -8,6 +8,10 @@ import PainelReajustes, { type Cadastro } from "./PainelReajustes";
 import ConfigReajustes from "./ConfigReajustes";
 import ReajusteContrato from "./ReajusteContrato";
 import ImportarCarga from "./ImportarCarga";
+import CompletarContratosGov from "./CompletarContratosGov";
+
+/** UG do GAP-MN no Contratos.gov.br (os contratos da SCON estão nela) */
+const UG_GAPMN = "120630";
 
 type Contrato = ContratoScon & { status: string | null; data_inicio: string | null };
 type Aba = "painel" | "config";
@@ -121,13 +125,14 @@ export default function Reajustes() {
 
       {carregando ? <div className="p-6 text-sm text-slate-500">Carregando os contratos…</div>
         : aberto ? (contrato
-          ? <DetalheComNE contratos={contratos} contrato={contrato} config={config} nomeUsuario={nome}
+          ? <DetalheComNE contratos={contratos} contrato={contrato} config={config} nomeUsuario={nome} ugGov={UG_GAPMN}
               aoVoltar={() => ir({})}
               aoSalvar={(r) => setCadastros((m) => new Map(m).set(r.numero_contrato, r))} />
           : <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Contrato {aberto} não encontrado. <button className="text-sky-700 hover:underline" onClick={() => ir({})}>Voltar ao painel</button></div>)
         : aba === "config"
           ? <ConfigReajustes config={config} podeEditar={admin} nomeUsuario={nome} aoSalvar={setConfig} />
           : <div className="space-y-3">
+              <CompletarContratosGov contratos={contratos} config={config} nomeUsuario={nome} ug={UG_GAPMN} aoTerminar={() => setRecarga((n) => n + 1)} />
               <ImportarCarga contratos={contratos} config={config} nomeUsuario={nome} aoTerminar={() => setRecarga((n) => n + 1)} />
               <PainelReajustes contratos={contratos} cadastros={cadastros} diasAlerta={config.dias_alerta} aoAbrir={(n) => ir({ contrato: n })} />
             </div>}
