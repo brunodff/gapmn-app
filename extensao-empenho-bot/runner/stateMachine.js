@@ -35,6 +35,7 @@ import { step6Runner } from './steps/step6.js';
 import {
   paginaMinutas, buscarNEnaLista, removerFiltros, adicionarAlteracao,
   alteracaoSubelementoRunner, alteracaoPassivo, lerListaAlteracoes, telaSubelementoAlteracao,
+  sondaItensAlteracao,
 } from './steps/alteracao.js';
 import {
   step0ClickAdicionarMinuta,
@@ -828,7 +829,7 @@ function limparMotivo(m) {
 
 // Falha "do sistema" (aba, sessão, CNET fora do ar) e não da solicitação: se
 // repetir, pular só criaria uma falha atrás da outra na fila inteira
-const RX_SISTEMICO = /Script não retornou|Exceção|timeout|não carregaram|não trouxe|não achei a lista de Minutas|bloqueada por um aviso|Não consegui ler a tela|sem resposta|sessão expirou/i;
+const RX_SISTEMICO = /Script não retornou|Exceção|timeout|não carregaram|não terminou de carregar|não trouxe|não achei a lista de Minutas|bloqueada por um aviso|Não consegui ler a tela|sem resposta|sessão expirou/i;
 const RX_SESSAO = /\/login\b|acesso\.gov\.br|\bsso\./i;
 const LIMITE_FALHAS_SISTEMA = 3;
 
@@ -2042,10 +2043,77 @@ async function altAdicionar(tabId) {
  * O script espera dentro da página (itens por AJAX): com limite. Sem resposta, a tela
  * é recarregada (o script preso morre com ela) e o robô tenta mais uma vez.
  */
+/**
+ * A tela do Subelemento da alteração traz os itens da NE pelo servidor, 10 por página.
+ * O robô pede "Todos" e, numa NE com muitos itens, o CNET pode levar bem mais que 10 s
+ * para devolver: com o item pedido (ex.: 069, dos últimos) ainda fora da tela, o robô
+ * dizia "não está na NE". Espera os itens da solicitação aparecerem, ou a lista inteira
+ * estar na tela e parada (aí o que falta não está mesmo na NE — a tela diz). Mesmos
+ * limites do resto do robô: aviso a cada 20 s, recarrega aos 2 min, desiste aos 5 min.
+ */
+async function esperarItensDaAlteracao(tabId, a) {
+  const pedidos = (a.itens ?? []).filter(it => numBR(it.valor) > 0 || numBR(it.quantidade) > 0)
+    .map(it => parseInt(String(it.numeroItem ?? '').replace(/\D/g, ''), 10)).filter(n => n > 0);
+  const ini = Date.now();
+  let aviso = ini + AVISO_CNET_LENTO, recarregou = false, ampliou = 0, s = null;
+  let assinatura = '', paradaDesde = null, incompletaDesde = null;
+  for (;;) {
+    s = await comLimite(execInPage(tabId, sondaItensAlteracao, [pedidos]), 8000);
+    if (RX_SESSAO.test(s?.url ?? '')) return { ok: false, error: 'a sessão do CNET expirou' };
+    const quieta = !!s && !s.processando;
+    if (quieta && s.linhas > 0 && pedidos.length && !s.faltando.length) break;
+    // Ainda paginada e sem nada carregando: o "Todos" não pegou (a tabela nem existia
+    // quando o robô pediu) — pede de novo
+    if (quieta && s.inicializada && s.todasNaTela === false && ampliou < 3) {
+      ampliou++;
+      await maximizarTabelas(tabId, 'da alteração', 1500);
+      paradaDesde = null;
+      continue;
+    }
+    // Lista inteira na tela (ou "nenhum registro") e sem mudar há 4 s: pronta
+    const ass = s ? `${s.linhas}|${s.total}|${s.numeros.join(',')}` : '';
+    const parada = quieta && (s.linhas > 0 || s.vazio) && s.todasNaTela !== false && ass === assinatura;
+    paradaDesde = parada ? paradaDesde ?? Date.now() : null;
+    // Pela metade e parada há 60 s mesmo depois de pedir "Todos": a tela explica
+    const incompleta = quieta && s.linhas > 0 && s.todasNaTela === false && ass === assinatura;
+    incompletaDesde = incompleta ? incompletaDesde ?? Date.now() : null;
+    assinatura = ass;
+    if (paradaDesde && Date.now() - paradaDesde > 4000) break;
+    if (incompletaDesde && Date.now() - incompletaDesde > 60000) break;
+
+    const passou = Date.now() - ini;
+    if (passou > ESPERA_MAX_CNET) {
+      return { ok: false, error: `o CNET não trouxe os itens da NE em ${Math.round(passou / 60000)} min${s?.total ? ` (${s.linhas} de ${s.total} na tela)` : ''} — tente de novo mais tarde` };
+    }
+    const aba = await chrome.tabs.get(tabId).catch(() => null);
+    if (!recarregou && aba?.url && passou > 120000) {
+      recarregou = true;
+      await logVisivel(`⚠ [Alteração] Os itens da NE não vieram em ${segDesde(ini)} s — recarregando a tela do CNET…`, 'warn');
+      await navegarPara(tabId, aba.url, 'A3');
+      await maximizarTabelas(tabId, 'da alteração');
+      assinatura = '';
+      paradaDesde = incompletaDesde = null;
+      continue;
+    }
+    if (Date.now() >= aviso) {
+      const quanto = s?.total ? ` (${s.linhas} de ${s.total} na tela)` : s?.linhas ? ` (${s.linhas} na tela)` : '';
+      await logVisivel(`⏳ [Alteração] O CNET está lento — esperando os itens da NE${quanto}, ${segDesde(ini)} s…`, 'warn');
+      aviso += AVISO_CNET_LENTO;
+    }
+    await delay(1000);
+  }
+  if (Date.now() - ini > 5000 && s) {
+    await logVisivel(`[Alteração] Itens da NE na tela: ${s.linhas}${s.total ? ` de ${s.total}` : ''} (${segDesde(ini)} s)`, 'info');
+  }
+  return { ok: true };
+}
+
 async function altSubelemento(tabId, a) {
   await logVisivel('[Alteração] Preenchendo Tipo Operação e valor…', 'info');
   const rodar = async () => {
     await maximizarTabelas(tabId, 'da alteração');
+    const espera = await esperarItensDaAlteracao(tabId, a);
+    if (!espera.ok) return { r: espera, idAntes: null };
     const idAntes = await idDoDocumento(tabId);
     const r = await comLimite(
       execInPage(tabId, alteracaoSubelementoRunner, [a]).catch(e => ({ ok: false, error: `erro ao rodar na tela da alteração: ${e.message}` })),
@@ -2061,6 +2129,12 @@ async function altSubelemento(tabId, a) {
     if (aba?.url) await navegarPara(tabId, aba.url, 'A3');
     ({ r, idAntes } = await rodar());
     if (!r) return { ok: false, error: `a tela da alteração não respondeu (duas tentativas; ${motivoSemResposta(await impressaoDaPagina(tabId))})` };
+  }
+  // Item pedido fora da tela com a lista pela metade: espera de novo (nada foi preenchido)
+  if (!r.ok && r.carregando) {
+    await logVisivel(`⚠ [Alteração] ${r.error} — esperando a lista e tentando de novo…`, 'warn');
+    ({ r, idAntes } = await rodar());
+    if (!r) return { ok: false, error: `a tela da alteração não respondeu (${motivoSemResposta(await impressaoDaPagina(tabId))})` };
   }
   if (!r.ok) return { ...r, error: `${r.error}${r.semOperacao ? dicaRestosAPagar(a.ne) : ''}` };
   for (const f of r.feitos ?? []) await logVisivel(`[Alteração] ${f}`, 'info');

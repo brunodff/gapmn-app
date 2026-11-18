@@ -154,6 +154,63 @@ export async function lerListaAlteracoes() {
 }
 
 /**
+ * Como está a lista de itens da tela Subelemento da alteração. O CNET traz os itens
+ * pelo servidor (DataTables serverSide), 10 por página: o robô pede "Todos" e, numa NE
+ * com muitos itens, a resposta pode levar bem mais que os 10 s que o robô esperava —
+ * o item 069 ainda não estava na tela e saía "não está na NE". `pedidos` = números dos
+ * itens da solicitação. `todasNaTela`: null = tabela sem a API do DataTables.
+ */
+export function sondaItensAlteracao(pedidos = []) {
+  const txt = s => String(s ?? '').replace(/\s+/g, ' ').trim();
+  const norm = s => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const visivel = e => !!e && e.getClientRects().length > 0 && getComputedStyle(e).display !== 'none';
+  const $ = window.jQuery || window.$;
+  const filhaDe = tr => (tr.nextElementSibling?.classList.contains('child') ? tr.nextElementSibling : null);
+  const naLinha = (tr, css) => [tr, filhaDe(tr)].filter(Boolean).flatMap(el => Array.from(el.querySelectorAll(css)));
+  const tituloLi = li => txt(li.querySelector('.dtr-title')?.textContent).replace(/:$/, '');
+  const ehSelectOperacao = s => Array.from(s.options).some(o => /^(ANULACAO|REFORCO)/.test(norm(o.text)));
+  const coluna = (tr, re) => {
+    const ths = Array.from(tr.closest('table')?.querySelectorAll('thead th') ?? []);
+    const i = ths.findIndex(th => re.test(txt(th.textContent)));
+    return i >= 0 ? tr.cells[i] : null;
+  };
+  const textoColuna = (tr, re) => {
+    const t = txt(coluna(tr, re)?.textContent);
+    if (t) return t;
+    const li = Array.from(filhaDe(tr)?.querySelectorAll('li') ?? []).find(l => re.test(tituloLi(l)));
+    return txt(li?.querySelector('.dtr-data')?.textContent);
+  };
+  const numeroDa = tr => parseInt(textoColuna(tr, /^N[úu]mero$|^N\.?\s*Item$/i).replace(/\D/g, ''), 10) ||
+    parseInt(naLinha(tr, 'input[name="numero_item[]"]')[0]?.value ?? '', 10) || NaN;
+
+  const linhas = Array.from(document.querySelectorAll('table tbody tr'))
+    .filter(tr => !tr.classList.contains('child') && naLinha(tr, 'select').some(ehSelectOperacao));
+  const numeros = linhas.map(numeroDa).filter(n => !Number.isNaN(n));
+  const processando = Array.from(document.querySelectorAll('.dataTables_processing')).some(visivel);
+  // "Nenhum registro" de verdade, não o "Carregando…" que o DataTables põe na mesma célula
+  const celVazia = document.querySelector('td.dataTables_empty');
+  const vazio = !linhas.length && !!celVazia && !/carregando|processando|loading|processing|aguarde/i.test(celVazia.textContent ?? '');
+
+  // Quantos itens a NE tem e quantos estão desenhados (page.info do DataTables)
+  let info = null;
+  try {
+    const tabela = linhas[0]?.closest('table') ?? document.querySelector('#dataTableBuilder');
+    if (tabela && $?.fn?.dataTable?.isDataTable?.(tabela)) {
+      const i = $(tabela).DataTable().page.info();
+      info = { total: i.recordsDisplay, desenhados: i.end - i.start, length: i.length, pages: i.pages };
+    }
+  } catch (_) { /* sem a API: fica a contagem das linhas */ }
+  return {
+    linhas: linhas.length, numeros,
+    faltando: pedidos.filter(n => !numeros.includes(n)),
+    processando, ocupado: !!($ && $.active > 0), vazio,
+    inicializada: !!info, total: info?.total ?? null,
+    todasNaTela: info ? info.desenhados >= info.total : null,
+    url: location.href,
+  };
+}
+
+/**
  * Tela Subelemento da alteração: Tipo Operação de cada item, valor (ou quantidade)
  * e Próxima Etapa. `a` = { operacao: 'ANULAÇÃO' | 'REFORÇO' | 'REFORÇO IRRISÓRIO' |
  * 'ANULAÇÃO SALDO IRRISÓRIO', operacaoIrrisoria, valor, itens: [{ numeroItem, valor,
@@ -208,26 +265,6 @@ export async function alteracaoSubelementoRunner(a) {
     const naLinha = (tr, css) => [tr, filhaDe(tr)].filter(Boolean).flatMap(el => Array.from(el.querySelectorAll(css)));
     const tituloLi = li => (li.querySelector('.dtr-title')?.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/:$/, '');
 
-    // Itens: linhas com o select de Tipo Operação
-    const ehSelectOperacao = s => Array.from(s.options).some(o => /^(ANULACAO|REFORCO)/.test(norm(o.text)));
-    let linhas = [];
-    for (let t = 0; t < 15000; t += 500) {
-      linhas = Array.from(document.querySelectorAll('table tbody tr'))
-        .filter(tr => !tr.classList.contains('child') && naLinha(tr, 'select').some(ehSelectOperacao));
-      if (linhas.length) break;
-      await dorme(500);
-    }
-    if (!linhas.length) {
-      const titulo = (document.querySelector('.content-header h1, section.content-header, h1')?.textContent ?? '').replace(/\s+/g, ' ').trim();
-      const selects = Array.from(document.querySelectorAll('select')).slice(0, 4)
-        .map(s => `[${Array.from(s.options).slice(0, 5).map(o => o.text.trim()).join(' / ')}]`).join(' ');
-      const aviso = (document.querySelector('.alert, .callout, .alert-danger, .alert-warning')?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 140);
-      return {
-        ok: false, semOperacao: true,
-        error: `o CNET não mostrou o "Tipo Operação" dos itens (tela: ${titulo || location.pathname}${aviso ? `; aviso: ${aviso}` : ''}${selects ? `; seletores: ${selects}` : ''})`,
-      };
-    }
-
     const coluna = (tr, re) => {
       const ths = Array.from(tr.closest('table')?.querySelectorAll('thead th') ?? []);
       const i = ths.findIndex(th => re.test((th.textContent ?? '').replace(/\s+/g, ' ').trim()));
@@ -243,6 +280,51 @@ export async function alteracaoSubelementoRunner(a) {
     const numeroDa = tr => parseInt(textoColuna(tr, /^N[úu]mero$|^N\.?\s*Item$/i).replace(/\D/g, ''), 10) ||
       parseInt(naLinha(tr, 'input[name="numero_item[]"]')[0]?.value ?? '', 10) || NaN;
 
+    // Itens: linhas com o select de Tipo Operação. A lista vem do servidor em partes
+    // (10 por página, depois "Todos"): espera os itens pedidos aparecerem, ou a lista
+    // ficar 2 s sem mudar e sem "Processando…" — a primeira linha não basta.
+    const ehSelectOperacao = s => Array.from(s.options).some(o => /^(ANULACAO|REFORCO)/.test(norm(o.text)));
+    const pedidos = (a.itens ?? []).filter(it => num(it.valor) > 0 || num(it.quantidade) > 0)
+      .map(it => parseInt(String(it.numeroItem ?? '').replace(/\D/g, ''), 10)).filter(n => n > 0);
+    const processando = () => Array.from(document.querySelectorAll('.dataTables_processing'))
+      .some(e => e.getClientRects().length > 0 && getComputedStyle(e).display !== 'none');
+    let linhas = [], assinatura = '', estavel = 0;
+    for (let t = 0; t < 30000; t += 500) {
+      linhas = Array.from(document.querySelectorAll('table tbody tr'))
+        .filter(tr => !tr.classList.contains('child') && naLinha(tr, 'select').some(ehSelectOperacao));
+      if (linhas.length && !processando()) {
+        const nums = linhas.map(numeroDa);
+        if (pedidos.length && pedidos.every(n => nums.includes(n))) break;
+        estavel = nums.join(',') === assinatura ? estavel + 1 : 0;
+        assinatura = nums.join(',');
+        if (estavel >= 4) break;
+      } else {
+        estavel = 0;
+      }
+      await dorme(500);
+    }
+    // Itens da NE × itens desenhados, pela API do DataTables (null = sem a API)
+    const infoTabela = () => {
+      try {
+        const tabela = linhas[0]?.closest('table');
+        if (tabela && $?.fn?.dataTable?.isDataTable?.(tabela)) {
+          const i = $(tabela).DataTable().page.info();
+          return { total: i.recordsDisplay, desenhados: i.end - i.start };
+        }
+      } catch (_) { /* segue sem */ }
+      return null;
+    };
+    if (!linhas.length) {
+      const titulo = (document.querySelector('.content-header h1, section.content-header, h1')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      const selects = Array.from(document.querySelectorAll('select')).slice(0, 4)
+        .map(s => `[${Array.from(s.options).slice(0, 5).map(o => o.text.trim()).join(' / ')}]`).join(' ');
+      const aviso = (document.querySelector('.alert, .callout, .alert-danger, .alert-warning')?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      return {
+        ok: false, semOperacao: true,
+        error: `o CNET não mostrou o "Tipo Operação" dos itens (tela: ${titulo || location.pathname}${aviso ? `; aviso: ${aviso}` : ''}${selects ? `; seletores: ${selects}` : ''})`,
+      };
+    }
+
     // Que linha recebe que valor
     const itens = (a.itens ?? []).filter(it => num(it.valor) > 0 || num(it.quantidade) > 0);
     const pares = [];
@@ -257,7 +339,14 @@ export async function alteracaoSubelementoRunner(a) {
       for (const it of itens) {
         const n = parseInt(String(it.numeroItem ?? '').replace(/\D/g, ''), 10);
         const tr = linhas.find(l => numeroDa(l) === n);
-        if (!tr) return { ok: false, error: `Item ${it.numeroItem} não está na NE (itens dela: ${linhas.map(numeroDa).join(', ')})` };
+        if (!tr) {
+          // Lista ainda pela metade: não é que o item falte na NE — o robô espera e tenta de novo
+          const info = infoTabela();
+          if (info && info.desenhados < info.total) {
+            return { ok: false, carregando: true, error: `Item ${it.numeroItem} não apareceu: a tela do CNET mostrava ${linhas.length} dos ${info.total} itens da NE (a lista não terminou de carregar)` };
+          }
+          return { ok: false, error: `Item ${it.numeroItem} não está na NE (${linhas.length} itens na tela: ${linhas.map(numeroDa).join(', ')})` };
+        }
         pares.push([tr, it]);
       }
     }

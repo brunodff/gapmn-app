@@ -79,6 +79,17 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - Se o botão de inserir documento não for achado, o log lista os botões da tela —
   mande o print para ajustar.
 
+## Anulação/reforço espera todos os itens da NE (versão 2.9.3)
+
+- A tela do Subelemento da alteração traz os itens da NE pelo servidor, 10 por página. O
+  robô pedia "Todos", mas esperava só 10 s pela resposta (e nada, se a tabela ainda não
+  tivesse nascido): numa NE com muitos itens, um item do fim da lista (ex.: 069) ainda
+  não estava na tela e saía "Item 069 não está na NE (itens dela: 1 … 10)".
+- Agora o robô espera os itens da solicitação aparecerem, ou a lista inteira estar na
+  tela e parada. Com o CNET lento: aviso a cada 20 s, recarrega a tela aos 2 min e
+  desiste aos 5 min. Se ainda faltar item com a lista pela metade, espera e tenta de
+  novo antes de desistir. O erro diz quantos itens estavam na tela.
+
 ## Solicitação com letra depois da 9999 (versão 2.9.2)
 
 - Unidades com mais de 9.999 solicitações no ano passam de 26S9999 para 26SA001, 26SA002…
