@@ -460,8 +460,8 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
   // Documentos
   const [showApt, setShowApt] = useState(false);
-  type DocTab = "contrato" | "tr" | "aditivo" | "apostilamento";
-  const [docTab, setDocTab] = useState<DocTab>("apostilamento");
+  type DocTab = "contrato" | "tr";
+  const [docTab, setDocTab] = useState<DocTab>("contrato");
   const [contratoDocs, setContratoDocs] = useState<ContratoDoc[]>([]);
   const [docUploading, setDocUploading] = useState(false);
   const [docMsg, setDocMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -481,15 +481,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [fiscalInput, setFiscalInput]     = useState("");
   const [savingFiscal, setSavingFiscal]   = useState(false);
 
-  // Data base do orçamento
-  const toMmYyyy = (d: string | null) => {
-    if (!d) return "";
-    const [yyyy, mm] = d.split("-");
-    return mm && yyyy ? `${mm}/${yyyy}` : "";
-  };
-  const [orcamentoInput, setOrcamentoInput]   = useState("");
-  const [savingOrcamento, setSavingOrcamento] = useState(false);
-  const [orcamentoMsg, setOrcamentoMsg]       = useState<{ ok: boolean; text: string } | null>(null);
 
   // Valor atual do contrato (saldo ajustado — base para reajuste)
   const [vlAtualInput, setVlAtualInput]     = useState("");
@@ -513,8 +504,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   useEffect(() => {
     setEditingFiscal(false);
     setFiscalInput("");
-    setOrcamentoInput(toMmYyyy(selected?.data_orcamento ?? null));
-    setOrcamentoMsg(null);
     setVlAtualInput(selected?.vl_atual != null ? String(selected.vl_atual) : "");
     setVlAtualMsg(null);
     setEditandoVlAtual(false);
@@ -796,33 +785,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       setEditingFiscal(false);
     }
     setSavingFiscal(false);
-  }
-
-  async function saveOrcamento() {
-    if (!selected) return;
-    const v = orcamentoInput.trim();
-    if (!/^\d{2}\/\d{4}$/.test(v)) {
-      setOrcamentoMsg({ ok: false, text: "Formato inválido. Use MM/AAAA." });
-      return;
-    }
-    const [mm, yyyy] = v.split("/");
-    const dbDate = `${yyyy}-${mm}-01`;
-    setSavingOrcamento(true);
-    setOrcamentoMsg(null);
-    const { error } = await supabase.rpc("set_contrato_data_orcamento", {
-      p_id: selected.id,
-      p_data_orcamento: dbDate,
-    });
-    setSavingOrcamento(false);
-    if (error) {
-      setOrcamentoMsg({ ok: false, text: `Erro: ${error.message}` });
-    } else {
-      const atualizado = { ...selected, data_orcamento: dbDate };
-      setSelected(atualizado);
-      setContratos((prev) => prev.map((c) => c.id === selected.id ? atualizado : c));
-      setOrcamentoMsg({ ok: true, text: "Salvo!" });
-      setTimeout(() => setOrcamentoMsg(null), 3000);
-    }
   }
 
   async function saveVlAtual() {
@@ -1886,14 +1848,21 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
             {/* Documentos */}
             <div className="mt-3 border-t pt-3">
               <div className="text-xs font-semibold text-slate-700 mb-2">Documentos</div>
+              {/* termo de apostilamento e de reajuste: só pela ferramenta oficial (tela Reajustes) */}
+              {canEditBudget && (
+                <button
+                  onClick={() => abrirReajuste(selected.numero_contrato)}
+                  className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                >
+                  📑 Reajuste por apostilamento (Memória, Declaração, Parecer e Termo)
+                </button>
+              )}
 
               {/* Abas */}
               <div className="flex gap-1 flex-wrap mb-3">
                 {([
                   { id: "contrato",     label: "Contrato",           icon: "📄" },
                   { id: "tr",           label: "Termo de Referência",icon: "📋" },
-                  { id: "aditivo",      label: "Termo Aditivo",      icon: "📝" },
-                  { id: "apostilamento",label: "Apostilamento",      icon: "🔖" },
                 ] as { id: DocTab; label: string; icon: string }[]).map(({ id, label, icon }) => (
                   <button
                     key={id}
@@ -1910,76 +1879,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
               </div>
 
               {/* Conteúdo da aba */}
-              {docTab === "apostilamento" && (
-                <div className="space-y-3">
-                  {/* Data base do orçamento */}
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs space-y-2">
-                    <div className="font-semibold text-amber-800">📅 Data base do orçamento (para reajuste)</div>
-                    {canEditBudget ? (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <input
-                        value={orcamentoInput}
-                        onChange={(e) => setOrcamentoInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") saveOrcamento(); }}
-                        placeholder="MM/AAAA"
-                        maxLength={7}
-                        className="rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-amber-300 w-28"
-                      />
-                      <button
-                        onClick={saveOrcamento}
-                        disabled={savingOrcamento}
-                        className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-60 font-medium"
-                      >
-                        {savingOrcamento ? "..." : "Salvar"}
-                      </button>
-                      {selected.data_orcamento && (
-                        <span className="text-amber-700 font-medium">Atual: {toMmYyyy(selected.data_orcamento)}</span>
-                      )}
-                    </div>
-                    ) : (
-                    <div className="text-amber-700">
-                      {selected.data_orcamento ? toMmYyyy(selected.data_orcamento) : <span className="text-amber-400 italic">Não definida</span>}
-                      <span className="ml-2 text-[10px] text-amber-400">(somente SCON/ADMIN podem alterar)</span>
-                    </div>
-                    )}
-                    {orcamentoMsg && (
-                      <p className={orcamentoMsg.ok ? "text-green-700" : "text-red-600"}>{orcamentoMsg.text}</p>
-                    )}
-                  </div>
-                  {/* Reajuste: SCON, ADMIN e DEV usam a tela de Reajustes do app (motor da SCON, 4 documentos);
-                      os outros setores seguem com o gerador antigo do termo (/apt) */}
-                  {canEditBudget ? (
-                    <button
-                      onClick={() => abrirReajuste(selected.numero_contrato)}
-                      className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
-                    >
-                      📑 Reajuste completo (Memória, Declaração, Parecer e Termo)
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => window.open(`/apt?tipo=contrato&id=${selected.id}`, "_blank")}
-                      className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 transition-colors"
-                    >
-                      🔖 Gerar Termo de Apostilamento
-                    </button>
-                  )}
-                  {/* Apostilamentos gerados e salvos */}
-                  {contratoDocs.filter(d => d.tipo === "apostilamento").map(doc => (
-                    <div key={doc.id} className="flex items-start gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs">
-                      <span className="text-lg leading-none">🔖</span>
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium text-sky-800 truncate block">{doc.nome}</span>
-                        <span className="text-slate-400">
-                          {doc.user_nome ?? "Usuário"} · {new Date(doc.created_at).toLocaleDateString("pt-BR")}
-                        </span>
-                      </div>
-                      {canEdit && (
-                        <button onClick={() => handleDocDelete(doc.id)} className="text-red-400 hover:text-red-600 font-bold ml-1" title="Remover">✕</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
               {(docTab === "contrato" || docTab === "tr") && (() => {
                 const tipoLabel = docTab === "contrato" ? "Termo de Contrato" : "Termo de Referência";
                 const docsDoTipo = contratoDocs.filter(d => d.tipo === docTab);
@@ -2029,34 +1928,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                   </div>
                 );
               })()}
-              {docTab === "aditivo" && (
-                <div className="space-y-3">
-                  <button
-                    onClick={() => window.open(`/apt?tipo=aditivo&id=${selected.id}`, "_blank")}
-                    className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
-                  >
-                    📝 Gerar Termo Aditivo
-                  </button>
-                  {/* Docs gerados salvos */}
-                  {contratoDocs.filter(d => d.tipo === "aditivo").map(doc => (
-                    <div key={doc.id} className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs">
-                      <span className="text-lg leading-none">📝</span>
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium text-indigo-800 truncate block">{doc.nome}</span>
-                        <span className="text-slate-400">
-                          {doc.user_nome ?? "Usuário"} · {new Date(doc.created_at).toLocaleDateString("pt-BR")}
-                        </span>
-                      </div>
-                      {canEdit && (
-                        <button onClick={() => handleDocDelete(doc.id)} className="text-red-400 hover:text-red-600 font-bold ml-1" title="Remover">✕</button>
-                      )}
-                    </div>
-                  ))}
-                  {contratoDocs.filter(d => d.tipo === "aditivo").length === 0 && (
-                    <p className="text-[11px] text-slate-400 italic">Nenhum termo aditivo gerado.</p>
-                  )}
-                </div>
-              )}
             </div>
             </>)}
 

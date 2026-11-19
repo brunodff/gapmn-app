@@ -3,14 +3,15 @@ import { supabase } from "../../lib/supabase";
 import { dadosIniciais, reajustesAplicados, type ContratoScon } from "../../lib/apostilamento/cadastro";
 import { pendenciasCadastro, situacaoCadastro, type CargaGuardada } from "../../lib/apostilamento/carga";
 import { acharContratoGov, completarCadastro, type ContratoGov } from "../../lib/apostilamento/contratosGov";
-import { cadastroDoContrato, enderecoPeloCnpj, listaDaUg } from "../../lib/apostilamento/contratosGovApi";
+import { cadastroDoContrato, enderecoPeloCnpj, lerDocumentosOficiais, listaDaUg } from "../../lib/apostilamento/contratosGovApi";
+import { aplicarAchados } from "../../lib/apostilamento/documentosGov";
 import type { ConfigApostilamento, DadosReajuste } from "../../lib/apostilamento/tipos";
 
 type Contrato = ContratoScon & { data_inicio?: string | null };
 type Existente = { numero_contrato: string; dados: Partial<DadosReajuste> | null; versao: number; dedicacao_exclusiva: boolean; carga: CargaGuardada | null; situacao_cadastro: string | null };
 type Linha = { numero_contrato: string; dados: Partial<DadosReajuste>; versao: number; reajustes_aplicados: number; situacao_cadastro: string; pendencias: string[];
   carga: Record<string, unknown>; antes: number; depois: number; preenchidos: number };
-type Previa = { linhas: Linha[]; semPar: string[]; falhas: string[]; jaCompletos: number };
+type Previa = { linhas: Linha[]; semPar: string[]; falhas: string[]; jaCompletos: number; comPdf: number };
 
 const LOTE = 50;
 const PARALELO = 3;
@@ -23,6 +24,7 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
   const [previa, setPrevia] = useState<Previa | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; txt: string } | null>(null);
+  const [comPdfs, setComPdfs] = useState(true);
   const opPend = { textosFixos: config.textos_fixos_om, omPadrao: config.ordenador.om_sigla || "GAP-MN" };
 
   async function buscar() {
@@ -51,7 +53,7 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
         if (gov) fila.push({ c, gov }); else if (ex || (c.data_final ?? "") >= new Date().toISOString().slice(0, 10)) semPar.push(c.numero_contrato);
       }
       const linhas: Linha[] = [], falhas: string[] = [];
-      let feitos = 0;
+      let feitos = 0, comPdf = 0;
       const trabalhar = async () => {
         for (let item = fila.shift(); item; item = fila.shift()) {
           const { c, gov } = item;
@@ -60,7 +62,16 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
             const base = { ...dadosIniciais(c), ...((ex?.dados ?? {}) as DadosReajuste) };
             const antes = pendenciasCadastro(base, { ...opPend, dedicacao: false }).length;
             const r = await cadastroDoContrato(gov);
-            const { dados, preenchidos } = completarCadastro(base, r.dados);
+            const completo = completarCadastro(base, r.dados);
+            let dados = completo.dados as DadosReajuste;
+            const preenchidos = completo.preenchidos;
+            if (comPdfs) {
+              const docs = await lerDocumentosOficiais(gov, dados.empresa?.cnpj);
+              const doPdf = aplicarAchados(dados, docs.contrato, docs.tr, { ugApoioNome: config.ug_apoio.nome, siglasPadrao: [config.ug_apoio.sigla, gov.contratante?.orgao?.unidade_gestora?.nome_resumido] });
+              dados = doPdf.dados;
+              preenchidos.push(...doPdf.preenchidos.map((x) => x.campo));
+              if (docs.contrato || docs.tr) comPdf++;
+            }
             if (!dados.empresa?.endereco && dados.empresa?.cnpj) {
               const end = await enderecoPeloCnpj(dados.empresa.cnpj);
               if (end) { dados.empresa = { ...dados.empresa, endereco: end }; preenchidos.push("empresa.endereco"); }
@@ -78,11 +89,11 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
             falhas.push(`${c.numero_contrato} (${e instanceof Error ? e.message : String(e)})`);
           }
           feitos++;
-          setOcupado(`Lendo contratos no Contratos.gov.br: ${feitos} de ${feitos + fila.length}…`);
+          setOcupado(`Lendo contratos${comPdfs ? " e PDFs (contrato e TR)" : ""}: ${feitos} de ${feitos + fila.length}…`);
         }
       };
       await Promise.all(Array.from({ length: PARALELO }, trabalhar));
-      setPrevia({ linhas: linhas.sort((a, b) => a.numero_contrato.localeCompare(b.numero_contrato)), semPar, falhas, jaCompletos });
+      setPrevia({ linhas: linhas.sort((a, b) => a.numero_contrato.localeCompare(b.numero_contrato)), semPar, falhas, jaCompletos, comPdf });
     } catch (e) {
       setMsg({ ok: false, txt: `Não consegui buscar no Contratos.gov.br: ${e instanceof Error ? e.message : String(e)}` });
     } finally { setOcupado(null); }
@@ -103,7 +114,7 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
         if (error) throw new Error(error.message);
       }
       const comp = uteis.filter((l) => l.situacao_cadastro === "COMPLETO").length;
-      setMsg({ ok: true, txt: `${uteis.length} cadastros completados pelo Contratos.gov.br (${comp} já prontos para gerar). O que falta (índice, cláusula, data do orçamento, representante) sai dos PDFs, em cada contrato.` });
+      setMsg({ ok: true, txt: `${uteis.length} cadastros completados (${comp} já prontos para gerar). O que ainda faltar, complete em cada contrato.` });
       setPrevia(null);
       aoTerminar();
     } catch (e) {
@@ -123,13 +134,15 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
         <button onClick={buscar} disabled={!!ocupado} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
           🔎 Completar todos pelo Contratos.gov.br
         </button>
-        <span className="text-[11px] text-slate-500">Partes, itens, termos, dotação do último empenho e endereço pelo CNPJ, direto da API pública — sem robô no SILOMS. Só preenche o que está vazio.</span>
+        <label className="flex items-center gap-1.5 text-[11px] text-slate-600"><input type="checkbox" checked={comPdfs} onChange={(e) => setComPdfs(e.target.checked)} disabled={!!ocupado} />
+          ler também o PDF do contrato e o TR no PNCP (mais lento)</label>
+        <span className="text-[11px] text-slate-500">Partes, itens, termos, dotação, endereço e, pelos PDFs, índice, cláusula, data do orçamento, representante, contratante e contratada. Só preenche o que está vazio.</span>
       </div>
       {ocupado && <div className="mt-2 text-xs text-sky-700">⏳ {ocupado}</div>}
       {msg && <div className={`mt-2 text-xs ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.txt}</div>}
       {previa && (
         <div className="mt-3 space-y-1 rounded-lg bg-slate-50 p-3 text-xs text-slate-700">
-          <div>Achados no Contratos.gov.br: <b>{previa.linhas.length}</b> · já completos ou com dedicação exclusiva (não mexi): {previa.jaCompletos} · sem par: {previa.semPar.length}{previa.falhas.length ? ` · falharam: ${previa.falhas.length}` : ""}</div>
+          <div>Achados no Contratos.gov.br: <b>{previa.linhas.length}</b>{comPdfs ? ` (${previa.comPdf} com PDF lido)` : ""} · já completos ou com dedicação exclusiva (não mexi): {previa.jaCompletos} · sem par: {previa.semPar.length}{previa.falhas.length ? ` · falharam: ${previa.falhas.length}` : ""}</div>
           <div>Pendências: <b>{previa.linhas.reduce((s, l) => s + l.antes, 0)}</b> antes → <b className="text-emerald-700">{previa.linhas.reduce((s, l) => s + l.depois, 0)}</b> depois ·
             <b className="text-emerald-700"> {previa.linhas.filter((l) => l.situacao_cadastro === "COMPLETO").length} ficam completos</b></div>
           <div className="text-slate-600">O que mais falta depois (vem dos PDFs, em cada contrato): {contagem(previa.linhas.map((l) => l.pendencias)).map(([p, n]) => `${p} (${n})`).join(" · ")}</div>

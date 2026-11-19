@@ -5,8 +5,9 @@ import type { TextItem } from "pdfjs-dist/types/src/display/api";
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).toString();
 
 /** Texto do PDF em ordem de leitura, uma linha por linha visual (até 60 páginas) */
-export async function textoDoPdf(arquivo: File): Promise<string> {
-  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await arquivo.arrayBuffer()) }).promise;
+export async function textoDoPdf(arquivo: File | Uint8Array): Promise<string> {
+  const dados = arquivo instanceof Uint8Array ? arquivo.slice() : new Uint8Array(await arquivo.arrayBuffer());
+  const doc = await pdfjsLib.getDocument({ data: dados }).promise;
   const paginas: string[] = [];
   for (let p = 1; p <= Math.min(doc.numPages, 60); p++) {
     const pag = await doc.getPage(p);

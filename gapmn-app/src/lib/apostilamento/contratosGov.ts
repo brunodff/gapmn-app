@@ -13,6 +13,9 @@ export interface ContratoGov {
   vigencia_inicio: string | null; vigencia_fim: string | null; data_assinatura: string | null;
   valor_inicial: string | null; valor_global: string | null; valor_parcela?: string | null; num_parcelas?: number | null;
   situacao?: string;
+  /** compra que originou o contrato (para achar o TR no PNCP) */
+  unidade_compra?: string | null; licitacao_numero?: string | null; codigo_modalidade?: string | null; modalidade?: string | null;
+  contratante?: { orgao?: { codigo?: string; nome?: string; unidade_gestora?: { codigo?: string; nome_resumido?: string; nome?: string } } };
 }
 export interface ItemGov { numero_item_compra: string | null; descricao_complementar: string | null; quantidade: string | null; valorunitario: string | null; valortotal: string | null }
 export interface HistoricoGov {

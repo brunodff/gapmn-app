@@ -229,7 +229,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
 
       {ugGov && !dedicacao && (
         <CompletarAutomatico numero={contrato.numero_contrato} pag={contrato.pag_nup} inicio={(contrato as ContratoScon & { data_inicio?: string | null }).data_inicio ?? null}
-          ug={ugGov} contratoGov={contratoGov} dados={d} aplicar={(novo) => void aplicarAutomatico(novo)} />
+          ug={ugGov} contratoGov={contratoGov} dados={d} aplicar={(novo) => void aplicarAutomatico(novo)} ugApoioNome={config.ug_apoio.nome} ugApoioSigla={config.ug_apoio.sigla} />
       )}
 
       {carga && <QuadroCarga carga={carga} />}

@@ -7,6 +7,7 @@ import FeedNoticias from "../components/FeedNoticias";
 import GerenciamentoProcessos from "../components/GerenciamentoProcessos";
 import GerenciamentoContratos from "../components/GerenciamentoContratos";
 import Reajustes from "../components/reajustes/Reajustes";
+import ReajusteOM from "./ReajusteOM";
 import PainelTcu from "../components/tcu/PainelTcu";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import AtasRegistroPreco from "../components/AtasRegistroPreco";
@@ -52,7 +53,7 @@ type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
   | "calendario" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
-  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "tcu";
+  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu";
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
 type KPIs     = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
@@ -63,6 +64,7 @@ const VIEW_LABELS: Record<View, string> = {
   processos:          "Processos Licitatórios",
   contratos:          "Contratos SCON",
   reajustes:          "Reajustes (apostilamento)",
+  "reajuste-om":      "Reajuste de contratos de outra UG",
   tcu:                "TCU — jurisprudência e sanções",
   indicadores:        "Indicadores de Lotação",
   atas:               "Atas de Registro de Preço",
@@ -211,18 +213,18 @@ function getCeliaResponse(text: string, kpis: KPIs): string {
     return "O 'Valor Atual do Contrato' é um campo manual em Contratos → seção Valores Financeiros. Ele serve de base para cálculo dos índices aplicados nos Termos Aditivos e de Apostilamento. Preencha com o valor vigente após cada reajuste.";
 
   if (/contrato|scon|vigencia|fornecedor|importar.*contrato|planilha.*scon/.test(q))
-    return "Em Contratos (SCON) você gerencia:\n• Importação via planilha Excel SCON\n• Dados: vigência, fiscal, UGE/UGR, ação orçamentária, CNPJ, valor\n• Valor atual (base para reajuste em Aditivos/Apostilamentos)\n• Geradores de Termo Aditivo e Apostilamento integrados\n• Data-base do orçamento com cálculo automático do próximo reajuste\nAcesse: menu Contratos.";
+    return "Em Contratos (SCON) você gerencia:\n• Importação via planilha Excel SCON\n• Dados: vigência, fiscal, UGE/UGR, ação orçamentária, CNPJ, valor\n• Valor atual (base para reajuste em Aditivos/Apostilamentos)\n• Reajuste por apostilamento (Memória, Declaração, Parecer e Termo) em Contratos › Reajustes\nAcesse: menu Contratos.";
 
   // ── Apostilamento ─────────────────────────────────────────────────────────
   if (/apostilament/.test(q))
-    return "O Apostilamento reajusta unilateralmente o contrato (art. 136 Lei 14.133/2021):\n1. Em Contratos, aba Apostilamento: informe a data-base (MM/AAAA)\n2. Clique em '🔖 Gerar Termo de Apostilamento'\n3. O IPCA acumulado é calculado automaticamente via API do Banco Central\n4. O documento é editável: '📝 Editar texto' para personalizar\n5. Salve com Ctrl+S e imprima com Ctrl+P\nOs termos das ATAs de RP ficam em Licitações → Atas de RP.";
+    return "O Apostilamento reajusta unilateralmente o contrato (art. 136 Lei 14.133/2021):\n1. Menu Contratos › Reajustes (ou o botão '📑 Reajuste por apostilamento' no contrato)\n2. 'Buscar no Contratos.gov.br' preenche o cadastro e lê o PDF do contrato e o TR no PNCP\n3. O índice vem do Banco Central; confira o quadro de checagem\n4. 'Gerar os 4 documentos' baixa Memória de cálculo, Declaração, Parecer e Termo\nContratos de outra UG: Contratos › Reajuste de outra UG. Os termos das ATAs de RP ficam em Licitações → Atas de RP.";
 
   if (/ipca|indice.*reajuste|reajuste.*ipca|banco.*central|inflac/.test(q))
-    return "O IPCA é buscado automaticamente via API pública do Banco Central (SIDRA/IBGE). O sistema calcula o índice acumulado desde a data-base do orçamento até o mês atual. O resultado aparece no Gerador de Apostilamento com memória de cálculo detalhada.";
+    return "O IPCA é buscado automaticamente via API pública do Banco Central (SIDRA/IBGE). O sistema calcula o índice acumulado desde a data-base do orçamento até o mês atual. O resultado entra no reajuste (Contratos › Reajustes), com a memória de cálculo.";
 
   // ── Termo Aditivo ─────────────────────────────────────────────────────────
   if (/termo.*aditiv|aditiv/.test(q))
-    return "O Termo Aditivo modifica cláusulas do contrato original. Em Contratos, aba Aditivo:\n• Clique em '📝 Gerar Termo Aditivo'\n• O documento é editável via '📝 Editar texto'\n• Edições são salvas por contrato no navegador (localStorage)\n• Ctrl+S para salvar rapidamente\n• '🔄 Original' restaura o texto padrão";
+    return "O Termo Aditivo modifica cláusulas do contrato original. O reajuste por índice é feito por apostila em Contratos › Reajustes; lá também dá para escolher 'Termo Aditivo' como instrumento, quando o reajuste vier junto com outra alteração.";
 
   // ── ATAs de Registro de Preço ─────────────────────────────────────────────
   if (/quantas? ata|total.*ata|ata.*total/.test(q))
@@ -335,7 +337,11 @@ const NAV: NavNode[] = [
     { label: "Pesquisa de Preços", path: "view:pesquisa-precos", icon: "💲" },
     { label: "TCU: jurisprudência e sanções", path: "view:tcu", icon: "🏛️" },
   ]},
-  { id: "ctr",     label: "Contratos",            icon: "📑", path: "view:contratos" },
+  { id: "ctr",     label: "Contratos",            icon: "📑", children: [
+    { label: "Contratos SCON",        path: "view:contratos",   icon: "📑" },
+    { label: "Reajustes",             path: "view:reajustes",   icon: "📈" },
+    { label: "Reajuste de outra UG",  path: "view:reajuste-om", icon: "🗂️" },
+  ]},
   { id: "eo",      label: "Exec. Orçamentária",   icon: "💰", children: [
     { label: "Indicadores de Lotação", path: "view:indicadores",    icon: "📊" },
     { label: "Solicitações",           path: "view:solicitacoes",   icon: "📬", seoOnly: true },
@@ -1214,6 +1220,7 @@ export default function AppChat() {
     params.get("painel") === "governanca" ? "painel-governanca"
       : params.get("vista") === "ferramentas" ? "ferramentas"
       : params.get("vista") === "reajustes" ? "reajustes"
+      : params.get("vista") === "reajuste-om" ? "reajuste-om"
       : params.get("vista") === "tcu" ? "tcu"
       : "dashboard"));
   const [filterTipo,     setFilterTipo] = useState("todos");
@@ -1225,6 +1232,7 @@ export default function AppChat() {
     const p = new URLSearchParams(params);
     p.delete("vista"); p.delete("contrato"); p.delete("aba");
     if (v === "reajustes") { p.set("vista", "reajustes"); if (contrato) p.set("contrato", contrato); }
+    if (v === "reajuste-om") p.set("vista", "reajuste-om");
     if (v === "painel-governanca") p.set("painel", "governanca");
     else if (p.get("painel") === "governanca") for (const k of ["painel", "div", "cat", "st", "q", "comp"]) p.delete(k);
     if (p.toString() !== params.toString()) setParams(p, { replace: true });
@@ -1730,6 +1738,7 @@ export default function AppChat() {
             {view === "contratos"     && <div className="svdark"><GerenciamentoContratos canImport={canImportCtr} canEdit={canEdit} canEditBudget={canImportCtr} onAbrirReajuste={(n) => setView("reajustes", n)} /></div>}
             {/* overflow visível: a barra de ações do reajuste fica presa no rodapé da área rolável */}
             {view === "reajustes"     && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><Reajustes /></div>}
+            {view === "reajuste-om"   && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><ReajusteOM /></div>}
             {view === "tcu"           && <div className="svdark" style={{ padding: 16 }}><PainelTcu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}

@@ -7,9 +7,10 @@ import { numBR, type ContratoGov } from "../lib/apostilamento/contratosGov";
 import { listaDaUg } from "../lib/apostilamento/contratosGovApi";
 import { CONFIG_VAZIA, type ConfigApostilamento } from "../lib/apostilamento/tipos";
 
-// Reajuste por apostilamento para qualquer OM da FAB, sem conta: os contratos vêm do Contratos.gov.br
-// pela UG; o cadastro, a configuração e os documentos ficam só neste navegador (nada vai para o banco
-// do gapmn.app). Rota pública /reajuste-om.
+// Reajuste por apostilamento para qualquer OM da FAB, dentro do app (/app?vista=reajuste-om): os contratos
+// vêm do Contratos.gov.br pela UG; o cadastro, a configuração e os documentos ficam só neste navegador (nada vai
+// para o banco do gapmn.app). Nome e sigla da unidade saem do Contratos.gov.br enquanto a OM não preenche a
+// configuração — sem isso o motor usaria os padrões do GAP-MN no cabeçalho e no "I – CONTRATANTE".
 
 const CHAVE_UG = "reajuste-om:ug";
 const chaveConfig = (ug: string) => `reajuste-om:config:${ug}`;
@@ -61,11 +62,24 @@ export default function ReajusteOM() {
     return (contratos ?? []).filter((c) => !q || `${c.numero} ${c.fornecedor?.nome} ${c.objeto} ${c.processo}`.toLowerCase().includes(q))
       .sort((a, b) => (b.vigencia_fim ?? "").localeCompare(a.vigencia_fim ?? ""));
   }, [contratos, busca]);
-  const configIncompleta = !config.ordenador.nome || !config.aci.nome || !config.ug_apoio.nome;
+  // unidade no Contratos.gov.br (contratante dos contratos da UG)
+  const unidadeGov = useMemo(() => {
+    const ugs = (contratos ?? []).map((c) => c.contratante?.orgao?.unidade_gestora).filter(Boolean);
+    return ugs.find((u) => u?.codigo === ug) ?? ugs[0] ?? null;
+  }, [contratos, ug]);
+  // configuração usada: a da OM, completando nome e sigla da unidade pelo Contratos.gov.br
+  const configUsada = useMemo<ConfigApostilamento>(() => {
+    if (!unidadeGov) return config;
+    const sigla = config.ug_apoio.sigla || unidadeGov.nome_resumido || "";
+    return { ...config, ug_apoio: { ...config.ug_apoio, nome: config.ug_apoio.nome || unidadeGov.nome || "", sigla },
+      ordenador: { ...config.ordenador, om_sigla: config.ordenador.om_sigla || sigla } };
+  }, [config, unidadeGov]);
+  const configIncompleta = !configUsada.ordenador.nome || !configUsada.aci.nome || !configUsada.ug_apoio.nome || !configUsada.cidade;
   // estáveis entre renders: o ReajusteContrato recarrega o cadastro quando eles mudam
   const contratoAberto = useMemo(() => (aberto ? contratoDoGov(aberto) : null), [aberto]);
-  const sigla = config.ordenador.om_sigla || config.ug_apoio.sigla, nomeOm = config.ug_apoio.nome;
-  const padroes = useMemo(() => ({ om_contratante_sigla: sigla, om_contratante_nome: nomeOm }), [sigla, nomeOm]);
+  const siglaAberto = aberto?.contratante?.orgao?.unidade_gestora?.nome_resumido || configUsada.ug_apoio.sigla;
+  // o nome por extenso da OM contratante vem do PDF do contrato (ou do Contratos.gov.br) no "Buscar"
+  const padroes = useMemo(() => ({ om_contratante_sigla: siglaAberto }), [siglaAberto]);
 
   function escolherUg(e: React.FormEvent) {
     e.preventDefault();
@@ -94,11 +108,10 @@ export default function ReajusteOM() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-4">
+    <div className="space-y-4 text-slate-800">
+      <div className="flex flex-wrap items-center gap-3">
           <div>
-            <h1 className="text-lg font-bold text-slate-800">Reajuste por apostilamento — para a sua OM</h1>
+            <h1 className="text-lg font-bold text-slate-800">Reajuste de contratos de outra UG</h1>
             <p className="text-xs text-slate-500">Contratos pelo Contratos.gov.br · índice do Banco Central · termo, parecer, declaração e memória de cálculo gerados no seu computador</p>
           </div>
           {ug && (
@@ -111,10 +124,8 @@ export default function ReajusteOM() {
               <button onClick={() => { setUg(""); setContratos(null); setAberto(null); }} className="text-slate-500 hover:text-slate-800">trocar UG</button>
             </div>
           )}
-        </div>
-      </header>
+      </div>
 
-      <main className="mx-auto max-w-6xl space-y-4 px-4 py-6">
         <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
           Feito no GAP-MN para a SCON e aberto a qualquer OM da FAB. <b>Nada do que você digita sai deste navegador</b>: o cadastro dos contratos e a
           configuração (Ordenador, ACI) ficam guardados aqui. Use “Baixar cópia” para levar a outro computador ou guardar no processo.
@@ -134,7 +145,7 @@ export default function ReajusteOM() {
             </label>
           </form>
         ) : aberto && contratoAberto ? (
-          <ReajusteContrato contrato={contratoAberto} config={config} nomeUsuario="" ultimaNE={null} armazem={armazem} ugGov={ug} contratoGov={aberto}
+          <ReajusteContrato contrato={contratoAberto} config={configUsada} nomeUsuario="" ultimaNE={null} armazem={armazem} ugGov={ug} contratoGov={aberto}
             padroes={padroes}
             aoVoltar={() => { setAberto(null); setSalvos(cadastrosNoNavegador(ug)); }} aoSalvar={() => setSalvos(cadastrosNoNavegador(ug))} />
         ) : (
@@ -147,10 +158,10 @@ export default function ReajusteOM() {
               ))}
             </div>
             {aba === "config" ? (
-              <ConfigReajustes config={config} podeEditar nomeUsuario="" aoSalvar={setConfig} guardar={async (c) => guardar(chaveConfig(ug), c)} />
+              <ConfigReajustes config={configUsada} podeEditar nomeUsuario="" aoSalvar={setConfig} guardar={async (c) => guardar(chaveConfig(ug), c)} />
             ) : (
               <div className="space-y-3">
-                {configIncompleta && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Preencha a Configuração da OM (Ordenador de Despesas, ACI, nome e endereço da OM) antes de gerar: eles vão no termo e no parecer.</div>}
+                {configIncompleta && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Preencha a Configuração da OM (Ordenador de Despesas, ACI, endereço e cidade da OM) antes de gerar: eles vão no termo e no parecer. Nome e sigla da unidade já vieram do Contratos.gov.br.</div>}
                 {!contratos && !erro && <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">⏳ Buscando os contratos da UG {ug} no Contratos.gov.br (pode levar até 1 minuto)…</div>}
                 {erro && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erro} <button className="underline" onClick={() => { setErro(null); setTentativa((t) => t + 1); }}>Tentar de novo</button></div>}
                 {contratos && (
@@ -188,7 +199,6 @@ export default function ReajusteOM() {
             )}
           </>
         )}
-      </main>
     </div>
   );
 }

@@ -11,7 +11,6 @@ import UsoExtensoes from "./pages/UsoExtensoes";
 import AptPage from "./pages/AptPage";
 import LandingPage from "./pages/LandingPage";
 import PainelOrcamentarioPublico from "./pages/PainelOrcamentarioPublico";
-import ReajusteOM from "./pages/ReajusteOM";
 import ColetaIndicadores from "./pages/ColetaIndicadores";
 import LevantamentoPta from "./pages/LevantamentoPta";
 import RequireAuth from "./routes/RequireAuth";
@@ -168,7 +167,7 @@ export default function App() {
           ))}
           {/* aberta, sem login: Painel Orçamentário para a página do GAP-MN na INTRAER */}
           <Route path="/painel-orcamentario" element={<PainelOrcamentarioPublico />} />
-          <Route path="/reajuste-om" element={<ReajusteOM />} />
+          <Route path="/reajuste-om" element={<Navigate to="/app?vista=reajuste-om" replace />} />
           {/* aberta, sem login: formulário mensal dos indicadores (vale com o código do link do mês) */}
           <Route path="/indicadores" element={<ColetaIndicadores />} />
           {/* aberta, sem login: levantamento dos projetos e atividades do PTA (vale com o código do link do ano) */}

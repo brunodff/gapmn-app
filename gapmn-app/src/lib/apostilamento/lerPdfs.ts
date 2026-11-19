@@ -13,6 +13,16 @@ export interface AchadosPdf {
   representante?: Achado<{ nome: string; feminino: boolean }>;
   endereco?: Achado<string>;
   objeto?: Achado<string>;
+  /** "**I – CONTRATANTE:** A União, … doravante denominado CONTRATANTE." (como no contrato inicial) */
+  contratante?: Achado<string>;
+  /** "**II – CONTRATADA:** …, neste ato representado(a) por …" (como no contrato inicial) */
+  contratada?: Achado<string>;
+  /** nome da OM que contrata, como escrito no contrato ("representada pelo QUARTO CENTRO …") */
+  omContratante?: Achado<string>;
+  /** sigla da OM, quando o contrato a escreve entre parênteses depois do nome ("… Tráfego Aéreo (CINDACTA IV)") */
+  omSigla?: Achado<string>;
+  /** PDF sem texto (imagem escaneada): nada pôde ser lido */
+  semTexto?: boolean;
 }
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
@@ -64,7 +74,27 @@ function acharIndice(t: string): Achado<string> | undefined {
   return melhor ? { valor: melhor[0], trecho: trecho(t, melhor[1].i) } : undefined;
 }
 
+const ORDINAL = String.raw`((?:D[ÉE]CIMA|VIG[ÉE]SIMA|TRIG[ÉE]SIMA)(?:[\s-]+(?:PRIMEIRA|SEGUNDA|TERCEIRA|QUARTA|QUINTA|SEXTA|S[ÉE]TIMA|OITAVA|NONA))?|PRIMEIRA|SEGUNDA|TERCEIRA|QUARTA|QUINTA|SEXTA|S[ÉE]TIMA|OITAVA|NONA)`;
+
+/** Cláusula pela frase do índice: o título pode ser "REPACTUAÇÃO DOS PREÇOS" no modelo, com reajuste por índice */
+function clausulaDaFrase(t: string, tipo: TipoDoc): Achado<string> | undefined {
+  const frase = /mediante a aplica[çc][ãa]o,? pel[oa] contratante,? do [íi]ndice|ser[ãa]o reajustad[oa]s[^.]{0,160}?[íi]ndice/i.exec(t);
+  if (!frase) return undefined;
+  const base = Math.max(0, frase.index - 5000);
+  const antes = t.slice(base, frase.index);
+  const cabs = [...antes.matchAll(new RegExp(String.raw`CL[ÁA]USULA\s+` + ORDINAL + String.raw`\b`, "gi"))];
+  const cab = cabs[cabs.length - 1];
+  if (!cab) return undefined;
+  const ordinal = cab[1].toUpperCase().replace(/\s*-\s*/g, " ").replace(/\s+/g, " ");
+  const itens = [...antes.slice(cab.index).matchAll(/(?:^|\s)(\d{1,2}\.\d{1,2})\.?\s/g)];
+  const item = itens[itens.length - 1]?.[1];
+  const doc = tipo === "TERMO DE REFERÊNCIA" ? "do Termo de Referência" : "do Contrato";
+  return { valor: `a CLÁUSULA ${ordinal}${item ? `, item ${item}` : ""}, ${doc}`, trecho: trecho(t, base + (cab.index ?? 0), 200) };
+}
+
 function acharClausula(t: string, tipo: TipoDoc): Achado<string> | undefined {
+  const pelaFrase = clausulaDaFrase(t, tipo);
+  if (pelaFrase) return pelaFrase;
   const cab = /CL[ÁA]USULA\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ]+)?)\s*[-–—:.]?\s*(?:D[OA]S?\s+)?REAJUSTE/i.exec(t);
   if (!cab) return undefined;
   const ordinal = cab[1].toUpperCase().replace(/\s+(DO|DA|DOS|DAS)$/, "");
@@ -126,7 +156,7 @@ const NOME = String.raw`([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕ�
 function acharRepresentante(t: string, cnpj?: string): Achado<{ nome: string; feminino: boolean }> | undefined {
   const p = paragrafoContratada(t, cnpj);
   if (!p) return undefined;
-  const rx = new RegExp(String.raw`representad[ao]\s+(?:neste ato\s+)?(?:por|pel[oa])\s+` + CARGO + String.raw`(?:(?:o|a)\s+)?(?:Sr\.?|Sra\.?|Senhor[a]?)?\s*` + NOME, "u");
+  const rx = new RegExp(String.raw`representad[ao](?:\([ao]\))?\s+(?:neste ato\s+)?(?:por|pel[oa](?:\([ao]\))?)\s+` + CARGO + String.raw`(?:(?:o|a)\s+)?(?:Sr\.?|Sra\.?|Senhor[a]?)?\s*` + NOME, "u");
   const m = rx.exec(p.texto);
   if (!m) return undefined;
   const nome = limpo(m[1]).replace(/\s+(conforme|portador[a]?|inscrit[oa]|brasileir[oa]|CPF).*$/i, "");
@@ -139,9 +169,58 @@ function acharRepresentante(t: string, cnpj?: string): Achado<{ nome: string; fe
 function acharEndereco(t: string, cnpj?: string): Achado<string> | undefined {
   const p = paragrafoContratada(t, cnpj);
   if (!p) return undefined;
-  const m = /(?:sediad[ao]|com sede|estabelecid[ao])\s+(n[ao]|em|à)\s+(.{10,220}?)(?=,?\s*(?:DDD|telefone|fone|e-?mail|neste ato|doravante|inscrit|representad)|;)/i.exec(p.texto);
+  const m = /(?:sediad[ao](?:\([ao]\))?|com sede|estabelecid[ao](?:\([ao]\))?)\s+(n[ao]|em|à)\s+(.{10,220}?)(?=,?\s*(?:DDD|telefone|fone|e-?mail|neste ato|doravante|inscrit|representad)|;)/i.exec(p.texto);
   if (!m) return undefined;
   return { valor: `${m[1].toLowerCase()} ${limpo(m[2]).replace(/,$/, "")}`, trecho: trecho(t, p.inicio + m.index) };
+}
+
+const FIM_CONTRATANTE = /doravante\s+(?:simplesmente\s+)?(?:denominad[ao]|designad[ao]|chamad[ao])(?:\([ao]\))?\s+(?:simplesmente\s+)?CONTRATANTE\b/i;
+const FIM_CONTRATADA = /,?\s*(?:tendo em vista|considerando|resolvem|t[êe]m entre si)\b/i;
+const pontuacao = (s: string) => limpo(s).replace(/\s+([,.;:])/g, "$1").replace(/[,;\s]+$/, "");
+
+/** Partes do contrato inicial: parágrafo do contratante (do "A União" até "doravante denominado CONTRATANTE";
+ *  o título também cita "A UNIÃO", por isso vale a última antes do fim), o da contratada (logo depois, até
+ *  "tendo em vista") e o nome da OM que contrata. */
+/** Sigla escrita entre parênteses depois do nome da OM, em qualquer ponto do contrato */
+function acharSigla(t: string, nome: string): Achado<string> | undefined {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`${nome.split(" ").map(esc).join("\\s+")}\\s*\\(([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9º°][A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9º° -]{1,18})\\)`, "gi");
+  for (const m of t.matchAll(re)) {
+    const s = limpo(m[1]);
+    if (s === s.toUpperCase()) return { valor: s, trecho: trecho(t, m.index ?? 0, 160) };
+  }
+  return undefined;
+}
+
+function acharPartes(t: string): Pick<AchadosPdf, "contratante" | "contratada" | "omContratante" | "omSigla"> {
+  const r: Pick<AchadosPdf, "contratante" | "contratada" | "omContratante" | "omSigla"> = {};
+  const fim = FIM_CONTRATANTE.exec(t);
+  if (!fim) return r;
+  const base = Math.max(0, fim.index - 1500);
+  const unioes = [...t.slice(base, fim.index).matchAll(/(?:I\s*[–-]\s*CONTRATANTE\s*:\s*)?A\s+UNI[ÃA]O\b/gi)];
+  const ini = unioes[unioes.length - 1];
+  if (ini) {
+    const inicio = base + (ini.index ?? 0);
+    const texto = pontuacao(t.slice(inicio, fim.index + fim[0].length)).replace(/^I\s*[–-]\s*CONTRATANTE\s*:\s*/i, "");
+    r.contratante = { valor: `**I – CONTRATANTE:** ${texto}.`, trecho: trecho(t, inicio, 260) };
+    const om = /(?:representad[ao](?:\([ao]\))?\s+pel[oa]|por interm[ée]dio d[oa])\s+(?:(?:o|a)\s+)?((?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9º°-]+\s+){1,14}[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9º°-]+)\s*(?:\([A-Z0-9-]{2,15}\)\s*)?,/g;
+    for (const m of texto.matchAll(om)) {
+      const nome = limpo(m[1]);
+      if (/^(COMANDO D[AO]|MINIST[ÉE]RIO)/i.test(nome) || nome.length < 10) continue;
+      r.omContratante = { valor: nome, trecho: trecho(t, inicio + (m.index ?? 0), 160) };
+    }
+    if (r.omContratante) r.omSigla = acharSigla(t, r.omContratante.valor);
+  }
+  // contratada: logo depois do contratante ("…CONTRATANTE, e a Empresa X, inscrita…") até "tendo em vista"
+  const depois = t.slice(fim.index + fim[0].length, fim.index + fim[0].length + 1500);
+  const comeco = /^\s*,?\s*(?:e\s+)?(?:II\s*[–-]\s*CONTRATAD[AO]\s*:\s*)?/i.exec(depois);
+  const corpo = depois.slice(comeco?.[0].length ?? 0);
+  const fimC = FIM_CONTRATADA.exec(corpo);
+  if (fimC && fimC.index > 40 && /CONTRATAD[AO]/i.test(corpo.slice(0, fimC.index))) {
+    const texto = pontuacao(corpo.slice(0, fimC.index));
+    r.contratada = { valor: `**II – CONTRATADA:** ${texto.charAt(0).toUpperCase()}${texto.slice(1)}.`, trecho: trecho(t, fim.index + fim[0].length, 260) };
+  }
+  return r;
 }
 
 function acharObjeto(t: string): Achado<string> | undefined {
@@ -151,9 +230,11 @@ function acharObjeto(t: string): Achado<string> | undefined {
 
 /** Tudo o que dá para tirar do texto de um PDF do contrato */
 export function extrairDoTexto(textoBruto: string, op: { cnpjEmpresa?: string } = {}): AchadosPdf {
-  const t = textoBruto.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
+  // o PDF quebra as frases em linhas: tudo vira uma linha s\u00f3
+  const t = textoBruto.replace(/\s+/g, " ");
   const tipo = tipoDoDocumento(t);
   const r: AchadosPdf = { tipo };
+  if (t.trim().length < 80) r.semTexto = true;
   if (tipo !== "OUTRO") {
     r.indice = acharIndice(t);
     r.clausula = acharClausula(t, tipo);
@@ -164,5 +245,6 @@ export function extrairDoTexto(textoBruto: string, op: { cnpjEmpresa?: string } 
     r.endereco = acharEndereco(t, op.cnpjEmpresa);
     r.objeto = acharObjeto(t);
   }
+  if (tipo === "CONTRATO") Object.assign(r, acharPartes(t));
   return r;
 }
