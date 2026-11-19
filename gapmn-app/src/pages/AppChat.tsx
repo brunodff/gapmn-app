@@ -9,6 +9,7 @@ import GerenciamentoContratos from "../components/GerenciamentoContratos";
 import Reajustes from "../components/reajustes/Reajustes";
 import ReajusteOM from "./ReajusteOM";
 import PainelTcu from "../components/tcu/PainelTcu";
+import PainelAgu from "../components/agu/PainelAgu";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import AtasRegistroPreco from "../components/AtasRegistroPreco";
 import PainelSolicitacoesEmpenho from "../components/PainelSolicitacoesEmpenho";
@@ -53,7 +54,7 @@ type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
   | "calendario" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
-  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu";
+  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu" | "agu";
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
 type KPIs     = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
@@ -66,6 +67,7 @@ const VIEW_LABELS: Record<View, string> = {
   reajustes:          "Reajustes (apostilamento)",
   "reajuste-om":      "Reajuste de contratos de outra UG",
   tcu:                "TCU — jurisprudência e sanções",
+  agu:                "AGU — pareceres referenciais",
   indicadores:        "Indicadores de Lotação",
   atas:               "Atas de Registro de Preço",
   solicitacoes:       "Solicitações de Empenho",
@@ -336,6 +338,7 @@ const NAV: NavNode[] = [
     { label: "Planejamento", path: "view:calendario", icon: "📅", slicOnly: true },
     { label: "Pesquisa de Preços", path: "view:pesquisa-precos", icon: "💲" },
     { label: "TCU: jurisprudência e sanções", path: "view:tcu", icon: "🏛️" },
+    { label: "AGU: pareceres referenciais", path: "view:agu", icon: "📜" },
   ]},
   { id: "ctr",     label: "Contratos",            icon: "📑", children: [
     { label: "Contratos SCON",        path: "view:contratos",   icon: "📑" },
@@ -1222,6 +1225,7 @@ export default function AppChat() {
       : params.get("vista") === "reajustes" ? "reajustes"
       : params.get("vista") === "reajuste-om" ? "reajuste-om"
       : params.get("vista") === "tcu" ? "tcu"
+      : params.get("vista") === "agu" ? "agu"
       : "dashboard"));
   const [filterTipo,     setFilterTipo] = useState("todos");
 
@@ -1740,6 +1744,7 @@ export default function AppChat() {
             {view === "reajustes"     && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><Reajustes /></div>}
             {view === "reajuste-om"   && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><ReajusteOM /></div>}
             {view === "tcu"           && <div className="svdark" style={{ padding: 16 }}><PainelTcu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
+            {view === "agu"           && <div className="svdark" style={{ padding: 16 }}><PainelAgu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}

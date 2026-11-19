@@ -31,6 +31,7 @@ const TIPO_ICONS: Record<string, string> = {
   indicadores: "📊",
   solicitacao: "📥",
   tcu:         "🏛️",
+  agu:         "📜",
   geral:       "📢",
 };
 
