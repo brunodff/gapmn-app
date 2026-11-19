@@ -620,3 +620,45 @@ export function calcularNecessidade(p: PrevisaoContrato, deMi: number, ateMi: nu
   const total = pendente + meses.reduce((s, m) => s + m.necessidade, 0);
   return { meses, pendente, total, previstoPeriodo, cobertoAte, excedente };
 }
+
+// ─── Cobertura das próximas faturas (cards e grupos de contratos) ────────────
+
+export interface Cobertura {
+  /** meses pedidos (3 no card; o que o grupo pedir) */
+  pedidos: number;
+  /** meses contados: menos que os pedidos quando a vigência acaba antes */
+  meses: number;
+  /** fatura mensal = valor mensal da previsão (parcela fixa: valor total ÷ vigência) */
+  fatura: number;
+  /** fatura × meses */
+  necessario: number;
+  /** saldo das NEs do contrato ainda a liquidar */
+  aLiquidar: number;
+  /** crédito que falta: max(0, necessário − a liquidar) */
+  falta: number;
+}
+
+/**
+ * Crédito que falta para cobrir as próximas faturas do contrato (regra do usuário, 18/11/2026):
+ * fatura mensal × meses − saldo a liquidar das NEs, nunca negativo. Ex.: fatura de R$ 1.000,
+ * R$ 1.000 a liquidar → faltam R$ 2.000 para 3 meses. Conta do mês atual em diante e para no fim
+ * da vigência, salvo `alemDaVigencia` (prorrogação). Sem fatura mensal (obras e aquisições pelo
+ * saldo, contratos fora da previsão): null.
+ */
+export function coberturaMeses(p: PrevisaoContrato | undefined, aLiquidar: number, hoje: Date, pedidos = 3, alemDaVigencia = false): Cobertura | null {
+  if (!p || (p.regime !== "fixo" && p.regime !== "estimativo") || !(p.mensal > 0)) return null;
+  const restantes = p.fimMi === null ? pedidos : p.fimMi - mesHoje(hoje) + 1;
+  const meses = alemDaVigencia ? pedidos : Math.max(0, Math.min(pedidos, restantes));
+  const cent = (v: number) => Math.round(v * 100) / 100;
+  const fatura = cent(p.mensal);
+  const necessario = cent(fatura * meses);
+  const saldo = cent(Math.max(0, aLiquidar || 0));
+  return { pedidos, meses, fatura, necessario, aLiquidar: saldo, falta: cent(Math.max(0, necessario - saldo)) };
+}
+
+/** "3 × R$ 1.000,00 = R$ 3.000,00 − a liquidar R$ 1.000,00": a conta da cobertura, para mostrar ao usuário */
+export function contaCobertura(c: Cobertura): string {
+  const r = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return `${c.meses} × ${r(c.fatura)} = ${r(c.necessario)} − a liquidar ${r(c.aLiquidar)}`
+    + (c.meses < c.pedidos ? ` (a vigência acaba antes: ${c.meses} ${c.meses === 1 ? "mês" : "meses"})` : "");
+}

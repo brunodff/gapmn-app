@@ -3,12 +3,13 @@ import { supabase } from "../lib/supabase";
 import { Card } from "./Card";
 import * as XLSX from "xlsx";
 import TermoApostilamentoContrato from "./TermoApostilamentoContrato";
-import { montarHistorico, projetarContratos, calcularNecessidade, mesHoje, mesIdx, anoDe, type CfgPrevisao, type Regime } from "../lib/previsaoContratos";
+import { montarHistorico, projetarContratos, coberturaMeses, type CfgPrevisao, type Regime } from "../lib/previsaoContratos";
 import { useExecucaoContratos } from "../lib/contratos/useExecucaoContratos";
 import { neCanonica } from "../lib/contratos/execucao.ts";
 import ExecucaoContrato from "./ExecucaoContrato";
 import { carregarCfgs, salvarCfg } from "../lib/previsaoConfig";
-import { PrevisaoOrcamentaria, PrevisaoResumoContrato, RegimeEditor, PrevisaoNoCard, type EstadoSiafi } from "./PrevisaoContratos";
+import { PrevisaoResumoContrato, RegimeEditor, PrevisaoNoCard, type EstadoSiafi } from "./PrevisaoContratos";
+import GrupoContratos from "./GrupoContratos";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
@@ -431,9 +432,10 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [err, setErr]             = useState<string | null>(null);
 
   // Previsão orçamentária
-  const [mainView, setMainView]     = useState<"lista" | "previsao">("lista");
-  const [reajustePct, setReajustePct]           = useState(5.1); // IPCA referência
-  const [suporProrrogacao, setSuporProrrogacao] = useState(false);
+  const [grupoAberto, setGrupoAberto] = useState(false);
+  // previsão: reajuste anual de referência (IPCA) e sem supor prorrogação
+  const reajustePct = 5.1;
+  const suporProrrogacao = false;
   // Execução SIAFI (NEs de todos os anos + restos a pagar), ligada a cada contrato: a fonte única de
   // empenhado, a liquidar, liquidado a pagar, pago e a empenhar (lista, Dados Gerais, Execução, previsão)
   const siafi = useExecucaoContratos(contratos);
@@ -991,13 +993,12 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     () => projetarContratos(contratosPrev, historicoSiafi, cfgsPrev, { hoje, reajustePct, suporProrrogacao, execucaoIndisponivel, historicoContrato }),
     [contratosPrev, historicoSiafi, cfgsPrev, hoje, reajustePct, suporProrrogacao, execucaoIndisponivel, historicoContrato],
   );
-  // Crédito necessário até dezembro, por contrato (cards e ordenação da lista)
-  const necessidadeDez = useMemo(() => {
-    const hojeMi = mesHoje(hoje), dez = mesIdx(anoDe(hojeMi), 12);
-    const m = new Map<string, number>();
-    previsoes.forEach((p, id) => m.set(id, p.vencido ? 0 : calcularNecessidade(p, hojeMi, dez).total));
+  // Crédito que falta para as próximas 3 faturas (fatura × 3 − a liquidar das NEs): card, detalhe e ordenação
+  const cobertura3 = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof coberturaMeses>>();
+    previsoes.forEach((p, id) => m.set(id, coberturaMeses(p, siafi.porContrato.get(id)?.totais.aLiquidar ?? 0, hoje)));
     return m;
-  }, [previsoes, hoje]);
+  }, [previsoes, siafi, hoje]);
 
   async function salvarAjustePrevisao(numero: string, regime: Regime | null, valor: number | null, obs: string | null): Promise<string | null> {
     const r = await salvarCfg(numero, regime, valor, obs);
@@ -1006,10 +1007,10 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
     return null;
   }
 
-  function abrirContratoDaPrevisao(id: string) {
+  function abrirContratoDoGrupo(id: string) {
     const c = contratos.find((x) => x.id === id);
     if (!c) return;
-    setMainView("lista");
+    setGrupoAberto(false);
     if (selected?.id === id) setDetailMode("execucao");
     else { detalheInicialRef.current = "execucao"; setSelected(c); }
   }
@@ -1041,10 +1042,10 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       });
     }
     else if (sortBy === "credito_desc") {
-      arr.sort((a, b) => (necessidadeDez.get(b.id) ?? 0) - (necessidadeDez.get(a.id) ?? 0));
+      arr.sort((a, b) => (cobertura3.get(b.id)?.falta ?? 0) - (cobertura3.get(a.id)?.falta ?? 0));
     }
     return arr;
-  }, [filtered, sortBy, necessidadeDez, siafi]);
+  }, [filtered, sortBy, cobertura3, siafi]);
 
   const fld = (key: keyof typeof form) => ({
     value: form[key],
@@ -1100,15 +1101,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                 </button>
               </>
             )}
-            {canEditBudget && (
-              <button
-                onClick={() => abrirReajuste()}
-                title="Cores dos reajustes de todos os contratos e geração da Memória, Declaração, Parecer e Termo"
-                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors"
-              >
-                Painel de reajustes
-              </button>
-            )}
             <button
               onClick={load}
               disabled={loading}
@@ -1123,44 +1115,39 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
         )}
       </div>
 
-      {/* Seletor de visão principal */}
-      <div className="flex gap-2">
-        {([ { id: "lista" as const, label: "📋 Lista de Contratos" },
-             ...(canEditBudget ? [{ id: "previsao" as const, label: "📊 Previsão Orçamentária" }] : []),
-        ]).map(({ id, label }) => (
+      {/* Lista, painel de reajustes e grupo de contratos */}
+      <div className="flex flex-wrap gap-2">
+        <span className="rounded-lg border border-sky-600 bg-sky-600 px-3 py-1.5 text-xs font-medium text-white">📋 Lista de Contratos</span>
+        {canEditBudget && (
           <button
-            key={id}
-            onClick={() => setMainView(id)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-              mainView === id
-                ? "bg-sky-600 text-white border-sky-600"
-                : "border-slate-200 text-slate-600 hover:bg-slate-50"
-            }`}
+            onClick={() => abrirReajuste()}
+            title="Painel dos reajustes de todos os contratos: cores, situação do cadastro e geração da Memória, Declaração, Parecer e Termo"
+            className="rounded-lg border border-amber-600 bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors"
           >
-            {label}
+            📑 Painel de reajustes
           </button>
-        ))}
+        )}
+        <button
+          onClick={() => setGrupoAberto(true)}
+          title="Escolha vários contratos e veja o crédito necessário para cobrir X meses de faturas, por contrato e no total"
+          className="rounded-lg border border-violet-600 bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 transition-colors"
+        >
+          🧮 Criar grupo
+        </button>
       </div>
 
-      {/* ── Previsão Orçamentária ── */}
-      {mainView === "previsao" && (
-        <PrevisaoOrcamentaria
-          contratos={contratos}
-          previsoes={previsoes}
+      {grupoAberto && (
+        <GrupoContratos
+          contratos={contratos.map((c) => ({ id: c.id, numero: c.numero_contrato, fornecedor: c.fornecedor, descricao: c.descricao,
+            prev: previsoes.get(c.id), aLiquidar: siafi.porContrato.get(c.id)?.totais.aLiquidar ?? 0 }))}
           hoje={hoje}
-          piByPag={piByPag}
-          piDescMap={piDescMap}
-          reajustePct={reajustePct}
-          onReajustePct={setReajustePct}
-          suporProrrogacao={suporProrrogacao}
-          onSuporProrrogacao={setSuporProrrogacao}
-          siafiCarregando={siafiCarregando}
-          siafiErro={siafiErro}
-          onAbrirContrato={abrirContratoDaPrevisao}
+          siafiOk={estadoSiafi === "ok"}
+          onFechar={() => setGrupoAberto(false)}
+          onAbrirContrato={abrirContratoDoGrupo}
         />
       )}
 
-      {mainView === "lista" && (<>
+
       {/* Prévia de importação */}
       {preview && (
         <Card>
@@ -1366,7 +1353,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
               { key: "liquidar_desc",  label: "A liquidar ↓" },
               { key: "vencimento_asc", label: "Vencimento" },
               { key: "reajuste_asc",   label: "📅 Próx. reajuste" },
-              { key: "credito_desc",   label: "💰 Falta até dez" },
+              { key: "credito_desc",   label: "💰 Falta p/ 3 meses" },
             ] as const).map(({ key, label }) => (
               <button
                 key={key}
@@ -1457,7 +1444,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                             </div>
                           );
                         })()}
-                        <PrevisaoNoCard prev={previsoes.get(c.id)} necessidadeAno={necessidadeDez.get(c.id)} anoAtual={hoje.getFullYear()} siafi={estadoSiafi} />
+                        <PrevisaoNoCard prev={previsoes.get(c.id)} cobertura={cobertura3.get(c.id)} siafi={estadoSiafi} />
                       </div>
                       <div className="text-right text-xs shrink-0 space-y-0.5">
                         {c.vl_contratual != null && (
@@ -1945,7 +1932,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
                 carregandoItens={siafi.estado === "carregando"}
               >
                 {/* Previsão do contrato — aparece também sem NEs (contrato novo) */}
-                <PrevisaoResumoContrato prev={previsoes.get(selected.id)} hoje={hoje} dataFinal={selected.data_final} siafi={estadoSiafi} />
+                <PrevisaoResumoContrato prev={previsoes.get(selected.id)} hoje={hoje} dataFinal={selected.data_final} siafi={estadoSiafi} cobertura={cobertura3.get(selected.id)} />
               </ExecucaoContrato>
             )}
 
@@ -2128,7 +2115,6 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
           </div>
         )}
       </div>
-      </>)}
 
     </div>
   );

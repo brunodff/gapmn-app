@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import { Card } from "./Card";
 import {
   REGIMES, REGIME_LIST, calcularNecessidade, classificarRegime, mesHoje, mesIdx, anoDe, rotuloMes, normPag,
-  type Regime, type PrevisaoContrato, type CfgPrevisao, type Necessidade,
+  contaCobertura, type Regime, type PrevisaoContrato, type CfgPrevisao, type Necessidade, type Cobertura,
 } from "../lib/previsaoContratos";
 
 // ─── Formatação ───────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ export function RegimeBadge({ prev }: { prev: PrevisaoContrato }) {
 
 // ─── Resumo no card do contrato (lista) ───────────────────────────────────────
 
-export function PrevisaoNoCard({ prev, necessidadeAno, anoAtual, siafi }: { prev?: PrevisaoContrato; necessidadeAno?: number; anoAtual: number; siafi: EstadoSiafi }) {
+export function PrevisaoNoCard({ prev, cobertura, siafi }: { prev?: PrevisaoContrato; cobertura?: Cobertura | null; siafi: EstadoSiafi }) {
   if (siafi === "carregando") return <div className="mt-1 text-[11px] text-slate-400">Previsão: carregando execução SIAFI…</div>;
   if (!prev) return null;
   if (prev.regime === "nao_prever") return <div className="mt-1"><RegimeBadge prev={prev} /></div>;
@@ -62,10 +62,13 @@ export function PrevisaoNoCard({ prev, necessidadeAno, anoAtual, siafi }: { prev
     <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[11px]">
       <RegimeBadge prev={prev} />
       {prev.mensal > 0 && <span className="text-slate-600" title={prev.base}>{fmtMoney(prev.mensal)}/mês</span>}
-      {siafi === "ok" && (necessidadeAno ?? 0) > 0.5 && (
-        <span className="font-semibold text-red-600" title={`Crédito ainda necessário até dezembro/${anoAtual}`}>
-          · faltam {fmtMoney(necessidadeAno!)} até dez
-        </span>
+      {siafi === "ok" && cobertura && cobertura.meses > 0 && (cobertura.falta > 0.5
+        ? <span className="font-semibold text-red-600" title={`Crédito que falta para as próximas ${cobertura.meses} faturas: ${contaCobertura(cobertura)}`}>
+            · faltam {fmtMoney(cobertura.falta)} p/ {cobertura.meses} {cobertura.meses === 1 ? "mês" : "meses"}
+          </span>
+        : <span className="font-semibold text-green-700" title={`O saldo a liquidar cobre as próximas ${cobertura.meses} faturas: ${contaCobertura(cobertura)}`}>
+            · {cobertura.meses} {cobertura.meses === 1 ? "mês coberto" : "meses cobertos"}
+          </span>
       )}
       {siafi === "erro" && <span className="text-slate-400" title="Planilha de execução SIAFI indisponível: empenhado do exercício desconhecido">· provisório</span>}
       {prev.alertas.length > 0 && <span className="text-amber-600" title={prev.alertas.join("\n")}>⚠</span>}
@@ -214,7 +217,9 @@ export function RegimeEditor({
 
 // ─── Resumo da previsão do contrato (aba Execução) ────────────────────────────
 
-export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi }: { prev?: PrevisaoContrato; hoje: Date; dataFinal: string | null; siafi: EstadoSiafi }) {
+export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi, cobertura }: {
+  prev?: PrevisaoContrato; hoje: Date; dataFinal: string | null; siafi: EstadoSiafi; cobertura?: Cobertura | null;
+}) {
   if (siafi === "carregando") return <p className="text-xs text-slate-400 text-center py-2">Carregando execução SIAFI para a previsão…</p>;
   if (!prev) return <p className="text-xs text-slate-400 text-center py-2">Carregando previsão…</p>;
   // Sem a planilha não se sabe o empenhado: mostra só o previsto
@@ -222,7 +227,6 @@ export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi }: { prev?
   const hojeMi = mesHoje(hoje), ano0 = anoDe(hojeMi), dez = mesIdx(ano0, 12);
   const nAno = calcularNecessidade(prev, hojeMi, dez);
   const nProx = calcularNecessidade(prev, mesIdx(ano0 + 1, 1), mesIdx(ano0 + 1, 12));
-  const n12 = calcularNecessidade(prev, hojeMi, hojeMi + 11);
   // Previsto no ano = realizado + o que falta até dezembro; assim previsto − empenhado
   // é o crédito necessário (competências liquidadas valem o que foi pago)
   const e = prev.execAno(ano0);
@@ -279,11 +283,20 @@ export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi }: { prev?
                 </div>
                 {nAno.excedente > 0.5 && <div className="text-[10px] text-green-700">sobra {fmtMoney(nAno.excedente)} no exercício</div>}
               </div>
-              <div className={`rounded-lg border p-2 ${nAno.total > 0.5 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
-                <div className={nAno.total > 0.5 ? "text-red-700" : "text-green-700"}>Crédito necessário até dez/{String(ano0).slice(2)}</div>
-                <div className={`font-bold ${nAno.total > 0.5 ? "text-red-700" : "text-green-700"}`}>{fmtMoney(nAno.total)}</div>
-                {nAno.pendente > 0.5 && <div className="text-[10px] text-red-600">inclui {fmtMoney(nAno.pendente)} de competências passadas</div>}
-              </div>
+              {cobertura && cobertura.meses > 0 ? (
+                <div className={`rounded-lg border p-2 ${cobertura.falta > 0.5 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
+                  <div className={cobertura.falta > 0.5 ? "text-red-700" : "text-green-700"}>
+                    Falta p/ {cobertura.meses} {cobertura.meses === 1 ? "mês" : "meses"}
+                  </div>
+                  <div className={`font-bold ${cobertura.falta > 0.5 ? "text-red-700" : "text-green-700"}`}>{fmtMoney(cobertura.falta)}</div>
+                  <div className="text-[10px] text-slate-500">{contaCobertura(cobertura)}</div>
+                </div>
+              ) : (
+                <div className="rounded-lg border bg-white p-2">
+                  <div className="text-slate-500">Próximas faturas</div>
+                  <div className="text-[11px] text-slate-500">{prev.vencido ? "vigência encerrada" : "sem fatura mensal (execução pelo saldo)"}</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -297,22 +310,6 @@ export function PrevisaoResumoContrato({ prev, hoje, dataFinal, siafi }: { prev?
               </div>
             </div>
             <div className="font-bold text-slate-800">{fmtMoney(nProx.previstoPeriodo)}</div>
-          </div>
-
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Próximos 12 meses</div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1">
-              {n12.meses.map((m) => (
-                <div key={m.mi} className="rounded border bg-white px-1.5 py-1" title={`Previsto ${fmtMoney(m.previsto)} · necessário ${fmtMoney(m.necessidade)}`}>
-                  <div className="text-[10px] text-slate-400">{rotuloMes(m.mi)}</div>
-                  <div className="font-mono text-[11px] text-slate-700">{fmtCurto(m.previsto)}</div>
-                  {!semExec && m.necessidade > 0.5 && <div className="font-mono text-[10px] text-red-600">+{fmtCurto(m.necessidade)}</div>}
-                </div>
-              ))}
-            </div>
-            <div className="mt-1 text-[10px] text-slate-400">
-              {semExec ? "Em cada mês: valor previsto." : "Em cada mês: valor previsto e, em vermelho, o crédito novo necessário."}
-            </div>
           </div>
         </>
       )}
