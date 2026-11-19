@@ -10,6 +10,7 @@ import Reajustes from "../components/reajustes/Reajustes";
 import ReajusteOM from "./ReajusteOM";
 import PainelTcu from "../components/tcu/PainelTcu";
 import PainelAgu from "../components/agu/PainelAgu";
+import MapaCompras from "../components/mapaCompras/MapaCompras";
 import IndicadoresLotacao from "../components/IndicadoresLotacao";
 import AtasRegistroPreco from "../components/AtasRegistroPreco";
 import PainelSolicitacoesEmpenho from "../components/PainelSolicitacoesEmpenho";
@@ -54,7 +55,7 @@ type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
   | "calendario" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
-  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu" | "agu";
+  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu" | "agu" | "mapa-compras";
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
 type KPIs     = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
@@ -68,6 +69,7 @@ const VIEW_LABELS: Record<View, string> = {
   "reajuste-om":      "Reajuste de contratos de outra UG",
   tcu:                "TCU — jurisprudência e sanções",
   agu:                "AGU — pareceres referenciais",
+  "mapa-compras":     "Mapa das compras",
   indicadores:        "Indicadores de Lotação",
   atas:               "Atas de Registro de Preço",
   solicitacoes:       "Solicitações de Empenho",
@@ -337,6 +339,7 @@ const NAV: NavNode[] = [
     { label: "Atas de RP",  path: "view:atas",       icon: "📄" },
     { label: "Planejamento", path: "view:calendario", icon: "📅", slicOnly: true },
     { label: "Pesquisa de Preços", path: "view:pesquisa-precos", icon: "💲" },
+    { label: "Mapa das compras", path: "view:mapa-compras", icon: "🗺️" },
     { label: "TCU: jurisprudência e sanções", path: "view:tcu", icon: "🏛️" },
     { label: "AGU: pareceres referenciais", path: "view:agu", icon: "📜" },
   ]},
@@ -1226,6 +1229,7 @@ export default function AppChat() {
       : params.get("vista") === "reajuste-om" ? "reajuste-om"
       : params.get("vista") === "tcu" ? "tcu"
       : params.get("vista") === "agu" ? "agu"
+      : params.get("vista") === "mapa-compras" ? "mapa-compras"
       : "dashboard"));
   const [filterTipo,     setFilterTipo] = useState("todos");
 
@@ -1745,6 +1749,7 @@ export default function AppChat() {
             {view === "reajuste-om"   && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><ReajusteOM /></div>}
             {view === "tcu"           && <div className="svdark" style={{ padding: 16 }}><PainelTcu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
             {view === "agu"           && <div className="svdark" style={{ padding: 16 }}><PainelAgu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
+            {view === "mapa-compras"  && <div className="svdark" style={{ padding: 16 }}><MapaCompras /></div>}
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}
