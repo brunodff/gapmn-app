@@ -31,6 +31,8 @@ export interface CabecalhoRelatorio {
   uf: string;
   /** como os preços foram atualizados (vazio: preços da data da compra) */
   correcao?: string;
+  /** a pesquisa incluiu itens de atas de registro de preços (art. 5º, II) */
+  atas?: boolean;
 }
 
 const METODOLOGIA = (c: CabecalhoRelatorio) =>
@@ -39,6 +41,8 @@ const METODOLOGIA = (c: CabecalhoRelatorio) =>
   `(API de Dados Abertos — módulo Pesquisa de Preço), consultadas pelo gapmn.app, ` +
   `no período dos últimos ${c.periodoMeses} meses${c.uf ? `, restrito ${c.uf.includes(",") ? "às UFs" : "à UF"} ${c.uf}` : ", em âmbito nacional"}. ` +
   (c.correcao ? `Os preços foram atualizados pelo ${c.correcao}, observado o índice de atualização de preços previsto no art. 5º, I e II. ` : "") +
+  (c.atas ? `Foram considerados também os itens de atas de registro de preços com vigência iniciada nos últimos 12 meses ` +
+    `(contratações similares, art. 5º, II), contando uma vez só o item de compra que aparece nas duas bases. ` : "") +
   `Para cada item foram comparados preços na mesma unidade de fornecimento (a do item ou, se ela não aparece, a mais frequente). ` +
   `Conforme o art. 6º da mesma IN, os valores inexequíveis, inconsistentes e excessivamente elevados foram ` +
   `desconsiderados pelo critério estatístico de Tukey (Q1 - 1,5 x IQR; Q3 + 1,5 x IQR), e o preço estimado de cada ` +
@@ -72,6 +76,20 @@ function apisUsadas(linhas: LinhaRelatorio[]): FonteApi[] {
     endereco: `${API_DADOS_ABERTOS}/modulo-material/4_consultarItemMaterial`,
     documentacao: swagger,
   });
+  if (linhas.some((l) => l.consultas.some((c) => c.fonte))) {
+    apis.push({
+      nome: "Compras.gov.br — Dados Abertos: Atas de Registro de Preços",
+      uso: "Itens de atas com vigência iniciada nos últimos 12 meses, por código do catálogo (rota 2_consultarARPItem).",
+      endereco: `${API_DADOS_ABERTOS}/modulo-arp/2_consultarARPItem`,
+      documentacao: swagger,
+    });
+    apis.push({
+      nome: "Compras.gov.br — Dados Abertos: Contratações (PNCP, Lei 14.133)",
+      uso: "Unidade de fornecimento, UF e órgão de cada ata, pela compra que a originou (rotas 1.1 e 2.1, por idCompra).",
+      endereco: `${API_DADOS_ABERTOS}/modulo-contratacoes/2.1_consultarItensContratacoes_PNCP_14133_Id`,
+      documentacao: swagger,
+    });
+  }
   if (servico) apis.push({
     nome: "Compras.gov.br — Dados Abertos: Catálogo de Serviços (CATSER)",
     uso: "Confirmação da descrição oficial de cada serviço (rota 6_consultarItemServico).",
@@ -91,7 +109,7 @@ function consultasPorItem(linhas: LinhaRelatorio[]): LinhaConsulta[] {
     const codigo = `${l.item.tipo === "material" ? "CATMAT" : "CATSER"} ${l.item.codigo ?? "–"}`;
     for (const c of l.consultas) {
       out.push({
-        item: l.item.numero, codigo, abrangencia: c.uf ?? "Nacional",
+        item: l.item.numero, codigo, abrangencia: c.fonte ? `${c.fonte} (nacional)` : c.uf ?? "Nacional",
         encontrados: fmtNum(c.encontrados, 0), quando: dt(c.consultadoEm), url: c.url,
       });
     }
@@ -264,7 +282,7 @@ export function exportarPdf(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) {
         ["Data", "UASG / Órgão", "UF", "Fornecedor", "Marca", "Unid. forn.", "Qtd.", cab.correcao ? "Preço unit. (compra → atual.)" : "Preço unit."]],
       body: l.registros.map((r) => [
         fmtData(r.dataResultado ?? r.dataCompra),
-        `${r.codigoUasg ?? ""} — ${r.nomeUasg ?? r.nomeOrgao ?? ""}`.slice(0, 70),
+        `${r.origem === "ata" ? `[Ata ${r.numeroAta ?? ""}] ` : ""}${r.codigoUasg ?? ""} — ${r.nomeUasg ?? r.nomeOrgao ?? ""}`.slice(0, 80),
         r.estado ?? "",
         (r.nomeFornecedor ?? "").slice(0, 45),
         (r.marca ?? "").slice(0, 20),
@@ -338,6 +356,8 @@ export function exportarXlsx(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) 
     "UASG": r.codigoUasg,
     "Unidade compradora": r.nomeUasg,
     "Órgão": r.nomeOrgao,
+    "Origem": r.origem === "ata" ? "Ata de registro de preços (art. 5º, II)" : "Preço praticado (art. 5º, I)",
+    "Nº da ata": r.numeroAta ?? "",
     "UF": r.estado,
     "Município": r.municipio,
     "CNPJ fornecedor": r.niFornecedor,

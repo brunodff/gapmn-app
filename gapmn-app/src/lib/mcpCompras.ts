@@ -6,7 +6,7 @@ import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import { supabase } from "./supabase";
 import { extrairItensTabela, trechosDaPagina, type Trecho } from "./trParser";
-import { corrigirPrecos, ultimoMesDaSerie, variacoesPorMes } from "./precos/ajustes";
+import { corrigirPrecos, prepararAtas, ultimoMesDaSerie, variacoesPorMes } from "./precos/ajustes";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
@@ -57,6 +57,12 @@ export interface RegistroPreco {
   /** preço da compra, antes da atualização pelo IPCA (precoUnitario fica atualizado) */
   precoOriginal?: number;
   fatorCorrecao?: number;
+  /** "ata": item de ata de registro de preços (art. 5º, II); sem campo = preço praticado (art. 5º, I) */
+  origem?: "ata";
+  unidadeTexto?: string | null;
+  numeroAta?: string;
+  vigenciaAta?: string;
+  numeroControlePncpAta?: string;
 }
 
 export interface Estatisticas {
@@ -91,10 +97,14 @@ export interface ResultadoETP {
   _erro_upstream?: { diagnostico?: string; alternativas?: string[] };
   /** UFs cuja consulta falhou numa pesquisa com vários estados (as demais foram somadas). */
   _ufs_com_erro?: string[];
+  /** quantos preços vieram de cada fonte; atasNovas = itens de ata que não estavam entre os preços praticados */
+  fontes?: { praticados: number; atas: number; atasNovas: number; erroAtas?: string };
 }
 
 /** Uma consulta feita à API de Dados Abertos, com o endereço para conferir no navegador. */
 export interface FonteConsulta {
+  /** padrão: preços praticados */
+  fonte?: string;
   uf: string | null;        // null = âmbito nacional
   url: string;
   encontrados: number;
@@ -153,6 +163,12 @@ export function urlConsultaPreco(p: {
   return `${API_DADOS_ABERTOS}/modulo-pesquisa-preco/${rota}?${q.toString()}`;
 }
 
+/** Endereço da consulta de itens de atas de registro de preços (1ª página), para conferir no navegador */
+export function urlConsultaAtas(p: { codigo: number; dataInicio: string; dataFim: string }): string {
+  const q = new URLSearchParams({ pagina: "1", tamanhoPagina: "500", codigoItem: String(p.codigo), dataVigenciaInicialMin: p.dataInicio, dataVigenciaInicialMax: p.dataFim });
+  return `${API_DADOS_ABERTOS}/modulo-arp/2_consultarARPItem?${q.toString()}`;
+}
+
 export function urlCatalogo(tipo: TipoItem, codigo: number): string {
   return tipo === "material"
     ? `${API_DADOS_ABERTOS}/modulo-material/4_consultarItemMaterial?pagina=1&tamanhoPagina=10&codigoItem=${codigo}`
@@ -204,7 +220,8 @@ export function mesclarETP(parciais: { uf: string; etp: ResultadoETP }[], falhas
     ...(falhas.length ? { _ufs_com_erro: falhas } : {}),
   };
   const est = calcularEstatisticas(valores);
-  if (!est) return { ...base, aviso: parciais.length > 1 ? "Nenhum preço unitário encontrado nos estados selecionados." : "Nenhum preço unitário encontrado no período." };
+  const porUf = parciais.filter((p) => p.uf !== "atas").length > 1;
+  if (!est) return { ...base, aviso: porUf ? "Nenhum preço unitário encontrado nos estados selecionados." : "Nenhum preço unitário encontrado no período." };
 
   const { n, outliers, ...resto } = est;
   const { filtrados } = filtrarOutliers(valores);
@@ -242,10 +259,17 @@ export async function buscarIpca(mesesAtras: number): Promise<SerieIpca> {
  */
 export async function pesquisarPrecosETP(p: {
   tipo: TipoItem; codigo: number; periodoMeses: number; ufs: string[]; maxPaginas: number; ipca?: SerieIpca | null;
+  /** inclui itens de atas de registro de preços com vigência iniciada nos últimos 12 meses (art. 5º, II) */
+  incluirAtas?: boolean;
 }): Promise<{ etp: ResultadoETP; consultas: FonteConsulta[] }> {
   const hoje = new Date();
   const ini = new Date(hoje.getTime() - p.periodoMeses * 30 * 86400000);
   const alvos: (string | null)[] = p.ufs.length ? p.ufs : [null];
+  // atas: uma consulta nacional (a API não filtra UF), em paralelo com os preços praticados
+  const atas = p.incluirAtas
+    ? mcpTool<ResultadoETP>("compras_atas_para_etp", { tipo: p.tipo, codigo_item_catalogo: p.codigo, meses: 12 }).then(
+      (etp) => ({ etp, erro: null as string | null }), (e: Error) => ({ etp: null, erro: e.message }))
+    : null;
 
   const chamar = (uf: string | null) => mcpTool<ResultadoETP>("compras_pesquisar_precos_para_etp", {
     tipo: p.tipo,
@@ -287,12 +311,33 @@ export async function pesquisarPrecosETP(p: {
     } else falhas.push(uf ?? "Nacional");
   });
 
+  // atas: na UF pedida (sem UF conhecida, fica fora quando há filtro de UF), unidade da compra, IPCA
+  const daAta = atas ? await atas : null;
+  const praticadosIds = new Set(ok.flatMap(({ etp }) => (etp.registros ?? []).map((r) => r.idCompraItem)).filter(Boolean));
+  let atasNovas = 0, atasNaUf = 0;
+  if (daAta?.etp) {
+    const { registros: regs, novas } = prepararAtas(daAta.etp.registros ?? [], { ufs: p.ufs, praticados: praticadosIds, ipca: p.ipca });
+    atasNaUf = regs.length;
+    atasNovas = novas;
+    ok.push({ uf: "atas", etp: { ...daAta.etp, amostra_total: atasNovas, registros: regs } });
+    consultas.push({
+      fonte: "Atas de registro de preços", uf: null, encontrados: daAta.etp.amostra_total ?? 0, consultadoEm,
+      url: urlConsultaAtas({ codigo: p.codigo, dataInicio: daAta.etp.data_inicio ?? isoDia(ini), dataFim: daAta.etp.data_fim ?? isoDia(hoje) }),
+    });
+  }
+
   if (!ok.length) {
     const primeira = saidas[0];
     if (primeira.status === "fulfilled") return { etp: primeira.value, consultas: [] };
     throw primeira.reason;
   }
-  return { etp: mesclarETP(ok, falhas), consultas };
+  // praticados primeiro: o mesmo item de compra que também está em ata conta uma vez só
+  const etp = mesclarETP(ok, falhas);
+  // o período e as datas são os dos preços praticados (as atas têm a janela fixa de 12 meses)
+  const praticado = ok.find((x) => x.uf !== "atas")?.etp;
+  if (praticado) { etp.data_inicio = praticado.data_inicio; etp.data_fim = praticado.data_fim; }
+  etp.fontes = { praticados: praticadosIds.size, atas: atasNaUf, atasNovas, ...(daAta?.erro ? { erroAtas: daAta.erro } : {}) };
+  return { etp, consultas };
 }
 
 export async function consultarCatalogo(tipo: TipoItem, codigo: number): Promise<ItemCatalogo | null> {

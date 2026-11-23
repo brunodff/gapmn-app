@@ -13,7 +13,11 @@
  *     compras_versao                      → a API respondeu (status da tela)
  *     compras_pesquisar_precos_para_etp   { tipo, codigo_item_catalogo, periodo_meses, max_paginas, uf? }
  *                                         → { amostra_total, registros, data_inicio, data_fim, _registros_truncados_em }
+ *     compras_atas_para_etp               { tipo, codigo_item_catalogo, meses?, max_paginas? }
+ *                                         → itens de atas de registro de preços (art. 5º, II), com unidade, UF e órgão
  *     compras_catmat_consultar / compras_catser_consultar { codigo_item } → { encontrado, item }
+ *   A consulta de itens do PNCP por código (modulo-contratacoes/2_consultarItensContratacoes…) não responde nem para
+ *   3 dias (testado em 23/11/2026), por isso as contratações do PNCP não entram como fonte separada.
  *   { action: "extrair_itens", texto: "<texto do TR>" }   → { itens: [...] }
  *
  * Deploy (com verificação de JWT — só usuários logados):
@@ -97,6 +101,74 @@ async function precosParaEtp(a: Record<string, unknown>) {
   return { amostra_total: total, registros, data_inicio: iso(ini), data_fim: iso(fim), _registros_truncados_em: truncado };
 }
 
+/** Até `n` tarefas ao mesmo tempo (para não sobrecarregar a API) */
+async function emLotes<T, R>(itens: T[], n: number, f: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(itens.length);
+  let prox = 0;
+  await Promise.all(Array.from({ length: Math.min(n, itens.length) }, async () => {
+    while (prox < itens.length) { const i = prox++; out[i] = await f(itens[i]); }
+  }));
+  return out;
+}
+
+/**
+ * Itens de atas de registro de preços (IN 65/2021, art. 5º, II: contratações similares, inclusive por SRP, no último
+ * ano) de um código CATMAT/CATSER, com vigência iniciada nos últimos `meses`. A ata não traz unidade nem UF: a função
+ * completa pela compra no PNCP (itens da compra → unidade; compra → UF, município e órgão), nas 80 compras mais recentes.
+ */
+async function atasParaEtp(a: Record<string, unknown>) {
+  const tipo = a.tipo === "servico" ? "servico" : "material";
+  const codigo = Math.trunc(Number(a.codigo_item_catalogo));
+  if (!Number.isFinite(codigo) || codigo <= 0) throw new Error("Código CATMAT/CATSER inválido.");
+  const meses = limitar(a.meses, 1, 24, 12);
+  const maxPaginas = limitar(a.max_paginas, 1, 4, 2);
+  const fim = new Date(), ini = new Date(fim.getTime() - meses * 30 * 86400000);
+  const linhas: any[] = [];
+  let total = 0, truncado: number | null = null;
+  for (let pagina = 1; pagina <= maxPaginas; pagina++) {
+    const q = new URLSearchParams({ pagina: String(pagina), tamanhoPagina: String(TAM_PAGINA), codigoItem: String(codigo),
+      dataVigenciaInicialMin: iso(ini), dataVigenciaInicialMax: iso(fim) });
+    const j = await buscarJson(`${API}/modulo-arp/2_consultarARPItem?${q}`);
+    total = Number(j.totalRegistros ?? total) || 0;
+    linhas.push(...(j.resultado ?? []));
+    if (!j.paginasRestantes) break;
+    if (pagina === maxPaginas) truncado = linhas.length;
+  }
+  const doTipo = (t: unknown) => (tipo === "material" ? !/^serv/i.test(String(t ?? "")) : /^serv/i.test(String(t ?? "")));
+  const validas = linhas.filter((r) => !r.itemExcluido && !r.dataHoraExclusao && typeof r.valorUnitario === "number" && r.valorUnitario > 0 && doTipo(r.tipoItem));
+
+  const compras = [...new Set(validas.sort((x, y) => String(y.dataAssinatura).localeCompare(String(x.dataAssinatura))).map((r) => String(r.idCompra)))].slice(0, 80);
+  const infos = new Map<string, { uf?: string; municipio?: string; orgao?: string; unidades: Map<number, string> }>();
+  await emLotes(compras, 8, async (idCompra) => {
+    const [compra, itens] = await Promise.allSettled([
+      buscarJson(`${API}/modulo-contratacoes/1.1_consultarContratacoes_PNCP_14133_Id?tipo=idCompra&codigo=${idCompra}`, 20_000),
+      buscarJson(`${API}/modulo-contratacoes/2.1_consultarItensContratacoes_PNCP_14133_Id?tipo=idCompra&codigo=${idCompra}`, 20_000),
+    ]);
+    const c = compra.status === "fulfilled" ? (compra.value?.resultado ?? [])[0] : null;
+    const unidades = new Map<number, string>();
+    for (const it of itens.status === "fulfilled" ? (itens.value?.resultado ?? []) : []) {
+      if (it?.unidadeMedida) unidades.set(Number(it.numeroItemCompra), String(it.unidadeMedida));
+    }
+    infos.set(idCompra, { uf: c?.unidadeOrgaoUfSigla ?? undefined, municipio: c?.unidadeOrgaoMunicipioNome ?? undefined,
+      orgao: c?.orgaoEntidadeRazaoSocial ?? undefined, unidades });
+  });
+
+  const registros = validas.map((r) => {
+    const info = infos.get(String(r.idCompra));
+    const data = String(r.dataAssinatura ?? r.dataVigenciaInicial ?? "").slice(0, 10);
+    return {
+      origem: "ata", idCompraItem: `${r.idCompra}${String(r.numeroItem ?? "").padStart(5, "0")}`, idCompra: r.idCompra,
+      dataCompra: data, dataResultado: data, precoUnitario: r.valorUnitario,
+      quantidade: r.quantidadeHomologadaVencedor ?? r.quantidadeHomologadaItem, niFornecedor: r.niFornecedor,
+      nomeFornecedor: r.nomeRazaoSocialFornecedor, codigoUasg: r.codigoUnidadeGerenciadora, nomeUasg: r.nomeUnidadeGerenciadora,
+      nomeOrgao: info?.orgao, estado: info?.uf, municipio: info?.municipio,
+      unidadeTexto: info?.unidades.get(Number(r.numeroItem)) ?? null, descricaoItem: r.descricaoItem,
+      numeroAta: r.numeroAtaRegistroPreco, vigenciaAta: r.dataVigenciaFinal, numeroControlePncpAta: r.numeroControlePncpAta,
+    };
+  });
+  return { amostra_total: total, registros, data_inicio: iso(ini), data_fim: iso(fim), _registros_truncados_em: truncado };
+}
+
 async function itemDoCatalogo(tipo: "material" | "servico", codigo: number) {
   if (!Number.isFinite(codigo) || codigo <= 0) return { encontrado: false, item: null };
   const url = tipo === "material"
@@ -113,6 +185,8 @@ async function chamarTool(nome: string, args: Record<string, unknown>) {
       return { versao: "API de Dados Abertos do Compras.gov.br (consulta direta)" };
     case "compras_pesquisar_precos_para_etp":
       return await precosParaEtp(args);
+    case "compras_atas_para_etp":
+      return await atasParaEtp(args);
     case "compras_catmat_consultar":
       return await itemDoCatalogo("material", Math.trunc(Number(args.codigo_item)));
     case "compras_catser_consultar":
@@ -121,7 +195,7 @@ async function chamarTool(nome: string, args: Record<string, unknown>) {
       return null;
   }
 }
-const TOOLS_PERMITIDAS = new Set(["compras_versao", "compras_pesquisar_precos_para_etp", "compras_catmat_consultar", "compras_catser_consultar"]);
+const TOOLS_PERMITIDAS = new Set(["compras_versao", "compras_pesquisar_precos_para_etp", "compras_atas_para_etp", "compras_catmat_consultar", "compras_catser_consultar"]);
 
 // ── Extração de itens do TR via LLM ─────────────────────────────────────────
 

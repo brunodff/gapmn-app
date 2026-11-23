@@ -35,7 +35,7 @@ interface ResultadoItem {
 }
 
 /** corrigirIpca: atualiza os preços pelo IPCA até o último mês divulgado (IN 65/2021, art. 5º, I e II) */
-interface Parametros { periodoMeses: number; ufs: string[]; maxPaginas: number; corrigirIpca: boolean }
+interface Parametros { periodoMeses: number; ufs: string[]; maxPaginas: number; corrigirIpca: boolean; incluirAtas: boolean }
 
 interface TrCadastrado { numero_compra: string; pdf_url: string | null; nup: string | null }
 
@@ -132,7 +132,7 @@ export default function PesquisaPrecos() {
 
   // Itens e pesquisa
   const [itens, setItens] = useState<ItemTR[]>([]);
-  const [params, setParams] = useState<Parametros>({ periodoMeses: 12, ufs: [], maxPaginas: 5, corrigirIpca: true });
+  const [params, setParams] = useState<Parametros>({ periodoMeses: 12, ufs: [], maxPaginas: 5, corrigirIpca: true, incluirAtas: true });
   const ipcaRef = useRef<Promise<SerieIpca | null> | null>(null);
   const [avisoIpca, setAvisoIpca] = useState<string | null>(null);
   const [resultados, setResultados] = useState<Record<string, ResultadoItem>>({});
@@ -150,7 +150,7 @@ export default function PesquisaPrecos() {
           setCab(r.cab); setItens(r.itens);
           // rascunhos antigos guardavam uma única UF (params.uf)
           setParams({ periodoMeses: r.params.periodoMeses, maxPaginas: r.params.maxPaginas, ufs: r.params.ufs ?? (r.params.uf ? [r.params.uf] : []),
-            corrigirIpca: r.params.corrigirIpca ?? true });
+            corrigirIpca: r.params.corrigirIpca ?? true, incluirAtas: r.params.incluirAtas ?? true });
           const res: Record<string, ResultadoItem> = r.resultados ?? {};
           for (const k of Object.keys(res)) if (res[k].status === "carregando") res[k].status = "pendente";
           setResultados(res);
@@ -328,7 +328,7 @@ export default function PesquisaPrecos() {
     patchResultado(item.id, { status: "carregando", erro: undefined });
     const ipca = await obterIpca(p);
     const [precos, catalogo] = await Promise.allSettled([
-      pesquisarPrecosETP({ tipo: item.tipo, codigo: item.codigo, periodoMeses: p.periodoMeses, ufs: p.ufs, maxPaginas: p.maxPaginas, ipca }),
+      pesquisarPrecosETP({ tipo: item.tipo, codigo: item.codigo, periodoMeses: p.periodoMeses, ufs: p.ufs, maxPaginas: p.maxPaginas, ipca, incluirAtas: p.incluirAtas }),
       consultarCatalogo(item.tipo, item.codigo),
     ]);
     const cat = catalogo.status === "fulfilled" ? catalogo.value : undefined;
@@ -350,7 +350,7 @@ export default function PesquisaPrecos() {
   async function pesquisarTodos(somentePendentes = false) {
     const fila = itens.filter((it) => !somentePendentes || !["ok", "vazio"].includes(resultados[it.id]?.status ?? ""));
     if (!fila.length) return;
-    setCab((c) => ({ ...c, periodoMeses: params.periodoMeses, uf: params.ufs.join(", ") }));
+    setCab((c) => ({ ...c, periodoMeses: params.periodoMeses, uf: params.ufs.join(", "), atas: params.incluirAtas }));
     ipcaRef.current = null; // nova rodada: IPCA atual
     setEtapa("pesquisa");
     setExecutando(true);
@@ -658,6 +658,13 @@ export default function PesquisaPrecos() {
                 Atualizar os preços pelo IPCA
               </label>
             </Campo>
+            <Campo label="Contratações similares (art. 5º, II)">
+              <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
+                title="Itens de atas de registro de preços com vigência iniciada nos últimos 12 meses (o mesmo item de compra conta uma vez só)">
+                <input type="checkbox" checked={params.incluirAtas} onChange={(e) => setParams({ ...params, incluirAtas: e.target.checked })} />
+                Incluir atas de registro de preços
+              </label>
+            </Campo>
             <div className="flex-1" />
             <button disabled={!itens.some((i) => i.codigo) || executando} onClick={() => pesquisarTodos()}
               className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold disabled:opacity-40">
@@ -945,6 +952,15 @@ function CartaoItem({ item, res, av, ufs, periodo, onPatch, onRefazer }: {
           </div>
         )}
 
+        {res.etp?.fontes && (res.etp.fontes.atas > 0 || res.etp.fontes.erroAtas) && (
+          <div className={`text-xs rounded-lg border px-3 py-2 ${res.etp.fontes.erroAtas ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+            {res.etp.fontes.erroAtas
+              ? <>As atas de registro de preços não foram consultadas ({res.etp.fontes.erroAtas}). Valem só os preços praticados.</>
+              : <>Fontes: {res.etp.fontes.praticados} preço(s) praticado(s) (art. 5º, I) e {res.etp.fontes.atas} item(ns) de ata de registro de preços
+                  dos últimos 12 meses (art. 5º, II), dos quais {res.etp.fontes.atasNovas} não estavam entre os praticados.</>}
+          </div>
+        )}
+
         {res.etp?._ufs_com_erro && (
           <div className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2">
             Não foi possível consultar: {res.etp._ufs_com_erro.join(", ")}. Os demais estados foram somados —
@@ -1025,7 +1041,11 @@ function CartaoItem({ item, res, av, ufs, periodo, onPatch, onRefazer }: {
                           })} />
                       </td>
                       <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(r.dataResultado ?? r.dataCompra)}</td>
-                      <td className="px-3 py-1.5">{r.codigoUasg} — {r.nomeUasg ?? r.nomeOrgao}</td>
+                      <td className="px-3 py-1.5">
+                        {r.origem === "ata" && <span className="mr-1 rounded bg-violet-100 px-1 py-0.5 text-[10px] font-semibold text-violet-700"
+                          title={`Ata de registro de preços nº ${r.numeroAta ?? "?"}${r.vigenciaAta ? `, vigente até ${fmtData(r.vigenciaAta)}` : ""}`}>ata {r.numeroAta}</span>}
+                        {r.codigoUasg} — {r.nomeUasg ?? r.nomeOrgao}
+                      </td>
                       <td className="px-3 py-1.5">{r.estado}</td>
                       <td className="px-3 py-1.5">{r.nomeFornecedor}</td>
                       <td className="px-3 py-1.5">{r.marca}</td>

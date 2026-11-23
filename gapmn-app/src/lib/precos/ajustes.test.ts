@@ -1,6 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { corrigirPrecos, fatorIpca, normalizarUnidade, ultimoMesDaSerie, unidadeDoRegistro, unidadePadrao, variacoesPorMes } from "./ajustes.ts";
+import { corrigirPrecos, fatorIpca, normalizarUnidade, prepararAtas, ultimoMesDaSerie, unidadeDoRegistro, unidadePadrao, variacoesPorMes } from "./ajustes.ts";
+
+test("atas (art. 5º, II): UF pedida, unidade da compra, IPCA e só as que não estavam entre os praticados contam como novas", () => {
+  const v = variacoesPorMes([{ data: "01/02/2026", valor: "1.00" }]);
+  const atas = [
+    { idCompraItem: "A", estado: "AM", unidadeTexto: "Unidade", precoUnitario: 10, dataCompra: "2026-01-10" },
+    { idCompraItem: "B", estado: "SP", unidadeTexto: "Caixa", precoUnitario: 20, dataCompra: "2026-01-10" },
+    { idCompraItem: "C", estado: undefined, unidadeTexto: null, precoUnitario: 30, dataCompra: "2026-01-10" },
+  ];
+  const nacional = prepararAtas(atas, { ufs: [], praticados: new Set(["A"]), ipca: { variacoes: v, ate: "2026-02" } });
+  assert.equal(nacional.registros.length, 3);
+  assert.equal(nacional.novas, 2, "A já estava entre os praticados");
+  assert.equal(nacional.registros[0].siglaUnidadeFornecimento, "UN");
+  assert.equal(nacional.registros[1].siglaUnidadeFornecimento, "CX");
+  assert.equal(nacional.registros[2].siglaUnidadeFornecimento, null);
+  assert.equal(nacional.registros[0].precoUnitario, 10.1);
+  const am = prepararAtas(atas, { ufs: ["AM"], praticados: new Set(), ipca: null });
+  assert.deepEqual(am.registros.map((r) => r.idCompraItem), ["A"], "sem UF conhecida, fica fora quando há filtro de UF");
+});
 
 const reg = (preco: number, sigla: string, cap: number | null = null, dataCompra = "2026-01-15") =>
   ({ precoUnitario: preco, siglaUnidadeFornecimento: sigla, capacidadeUnidadeFornecimento: cap, dataCompra });
@@ -13,6 +31,11 @@ test("unidade de fornecimento: a do item quando aparece, senão a mais comum; um
   assert.equal(unidadePadrao([reg(1, "UN"), reg(2, "UN")], "UN"), "");
   assert.equal(normalizarUnidade("unidade"), "UN");
   assert.equal(normalizarUnidade("Pacote"), "PCT");
+  // a unidade das atas (PNCP, por extenso) cai na sigla dos preços praticados (catálogo)
+  assert.equal(normalizarUnidade("Comprimido"), "COMPR");
+  assert.equal(normalizarUnidade("Frasco-Ampola"), "FR-AM");
+  assert.equal(normalizarUnidade("FR-AM"), "FR-AM");
+  assert.equal(unidadePadrao([reg(1, "COMPR"), reg(2, "COMPR"), reg(3, "FR-AM"), reg(4, "FR-AM"), reg(5, "FR-AM")], "comprimido"), "COMPR");
 });
 
 test("IPCA do mês seguinte ao da compra até o último divulgado", () => {

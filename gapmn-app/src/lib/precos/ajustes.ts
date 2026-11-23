@@ -23,13 +23,16 @@ export function unidadeDoRegistro(r: PrecoComUnidade): string {
   return `${r.siglaUnidadeFornecimento ?? "?"}${cap && cap !== 1 ? ` c/ ${fmtCap(cap)}` : ""}`;
 }
 
+// sai na sigla do catálogo (a dos preços praticados): o PNCP, de onde vem a unidade das atas, escreve por extenso
 const SINONIMOS: [RegExp, string][] = [
-  [/^(UN|UND|UNID|UNIDADE|UNIDADES|UNI|PC|PECA|PCA)$/, "UN"],
-  [/^(CX|CAIXA)$/, "CX"], [/^(PCT|PACOTE|PT)$/, "PCT"], [/^(KG|QUILO|QUILOGRAMA)$/, "KG"],
-  [/^(L|LT|LITRO)$/, "L"], [/^(M|METRO)$/, "M"], [/^(RESMA|RM)$/, "RESMA"], [/^(FR|FRASCO)$/, "FRASCO"],
-  [/^(GL|GALAO)$/, "GALAO"], [/^(SV|SERV|SERVICO)$/, "SERVICO"], [/^(MES|MESES)$/, "MES"],
+  [/^(UN|UND|UNID|UNIDADE|UNIDADES|UNI)$/, "UN"], [/^(PC|PCA|PECA|PECAS)$/, "PC"],
+  [/^(COMPR|COMP|CP|CPR|COMPRIMIDO|COMPRIMIDOS)$/, "COMPR"], [/^(CAPS|CAP|CAPSULA|CAPSULAS)$/, "CAPS"],
+  [/^(FRAM|FRASCOAMPOLA|FRASCOAMPOLAS)$/, "FR-AM"], [/^(AMP|AMPOLA|AMPOLAS)$/, "AMP"], [/^(FR|FRASCO|FRASCOS)$/, "FR"],
+  [/^(BIS|BISNAGA|BISNAGAS)$/, "BIS"], [/^(CX|CAIXA|CAIXAS)$/, "CX"], [/^(PCT|PACOTE|PACOTES|PT)$/, "PCT"],
+  [/^(KG|QUILO|QUILOGRAMA|QUILOGRAMAS)$/, "KG"], [/^(L|LT|LITRO|LITROS)$/, "L"], [/^(M|METRO|METROS)$/, "M"],
+  [/^(RESMA|RESMAS|RM)$/, "RESMA"], [/^(GL|GALAO|GALOES)$/, "GL"], [/^(SV|SERV|SERVICO|SERVICOS)$/, "SERVICO"], [/^(MES|MESES)$/, "MES"],
 ];
-/** Sigla de unidade sem acento, ponto e variações ("Unid." = "UN") */
+/** Sigla de unidade sem acento, ponto e variações ("Unid." = "UN", "Comprimido" = "COMPR") */
 export function normalizarUnidade(s: string | null | undefined): string {
   const t = String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   for (const [rx, v] of SINONIMOS) if (rx.test(t)) return v;
@@ -83,6 +86,21 @@ export function corrigirPrecos<T extends PrecoComUnidade>(registros: T[], variac
     const fator = fatorIpca(r.dataCompra, variacoes, ate);
     return { ...r, precoOriginal: original, fatorCorrecao: fator, precoUnitario: Math.round(original * fator * 10000) / 10000 };
   });
+}
+
+export interface PrecoDeAta extends PrecoComUnidade { idCompraItem?: string; estado?: string; unidadeTexto?: string | null }
+
+/** Itens de ata (art. 5º, II) prontos para a cesta: só da UF pedida (sem UF conhecida, ficam fora quando há
+ *  filtro de UF), unidade da compra como sigla, atualização pelo IPCA; `novas` = os que não estavam entre os
+ *  preços praticados (o mesmo item de compra conta uma vez só). */
+export function prepararAtas<T extends PrecoDeAta>(registros: T[], op: {
+  ufs: string[]; praticados: Set<string | undefined>; ipca?: { variacoes: Map<string, number>; ate: string } | null;
+}): { registros: T[]; novas: number } {
+  let regs = registros
+    .filter((r) => !op.ufs.length || (!!r.estado && op.ufs.includes(r.estado)))
+    .map((r) => ({ ...r, siglaUnidadeFornecimento: r.unidadeTexto ? normalizarUnidade(r.unidadeTexto) : null, capacidadeUnidadeFornecimento: null }));
+  if (op.ipca) regs = corrigirPrecos(regs, op.ipca.variacoes, op.ipca.ate);
+  return { registros: regs, novas: regs.filter((r) => !op.praticados.has(r.idCompraItem)).length };
 }
 
 /** Último mês da série (AAAA-MM) */
