@@ -311,3 +311,12 @@ a ele o PDF da solicitação e o da declaração do SICAF (substitui a extensão
 - NE de ano anterior (restos a pagar): a revisão avisa. Se o CNET não oferecer o
   "Tipo Operação", o robô para e explica — alteração de RP costuma ser feita no SIAFI Web.
 - Anulação não confere o fornecedor; reforço confere (SICAF) como o empenho novo.
+
+## Verificação do fornecedor pelo servidor do gapmn.app (versão 2.9.4)
+
+O servidor que verificava o fornecedor (mcp-compras.up.railway.app) saiu do ar em novembro de 2026, e a
+verificação passava a dar "Não consegui verificar o fornecedor". Agora ela é feita pela função
+`verificar-fornecedor` do gapmn.app, só em fontes públicas e só com o CNPJ: CEIS, CNEP e CEPIM do Portal da
+Transparência (da filial e da matriz), cadastro do Compras.gov.br (ativo e habilitado a licitar) e situação
+cadastral na Receita. O resultado continua só avisando: nunca impede o empenho. A extensão deixou de pedir
+acesso ao servidor antigo.

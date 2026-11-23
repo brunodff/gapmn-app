@@ -106,8 +106,7 @@ Apoiar a emissão de empenhos: ler a solicitação de empenho em PDF e preencher
 contratos.comprasnet.gov.br: preencher a minuta de empenho na sessão do usuário.
 www3.comprasnet.gov.br: ler a declaração do SICAF (situação do fornecedor e certidões) na sessão do usuário.
 *.siloms.intraer, *.intraer e *.fab.mil.br: SILOMS, sistema interno do Comando da Aeronáutica, onde o robô cria o subprocesso do empenho (só existe na rede interna).
-mcp-compras.up.railway.app: servidor de consultas do GAP-MN App, que verifica sanções do fornecedor em bases públicas; recebe apenas o CNPJ.
-fychrtyyqbzlfbzbvzqp.supabase.co: banco do GAP-MN App, que recebe as sugestões enviadas pelo botão de sugestões e a contagem anônima de uso.
+fychrtyyqbzlfbzbvzqp.supabase.co: servidor do GAP-MN App, que verifica sanções do fornecedor em bases públicas (recebe apenas o CNPJ) e recebe as sugestões enviadas pelo botão de sugestões e a contagem anônima de uso.
 ```
 
 **Código remoto:** marque **Não, não estou usando código remoto.**

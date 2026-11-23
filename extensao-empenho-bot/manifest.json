@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Robô de Empenhos",
-  "version": "2.9.3",
+  "version": "2.9.4",
   "description": "Lê a solicitação de empenho em PDF, preenche a minuta no Contratos.gov.br e cria o subprocesso no SILOMS. Ferramenta não oficial.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -18,7 +18,6 @@
   ],
   "host_permissions": [
     "https://fychrtyyqbzlfbzbvzqp.supabase.co/*",
-    "https://mcp-compras.up.railway.app/*",
     "https://contratos.comprasnet.gov.br/*",
     "https://www3.comprasnet.gov.br/*",
     "https://mac1.siloms.intraer/*",

@@ -1,25 +1,21 @@
 /**
- * Verificação do fornecedor pelo MCP Compras.gov.br (o mesmo servidor do gapmn.app):
- *   - sanções do Portal da Transparência: CEIS, CNEP e CEPIM;
- *   - impedimentos registrados no Comprasnet (SICAF);
- *   - "habilitado a licitar" do cadastro no Compras.gov.br;
+ * Verificação do fornecedor pelo servidor do gapmn.app (função verificar-fornecedor, no Supabase):
+ *   - sanções do Portal da Transparência: CEIS, CNEP e CEPIM (da filial e da matriz);
+ *   - "ativo" e "habilitado a licitar" do cadastro no Compras.gov.br (SICAF);
  *   - situação cadastral do CNPJ na Receita Federal.
+ * Até a 2.9.3 a consulta ia ao servidor MCP Compras (mcp-compras.up.railway.app), que saiu do ar.
  *
  * Não cobre as certidões de regularidade (CND Receita/PGFN, FGTS, trabalhista):
  * elas só aparecem na "Situação do Fornecedor" do SICAF, com login gov.br.
  */
 
-const MCP_URL = 'https://mcp-compras.up.railway.app/mcp';
-const PROTOCOL_VERSION = '2025-06-18';
+const URL_VERIFICAR = 'https://fychrtyyqbzlfbzbvzqp.supabase.co/functions/v1/verificar-fornecedor';
+// chave pública do gapmn.app (a mesma da contagem de uso): só chama a função, não lê o banco
+const CHAVE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5Y2hydHl5cWJ6bGZiemJ2enFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5Mzk5NzcsImV4cCI6MjA4NjUxNTk3N30.i27qaCYX9qZ6liL9iXaOtYgddWgKyiM5eoobIN1loFw';
 
-let sessao = null;
-let rpcId = 0;
-let handshake = null;
-
-// Cada pedido ao MCP tem prazo (envio + leitura da resposta): servidor lento ou
-// fluxo SSE que nunca fecha deixavam o cartão "verificando" para sempre
-const PRAZO_MCP = 25000;
-async function comPrazo(fn, ms = PRAZO_MCP) {
+// A consulta tem prazo: servidor lento deixaria o cartão "verificando" para sempre
+const PRAZO = 45000;
+async function comPrazo(fn, ms = PRAZO) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
@@ -30,83 +26,6 @@ async function comPrazo(fn, ms = PRAZO_MCP) {
   } finally {
     clearTimeout(t);
   }
-}
-
-async function postMcp(payload, signal) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/event-stream',
-    'mcp-protocol-version': PROTOCOL_VERSION,
-  };
-  if (sessao) headers['mcp-session-id'] = sessao;
-  return fetch(MCP_URL, { method: 'POST', headers, body: JSON.stringify(payload), signal });
-}
-
-// Resposta em JSON ou em SSE (event-stream), conforme o servidor escolher. No SSE
-// lê aos poucos e para na mensagem pedida — o fluxo pode continuar aberto.
-async function lerResposta(res, id) {
-  if (!(res.headers.get('content-type') ?? '').includes('text/event-stream')) return JSON.parse(await res.text());
-  const leitor = res.body.getReader();
-  const dec = new TextDecoder();
-  let resto = '';
-  const procurar = linha => {
-    if (!linha.startsWith('data:')) return null;
-    try { const msg = JSON.parse(linha.slice(5)); return msg.id === id ? msg : null; } catch { return null; }   // evento sem JSON
-  };
-  try {
-    for (;;) {
-      const { value, done } = await leitor.read();
-      resto += done ? dec.decode() : dec.decode(value, { stream: true });
-      const linhas = resto.split('\n');
-      resto = done ? '' : linhas.pop();
-      for (const l of linhas) { const msg = procurar(l.replace(/\r$/, '')); if (msg) return msg; }
-      if (done) break;
-    }
-  } finally {
-    leitor.cancel().catch(() => {});
-  }
-  throw new Error('resposta do MCP sem a mensagem pedida');
-}
-
-async function iniciarSessao() {
-  sessao = null;
-  const id = ++rpcId;
-  await comPrazo(async signal => {
-    const res = await postMcp({
-      jsonrpc: '2.0', id, method: 'initialize',
-      params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'gapmn-empenho-bot', version: '1.0' } },
-    }, signal);
-    if (!res.ok) throw new Error(`MCP indisponível (HTTP ${res.status})`);
-    sessao = res.headers.get('mcp-session-id');
-    await lerResposta(res, id);
-  });
-  await comPrazo(signal => postMcp({ jsonrpc: '2.0', method: 'notifications/initialized' }, signal)).catch(() => {});
-}
-
-async function chamarTool(nome, args) {
-  if (!sessao) {
-    handshake ??= iniciarSessao().finally(() => { handshake = null; });
-    await handshake;
-  }
-  for (let tentativa = 0; tentativa < 3; tentativa++) {
-    const id = ++rpcId;
-    const resposta = await comPrazo(async signal => {
-      const res = await postMcp({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: nome, arguments: args } }, signal);
-      if (!res.ok) return { status: res.status };
-      return { status: res.status, msg: await lerResposta(res, id) };
-    });
-    if (resposta.status === 404 || resposta.status === 400) { await iniciarSessao(); continue; }  // sessão perdida
-    if (resposta.status >= 500 || resposta.status === 429) { await new Promise(ok => setTimeout(ok, 800 * (tentativa + 1))); continue; }
-    if (!resposta.msg) throw new Error(`MCP respondeu HTTP ${resposta.status}`);
-    const msg = resposta.msg;
-    if (msg.error) throw new Error(msg.error.message ?? 'erro do MCP');
-    const r = msg.result ?? {};
-    const texto = r.content?.find(c => c.type === 'text')?.text ?? '';
-    if (r.isError) throw new Error(texto || 'a consulta devolveu erro');
-    if (r.structuredContent) return r.structuredContent;
-    try { return JSON.parse(texto); } catch { return { texto }; }
-  }
-  throw new Error('MCP indisponível após 3 tentativas');
 }
 
 // ── Regras ────────────────────────────────────────────────────────────────────
@@ -177,7 +96,7 @@ export function classificar(perfil, sancoes, hoje = new Date()) {
   if (cadastro) {
     if (cadastro.habilitadoLicitar === false) add('atencao', 'SICAF: fornecedor não habilitado a licitar');
     if (cadastro.ativo === false) add('atencao', 'Compras.gov.br: cadastro do fornecedor inativo');
-  } else if (perfil) {
+  } else if (perfil && !sancoes?.fontes_com_erro?.sicaf) {
     add('atencao', 'Fornecedor não encontrado no cadastro do Compras.gov.br (SICAF)');
   }
 
@@ -216,12 +135,18 @@ export function classificar(perfil, sancoes, hoje = new Date()) {
 const cache = new Map();   // cnpj → Promise do resultado (uma consulta por CNPJ na sessão)
 
 async function consultar(cnpj) {
-  const [perfil, sancoes] = await Promise.allSettled([
-    chamarTool('compras_perfil_fornecedor_completo', { cnpj }),
-    chamarTool('compras_checar_sancoes_fornecedor', { cnpj }),
-  ]);
-  if (perfil.status === 'rejected' && sancoes.status === 'rejected') throw perfil.reason;
-  return classificar(perfil.value ?? null, sancoes.value ?? null);
+  const j = await comPrazo(async signal => {
+    const r = await fetch(URL_VERIFICAR, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: CHAVE, Authorization: 'Bearer ' + CHAVE },
+      body: JSON.stringify({ cnpj }),
+      signal,
+    });
+    const corpo = await r.json().catch(() => null);
+    if (!r.ok || !corpo) throw new Error(corpo?.erro ?? `o servidor de verificação respondeu ${r.status}`);
+    return corpo;
+  });
+  return classificar(j.perfil ?? null, j.sancoes ?? null);
 }
 
 /** Verifica o fornecedor pelo CNPJ. Nunca rejeita: falha vira nivel 'erro'. */
