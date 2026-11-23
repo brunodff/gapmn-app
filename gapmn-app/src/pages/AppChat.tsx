@@ -27,21 +27,27 @@ import CalendarioLicitacoes from "../components/CalendarioLicitacoes";
 import PesquisaPrecos from "../components/PesquisaPrecos";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
+// Neutros do shell em variáveis CSS: trocam entre noite e dia pelo data-tema do <html>
+// (as definições das variáveis ficam no <style> do AppChat). Acentos iguais nos dois temas.
 const T = {
-  bg:    "#060c1c",
-  bg2:   "#081124",
-  surf:  "rgba(255,255,255,0.035)",
-  surf2: "rgba(255,255,255,0.065)",
-  bdr:   "rgba(255,255,255,0.08)",
-  bdr2:  "rgba(255,255,255,0.14)",
+  bg:    "var(--gm-bg)",
+  bg2:   "var(--gm-bg2)",
+  surf:  "var(--gm-surf)",
+  surf2: "var(--gm-surf2)",
+  bdr:   "var(--gm-bdr)",
+  bdr2:  "var(--gm-bdr2)",
+  topbar:"var(--gm-topbar)",
+  pop:   "var(--gm-pop)",
+  side:  "var(--gm-side)",
+  hover: "var(--gm-hover)",
   cyan:  "#38bdf8",
   cyan2: "#0ea5e9",
   green: "#34d399",
   gold:  "#fbbf24",
   vio:   "#a78bfa",
   rose:  "#fb7185",
-  txt:   "#eaf1fb",
-  muted: "rgba(234,241,251,0.55)",
+  txt:   "var(--gm-txt)",
+  muted: "var(--gm-muted)",
   font:  "'Plus Jakarta Sans', system-ui, sans-serif",
   mono:  "'JetBrains Mono', 'Fira Mono', monospace",
 };
@@ -398,7 +404,7 @@ function ProfileModal({ user, onSave, onClose }: {
       display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={onClose}>
       <div style={{
-        background: "rgba(6,12,28,0.98)", backdropFilter: "blur(24px)",
+        background: T.pop, backdropFilter: "blur(24px)",
         border: `1px solid ${T.bdr2}`, borderRadius: 18,
         padding: "28px 28px", width: 380,
         boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
@@ -557,7 +563,7 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
     <nav style={{
       position: "fixed", left: 0, top: 0, bottom: 0,
       width: collapsed ? SWC : SW, zIndex: 40,
-      background: "rgba(4,8,20,0.95)", backdropFilter: "blur(24px) saturate(1.4)",
+      background: T.side, backdropFilter: "blur(24px) saturate(1.4)",
       borderRight: `1px solid ${T.bdr}`,
       display: "flex", flexDirection: "column",
       transition: "width 0.22s cubic-bezier(.4,0,.2,1)", overflow: "hidden",
@@ -601,7 +607,7 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
                 fontSize: 13, fontWeight: 500, fontFamily: T.font,
                 transition: "background 0.14s, color 0.14s", marginBottom: 2,
               }}
-              onMouseEnter={e => { if (active !== n.id) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; }}
+              onMouseEnter={e => { if (active !== n.id) (e.currentTarget as HTMLButtonElement).style.background = T.hover; }}
               onMouseLeave={e => { if (active !== n.id) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
             >
               <span style={{ fontSize: 15, flexShrink: 0, lineHeight: 1 }}>{n.icon}</span>
@@ -673,7 +679,7 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
           />
           <span style={{ position: "absolute", bottom: 0, right: 0,
             width: 10, height: 10, borderRadius: "50%",
-            background: T.green, border: "2px solid #060c1c" }} />
+            background: T.green, border: `2px solid ${T.side}` }} />
         </div>
         {!collapsed && (
           <>
@@ -715,9 +721,10 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
 }
 
 // ── Topbar ────────────────────────────────────────────────────────────────────
-function Topbar({ user, bellCount, bellOpen, bellItems, onBell, onToggle }: {
+function Topbar({ user, bellCount, bellOpen, bellItems, onBell, onToggle, tema, onToggleTema }: {
   user: UserInfo; bellCount: number; bellOpen: boolean;
   bellItems: BellItem[]; onBell: () => void; onToggle: () => void;
+  tema: "noite" | "dia"; onToggleTema: () => void;
 }) {
   const h = getBrasiliaHour();
   const greet = h >= 6 && h < 13 ? "Bom dia" : h >= 13 && h < 19 ? "Boa tarde" : "Boa noite";
@@ -727,7 +734,7 @@ function Topbar({ user, bellCount, bellOpen, bellItems, onBell, onToggle }: {
       position: "sticky", top: 0, zIndex: 30,
       height: 58, display: "flex", alignItems: "center",
       padding: "0 24px 0 18px", gap: 14,
-      background: "rgba(4,9,22,0.9)", backdropFilter: "blur(18px) saturate(1.3)",
+      background: T.topbar, backdropFilter: "blur(18px) saturate(1.3)",
       borderBottom: `1px solid ${T.bdr}`,
     }}>
       <button onClick={onToggle}
@@ -741,6 +748,20 @@ function Topbar({ user, bellCount, bellOpen, bellItems, onBell, onToggle }: {
       <div style={{ flex: 1, color: T.txt, fontSize: 14, fontWeight: 600, fontFamily: T.font }}>
         {greet}, <span style={{ color: T.cyan }}>{user.nome.split(" ")[0]}</span>!
       </div>
+
+      {/* Alternar tema dia/noite */}
+      <button onClick={onToggleTema}
+        title={tema === "dia" ? "Mudar para o modo noite (escuro)" : "Mudar para o modo dia (claro)"}
+        aria-label={tema === "dia" ? "Mudar para o modo noite" : "Mudar para o modo dia"}
+        style={{
+          background: T.surf, border: `1px solid ${T.bdr}`,
+          borderRadius: 10, width: 36, height: 36, cursor: "pointer", flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: T.txt, fontSize: 16, transition: "all 0.14s",
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = T.surf2; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = T.surf; }}
+      >{tema === "dia" ? "🌙" : "☀️"}</button>
 
       {/* Bell */}
       <div style={{ position: "relative", flexShrink: 0 }}>
@@ -760,7 +781,7 @@ function Topbar({ user, bellCount, bellOpen, bellItems, onBell, onToggle }: {
               background: T.rose, color: "#fff", fontSize: 8, fontWeight: 800,
               width: 16, height: 16, borderRadius: "50%",
               display: "flex", alignItems: "center", justifyContent: "center",
-              border: "2px solid #060c1c",
+              border: `2px solid ${T.topbar}`,
             }}>{bellCount > 9 ? "9+" : bellCount}</span>
           )}
         </button>
@@ -768,7 +789,7 @@ function Topbar({ user, bellCount, bellOpen, bellItems, onBell, onToggle }: {
         {bellOpen && (
           <div style={{
             position: "absolute", top: "calc(100% + 8px)", right: 0,
-            width: 310, background: "rgba(6,12,28,0.98)",
+            width: 310, background: T.pop,
             backdropFilter: "blur(24px)",
             border: `1px solid ${T.bdr2}`, borderRadius: 14,
             boxShadow: "0 20px 60px rgba(0,0,0,0.55)",
@@ -885,7 +906,7 @@ function CeliaWidget({ kpis }: { kpis: KPIs }) {
     <div ref={widgetRef} style={{ position: "fixed", bottom: 22, right: 22, zIndex: 100, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
       {phase === "balloon" && (
         <div style={{
-          background: "rgba(6,12,28,0.96)", backdropFilter: "blur(18px)",
+          background: T.pop, backdropFilter: "blur(18px)",
           border: `1px solid ${T.cyan}55`, borderRadius: "14px 14px 4px 14px",
           padding: "10px 14px", color: T.txt, fontSize: 13,
           whiteSpace: "nowrap", fontFamily: T.font,
@@ -895,7 +916,7 @@ function CeliaWidget({ kpis }: { kpis: KPIs }) {
 
       {phase === "chat" && (
         <div style={{
-          width: 310, background: "rgba(4,9,22,0.97)", backdropFilter: "blur(24px)",
+          width: 310, background: T.pop, backdropFilter: "blur(24px)",
           border: `1px solid ${T.bdr2}`, borderRadius: 16, overflow: "hidden",
           boxShadow: "0 24px 64px rgba(0,0,0,0.65)", animation: "dashFadeIn 0.22s ease-out",
           display: "flex", flexDirection: "column",
@@ -1022,8 +1043,8 @@ function AdminUsersPanel() {
   }
 
   return (
-    <div style={{ background: "#0d1117", borderRadius: 16, padding: "24px 28px" }}>
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>Gerenciamento de Usuários</div>
+    <div style={{ background: T.pop, borderRadius: 16, padding: "24px 28px" }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: T.txt, marginBottom: 4 }}>Gerenciamento de Usuários</div>
       <div style={{ fontSize: 11, color: "#64748b", marginBottom: 20 }}>
         Edite o setor/função de cada usuário. A permissão de importação e edição é determinada pelo setor.
       </div>
@@ -1140,7 +1161,7 @@ function NotificacaoAtualizacao({ onFerramentas }: { onFerramentas: () => void }
     <div style={{
       position: "fixed", top: 24, right: 24, zIndex: 9999,
       width: 380, borderRadius: 18,
-      background: "rgba(8,14,30,0.97)",
+      background: T.pop,
       border: "1px solid rgba(99,102,241,0.4)",
       boxShadow: "0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,102,241,0.1)",
       overflow: "hidden",
@@ -1217,6 +1238,15 @@ export default function AppChat() {
   const [kpis,           setKpis]       = useState<KPIs>({ empenhos: 0, processos: 0, contratos: 0, il: 0, atas: 0 });
   const [collapsed,      setCollapsed]  = useState(false);
   const [bellOpen,       setBellOpen]   = useState(false);
+  // Tema do site: "noite" (escuro, padrão) ou "dia" (claro). Fica guardado neste navegador.
+  const [tema,           setTema]       = useState<"noite" | "dia">(() => {
+    try { return localStorage.getItem("gm-tema") === "dia" ? "dia" : "noite"; } catch { return "noite"; }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.tema = tema;
+    try { localStorage.setItem("gm-tema", tema); } catch { /* só neste navegador */ }
+    return () => { delete document.documentElement.dataset.tema; };
+  }, [tema]);
   // Só o Painel de Governança vai para o endereço (?painel=governanca), para os filtros
   // dele poderem ser compartilhados por link; as outras telas seguem só no estado.
   // ?vista=ferramentas abre a Central de Ferramentas: é para onde vão os endereços antigos
@@ -1372,6 +1402,29 @@ export default function AppChat() {
   return (
     <>
       <style>{`
+        /* Tokens do shell — noite (padrão) e dia (data-tema="dia" no <html>) */
+        :root {
+          --gm-bg:#060c1c; --gm-bg2:#081124;
+          --gm-surf:rgba(255,255,255,0.035); --gm-surf2:rgba(255,255,255,0.065);
+          --gm-bdr:rgba(255,255,255,0.08); --gm-bdr2:rgba(255,255,255,0.14);
+          --gm-txt:#eaf1fb; --gm-muted:rgba(234,241,251,0.55);
+          --gm-topbar:rgba(4,9,22,0.9); --gm-pop:rgba(6,12,28,0.98);
+          --gm-side:rgba(4,8,20,0.95); --gm-hover:rgba(255,255,255,0.05);
+          --gm-grad:linear-gradient(155deg,#060c1c 0%,#081124 55%,#0a1628 100%);
+          --gm-scroll:rgba(255,255,255,0.09); --gm-ph:rgba(234,241,251,0.28);
+        }
+        :root[data-tema="dia"] {
+          --gm-bg:#eef2f8; --gm-bg2:#e2e8f0;
+          --gm-surf:#ffffff; --gm-surf2:#f1f5f9;
+          --gm-bdr:rgba(15,23,42,0.10); --gm-bdr2:rgba(15,23,42,0.18);
+          --gm-txt:#0f172a; --gm-muted:rgba(15,23,42,0.6);
+          --gm-topbar:rgba(255,255,255,0.92); --gm-pop:#ffffff;
+          --gm-side:rgba(255,255,255,0.94); --gm-hover:rgba(15,23,42,0.05);
+          --gm-grad:linear-gradient(155deg,#f4f7fb 0%,#e7eef6 55%,#dbeafe 100%);
+          --gm-scroll:rgba(15,23,42,0.18); --gm-ph:rgba(15,23,42,0.4);
+        }
+        /* No modo dia, o painel das sub-views ganha uma superfície clara */
+        :root[data-tema="dia"] .svdark { background:#f3f6fb; border-radius:14px; overflow:hidden; }
         @keyframes dashFadeIn {
           from { opacity:0; transform:translateY(8px) scale(.97); }
           to   { opacity:1; transform:translateY(0) scale(1); }
@@ -1384,9 +1437,13 @@ export default function AppChat() {
         @media (prefers-reduced-motion:reduce) { .dc { animation:none !important; } }
         *,:before,:after { box-sizing:border-box; }
         ::-webkit-scrollbar { width:4px; height:4px; background:transparent; }
-        ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.09); border-radius:2px; }
-        input::placeholder { color:rgba(234,241,251,0.28) !important; }
+        ::-webkit-scrollbar-thumb { background:var(--gm-scroll); border-radius:2px; }
+        input::placeholder { color:var(--gm-ph) !important; }
+      `}</style>
 
+      {/* Sobreposições do tema escuro: só no modo noite. No modo dia os componentes
+          mostram as cores claras nativas do Tailwind. */}
+      {tema !== "dia" && <style>{`
         /* ── FeedNoticias dark overrides ───────────────────────────────────── */
         .fdark .bg-white        { background: rgba(255,255,255,0.04) !important; }
         .fdark .border-slate-100 { border-color: rgba(255,255,255,0.07) !important; }
@@ -1632,19 +1689,19 @@ export default function AppChat() {
         .svdark .svmodal .bg-amber-50     { background: #fffbeb !important; }
         .svdark .svmodal .bg-red-50       { background: #fef2f2 !important; }
         .svdark .svmodal .bg-sky-50       { background: #f0f9ff !important; }
-      `}</style>
+      `}</style>}
 
       <NotificacaoAtualizacao onFerramentas={() => setView("ferramentas")} />
 
       <div style={{
         position: "fixed", inset: 0, overflow: "hidden",
-        background: `linear-gradient(155deg, ${T.bg} 0%, ${T.bg2} 55%, #0a1628 100%)`,
+        background: "var(--gm-grad)",
         fontFamily: T.font, color: T.txt,
       }}>
         {/* Particles */}
-        <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none", opacity: 0.28 }}>
+        <div style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none", opacity: tema === "dia" ? 0.5 : 0.28 }}>
           <SparklesCore background="transparent" minSize={0.3} maxSize={1.1}
-            particleDensity={40} particleColor="#38bdf8" speed={0.65} className="w-full h-full" />
+            particleDensity={40} particleColor={tema === "dia" ? "#64748b" : "#38bdf8"} speed={0.65} className="w-full h-full" />
         </div>
 
         {/* Sidebar */}
@@ -1665,6 +1722,7 @@ export default function AppChat() {
             bellOpen={bellOpen} bellItems={userNotifs}
             onBell={() => setBellOpen(b => !b)}
             onToggle={() => setCollapsed(c => !c)}
+            tema={tema} onToggleTema={() => setTema(t => (t === "dia" ? "noite" : "dia"))}
           />
 
           <div
