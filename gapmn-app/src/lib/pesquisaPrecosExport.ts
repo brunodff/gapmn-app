@@ -29,6 +29,8 @@ export interface CabecalhoRelatorio {
   responsavel: string;
   periodoMeses: number;
   uf: string;
+  /** como os preços foram atualizados (vazio: preços da data da compra) */
+  correcao?: string;
 }
 
 const METODOLOGIA = (c: CabecalhoRelatorio) =>
@@ -36,6 +38,8 @@ const METODOLOGIA = (c: CabecalhoRelatorio) =>
   `utilizando preços praticados em contratações públicas registradas no Compras.gov.br ` +
   `(API de Dados Abertos — módulo Pesquisa de Preço), consultadas pelo gapmn.app, ` +
   `no período dos últimos ${c.periodoMeses} meses${c.uf ? `, restrito ${c.uf.includes(",") ? "às UFs" : "à UF"} ${c.uf}` : ", em âmbito nacional"}. ` +
+  (c.correcao ? `Os preços foram atualizados pelo ${c.correcao}, observado o índice de atualização de preços previsto no art. 5º, I e II. ` : "") +
+  `Para cada item foram comparados preços na mesma unidade de fornecimento (a do item ou, se ela não aparece, a mais frequente). ` +
   `Conforme o art. 6º da mesma IN, os valores inexequíveis, inconsistentes e excessivamente elevados foram ` +
   `desconsiderados pelo critério estatístico de Tukey (Q1 - 1,5 x IQR; Q3 + 1,5 x IQR), e o preço estimado de cada ` +
   `item foi obtido pelo método indicado na tabela (média, mediana ou menor valor) sobre conjunto de três ou mais preços.`;
@@ -257,7 +261,7 @@ export function exportarPdf(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) {
     autoTable(doc, {
       startY: yAnexo,
       head: [[{ content: `Item ${l.item.numero} — ${l.item.descricao.slice(0, 120)}`, colSpan: 8 }],
-        ["Data", "UASG / Órgão", "UF", "Fornecedor", "Marca", "Unid. forn.", "Qtd.", "Preço unit."]],
+        ["Data", "UASG / Órgão", "UF", "Fornecedor", "Marca", "Unid. forn.", "Qtd.", cab.correcao ? "Preço unit. (compra → atual.)" : "Preço unit."]],
       body: l.registros.map((r) => [
         fmtData(r.dataResultado ?? r.dataCompra),
         `${r.codigoUasg ?? ""} — ${r.nomeUasg ?? r.nomeOrgao ?? ""}`.slice(0, 70),
@@ -266,7 +270,8 @@ export function exportarPdf(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) {
         (r.marca ?? "").slice(0, 20),
         [r.siglaUnidadeFornecimento, r.capacidadeUnidadeFornecimento && r.capacidadeUnidadeFornecimento !== 1 ? `c/ ${fmtNum(r.capacidadeUnidadeFornecimento)}` : ""].filter(Boolean).join(" "),
         fmtNum(r.quantidade),
-        fmtBRL(r.precoUnitario),
+        r.precoOriginal != null && r.fatorCorrecao != null && r.fatorCorrecao !== 1
+          ? `${fmtBRL(r.precoOriginal)} → ${fmtBRL(r.precoUnitario)}` : fmtBRL(r.precoUnitario),
       ]),
       styles: { fontSize: 6.8, cellPadding: 1 },
       headStyles: { fillColor: [26, 58, 92], fontSize: 7 },
@@ -341,7 +346,9 @@ export function exportarXlsx(cab: CabecalhoRelatorio, linhas: LinhaRelatorio[]) 
     "Unid. fornecimento": r.siglaUnidadeFornecimento,
     "Capacidade": r.capacidadeUnidadeFornecimento,
     "Quantidade": r.quantidade,
-    "Preço unitário": r.precoUnitario,
+    "Preço unitário na compra": r.precoOriginal ?? r.precoUnitario,
+    "Fator IPCA": r.fatorCorrecao ?? 1,
+    "Preço unitário considerado": r.precoUnitario,
     "Id compra/item": r.idCompraItem,
     "Descrição detalhada": r.descricaoDetalhadaItem,
   })));

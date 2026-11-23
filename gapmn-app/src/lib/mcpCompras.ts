@@ -6,6 +6,7 @@ import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import { supabase } from "./supabase";
 import { extrairItensTabela, trechosDaPagina, type Trecho } from "./trParser";
+import { corrigirPrecos, ultimoMesDaSerie, variacoesPorMes } from "./precos/ajustes";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
@@ -53,6 +54,9 @@ export interface RegistroPreco {
   forma?: string;
   descricaoDetalhadaItem?: string;
   descricaoItem?: string;
+  /** preço da compra, antes da atualização pelo IPCA (precoUnitario fica atualizado) */
+  precoOriginal?: number;
+  fatorCorrecao?: number;
 }
 
 export interface Estatisticas {
@@ -218,12 +222,26 @@ export function mesclarETP(parciais: { uf: string; etp: ResultadoETP }[], falhas
   };
 }
 
+/** Série do IPCA (SGS 433 do Banco Central, que libera o navegador) para atualizar os preços: IN 65/2021, art. 5º */
+export interface SerieIpca { variacoes: Map<string, number>; ate: string }
+export async function buscarIpca(mesesAtras: number): Promise<SerieIpca> {
+  const d = new Date();
+  const ini = new Date(d.getFullYear(), d.getMonth() - mesesAtras - 1, 1);
+  const dd = (x: Date) => `${String(x.getDate()).padStart(2, "0")}/${String(x.getMonth() + 1).padStart(2, "0")}/${x.getFullYear()}`;
+  const r = await fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados?formato=json&dataInicial=${dd(ini)}&dataFinal=${dd(d)}`);
+  if (!r.ok) throw new Error(`o Banco Central respondeu ${r.status} ao buscar o IPCA`);
+  const variacoes = variacoesPorMes(await r.json());
+  if (!variacoes.size) throw new Error("o Banco Central não devolveu o IPCA do período");
+  return { variacoes, ate: ultimoMesDaSerie(variacoes) };
+}
+
 /**
  * Pesquisa de preços de um item. Com 0 ou 1 UF é uma consulta só; com várias UFs, uma por estado,
- * juntando os resultados. A estatística é calculada aqui, sobre todos os preços trazidos.
+ * juntando os resultados. Com `ipca`, os preços são atualizados pelo índice antes da estatística,
+ * calculada aqui sobre todos os preços trazidos.
  */
 export async function pesquisarPrecosETP(p: {
-  tipo: TipoItem; codigo: number; periodoMeses: number; ufs: string[]; maxPaginas: number;
+  tipo: TipoItem; codigo: number; periodoMeses: number; ufs: string[]; maxPaginas: number; ipca?: SerieIpca | null;
 }): Promise<{ etp: ResultadoETP; consultas: FonteConsulta[] }> {
   const hoje = new Date();
   const ini = new Date(hoje.getTime() - p.periodoMeses * 30 * 86400000);
@@ -255,7 +273,8 @@ export async function pesquisarPrecosETP(p: {
   saidas.forEach((s, i) => {
     const uf = alvos[i];
     if (s.status === "fulfilled" && !s.value._erro_upstream) {
-      ok.push({ uf: uf ?? "", etp: s.value });
+      const registros = p.ipca ? corrigirPrecos(s.value.registros ?? [], p.ipca.variacoes, p.ipca.ate) : s.value.registros;
+      ok.push({ uf: uf ?? "", etp: { ...s.value, registros } });
       consultas.push({
         uf,
         url: urlConsultaPreco({

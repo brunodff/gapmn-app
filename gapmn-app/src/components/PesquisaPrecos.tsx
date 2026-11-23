@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabase";
 import {
-  CRITERIO_LABEL, UFS,
+  CRITERIO_LABEL, UFS, buscarIpca, type SerieIpca,
   calcularEstatisticas, consultarCatalogo, extrairItensIA, extrairItensRegras, extrairNup,
   extrairItensDaTabela, extrairObjeto, filtrarOutliers, fmtBRL, fmtData, fmtNum, lerPdf, mcpTool,
   normalizarItem, parseNumero, pesquisarPrecosETP, urlCatalogo, valorPorCriterio,
@@ -10,6 +10,7 @@ import {
   type ResultadoETP, type TipoItem,
 } from "../lib/mcpCompras";
 import type { Trecho } from "../lib/trParser";
+import { unidadeDoRegistro, unidadePadrao } from "../lib/precos/ajustes";
 import { exportarPdf, exportarXlsx, type CabecalhoRelatorio, type LinhaRelatorio } from "../lib/pesquisaPrecosExport";
 
 // ── Tipos de estado ──────────────────────────────────────────────────────────
@@ -25,13 +26,16 @@ interface ResultadoItem {
   criterio: Criterio;
   excluidos: string[];
   unidadeFiltro: string;
+  /** a unidade foi escolhida pelo app (a do item ou a mais comum), não pelo analista */
+  unidadeAuto?: boolean;
   faixa: [number, number] | null;
   justificativa: string;
   aberto: boolean;
   consultas?: FonteConsulta[];
 }
 
-interface Parametros { periodoMeses: number; ufs: string[]; maxPaginas: number }
+/** corrigirIpca: atualiza os preços pelo IPCA até o último mês divulgado (IN 65/2021, art. 5º, I e II) */
+interface Parametros { periodoMeses: number; ufs: string[]; maxPaginas: number; corrigirIpca: boolean }
 
 interface TrCadastrado { numero_compra: string; pdf_url: string | null; nup: string | null }
 
@@ -39,7 +43,7 @@ const RASCUNHO_KEY = "gapmn:pesquisa-precos:v1";
 const CONCORRENCIA = 3;
 
 const ETAPAS: { id: Etapa; label: string; icon: string }[] = [
-  { id: "tr",        label: "Termo de Referência", icon: "📄" },
+  { id: "tr",        label: "Documento (DFD/ETP)", icon: "📄" },
   { id: "itens",     label: "Itens",               icon: "🧾" },
   { id: "pesquisa",  label: "Pesquisa",            icon: "🔎" },
   { id: "relatorio", label: "Relatório",           icon: "📊" },
@@ -52,10 +56,8 @@ const resultadoVazio = (): ResultadoItem => ({
 
 const chaveRegistro = (r: RegistroPreco, i: number) => r.idCompraItem ?? `${r.idCompra ?? "x"}-${i}`;
 
-const unidadeRegistro = (r: RegistroPreco) => {
-  const cap = r.capacidadeUnidadeFornecimento;
-  return `${r.siglaUnidadeFornecimento ?? "?"}${cap && cap !== 1 ? ` c/ ${fmtNum(cap)}` : ""}`;
-};
+const unidadeRegistro = (r: RegistroPreco) => unidadeDoRegistro(r);
+const mesAno = (am: string) => (/^(\d{4})-(\d{2})$/.test(am) ? `${am.slice(5)}/${am.slice(0, 4)}` : am);
 
 // ── Avaliação de um item (aplica os ajustes do analista) ─────────────────────
 
@@ -130,7 +132,9 @@ export default function PesquisaPrecos() {
 
   // Itens e pesquisa
   const [itens, setItens] = useState<ItemTR[]>([]);
-  const [params, setParams] = useState<Parametros>({ periodoMeses: 12, ufs: [], maxPaginas: 5 });
+  const [params, setParams] = useState<Parametros>({ periodoMeses: 12, ufs: [], maxPaginas: 5, corrigirIpca: true });
+  const ipcaRef = useRef<Promise<SerieIpca | null> | null>(null);
+  const [avisoIpca, setAvisoIpca] = useState<string | null>(null);
   const [resultados, setResultados] = useState<Record<string, ResultadoItem>>({});
   const [executando, setExecutando] = useState(false);
   const [mcpStatus, setMcpStatus] = useState<"verificando" | "online" | "offline">("verificando");
@@ -145,7 +149,8 @@ export default function PesquisaPrecos() {
         if (r.itens?.length) {
           setCab(r.cab); setItens(r.itens);
           // rascunhos antigos guardavam uma única UF (params.uf)
-          setParams({ periodoMeses: r.params.periodoMeses, maxPaginas: r.params.maxPaginas, ufs: r.params.ufs ?? (r.params.uf ? [r.params.uf] : []) });
+          setParams({ periodoMeses: r.params.periodoMeses, maxPaginas: r.params.maxPaginas, ufs: r.params.ufs ?? (r.params.uf ? [r.params.uf] : []),
+            corrigirIpca: r.params.corrigirIpca ?? true });
           const res: Record<string, ResultadoItem> = r.resultados ?? {};
           for (const k of Object.keys(res)) if (res[k].status === "carregando") res[k].status = "pendente";
           setResultados(res);
@@ -299,6 +304,21 @@ export default function PesquisaPrecos() {
     setResultados((r) => ({ ...r, [id]: { ...(r[id] ?? resultadoVazio()), ...patch } }));
   }
 
+  /** IPCA para atualizar os preços (uma busca por rodada, mesmo com itens em paralelo); sem ele, segue e avisa */
+  function obterIpca(p: Parametros): Promise<SerieIpca | null> {
+    if (!p.corrigirIpca) return Promise.resolve(null);
+    ipcaRef.current ??= buscarIpca(Math.max(p.periodoMeses, 24) + 1).then((s) => {
+      setAvisoIpca(null);
+      setCab((c) => ({ ...c, correcao: `IPCA (série 433 do Banco Central), do mês seguinte ao da compra até ${mesAno(s.ate)}` }));
+      return s;
+    }).catch((e: Error) => {
+      setAvisoIpca(`Os preços não foram atualizados pelo IPCA (${e.message}). Pesquise de novo para tentar outra vez.`);
+      setCab((c) => ({ ...c, correcao: "" }));
+      return null;
+    });
+    return ipcaRef.current;
+  }
+
   async function pesquisarItem(item: ItemTR, override?: Partial<Parametros>) {
     const p = { ...params, ...override };
     if (!item.codigo) {
@@ -306,8 +326,9 @@ export default function PesquisaPrecos() {
       return;
     }
     patchResultado(item.id, { status: "carregando", erro: undefined });
+    const ipca = await obterIpca(p);
     const [precos, catalogo] = await Promise.allSettled([
-      pesquisarPrecosETP({ tipo: item.tipo, codigo: item.codigo, periodoMeses: p.periodoMeses, ufs: p.ufs, maxPaginas: p.maxPaginas }),
+      pesquisarPrecosETP({ tipo: item.tipo, codigo: item.codigo, periodoMeses: p.periodoMeses, ufs: p.ufs, maxPaginas: p.maxPaginas, ipca }),
       consultarCatalogo(item.tipo, item.codigo),
     ]);
     const cat = catalogo.status === "fulfilled" ? catalogo.value : undefined;
@@ -317,10 +338,12 @@ export default function PesquisaPrecos() {
     }
     const { etp, consultas } = precos.value;
     const status: Status = etp._erro_upstream ? "erro" : etp.amostra_total > 0 ? "ok" : "vazio";
+    // a mesma CATMAT mistura unidades (UN, CX c/ 100…): a estatística começa só com a do item ou a mais comum
+    const unidade = unidadePadrao(etp.registros ?? [], item.unidade);
     patchResultado(item.id, {
       status, etp, consultas, catalogo: cat,
       erro: etp._erro_upstream?.diagnostico,
-      excluidos: [], unidadeFiltro: "", faixa: null,
+      excluidos: [], unidadeFiltro: unidade, unidadeAuto: !!unidade, faixa: null,
     });
   }
 
@@ -328,6 +351,7 @@ export default function PesquisaPrecos() {
     const fila = itens.filter((it) => !somentePendentes || !["ok", "vazio"].includes(resultados[it.id]?.status ?? ""));
     if (!fila.length) return;
     setCab((c) => ({ ...c, periodoMeses: params.periodoMeses, uf: params.ufs.join(", ") }));
+    ipcaRef.current = null; // nova rodada: IPCA atual
     setEtapa("pesquisa");
     setExecutando(true);
     let idx = 0;
@@ -349,7 +373,9 @@ export default function PesquisaPrecos() {
     return {
       item: it, estat: a.estat, amostraTotal: r.etp?.amostra_total ?? 0, criterio: r.criterio,
       valorUnitario: a.valorUnitario, valorTotal: a.valorTotal, ajustado: a.ajustado,
-      justificativa: r.justificativa, registros: [...a.considerados].sort((x, y) => x.precoUnitario! - y.precoUnitario!),
+      justificativa: r.justificativa || (r.unidadeAuto && r.unidadeFiltro
+        ? `Considerados só os preços em ${r.unidadeFiltro} (a unidade do item ou, se ela não aparece, a mais frequente), para comparar preços equivalentes.` : ""),
+      registros: [...a.considerados].sort((x, y) => x.precoUnitario! - y.precoUnitario!),
       consultas: r.consultas ?? [],
       catalogoUrl: it.codigo ? urlCatalogo(it.tipo, it.codigo) : "",
     };
@@ -364,9 +390,10 @@ export default function PesquisaPrecos() {
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-800">Pesquisa de Preços a partir do TR</h2>
+          <h2 className="text-lg font-bold text-slate-800">Pesquisa de Preços</h2>
           <p className="text-sm text-slate-500 mt-0.5">
-            Preços praticados no Compras.gov.br (API de Dados Abertos) — metodologia IN SEGES/ME nº 65/2021
+            Preços praticados no Compras.gov.br (API de Dados Abertos), atualizados pelo IPCA — IN SEGES/ME nº 65/2021.
+            Feita antes do Termo de Referência: o valor estimado entra no TR.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -421,15 +448,17 @@ export default function PesquisaPrecos() {
               onClick={() => fileRef.current?.click()}
               className="cursor-pointer rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-sky-50 p-8 text-center transition-all">
               <div className="text-4xl mb-2">📄</div>
-              <div className="text-sm font-semibold text-slate-700">Arraste o PDF do Termo de Referência ou clique para selecionar</div>
-              <div className="text-xs text-slate-500 mt-1">PDF com texto (não digitalizado) ou .txt</div>
+              <div className="text-sm font-semibold text-slate-700">Arraste o documento com a lista de itens ou clique para selecionar</div>
+              <div className="text-xs text-slate-500 mt-1">
+                DFD (Documento de Formalização da Demanda), ETP ou minuta do TR — PDF com texto (não digitalizado) ou .txt
+              </div>
               <input ref={fileRef} type="file" accept=".pdf,.txt" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) lerArquivo(f); e.target.value = ""; }} />
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <label className="text-xs font-semibold text-slate-500">Ou use um TR já cadastrado (Atas de RP)</label>
+                <label className="text-xs font-semibold text-slate-500">Ou parta do TR de uma compra anterior (Atas de RP)</label>
                 <select className="mt-1.5 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                   value="" onChange={(e) => e.target.value && lerTrCadastrado(e.target.value)}>
                   <option value="">{trsCadastrados.length ? "Selecione a compra…" : "Nenhum TR cadastrado"}</option>
@@ -441,7 +470,7 @@ export default function PesquisaPrecos() {
                 </select>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <label className="text-xs font-semibold text-slate-500">Ou cole o texto do TR</label>
+                <label className="text-xs font-semibold text-slate-500">Ou cole o texto (ou as linhas da planilha de itens)</label>
                 <button onClick={() => setMostrarTexto((v) => !v)}
                   className="mt-1.5 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
                   {mostrarTexto ? "Ocultar editor de texto" : "Abrir editor de texto"}
@@ -451,7 +480,7 @@ export default function PesquisaPrecos() {
 
             {mostrarTexto && (
               <textarea value={textoTR} onChange={(e) => { setTextoTR(e.target.value); setNomeArquivo("texto colado"); trechosRef.current = []; }}
-                rows={10} placeholder="Cole aqui o texto do TR (ao menos a tabela de itens com os códigos CATMAT/CATSER)…"
+                rows={10} placeholder="Cole aqui o texto do DFD, do ETP ou da minuta do TR (ao menos a lista de itens com os códigos CATMAT/CATSER)…"
                 className="w-full rounded-xl border border-slate-200 p-3 text-xs font-mono" />
             )}
 
@@ -466,7 +495,7 @@ export default function PesquisaPrecos() {
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => extrair("auto")}
                     className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">
-                    📋 Extrair itens do TR
+                    📋 Extrair os itens
                   </button>
                   <button onClick={() => extrair("ia")}
                     className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700">
@@ -478,7 +507,7 @@ export default function PesquisaPrecos() {
                   </button>
                 </div>
                 <p className="text-xs text-slate-500">
-                  Lê a tabela de itens do TR (Item, Especificação, CATMAT/CATSER, Unidade, Quantidade e Valor Unitário).
+                  Lê a tabela de itens (Item, Especificação, CATMAT/CATSER, Unidade, Quantidade e, se houver, Valor Unitário).
                   Se o PDF não tiver essa tabela, usa IA automaticamente. Em qualquer caso você revisa tudo na próxima etapa.
                 </p>
               </div>
@@ -486,8 +515,22 @@ export default function PesquisaPrecos() {
 
             <button onClick={() => { if (!itens.length) adicionarItem(); setEtapa("itens"); }}
               className="text-xs text-slate-500 underline hover:text-slate-700">
-              Não tenho o TR em arquivo — cadastrar os itens manualmente
+              Não tenho o documento em arquivo — cadastrar os itens manualmente
             </button>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 space-y-1">
+              <div className="font-semibold text-slate-700">Qual documento usar (Lei 14.133/2021)</div>
+              <p>
+                A ordem é DFD → ETP → <b>pesquisa de preços</b> → TR → edital: o valor estimado da contratação sai da pesquisa e entra
+                no TR (art. 6º, XXIII, "i"; art. 23). A lista de itens — especificação, código CATMAT/CATSER, unidade e quantidade — já
+                existe antes, no <b>DFD</b> e no <b>ETP</b>. Use um deles, ou a minuta do TR, se for a que tem a lista.
+              </p>
+              <p>
+                Item sem código: procure no{" "}
+                <a href="https://catalogo.compras.gov.br/cnbs-web/busca" target="_blank" rel="noreferrer" className="text-sky-700 underline">Catálogo de Materiais e Serviços</a>{" "}
+                (a consulta de preços é pelo código).
+              </p>
+            </div>
           </div>
 
           <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-4 space-y-3 h-fit">
@@ -609,6 +652,12 @@ export default function PesquisaPrecos() {
                 <option value={10}>Ampla (até 5.000)</option>
               </select>
             </Campo>
+            <Campo label="Atualização (art. 5º, I e II)">
+              <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700">
+                <input type="checkbox" checked={params.corrigirIpca} onChange={(e) => setParams({ ...params, corrigirIpca: e.target.checked })} />
+                Atualizar os preços pelo IPCA
+              </label>
+            </Campo>
             <div className="flex-1" />
             <button disabled={!itens.some((i) => i.codigo) || executando} onClick={() => pesquisarTodos()}
               className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold disabled:opacity-40">
@@ -639,6 +688,10 @@ export default function PesquisaPrecos() {
               </>
             )}
           </div>
+          {avisoIpca && <div className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">{avisoIpca}</div>}
+          {params.corrigirIpca && cab.correcao && !avisoIpca && (
+            <div className="text-xs text-slate-500">Preços atualizados pelo {cab.correcao} (IN 65/2021, art. 5º, I e II); o preço da compra aparece embaixo de cada um.</div>
+          )}
 
           {itens.map((it) => (
             <CartaoItem key={it.id} item={it} res={resultados[it.id] ?? resultadoVazio()} av={avaliacoes[it.id]}
@@ -823,7 +876,7 @@ function CartaoItem({ item, res, av, ufs, periodo, onPatch, onRefazer }: {
               </Campo>
               {unidades.length > 1 && (
                 <Campo label="Unidade de fornecimento">
-                  <select value={res.unidadeFiltro} onChange={(e) => onPatch({ unidadeFiltro: e.target.value })}
+                  <select value={res.unidadeFiltro} onChange={(e) => onPatch({ unidadeFiltro: e.target.value, unidadeAuto: false })}
                     className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
                     <option value="">Todas ({registrosValidos.length})</option>
                     {unidades.map(([u, n]) => <option key={u} value={u}>{u} ({n})</option>)}
@@ -869,7 +922,15 @@ function CartaoItem({ item, res, av, ufs, periodo, onPatch, onRefazer }: {
           </div>
         )}
 
-        {ajustado && (
+        {res.unidadeAuto && !res.excluidos.length && !res.faixa && (
+          <div className="text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-600 px-3 py-2">
+            O mesmo código traz preços em unidades de fornecimento diferentes. A estatística usa só os preços em <b>{res.unidadeFiltro}</b>
+            {" "}(a unidade do item ou, se ela não aparece, a mais comum), para comparar preços equivalentes.
+            Troque em "Unidade de fornecimento", se for o caso.
+          </div>
+        )}
+
+        {ajustado && !(res.unidadeAuto && !res.excluidos.length && !res.faixa) && (
           <div className="text-xs rounded-lg border border-sky-200 bg-sky-50 text-sky-700 px-3 py-2 space-y-2">
             <div>
               Amostra ajustada manualmente — estatística recalculada sobre {registrosValidos.length} registros retornados
@@ -972,6 +1033,9 @@ function CartaoItem({ item, res, av, ufs, periodo, onPatch, onRefazer }: {
                       <td className="px-3 py-1.5 text-right">{fmtNum(r.quantidade)}</td>
                       <td className={`px-3 py-1.5 text-right whitespace-nowrap font-semibold ${outlier ? "text-amber-700" : ""}`}>
                         {fmtBRL(r.precoUnitario)}{outlier && <span className="ml-1 font-normal">(outlier)</span>}
+                        {r.fatorCorrecao != null && r.fatorCorrecao !== 1 && r.precoOriginal != null && (
+                          <div className="text-[10px] font-normal text-slate-400" title="preço da compra, antes da atualização pelo IPCA">compra: {fmtBRL(r.precoOriginal)}</div>
+                        )}
                       </td>
                     </tr>
                   );
