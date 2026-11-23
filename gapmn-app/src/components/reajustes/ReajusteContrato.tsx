@@ -4,7 +4,8 @@ import type { ContratoGov } from "../../lib/apostilamento/contratosGov";
 import CompletarAutomatico from "./CompletarAutomatico";
 import { motor } from "../../lib/apostilamento/motor";
 import { buscarIndice, chaveIndice, periodoDoReajuste, SERIES_SGS, urlCalculadora } from "../../lib/apostilamento/indice";
-import { ehFgv, linksFgv } from "../../lib/apostilamento/indiceFgv";
+import { acumuladoFgv, ehFgv, linksFgv } from "../../lib/apostilamento/indiceFgv";
+import { tabelaDaFgv } from "../../lib/apostilamento/fgvApi";
 import { ITENS_CHECKLIST, avisosChecklist, checklistIniciado, marcar, normalizarChecklist } from "../../lib/apostilamento/checklist";
 import { completarReajustesDevidos, dadosIniciais, itensColados, paraMotor, reajustesAplicados, type ContratoScon } from "../../lib/apostilamento/cadastro";
 import { motivoForaDaAutomacao, pendenciasCadastro, proximoApostilamento, situacaoCadastro, type CargaGuardada } from "../../lib/apostilamento/carga";
@@ -43,34 +44,35 @@ function valorParaCalculadora(d: DadosReajuste, n: number): number {
 const casasDoIndice = (nome: string) => (ehFgv(nome) ? 2 : 6);
 const pct = (v: number, casas: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
 
-/** Busca no Banco Central o índice dos reajustes pedidos agora que ainda estão sem percentual (só os índices
- *  que o BCB publica). INCC: o percentual vem da tabela anual da FGV, digitado de lá (o link abre na linha). */
-async function indicesFaltando(d: DadosReajuste): Promise<{ dados: DadosReajuste; achados: string[]; avisos: string[] }> {
+/** Busca o índice dos reajustes pedidos agora que ainda estão sem percentual: INCC na tabela anual da FGV (pela
+ *  ponte da Cloudflare), os demais no Banco Central (os que não estão no SGS, como o IPCA-E, continuam digitados). */
+async function indicesFaltando(d: DadosReajuste): Promise<{ dados: DadosReajuste; achados: string[]; avisos: string[]; fonte: string }> {
   const achados: string[] = [], avisos: string[] = [];
+  const fgv = ehFgv(d.indice.nome);
+  const fonte = fgv ? "da FGV" : "do BCB";
   const faltam = d.reajustes.filter((r) => r.novo && r.indice_pct == null);
-  if (!faltam.length || !/^\d{2}\/\d{4}$/.test(d.data_base) || !d.indice.nome) return { dados: d, achados, avisos };
-  if (ehFgv(d.indice.nome)) {
-    const linhas = faltam.map((r) => { const per = periodoDoReajuste(d.data_base, r.n); return `${r.n}º linha ${linksFgv(d.indice.nome, per.inicio, per.fim).linha_tabela}`; });
-    avisos.push(`INCC: abra a consulta do índice na FGV (${linhas.join("; ")}, coluna Acumulado 12 meses), digite o percentual e anexe o print.`);
-    return { dados: d, achados, avisos };
-  }
-  if (!SERIES_SGS[chaveIndice(d.indice.nome)]) {
+  if (!faltam.length || !/^\d{2}\/\d{4}$/.test(d.data_base) || !d.indice.nome) return { dados: d, achados, avisos, fonte };
+  if (!fgv && !SERIES_SGS[chaveIndice(d.indice.nome)]) {
     avisos.push(`O ${d.indice.nome} não está no Banco Central: digite o índice e anexe o print da fonte.`);
-    return { dados: d, achados, avisos };
+    return { dados: d, achados, avisos, fonte };
   }
   let reajustes = d.reajustes;
   for (const r of faltam) {
     const per = periodoDoReajuste(d.data_base, r.n);
     try {
-      const res = await buscarIndice(d.indice.nome, per.inicio, per.fim, valorParaCalculadora({ ...d, reajustes }, r.n));
+      const res = fgv
+        ? { ...(await acumuladoFgv(d.indice.nome, per.inicio, per.fim, tabelaDaFgv)), completo: true }
+        : await buscarIndice(d.indice.nome, per.inicio, per.fim, valorParaCalculadora({ ...d, reajustes }, r.n));
       if (!res.completo) { avisos.push(`${r.n}º reajuste: o ${res.indice} de ${per.fim} ainda não saiu.`); continue; }
       reajustes = reajustes.map((x) => (x.n === r.n ? { ...x, indice_pct: res.percentual } : x));
-      achados.push(`${r.n}º ${pct(res.percentual, 6)}%`);
+      achados.push(`${r.n}º ${pct(res.percentual, casasDoIndice(d.indice.nome))}%`);
     } catch (e) {
-      avisos.push(`${r.n}º reajuste: não consegui o índice no Banco Central (${e instanceof Error ? e.message : String(e)}).`);
+      const m = e instanceof Error ? e.message : String(e);
+      avisos.push(fgv ? `${r.n}º reajuste: não consegui o índice na FGV (${m}). Abra a consulta do índice, digite o percentual e anexe o print.`
+        : `${r.n}º reajuste: não consegui o índice no Banco Central (${m}).`);
     }
   }
-  return { dados: { ...d, reajustes }, achados, avisos };
+  return { dados: { ...d, reajustes }, achados, avisos, fonte };
 }
 
 function baixar(arquivo: Blob, nome: string) {
@@ -121,7 +123,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
       if (!temCadastro || feitos.length) setAlterado(true);
       const r = await indicesFaltando(base);
       if (!vivo) return;
-      if (r.achados.length) { setD((x) => (x ? { ...x, reajustes: r.dados.reajustes } : x)); setAlterado(true); feitos.push(`índice do BCB: ${r.achados.join("; ")}`); }
+      if (r.achados.length) { setD((x) => (x ? { ...x, reajustes: r.dados.reajustes } : x)); setAlterado(true); feitos.push(`índice ${r.fonte}: ${r.achados.join("; ")}`); }
       if (feitos.length) setMsg({ ok: true, txt: `Preparado automaticamente: ${feitos.join(" · ")}. Confira e salve.` + (r.avisos.length ? ` ${r.avisos.join(" ")}` : "") });
       else if (r.avisos.length) setMsg({ ok: false, txt: r.avisos.join(" ") });
     })();
@@ -133,14 +135,14 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
   const muda = (f: (x: DadosReajuste) => DadosReajuste) => { setD((x) => (x ? f(x) : x)); setAlterado(true); setChecagem(null); setSimulacao(null); };
   const set = <K extends keyof DadosReajuste>(k: K, v: DadosReajuste[K]) => muda((x) => ({ ...x, [k]: v }));
   // depois de completar pelo Contratos.gov.br ou pelos PDFs, faz o mesmo da abertura do contrato: inclui os
-  // reajustes devidos hoje (a data-base pode ter acabado de chegar) e busca o índice no Banco Central
+  // reajustes devidos hoje (a data-base pode ter acabado de chegar) e busca o índice (Banco Central ou FGV)
   async function aplicarAutomatico(novo: DadosReajuste) {
     const devidos = completarReajustesDevidos(novo);
     const base = devidos ? { ...novo, reajustes: devidos } : novo;
     muda(() => base);
     const r = await indicesFaltando(base);
     if (r.achados.length) setD((x) => (x ? { ...x, reajustes: r.dados.reajustes } : x));
-    const feitos = [...(devidos ? ["reajustes devidos hoje incluídos"] : []), ...(r.achados.length ? [`índice do BCB: ${r.achados.join("; ")}`] : [])];
+    const feitos = [...(devidos ? ["reajustes devidos hoje incluídos"] : []), ...(r.achados.length ? [`índice ${r.fonte}: ${r.achados.join("; ")}`] : [])];
     if (feitos.length) setMsg({ ok: true, txt: `Preparado automaticamente: ${feitos.join(" · ")}. Confira e salve.` + (r.avisos.length ? ` ${r.avisos.join(" ")}` : "") });
     else if (r.avisos.length) setMsg({ ok: false, txt: r.avisos.join(" ") });
   }
@@ -226,20 +228,29 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     setMsg({ ok: !r.avisos.length, txt: `Checklist gerado: ${r.arquivo}.` + (r.avisos.length ? ` Confira: ${r.avisos.join(" ")}` : "") });
   }
 
-  async function buscarNoBC(idx: number) {
+  /** Índice de um reajuste: INCC na tabela anual da FGV; os demais no Banco Central, como a Calculadora */
+  async function buscarNaFonte(idx: number) {
     const r = d!.reajustes[idx];
     if (!/^\d{2}\/\d{4}$/.test(d!.data_base)) { setMsg({ ok: false, txt: "Informe a data do orçamento (MM/AAAA) antes." }); return; }
     if (!d!.indice.nome) { setMsg({ ok: false, txt: "Informe o índice do contrato antes." }); return; }
     const per = periodoDoReajuste(d!.data_base, r.n);
+    const usar = (v: number) => muda((x) => ({ ...x, reajustes: x.reajustes.map((y, i) => (i === idx ? { ...y, indice_pct: v } : y)) }));
     setBuscandoIdx(idx); setMsg(null);
     try {
+      if (fgv) {
+        const res = await acumuladoFgv(d!.indice.nome, per.inicio, per.fim, tabelaDaFgv);
+        usar(res.percentual);
+        setMsg({ ok: true, txt: `${res.indice} ${per.inicio} a ${per.fim}: ${pct(res.percentual, 2)}% (tabela da FGV, linha ${res.linha_tabela}, Acumulado 12 meses). Confira e anexe o print da tabela.` });
+        return;
+      }
       const res = await buscarIndice(d!.indice.nome, per.inicio, per.fim, valorParaCalculadora(d!, r.n));
-      muda((x) => ({ ...x, reajustes: x.reajustes.map((y, i) => (i === idx ? { ...y, indice_pct: res.percentual } : y)) }));
+      usar(res.percentual);
       setMsg({ ok: res.completo, txt: res.completo
         ? `${res.indice} ${per.inicio} a ${per.fim}: ${pct(res.percentual, 6)}% (${res.meses} meses, como na Calculadora). Confira e anexe o print da Calculadora.`
         : `${res.indice} ${per.inicio} a ${per.fim}: só ${res.meses} meses divulgados — o índice do último mês ainda não saiu.` });
     } catch (e) {
-      setMsg({ ok: false, txt: e instanceof Error ? e.message : String(e) });
+      const m = e instanceof Error ? e.message : String(e);
+      setMsg({ ok: false, txt: fgv ? `Não consegui o índice na FGV: ${m}. Abra a consulta do índice e digite o percentual da tabela.` : m });
     } finally { setBuscandoIdx(null); }
   }
 
@@ -368,8 +379,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
                   <td className="py-1.5 text-slate-600">{per ? `${per.inicio} a ${per.fim} · efeitos 01/${per.aniversario}` : "–"}</td>
                   <td className="py-1.5">
                     <CampoNumero valor={r.indice_pct} casas={casas} className="w-28" onChange={(v) => muda((x) => ({ ...x, reajustes: x.reajustes.map((y, j) => (j === i ? { ...y, indice_pct: v } : y)) }))} />
-                    {r.novo && !fgv && <button disabled={buscandoIdx != null} onClick={() => buscarNoBC(i)} className="ml-2 text-sky-700 hover:underline disabled:opacity-40">{buscandoIdx === i ? "buscando…" : "Buscar no Banco Central"}</button>}
-                    {r.novo && lf && <span className="ml-2 text-[10px] text-slate-500">da tabela da FGV, 2 casas</span>}
+                    {r.novo && <button disabled={buscandoIdx != null} onClick={() => buscarNaFonte(i)} className="ml-2 text-sky-700 hover:underline disabled:opacity-40">{buscandoIdx === i ? "buscando…" : fgv ? "Buscar na FGV" : "Buscar no Banco Central"}</button>}
                   </td>
                   <td className="py-1.5">
                     <select className={cel} value={r.novo ? "novo" : "aplicado"} onChange={(e) => muda((x) => ({ ...x, reajustes: x.reajustes.map((y, j) => (j === i ? { ...y, novo: e.target.value === "novo" } : y)) }))}>

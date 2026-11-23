@@ -1,0 +1,8 @@
+# Ponte do gapmn.app para a tabela do INCC da FGV (ver src/index.ts). Deploy nesta pasta: npx wrangler deploy
+name = "gapmn-indice-fgv"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+# só no domínio do app (o endereço *.workers.dev da conta fica desligado)
+routes = [{ pattern = "indice-fgv.gapmn.app", custom_domain = true }]
+workers_dev = false
+preview_urls = false
