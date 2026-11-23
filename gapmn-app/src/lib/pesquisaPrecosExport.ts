@@ -34,7 +34,7 @@ export interface CabecalhoRelatorio {
 const METODOLOGIA = (c: CabecalhoRelatorio) =>
   `Pesquisa realizada com base no art. 5º, incisos I e II, da IN SEGES/ME nº 65/2021, ` +
   `utilizando preços praticados em contratações públicas registradas no Compras.gov.br ` +
-  `(API de Dados Abertos — módulo Pesquisa de Preço), consultadas por meio do MCP Compras.gov.br, ` +
+  `(API de Dados Abertos — módulo Pesquisa de Preço), consultadas pelo gapmn.app, ` +
   `no período dos últimos ${c.periodoMeses} meses${c.uf ? `, restrito ${c.uf.includes(",") ? "às UFs" : "à UF"} ${c.uf}` : ", em âmbito nacional"}. ` +
   `Conforme o art. 6º da mesma IN, os valores inexequíveis, inconsistentes e excessivamente elevados foram ` +
   `desconsiderados pelo critério estatístico de Tukey (Q1 - 1,5 x IQR; Q3 + 1,5 x IQR), e o preço estimado de cada ` +
@@ -73,12 +73,6 @@ function apisUsadas(linhas: LinhaRelatorio[]): FonteApi[] {
     uso: "Confirmação da descrição oficial de cada serviço (rota 6_consultarItemServico).",
     endereco: `${API_DADOS_ABERTOS}/modulo-servico/6_consultarItemServico`,
     documentacao: swagger,
-  });
-  apis.push({
-    nome: "MCP Compras.gov.br (servidor MCP)",
-    uso: "Camada que consulta as APIs acima, percorre as páginas de resultado e calcula as estatísticas (média, mediana, quartis e descarte de outliers).",
-    endereco: "https://mcp-compras.up.railway.app/mcp",
-    documentacao: "https://github.com/opedrosoares/MCP_Compras",
   });
   return apis;
 }
@@ -155,7 +149,7 @@ function paginaFontes(doc: jsPDF, linhas: LinhaRelatorio[]) {
   const y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
   doc.setFont("helvetica", "italic").setFontSize(7.5).setTextColor(60);
   doc.text(doc.splitTextToSize(
-    "Os endereços reproduzem a consulta feita à API pública de Dados Abertos (primeira página, até 500 registros; o MCP percorre as demais páginas). " +
+    "Os endereços reproduzem a consulta feita à API pública de Dados Abertos (primeira página, até 500 registros; o gapmn.app percorre as demais páginas e calcula as estatísticas)." +
     "Os dados são atualizados continuamente pelo órgão gestor, de modo que a mesma consulta pode retornar resultados adicionais em datas posteriores. " +
     "Cada preço considerado, com UASG, fornecedor, marca e data, consta no Anexo deste relatório.",
     W - 28), 14, y);

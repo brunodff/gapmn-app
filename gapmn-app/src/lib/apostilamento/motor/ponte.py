@@ -9,6 +9,7 @@ import copy
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import types
@@ -68,6 +69,39 @@ def _nome_checklist(dados):
     return f"5 - Checklist do Fiscal - CT {nome}" + (f" - {inst}" if inst else "") + ".docx"
 
 
+def _quebra_antes(caminho, achar):
+    """Põe o parágrafo escolhido no começo de uma página nova: ele e as assinaturas que vêm depois ficam
+    juntos na última página. `achar` recebe os textos dos parágrafos e devolve o índice (ou None)."""
+    from docx import Document
+    doc = Document(caminho)
+    i = achar([p.text.strip() for p in doc.paragraphs])
+    if i is None:
+        return False
+    doc.paragraphs[i].paragraph_format.page_break_before = True
+    doc.save(caminho)
+    return True
+
+
+def _ultimo_item_clausula_5(textos):
+    itens = [i for i, t in enumerate(textos) if re.match(r"5\.\d+\s*[–-]", t)]
+    return itens[-1] if itens else None
+
+
+def _isto_posto(textos):
+    return next((i for i, t in enumerate(textos) if t.startswith("Isto posto")), None)
+
+
+def _paginas_finais(arquivos):
+    """Regra do GAP-MN: no Termo, o último item da cláusula 5 abre a última página, junto com as assinaturas;
+    no Parecer, o parágrafo "Isto posto" abre a última página, junto com as assinaturas."""
+    avisos = []
+    if "termo" in arquivos and not _quebra_antes(arquivos["termo"], _ultimo_item_clausula_5):
+        avisos.append("Não achei o último item da cláusula 5 no termo: confira a última página no Word.")
+    if "parecer" in arquivos and not _quebra_antes(arquivos["parecer"], _isto_posto):
+        avisos.append('Não achei o parágrafo "Isto posto" no parecer: confira a última página no Word.')
+    return avisos
+
+
 def _linhas_links(links):
     return [f"{l['n']}º reajuste ({l.get('periodo', '')}) – {l.get('fonte', '')}: {l.get('url_print') or '(sem link)'}"
             + (f"  [linha {l['linha_tabela']}, coluna Acumulado 12 meses]" if l.get("linha_tabela") else "")
@@ -97,12 +131,12 @@ def gerar(dados_json, cfg_json, prints_json, saida_zip="", checklist_json=""):
         raise ValueError(str(e))
     avisos = list(r["avisos"])
     arquivos = dict(r["arquivos"])
+    if saida_zip:
+        avisos += _paginas_finais(arquivos)
     if saida_zip and marcacoes:
         caminho = os.path.join(pasta, _nome_checklist(dados))
         avisos += ["Checklist: " + a for a in ck.gerar_checklist(_dados_checklist(dados), marcacoes, caminho)]
         arquivos["checklist"] = caminho
-    avisos.append("Conferir no Word se a última página do termo não ficou só com as assinaturas "
-                  "(no navegador o motor não consegue conferir sozinho).")
     if saida_zip:
         links = r["resumo"].get("links_indice") or []
         with zipfile.ZipFile(saida_zip, "w", zipfile.ZIP_DEFLATED) as z:

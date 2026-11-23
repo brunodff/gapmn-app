@@ -96,6 +96,8 @@ export interface DadosReajuste {
   observacoes_extras: string[];
   /** checklist do fiscal, guardado com o cadastro (o app o entrega à parte ao motor) */
   checklist?: MarcacaoChecklist[];
+  /** origem da data do orçamento quando vem dentro dos dados da carga (só conferência; não vai ao motor) */
+  data_base_fonte?: Record<string, unknown>;
 }
 
 /** Configuração do app que o motor usa no lugar dos dados que não podem ficar no código. */

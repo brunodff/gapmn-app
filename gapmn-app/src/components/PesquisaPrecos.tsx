@@ -82,7 +82,7 @@ function avaliar(item: ItemTR, res: ResultadoItem | undefined): Avaliacao {
   let estat: Estatisticas | null;
   let base: RegistroPreco[];
   if (!ajustado && res.etp.estatisticas) {
-    // Sem ajuste: vale a estatística do MCP, calculada sobre a amostra completa.
+    // Sem ajuste: vale a estatística calculada sobre a amostra completa.
     estat = {
       ...res.etp.estatisticas,
       n: res.etp.amostra_efetiva ?? res.etp.amostra_total,
@@ -136,7 +136,7 @@ export default function PesquisaPrecos() {
   const [mcpStatus, setMcpStatus] = useState<"verificando" | "online" | "offline">("verificando");
   const [rascunhoRestaurado, setRascunhoRestaurado] = useState(false);
 
-  // ── Inicialização: rascunho, TRs cadastrados, status do MCP, responsável ──
+  // ── Inicialização: rascunho, TRs cadastrados, status da API do Compras.gov.br, responsável ──
   useEffect(() => {
     try {
       const raw = localStorage.getItem(RASCUNHO_KEY);
@@ -366,7 +366,7 @@ export default function PesquisaPrecos() {
         <div>
           <h2 className="text-lg font-bold text-slate-800">Pesquisa de Preços a partir do TR</h2>
           <p className="text-sm text-slate-500 mt-0.5">
-            Preços praticados no Compras.gov.br via MCP Compras — metodologia IN SEGES/ME nº 65/2021
+            Preços praticados no Compras.gov.br (API de Dados Abertos) — metodologia IN SEGES/ME nº 65/2021
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -374,7 +374,7 @@ export default function PesquisaPrecos() {
             mcpStatus === "online" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
             : mcpStatus === "offline" ? "bg-red-50 text-red-700 border-red-200"
             : "bg-slate-100 text-slate-500 border-slate-200"}`}>
-            {mcpStatus === "online" ? "● MCP online" : mcpStatus === "offline" ? "● MCP indisponível" : "○ verificando MCP…"}
+            {mcpStatus === "online" ? "● Compras.gov.br online" : mcpStatus === "offline" ? "● Compras.gov.br indisponível" : "○ verificando Compras.gov.br…"}
           </span>
           {itens.length > 0 && (
             <button onClick={novaPesquisa}

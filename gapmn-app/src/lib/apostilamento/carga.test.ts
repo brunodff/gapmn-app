@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { casarContratos, cargaMaisNova, lerCarga, mesclarDados, motivoForaDaAutomacao, nucleoNumero, pendenciasCadastro, proximoApostilamento, situacaoCadastro } from "./carga.ts";
+import { cargaGuardada, casarContratos, cargaMaisNova, fonteDaDataBase, lerCarga, mesclarDados, motivoForaDaAutomacao, nucleoNumero, pendenciasCadastro, proximoApostilamento, situacaoCadastro } from "./carga.ts";
 import { completarReajustesDevidos } from "./cadastro.ts";
 import type { DadosReajuste } from "./tipos.ts";
 
@@ -41,6 +41,15 @@ test("fora da automação: dedicação exclusiva ou o motivo que a carga trouxe 
   assert.equal(motivoForaDaAutomacao({ reajuste_nao_aplicavel: "preços pela tabela de referência do credenciamento" }), "preços pela tabela de referência do credenciamento");
   assert.equal(motivoForaDaAutomacao({ status: "ATIVO" }), null);
   assert.equal(motivoForaDaAutomacao(undefined), null);
+});
+
+test("origem da data do orçamento: no registro ou dentro dos dados, guardada com a carga", () => {
+  const carga = { versao: 1, gerado_em: "2026-11-23", contratos: [] };
+  const f = { fonte: "Termo de Referência", documento: "TR", subprocesso: "12", trecho: "data do orçamento: 03/2025", conferir: true };
+  assert.deepEqual(cargaGuardada({ chave: "A", data_base_fonte: f }, carga).data_base_fonte, f);
+  assert.deepEqual(fonteDaDataBase({ chave: "B", dados: { data_base_fonte: f } }), f);
+  assert.equal("data_base_fonte" in cargaGuardada({ chave: "C" }, carga), false);
+  assert.equal(fonteDaDataBase({ chave: "D", data_base_fonte: {} }), undefined);
 });
 
 test("pendências: texto fixo da OM, soma dos itens e reajuste aplicado sem documento", () => {

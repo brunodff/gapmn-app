@@ -68,7 +68,7 @@ export default function Reajustes() {
           .select("id, numero_contrato, pag_nup, fornecedor, cnpj, descricao, data_orcamento, data_inicio, data_final, vl_contratual, status")
           .order("numero_contrato"),
         supabase.from("contratos_apostilamento")
-          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga, nao_aplicavel:carga->siloms->>reajuste_nao_aplicavel"),
+          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga, nao_aplicavel:carga->siloms->>reajuste_nao_aplicavel, vig_siloms:carga->siloms->>vigencia_fim"),
         supabase.from("apostilamento_config").select("ordenador, aci, cidade, ug_apoio, textos_fixos_om, dias_alerta").eq("id", "padrao").maybeSingle(),
       ]);
       if (!vivo) return;

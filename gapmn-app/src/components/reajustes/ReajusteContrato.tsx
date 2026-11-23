@@ -8,7 +8,7 @@ import { acumuladoFgv, ehFgv, linksFgv } from "../../lib/apostilamento/indiceFgv
 import { tabelaDaFgv } from "../../lib/apostilamento/fgvApi";
 import { ITENS_CHECKLIST, avisosChecklist, checklistIniciado, marcar, normalizarChecklist } from "../../lib/apostilamento/checklist";
 import { completarReajustesDevidos, dadosIniciais, itensColados, paraMotor, reajustesAplicados, type ContratoScon } from "../../lib/apostilamento/cadastro";
-import { motivoForaDaAutomacao, pendenciasCadastro, proximoApostilamento, situacaoCadastro, type CargaGuardada } from "../../lib/apostilamento/carga";
+import { motivoForaDaAutomacao, pendenciasCadastro, proximoApostilamento, situacaoCadastro, type CargaGuardada, type FonteDataBase } from "../../lib/apostilamento/carga";
 import type { ConfigApostilamento, DadosReajuste, ItemContrato, MarcacaoChecklist, ResultadoChecagem, ResultadoGeracao } from "../../lib/apostilamento/tipos";
 import { Caixa, Campo, CampoNumero, Secao, brl } from "./campos";
 
@@ -598,6 +598,19 @@ function repsComo(emp: DadosReajuste["empresa"], reps: { nome: string; feminino?
   return { ...e, representantes: reps, representante: reps[0].nome, representante_feminino: !!reps[0].feminino };
 }
 
+/** De onde a SCON tirou a data do orçamento; as marcadas para conferir vieram de documento indireto
+ *  (mesmo pregão, ciclo de reajustes ou proposta) e precisam ser vistas antes de assinar */
+function FonteData({ f }: { f: FonteDataBase }) {
+  const conferir = f.conferir === true || /^(sim|s|true|1)$/i.test(String(f.conferir ?? ""));
+  const partes = [f.fonte, f.documento, f.subprocesso != null && f.subprocesso !== "" ? `subprocesso ${f.subprocesso}` : ""].filter(Boolean);
+  return (
+    <div className={conferir ? "text-amber-700" : ""}>
+      Data do orçamento achada em: {partes.join(" · ") || "–"}{conferir && <b> — ⚠ conferir antes de assinar</b>}
+      {f.trecho && <span className="block italic text-slate-500">“{f.trecho}”</span>}
+    </div>
+  );
+}
+
 /** O que veio da carga do SILOMS: dados da tela do contrato, documentos assinados e último empenho */
 function QuadroCarga({ carga }: { carga: CargaGuardada }) {
   const s = carga.siloms ?? {};
@@ -613,6 +626,7 @@ function QuadroCarga({ carga }: { carga: CargaGuardada }) {
         <div>Documentos assinados: {docs.map((x) => [x.numero || x.tipo, x.data_assinatura, x.valor_resultante != null ? brl(x.valor_resultante) : ""].filter(Boolean).join(" ")).join(" · ")}</div>
       )}
       {!!(ne.ne || ne.fonte_dos_dados) && <div>Último empenho: {[ne.ne, ne.data, ne.fonte_dos_dados].filter(Boolean).map(String).join(" · ")}</div>}
+      {carga.data_base_fonte && <FonteData f={carga.data_base_fonte} />}
       {!!carga.avisos?.length && (
         <div className="text-amber-700">A coleta pede para conferir: <ul className="list-disc pl-5">{carga.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul></div>
       )}

@@ -67,6 +67,14 @@ export function hojeLocal(d = new Date()): Data {
   return { a: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
 }
 
+/** Fim da vigência do SILOMS (carga, dd/mm/aaaa) → AAAA-MM-DD; aceita AAAA-MM-DD. */
+export function isoDaVigencia(s: string | null | undefined): string | null {
+  const t = String(s ?? "").trim();
+  const dmy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : null;
+}
+
 /** Data do orçamento AAAA-MM-DD (contratos_scon.data_orcamento) → MM/AAAA. */
 export function dataBaseDe(dataOrcamento: string | null | undefined): string | null {
   const m = /^(\d{4})-(\d{2})/.exec(dataOrcamento ?? "");
@@ -81,7 +89,11 @@ export function statusContrato(c: ContratoPainel, hoje: Data = hojeLocal(), dias
   if (c.nao_aplicavel) {
     return { ...base, status: "NAO_SE_APLICA", motivo: `Sem reajuste por índice: ${c.nao_aplicavel}`, cor: CORES.NAO_SE_APLICA };
   }
+  const vig = /^(\d{4})-(\d{2})-(\d{2})/.exec(c.vigencia_fim ?? "");
+  const encerrado = !!vig && cmp({ a: +vig[1], m: +vig[2], d: +vig[3] }, hoje) < 0;
   const mb = /^(\d{2})\/(\d{4})$/.exec(c.data_base ?? "");
+  // vigência antes da data do orçamento (carga de 23/11 da SCON): contrato encerrado sem data-base não fica em "Sem data"
+  if (!mb && encerrado) return { ...base, status: "VIGENCIA_ENCERRADA", motivo: "Vigência encerrada", cor: CORES.VIGENCIA_ENCERRADA };
   if (!mb) return { ...base, status: "SEM_DATA_BASE", motivo: "Cadastrar a data do orçamento", cor: CORES.SEM_DATA_BASE };
   const dbm = Number(mb[1]), dba = Number(mb[2]);
   const aplicados = Math.max(0, Math.trunc(Number(c.reajustes_aplicados ?? 0)));
@@ -111,8 +123,7 @@ export function statusContrato(c: ContratoPainel, hoje: Data = hojeLocal(), dias
     if (!devidos[devidos.length - 1].indice_divulgado && devidos.length > 1) status = "VERMELHO";
   } else status = dias <= diasAlerta ? "AMARELO" : "VERDE";
 
-  const vig = /^(\d{4})-(\d{2})-(\d{2})/.exec(c.vigencia_fim ?? "");
-  if (vig && cmp({ a: +vig[1], m: +vig[2], d: +vig[3] }, hoje) < 0) status = "VIGENCIA_ENCERRADA";
+  if (encerrado) status = "VIGENCIA_ENCERRADA";
 
   return { contrato: c.contrato, status, reajustes_devidos: devidos, qtd_devidos: devidos.length,
     proximo_aniversario: fmt(proximo), dias_para_proximo: dias, cor: CORES[status] };

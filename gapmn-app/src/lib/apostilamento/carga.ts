@@ -22,8 +22,12 @@ export interface SilomsCarga {
   descricao_resumida?: string; vigencia_vencida_no_siloms?: boolean; [k: string]: unknown;
 }
 
+/** De onde veio a data do orçamento (busca da SCON no SILOMS, desde a carga de 23/11/2026) */
+export interface FonteDataBase { fonte?: string; documento?: string; subprocesso?: string | number; trecho?: string; conferir?: boolean | string }
+
 export interface RegistroCarga {
   chave: string;
+  data_base_fonte?: FonteDataBase;
   atualizado_em?: string;
   siloms?: SilomsCarga;
   coleta?: { etapa?: string; documentos_lidos?: boolean };
@@ -45,7 +49,7 @@ export interface Carga {
 export interface CargaGuardada {
   chave: string; atualizado_em?: string; gerado_em?: string; fonte?: string;
   siloms?: SilomsCarga; coleta?: RegistroCarga["coleta"]; documentos?: DocumentoCarga[];
-  ultimo_empenho?: Record<string, unknown>; avisos?: string[]; fora_da_carga?: boolean;
+  ultimo_empenho?: Record<string, unknown>; avisos?: string[]; data_base_fonte?: FonteDataBase; fora_da_carga?: boolean;
 }
 
 export type SituacaoCadastro = "COMPLETO" | "PENDENTE" | "NAO_SE_APLICA";
@@ -212,7 +216,14 @@ export function mesclarDados(atual: Partial<DadosReajuste> | null | undefined, d
 export function cargaGuardada(reg: RegistroCarga, carga: Carga): CargaGuardada {
   return { chave: reg.chave, atualizado_em: reg.atualizado_em ?? carga.gerado_em, gerado_em: carga.gerado_em, fonte: carga.fonte,
     siloms: reg.siloms, coleta: reg.coleta, documentos: reg.documentos ?? [], ultimo_empenho: reg.ultimo_empenho,
-    ...(reg.avisos?.length ? { avisos: reg.avisos } : {}) };
+    ...(reg.avisos?.length ? { avisos: reg.avisos } : {}),
+    ...(fonteDaDataBase(reg) ? { data_base_fonte: fonteDaDataBase(reg) } : {}) };
+}
+
+/** A origem da data do orçamento vem no registro ou dentro dos dados, conforme a versão da coleta */
+export function fonteDaDataBase(reg: RegistroCarga): FonteDataBase | undefined {
+  const f = reg.data_base_fonte ?? (reg.dados?.data_base_fonte as FonteDataBase | undefined);
+  return f && typeof f === "object" && Object.keys(f).length ? f : undefined;
 }
 
 /** A carga é mais nova que a última edição do cadastro no app? A coleta só tem o dia: se o cadastro foi

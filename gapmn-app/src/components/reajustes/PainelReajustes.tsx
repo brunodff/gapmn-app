@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { painel, dataBaseDe, ROTULOS, CORES, type StatusReajuste } from "../../lib/apostilamento/painel";
+import { painel, dataBaseDe, isoDaVigencia, ROTULOS, CORES, type StatusReajuste } from "../../lib/apostilamento/painel";
 import type { ContratoScon } from "../../lib/apostilamento/cadastro";
 
 export type Cadastro = {
@@ -7,6 +7,8 @@ export type Cadastro = {
   situacao_cadastro?: string | null; pendencias?: string[] | null; carga_em?: string | null; fora?: boolean | null;
   /** motivo da carga do SILOMS para não haver reajuste por índice (adesão, credenciamento) */
   nao_aplicavel?: string | null;
+  /** fim da vigência no SILOMS (carga, dd/mm/aaaa): vale mais que o data_final do contratos_scon */
+  vig_siloms?: string | null;
 };
 
 type Props = {
@@ -34,7 +36,8 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
         reajustes_aplicados: cad?.reajustes_aplicados ?? 0,
         dedicacao_exclusiva: cad?.dedicacao_exclusiva ?? false,
         nao_aplicavel: cad?.nao_aplicavel ?? null,
-        vigencia_fim: c.data_final,
+        // como o painel da SCON: o fim da vigência no SILOMS (a carga traz também os encerrados)
+        vigencia_fim: isoDaVigencia(cad?.vig_siloms) ?? c.data_final,
       };
     });
     return painel(entrada, undefined, diasAlerta).map((l) => ({ ...l, c: porNumero.get(l.contrato)!, cad: cadastros.get(l.contrato), data_base: entrada.find((e) => e.contrato === l.contrato)?.data_base ?? null }));

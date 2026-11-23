@@ -1,6 +1,7 @@
 // src/lib/mcpCompras.ts
-// Cliente do MCP Compras.gov.br via Edge Function `pesquisa-precos`, mais a
-// estatística da pesquisa de preços (IN SEGES/ME 65/2021) e a leitura do TR.
+// Consulta de preços na API de Dados Abertos do Compras.gov.br pela Edge Function `pesquisa-precos`
+// (até 23/11/2026 passava pelo servidor MCP Compras, que saiu do ar), mais a estatística da pesquisa de
+// preços (IN SEGES/ME 65/2021), calculada aqui, e a leitura do TR.
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import { supabase } from "./supabase";
@@ -105,7 +106,7 @@ export interface ItemCatalogo {
   statusItem?: boolean;
 }
 
-// ── Chamadas ao MCP ──────────────────────────────────────────────────────────
+// ── Chamadas à função pesquisa-precos (as "tools" têm os nomes do antigo MCP) ──
 
 async function invocar<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke("pesquisa-precos", { body });
@@ -132,8 +133,8 @@ export const API_DADOS_ABERTOS = "https://dadosabertos.compras.gov.br";
 const isoDia = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
- * Endereço da consulta de preços na API de Dados Abertos — mesma chamada que o
- * MCP faz (1ª página), para o analista conferir o resultado no navegador.
+ * Endereço da consulta de preços na API de Dados Abertos — mesma chamada que a
+ * função faz (1ª página), para o analista conferir o resultado no navegador.
  */
 export function urlConsultaPreco(p: {
   tipo: TipoItem; codigo: number; dataInicio: string; dataFim: string; uf?: string | null;
@@ -154,7 +155,7 @@ export function urlCatalogo(tipo: TipoItem, codigo: number): string {
     : `${API_DADOS_ABERTOS}/modulo-servico/6_consultarItemServico?pagina=1&tamanhoPagina=10&codigoServico=${codigo}`;
 }
 
-/** Agrupa valores em até 3 faixas pelos maiores saltos relativos (≥30%) — mesmo critério do MCP. */
+/** Agrupa valores em até 3 faixas pelos maiores saltos relativos (≥30%) — mesmo critério do antigo MCP. */
 function clusterizarPorGap(valores: number[]): Cluster[] {
   const s = [...valores].sort((a, b) => a - b);
   const resumir = (v: number[]): Cluster => ({
@@ -174,8 +175,8 @@ function clusterizarPorGap(valores: number[]): Cluster[] {
   return faixas;
 }
 
-/** Soma as pesquisas de vários estados e recalcula as estatísticas sobre o conjunto. */
-function mesclarETP(parciais: { uf: string; etp: ResultadoETP }[], falhas: string[]): ResultadoETP {
+/** Junta as consultas (uma por UF, ou a nacional) e calcula as estatísticas sobre o conjunto. */
+export function mesclarETP(parciais: { uf: string; etp: ResultadoETP }[], falhas: string[]): ResultadoETP {
   const vistos = new Set<string>();
   const registros: RegistroPreco[] = [];
   for (const { etp } of parciais) {
@@ -188,16 +189,18 @@ function mesclarETP(parciais: { uf: string; etp: ResultadoETP }[], falhas: strin
   }
   const amostraTotal = parciais.reduce((s, p) => s + (p.etp.amostra_total ?? 0), 0);
   const valores = registros.map((r) => r.precoUnitario).filter((v): v is number => typeof v === "number");
+  const truncados = parciais.map((p) => p.etp._registros_truncados_em).filter((v): v is number => typeof v === "number");
   const base: ResultadoETP = {
     amostra_total: amostraTotal,
     registros,
     estatisticas: null,
     data_inicio: parciais[0]?.etp.data_inicio,
     data_fim: parciais[0]?.etp.data_fim,
+    ...(truncados.length ? { _registros_truncados_em: truncados.reduce((a, b) => a + b, 0) } : {}),
     ...(falhas.length ? { _ufs_com_erro: falhas } : {}),
   };
   const est = calcularEstatisticas(valores);
-  if (!est) return { ...base, aviso: "Nenhum preço unitário encontrado nos estados selecionados." };
+  if (!est) return { ...base, aviso: parciais.length > 1 ? "Nenhum preço unitário encontrado nos estados selecionados." : "Nenhum preço unitário encontrado no período." };
 
   const { n, outliers, ...resto } = est;
   const { filtrados } = filtrarOutliers(valores);
@@ -216,8 +219,8 @@ function mesclarETP(parciais: { uf: string; etp: ResultadoETP }[], falhas: strin
 }
 
 /**
- * Pesquisa de preços de um item. Com 0 ou 1 UF é uma chamada só (estatística do
- * MCP); com várias UFs faz uma consulta por estado e junta os resultados.
+ * Pesquisa de preços de um item. Com 0 ou 1 UF é uma consulta só; com várias UFs, uma por estado,
+ * juntando os resultados. A estatística é calculada aqui, sobre todos os preços trazidos.
  */
 export async function pesquisarPrecosETP(p: {
   tipo: TipoItem; codigo: number; periodoMeses: number; ufs: string[]; maxPaginas: number;
@@ -234,7 +237,7 @@ export async function pesquisarPrecosETP(p: {
     ...(uf ? { uf } : {}),
   });
 
-  // No máximo 4 estados ao mesmo tempo, para não sobrecarregar o MCP.
+  // No máximo 4 estados ao mesmo tempo, para não sobrecarregar a API.
   const saidas: PromiseSettledResult<ResultadoETP>[] = new Array(alvos.length);
   let prox = 0;
   await Promise.all(Array.from({ length: Math.min(4, alvos.length) }, async () => {
@@ -270,7 +273,6 @@ export async function pesquisarPrecosETP(p: {
     if (primeira.status === "fulfilled") return { etp: primeira.value, consultas: [] };
     throw primeira.reason;
   }
-  if (alvos.length === 1) return { etp: ok[0].etp, consultas };
   return { etp: mesclarETP(ok, falhas), consultas };
 }
 
@@ -297,7 +299,7 @@ export async function extrairItensIA(texto: string): Promise<{ objeto: string | 
   return { objeto: r.objeto, itens };
 }
 
-// ── Estatística (mesmo método do MCP: quartis por mediana das metades + Tukey) ──
+// ── Estatística (mesmo método do antigo MCP: quartis por mediana das metades + Tukey) ──
 
 function mediana(v: number[]): number {
   if (!v.length) return 0;

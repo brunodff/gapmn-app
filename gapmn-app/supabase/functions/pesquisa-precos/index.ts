@@ -1,45 +1,34 @@
 // @ts-nocheck
 /**
  * Edge Function: pesquisa-precos
- * Ponte entre o app e o MCP Compras.gov.br (servidor MCP hospedado, Streamable HTTP).
+ * Ponte entre o app e a API de Dados Abertos do Compras.gov.br (módulos Pesquisa de Preço, Material e Serviço).
  *
- * O MCP não expõe CORS, então o navegador não fala com ele direto: esta função
- * faz o handshake MCP (initialize → notifications/initialized), guarda o
- * Mcp-Session-Id enquanto o isolate estiver quente e repassa tools/call.
+ * A API não libera CORS para o navegador ("Invalid CORS request"), então esta função consulta por ele.
+ * Até 23/11/2026 a consulta passava pelo servidor MCP Compras (mcp-compras.up.railway.app), que saiu do ar
+ * (aplicação e repositório apagados): agora a função lê a API direto. Os nomes das "tools" continuam os
+ * mesmos para o app não mudar; a estatística (Tukey, faixas) é feita no app (src/lib/mcpCompras.ts).
  *
  * Ações (POST JSON):
  *   { action: "call", tool: "<nome>", arguments: {...} }  → { result }
+ *     compras_versao                      → a API respondeu (status da tela)
+ *     compras_pesquisar_precos_para_etp   { tipo, codigo_item_catalogo, periodo_meses, max_paginas, uf? }
+ *                                         → { amostra_total, registros, data_inicio, data_fim, _registros_truncados_em }
+ *     compras_catmat_consultar / compras_catser_consultar { codigo_item } → { encontrado, item }
  *   { action: "extrair_itens", texto: "<texto do TR>" }   → { itens: [...] }
  *
  * Deploy (com verificação de JWT — só usuários logados):
- *   supabase functions deploy pesquisa-precos
+ *   supabase functions deploy pesquisa-precos --project-ref <ref> --use-api
  *
  * Secrets:
  *   GROQ_API_KEY      (já usado pelo claude-chat — necessário para extrair_itens)
- *   MCP_COMPRAS_URL   (opcional; padrão = servidor público oficial)
  */
 
 import { corsHeaders } from "../_shared/cors.ts";
 
-const MCP_URL = Deno.env.get("MCP_COMPRAS_URL") ?? "https://mcp-compras.up.railway.app/mcp";
+const API = "https://dadosabertos.compras.gov.br";
+const TAM_PAGINA = 500;
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 const GROQ_MODEL = Deno.env.get("GROQ_MODEL") ?? "llama-3.3-70b-versatile";
-const PROTOCOL_VERSION = "2025-06-18";
-
-// Só tools de leitura usadas pelo módulo. Evita que a função vire proxy aberto
-// para as 100 tools do MCP.
-const TOOLS_PERMITIDAS = new Set([
-  "compras_pesquisar_precos_para_etp",
-  "compras_pesquisar_preco_material",
-  "compras_pesquisar_preco_servico",
-  "compras_catmat_consultar",
-  "compras_catser_consultar",
-  "compras_arp_itens_listar",
-  "compras_versao",
-]);
-
-let sessao: string | null = null;
-let rpcId = 0;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -48,82 +37,91 @@ function json(body: unknown, status = 200) {
   });
 }
 
-/** Lê a resposta JSON-RPC, venha ela em application/json ou em SSE. */
-async function lerResposta(res: Response, id: number) {
-  const tipo = res.headers.get("content-type") ?? "";
-  const corpo = await res.text();
-  if (tipo.includes("text/event-stream")) {
-    for (const linha of corpo.split(/\r?\n/)) {
-      if (!linha.startsWith("data:")) continue;
-      try {
-        const msg = JSON.parse(linha.slice(5).trim());
-        if (msg.id === id) return msg;
-      } catch { /* evento sem JSON — ignora */ }
+/** GET com até 3 tentativas (a API oscila); 4xx volta com a mensagem da API */
+async function buscarJson(url: string, ms = 60_000): Promise<any> {
+  let ultimo = "";
+  for (let t = 1; t <= 3; t++) {
+    try {
+      const r = await fetch(url, { headers: { accept: "application/json", "user-agent": "GAPMN-App/1.0 (gapmn.app)" }, signal: AbortSignal.timeout(ms) });
+      if (r.ok) return await r.json();
+      const corpo = await r.text();
+      if (r.status < 500 && r.status !== 429) {
+        let detalhe = corpo.slice(0, 200);
+        try { const j = JSON.parse(corpo); detalhe = j.detail ?? j.message ?? detalhe; } catch { /* texto */ }
+        throw Object.assign(new Error(`A API do Compras.gov.br recusou a consulta (${r.status}): ${detalhe}`), { definitivo: true });
+      }
+      ultimo = `respondeu ${r.status}`;
+    } catch (e: any) {
+      if (e?.definitivo) throw e;
+      ultimo = e?.name === "TimeoutError" ? "demorou demais para responder" : "não respondeu";
     }
-    throw new Error("Resposta SSE do MCP sem mensagem para a requisição");
+    await new Promise((ok) => setTimeout(ok, 800 * t * t));
   }
-  return JSON.parse(corpo);
+  throw new Error(`A API de Dados Abertos do Compras.gov.br ${ultimo}. Tente de novo em instantes.`);
 }
 
-async function postMcp(payload: Record<string, unknown>) {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "Accept": "application/json, text/event-stream",
-    "mcp-protocol-version": PROTOCOL_VERSION,
-  };
-  if (sessao) headers["mcp-session-id"] = sessao;
-  return await fetch(MCP_URL, { method: "POST", headers, body: JSON.stringify(payload) });
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const limitar = (v: unknown, min: number, max: number, padrao: number) => {
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) && n >= min ? Math.min(n, max) : padrao;
+};
+
+/** Preços praticados de um item (CATMAT ou CATSER) no período, percorrendo até `max_paginas` páginas de 500 */
+async function precosParaEtp(a: Record<string, unknown>) {
+  const tipo = a.tipo === "servico" ? "servico" : "material";
+  const codigo = Math.trunc(Number(a.codigo_item_catalogo));
+  if (!Number.isFinite(codigo) || codigo <= 0) throw new Error("Código CATMAT/CATSER inválido.");
+  const meses = limitar(a.periodo_meses, 1, 60, 12);
+  const maxPaginas = limitar(a.max_paginas, 1, 10, 3);
+  const uf = typeof a.uf === "string" && /^[A-Z]{2}$/.test(a.uf) ? a.uf : null;
+  const fim = new Date(), ini = new Date(fim.getTime() - meses * 30 * 86400000);
+  const registros: Record<string, unknown>[] = [];
+  let total = 0, truncado: number | null = null;
+  for (let pagina = 1; pagina <= maxPaginas; pagina++) {
+    const q = new URLSearchParams({ pagina: String(pagina), tamanhoPagina: String(TAM_PAGINA) });
+    if (tipo === "material") { q.set("tipo", "codigoItemCatalogo"); q.set("codigo", String(codigo)); }
+    else q.set("codigoItemCatalogo", String(codigo));
+    q.set("dataCompraInicio", iso(ini));
+    q.set("dataCompraFim", iso(fim));
+    if (uf) q.set("estado", uf);
+    const rota = tipo === "material" ? "1_consultarMaterial" : "3_consultarServico";
+    const j = await buscarJson(`${API}/modulo-pesquisa-preco/${rota}?${q}`);
+    total = Number(j.totalRegistros ?? total) || 0;
+    for (const r of j.resultado ?? []) {
+      // serviço não traz idCompraItem: o app usa a chave para não contar o mesmo preço duas vezes
+      registros.push({ ...r, idCompraItem: r.idCompraItem ?? (r.idCompra != null ? `${r.idCompra}-${r.idItemCompra ?? r.numeroItemCompra ?? ""}` : undefined) });
+    }
+    if (!j.paginasRestantes) break;
+    if (pagina === maxPaginas) truncado = registros.length;
+  }
+  return { amostra_total: total, registros, data_inicio: iso(ini), data_fim: iso(fim), _registros_truncados_em: truncado };
 }
 
-async function iniciarSessao() {
-  sessao = null;
-  const id = ++rpcId;
-  const res = await postMcp({
-    jsonrpc: "2.0", id, method: "initialize",
-    params: {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: "gapmn-app", version: "1.0" },
-    },
-  });
-  if (!res.ok) throw new Error(`MCP initialize falhou (HTTP ${res.status})`);
-  sessao = res.headers.get("mcp-session-id");
-  await lerResposta(res, id);
-  await postMcp({ jsonrpc: "2.0", method: "notifications/initialized" });
+async function itemDoCatalogo(tipo: "material" | "servico", codigo: number) {
+  if (!Number.isFinite(codigo) || codigo <= 0) return { encontrado: false, item: null };
+  const url = tipo === "material"
+    ? `${API}/modulo-material/4_consultarItemMaterial?pagina=1&tamanhoPagina=10&codigoItem=${codigo}`
+    : `${API}/modulo-servico/6_consultarItemServico?pagina=1&tamanhoPagina=10&codigoServico=${codigo}`;
+  const item = (await buscarJson(url, 30_000)).resultado?.[0] ?? null;
+  return { encontrado: !!item, item };
 }
 
 async function chamarTool(nome: string, args: Record<string, unknown>) {
-  if (!sessao) await iniciarSessao();
-
-  for (let tentativa = 0; tentativa < 3; tentativa++) {
-    const id = ++rpcId;
-    const res = await postMcp({
-      jsonrpc: "2.0", id, method: "tools/call",
-      params: { name: nome, arguments: args },
-    });
-
-    // Servidor reiniciou e perdeu a sessão → refaz o handshake e repete.
-    if (res.status === 404 || res.status === 400) {
-      await iniciarSessao();
-      continue;
-    }
-    // Cold start / sobrecarga → backoff curto.
-    if (res.status >= 500 || res.status === 429) {
-      await new Promise((r) => setTimeout(r, 800 * (tentativa + 1)));
-      continue;
-    }
-    if (!res.ok) throw new Error(`MCP respondeu HTTP ${res.status}`);
-
-    const msg = await lerResposta(res, id);
-    if (msg.error) throw new Error(msg.error.message ?? "Erro JSON-RPC do MCP");
-    const r = msg.result ?? {};
-    const texto = r.content?.find((c: any) => c.type === "text")?.text ?? "";
-    if (r.isError) throw new Error(texto || "A tool do MCP devolveu erro");
-    if (r.structuredContent) return r.structuredContent;
-    try { return JSON.parse(texto); } catch { return { texto }; }
+  switch (nome) {
+    case "compras_versao":
+      await itemDoCatalogo("material", 150512); // a API responde?
+      return { versao: "API de Dados Abertos do Compras.gov.br (consulta direta)" };
+    case "compras_pesquisar_precos_para_etp":
+      return await precosParaEtp(args);
+    case "compras_catmat_consultar":
+      return await itemDoCatalogo("material", Math.trunc(Number(args.codigo_item)));
+    case "compras_catser_consultar":
+      return await itemDoCatalogo("servico", Math.trunc(Number(args.codigo_item)));
+    default:
+      return null;
   }
-  throw new Error("MCP indisponível após 3 tentativas");
 }
+const TOOLS_PERMITIDAS = new Set(["compras_versao", "compras_pesquisar_precos_para_etp", "compras_catmat_consultar", "compras_catser_consultar"]);
 
 // ── Extração de itens do TR via LLM ─────────────────────────────────────────
 

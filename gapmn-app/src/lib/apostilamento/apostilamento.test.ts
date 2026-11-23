@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { painel, statusContrato, dataBaseDe } from "./painel.ts";
+import { painel, statusContrato, dataBaseDe, isoDaVigencia } from "./painel.ts";
 import { acumular, periodoDoReajuste, urlCalculadora, chaveIndice, buscarIndice } from "./indice.ts";
 import { dadosIniciais, itensColados, paraMotor, reajustesAplicados, omDoNumero } from "./cadastro.ts";
 
@@ -27,6 +27,15 @@ test("painel igual ao painel_reajustes.py da SCON", () => {
     assert.equal(r.dias_para_proximo, dias, c.contrato);
     assert.deepEqual(r.reajustes_devidos.map((d) => `${d.periodo}/${d.indice_divulgado}`), periodos, c.contrato);
   }
+});
+
+test("painel: vigência encerrada vem antes da falta de data do orçamento (LEIA-ME da carga de 23/11)", () => {
+  assert.equal(statusContrato({ contrato: "014", data_base: null, vigencia_fim: "2026-11-06" }, dia(2026, 11, 23)).status, "VIGENCIA_ENCERRADA");
+  assert.equal(statusContrato({ contrato: "X", data_base: null, vigencia_fim: "2027-01-31" }, dia(2026, 11, 23)).status, "SEM_DATA_BASE");
+  assert.equal(statusContrato({ contrato: "A", data_base: null, vigencia_fim: "2020-01-01", nao_aplicavel: "tarifa" }, dia(2026, 11, 23)).status, "NAO_SE_APLICA");
+  assert.equal(isoDaVigencia("06/11/2026"), "2026-11-06");
+  assert.equal(isoDaVigencia("2026-11-06T00:00:00"), "2026-11-06");
+  assert.equal(isoDaVigencia(""), null);
 });
 
 test("painel: ordem e contrato sem data do orçamento", () => {
@@ -87,8 +96,10 @@ test("cadastro inicial a partir do contrato e dados para o motor", () => {
   assert.equal("itens_total_inicial" in m, false);
   assert.equal(reajustesAplicados({ ...d, reajustes: [{ n: 1, indice_pct: 5, novo: false }, { n: 2, indice_pct: null, novo: true }] }), 1);
   // o checklist vai à parte; no IPCA fica o "pesquisa abaixo" do cadastro
-  const ck = paraMotor({ ...d, indice: { nome: "IPCA", clausula: "c", fonte_curta: "pesquisa abaixo" }, checklist: [{ sim: true, nao: false, obs: "" }] });
+  const ck = paraMotor({ ...d, indice: { nome: "IPCA", clausula: "c", fonte_curta: "pesquisa abaixo" }, checklist: [{ sim: true, nao: false, obs: "" }],
+    data_base_fonte: { fonte: "TR" } });
   assert.equal("checklist" in ck, false);
+  assert.equal("data_base_fonte" in ck, false);
   assert.equal(ck.indice.fonte_curta, "pesquisa abaixo");
 });
 
