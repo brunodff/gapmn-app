@@ -33,6 +33,9 @@ test("ponte: página que não existe volta tabela null; pedido fora das páginas
   const j = await (await pedir("?pagina=incc-m-2027")).json() as { tabela: unknown; url: unknown };
   assert.equal(j.tabela, null);
   assert.equal(j.url, null);
+  const ajuda = await pedir("");
+  assert.equal(ajuda.status, 200, "sem a página, explica como usar");
+  assert.equal(((await ajuda.json()) as { exemplo: string }).exemplo, "https://gapmn-indice-fgv.exemplo.workers.dev/?pagina=incc-m-2026");
   assert.equal((await pedir("?pagina=../../etc")).status, 400);
   assert.equal((await pedir("?pagina=ipca-2026")).status, 400);
   assert.equal((await ponte.fetch(new Request("https://x.workers.dev/?pagina=incc-m-2026", { method: "POST" }))).status, 405);

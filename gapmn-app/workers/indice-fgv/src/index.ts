@@ -4,6 +4,7 @@
 // e devolve a tabela já lida pelo mesmo código do app (lerTabelaFgv). Dado público, sem login e sem segredo.
 //   GET /?pagina=incc-m-2026 → { pagina, url, tabela: { "out/26": [0.35, 6.75], … } }
 //   tabela null = a página não existe (a FGV manda para a lista de notícias) ou não tem a tabela
+//   GET / (sem página) → como usar
 // Guarda cada página por 6 h na memória do Worker (a FGV publica uma vez por mês).
 // Deploy, nesta pasta: npx wrangler deploy
 import { PAGINA_FGV_VALIDA, lerTabelaFgv, type TabelaFgv } from "../../../src/lib/apostilamento/indiceFgv.ts";
@@ -34,7 +35,10 @@ export default {
   async fetch(req: Request): Promise<Response> {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     if (req.method !== "GET") return json({ erro: "Use GET." }, 405);
-    const pagina = new URL(req.url).searchParams.get("pagina") ?? "";
+    const url = new URL(req.url);
+    const pagina = url.searchParams.get("pagina") ?? "";
+    // aberto sem a página (ex.: alguém clicou no endereço): explica como usar
+    if (!pagina) return json({ ponte: "Tabela do INCC da FGV para o reajuste dos contratos do gapmn.app", exemplo: `${url.origin}/?pagina=incc-m-2026` });
     if (!PAGINA_FGV_VALIDA.test(pagina)) return json({ erro: "Página da FGV inválida (ex.: incc-m-2026)." }, 400);
     const g = guardadas.get(pagina);
     if (g && g.ate > Date.now()) return json(g.leitura);
