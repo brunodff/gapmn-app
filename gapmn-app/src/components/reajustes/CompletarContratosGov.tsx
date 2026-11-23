@@ -48,7 +48,7 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
       let jaCompletos = 0;
       for (const c of contratos) {
         const ex = existentes.get(c.numero_contrato);
-        if (ex?.situacao_cadastro === "COMPLETO" || ex?.dedicacao_exclusiva) { jaCompletos++; continue; }
+        if (ex?.situacao_cadastro === "COMPLETO" || ex?.situacao_cadastro === "NAO_SE_APLICA" || ex?.dedicacao_exclusiva) { jaCompletos++; continue; }
         const gov = acharContratoGov(c.numero_contrato, c.pag_nup, c.data_inicio, lista);
         if (gov) fila.push({ c, gov }); else if (ex || (c.data_final ?? "") >= new Date().toISOString().slice(0, 10)) semPar.push(c.numero_contrato);
       }
@@ -142,7 +142,7 @@ export default function CompletarContratosGov({ contratos, config, nomeUsuario, 
       {msg && <div className={`mt-2 text-xs ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.txt}</div>}
       {previa && (
         <div className="mt-3 space-y-1 rounded-lg bg-slate-50 p-3 text-xs text-slate-700">
-          <div>Achados no Contratos.gov.br: <b>{previa.linhas.length}</b>{comPdfs ? ` (${previa.comPdf} com PDF lido)` : ""} · já completos ou com dedicação exclusiva (não mexi): {previa.jaCompletos} · sem par: {previa.semPar.length}{previa.falhas.length ? ` · falharam: ${previa.falhas.length}` : ""}</div>
+          <div>Achados no Contratos.gov.br: <b>{previa.linhas.length}</b>{comPdfs ? ` (${previa.comPdf} com PDF lido)` : ""} · já completos ou fora da automação (não mexi): {previa.jaCompletos} · sem par: {previa.semPar.length}{previa.falhas.length ? ` · falharam: ${previa.falhas.length}` : ""}</div>
           <div>Pendências: <b>{previa.linhas.reduce((s, l) => s + l.antes, 0)}</b> antes → <b className="text-emerald-700">{previa.linhas.reduce((s, l) => s + l.depois, 0)}</b> depois ·
             <b className="text-emerald-700"> {previa.linhas.filter((l) => l.situacao_cadastro === "COMPLETO").length} ficam completos</b></div>
           <div className="text-slate-600">O que mais falta depois (vem dos PDFs, em cada contrato): {contagem(previa.linhas.map((l) => l.pendencias)).map(([p, n]) => `${p} (${n})`).join(" · ")}</div>

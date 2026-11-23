@@ -3,7 +3,8 @@
 // painel abrir sem carregar o Python:
 // - o reajuste fica devido a cada 12 meses da data do orçamento (data-base);
 // - os efeitos começam no 1º dia do mês de aniversário;
-// - com dedicação exclusiva de mão de obra não entra (é repactuação);
+// - com dedicação exclusiva de mão de obra não entra (é repactuação), nem o contrato que a carga do SILOMS
+//   marca sem reajuste por índice (adesão com tarifa regulada, credenciamento com tabela);
 // - com reajustes já aplicados, o próximo é o de número (aplicados + 1);
 // - o índice do mês final sai até o dia 12 do mês seguinte.
 // O app acrescenta SEM_DATA_BASE para contrato sem a data do orçamento cadastrada.
@@ -20,6 +21,7 @@ export interface ContratoPainel {
   data_base: string | null;        // MM/AAAA
   reajustes_aplicados?: number;
   dedicacao_exclusiva?: boolean;
+  nao_aplicavel?: string | null;   // motivo da carga do SILOMS (siloms.reajuste_nao_aplicavel)
   vigencia_fim?: string | null;    // AAAA-MM-DD
 }
 
@@ -43,7 +45,7 @@ export const CORES: Record<StatusReajuste, string> = {
 
 export const ROTULOS: Record<StatusReajuste, string> = {
   VERMELHO: "Reajuste devido", AGUARDANDO_INDICE: "Aguardando índice", AMARELO: "Próximo",
-  VERDE: "Distante", VIGENCIA_ENCERRADA: "Vigência encerrada", NAO_SE_APLICA: "Repactuação",
+  VERDE: "Distante", VIGENCIA_ENCERRADA: "Vigência encerrada", NAO_SE_APLICA: "Fora da automação",
   SEM_DATA_BASE: "Sem data do orçamento",
 };
 
@@ -75,6 +77,9 @@ export function statusContrato(c: ContratoPainel, hoje: Data = hojeLocal(), dias
   const base = { contrato: c.contrato, reajustes_devidos: [] as ReajusteDevido[], qtd_devidos: 0, proximo_aniversario: null, dias_para_proximo: null };
   if (c.dedicacao_exclusiva) {
     return { ...base, status: "NAO_SE_APLICA", motivo: "Dedicação exclusiva de mão de obra (repactuação)", cor: CORES.NAO_SE_APLICA };
+  }
+  if (c.nao_aplicavel) {
+    return { ...base, status: "NAO_SE_APLICA", motivo: `Sem reajuste por índice: ${c.nao_aplicavel}`, cor: CORES.NAO_SE_APLICA };
   }
   const mb = /^(\d{2})\/(\d{4})$/.exec(c.data_base ?? "");
   if (!mb) return { ...base, status: "SEM_DATA_BASE", motivo: "Cadastrar a data do orçamento", cor: CORES.SEM_DATA_BASE };

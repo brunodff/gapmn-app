@@ -26,9 +26,12 @@ export interface Indice {
   fonte_curta?: string;
 }
 
+/** Item do checklist do fiscal (8 itens fixos, na ordem do documento): SIM ou NÃO, justificativa só no NÃO */
+export interface MarcacaoChecklist { sim: boolean; nao: boolean; obs: string }
+
 export interface Reajuste {
   n: number;                 // 1º, 2º… reajuste desde a data do orçamento
-  indice_pct: number | null; // percentual acumulado dos 12 meses (6 casas)
+  indice_pct: number | null; // percentual acumulado dos 12 meses (6 casas; INCC da FGV: 2)
   novo: boolean;             // true = pedido agora; false = já aplicado em apostilamento anterior
   documento?: string;        // reajuste já aplicado: documento que o aplicou
 }
@@ -91,6 +94,8 @@ export interface DadosReajuste {
   fator_anual?: number;     // conferência do item: valor = unitário × qtd × fator (vazio: ANUAL = 12, MENSAL = 1; preço por unidade = 1)
   data_declaracao?: string; // AAAA-MM-DD; vazio = "data conforme assinatura eletrônica"
   observacoes_extras: string[];
+  /** checklist do fiscal, guardado com o cadastro (o app o entrega à parte ao motor) */
+  checklist?: MarcacaoChecklist[];
 }
 
 /** Configuração do app que o motor usa no lugar dos dados que não podem ficar no código. */
@@ -116,6 +121,12 @@ export interface ResumoReajuste {
   valor_termo: number;
   valor_termo_extenso: string;
   efeitos_financeiros: string;
+  /** um por reajuste novo: a consulta que vai como print no parecer (Calculadora do Cidadão ou tabela da FGV) */
+  links_indice?: LinkIndice[];
+}
+export interface LinkIndice {
+  n: number; fonte: string; indice: string; periodo: string; url_print: string | null;
+  linha_tabela?: string; coluna?: string; url_google?: string; url_pagina_ano_seguinte?: string; valor_correcao?: number;
 }
 export interface ResultadoGeracao { resumo: ResumoReajuste; avisos: string[]; arquivos: string[] }
 

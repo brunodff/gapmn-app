@@ -1,7 +1,7 @@
 // Índice do reajuste pelo Banco Central (SGS), como o indice_bcb.py do pacote da SCON: variações mensais
 // do mês do orçamento até o mês anterior ao aniversário (12 índices), acumuladas como na Calculadora do
 // Cidadão e arredondadas em 6 casas. A conta é feita em inteiros (BigInt), sem erro de ponto flutuante.
-// INCC e outros índices da FGV que não estão na Calculadora entram à mão.
+// O INCC, que não está na Calculadora, vem da tabela anual da FGV (indiceFgv.ts).
 
 export const SERIES_SGS: Record<string, number> = { IPCA: 433, INPC: 188, "IGP-M": 189, "IGP-DI": 190 };
 

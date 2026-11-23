@@ -16,15 +16,19 @@ const UG_GAPMN = "120630";
 type Contrato = ContratoScon & { status: string | null; data_inicio: string | null };
 type Aba = "painel" | "config";
 
-const SETORES = ["SCON", "ADMIN", "DEV"];
+/** Carga do SILOMS e completar todos pelo Contratos.gov.br (gravam muitos cadastros de uma vez) */
+const SETORES_LOTE = ["SCON", "ADMIN", "DEV"];
 
-/** Reajuste por apostilamento (SCON): painel de cores, cadastro do reajuste por contrato e geração dos
- *  4 documentos pelo motor da SCON, que roda no navegador. Tela do app: /app?vista=reajustes[&contrato=…][&aba=config]. */
+/** Reajuste por apostilamento: painel de cores, cadastro do reajuste por contrato e geração dos documentos
+ *  pelo motor da SCON, que roda no navegador. Todos os usuários do app usam (fiscais e gestores criam os
+ *  documentos); as ferramentas em lote ficam com SCON, ADMIN e DEV e a configuração, com ADMIN e DEV.
+ *  Tela do app: /app?vista=reajustes[&contrato=…][&aba=config]. */
 export default function Reajustes() {
   const [params, setParams] = useSearchParams();
   const aberto = params.get("contrato");
   const aba: Aba = params.get("aba") === "config" ? "config" : "painel";
 
+  const [logado, setLogado] = useState(false);
   const [setor, setSetor] = useState<string | null>(null);
   const [nome, setNome] = useState("");
   const [perfilOk, setPerfilOk] = useState(false);
@@ -42,6 +46,7 @@ export default function Reajustes() {
       if (uid) {
         const { data } = await supabase.from("profiles").select("setor, nome_guerra").eq("id", uid).maybeSingle();
         const p = data as { setor?: string | null; nome_guerra?: string | null } | null;
+        setLogado(true);
         setSetor(p?.setor?.toUpperCase() ?? null);
         setNome(p?.nome_guerra ?? s.session?.user.email ?? "");
       }
@@ -49,7 +54,8 @@ export default function Reajustes() {
     })();
   }, []);
 
-  const pode = !!setor && SETORES.includes(setor);
+  const pode = logado;
+  const lote = !!setor && SETORES_LOTE.includes(setor);
   const admin = setor === "ADMIN" || setor === "DEV";
 
   useEffect(() => {
@@ -62,7 +68,7 @@ export default function Reajustes() {
           .select("id, numero_contrato, pag_nup, fornecedor, cnpj, descricao, data_orcamento, data_inicio, data_final, vl_contratual, status")
           .order("numero_contrato"),
         supabase.from("contratos_apostilamento")
-          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga"),
+          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga, nao_aplicavel:carga->siloms->>reajuste_nao_aplicavel"),
         supabase.from("apostilamento_config").select("ordenador, aci, cidade, ug_apoio, textos_fixos_om, dias_alerta").eq("id", "padrao").maybeSingle(),
       ]);
       if (!vivo) return;
@@ -93,7 +99,7 @@ export default function Reajustes() {
   };
 
   if (!perfilOk) return <div className="p-6 text-sm text-slate-500">Carregando…</div>;
-  if (!pode) return <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">Esta tela é da Seção de Contratos (SCON), ADMIN e DEV.</div>;
+  if (!pode) return <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">Entre no gapmn.app para usar o reajuste dos contratos.</div>;
 
   const configIncompleta = !config.ordenador.nome || !config.aci.nome;
 
@@ -102,7 +108,7 @@ export default function Reajustes() {
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-lg font-bold text-slate-800">Reajuste por apostilamento</h1>
-          <p className="text-xs text-slate-500">Memória de cálculo, Declaração de Disponibilidade Orçamentária, Parecer Técnico e Termo de Apostilamento — regras da SCON.</p>
+          <p className="text-xs text-slate-500">Memória de cálculo, Declaração de Disponibilidade Orçamentária, Parecer Técnico, Termo de Apostilamento e Checklist do Fiscal — regras da SCON.</p>
         </div>
         {!contrato && (
           <div className="ml-auto flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
@@ -132,8 +138,8 @@ export default function Reajustes() {
         : aba === "config"
           ? <ConfigReajustes config={config} podeEditar={admin} nomeUsuario={nome} aoSalvar={setConfig} />
           : <div className="space-y-3">
-              <CompletarContratosGov contratos={contratos} config={config} nomeUsuario={nome} ug={UG_GAPMN} aoTerminar={() => setRecarga((n) => n + 1)} />
-              <ImportarCarga contratos={contratos} config={config} nomeUsuario={nome} aoTerminar={() => setRecarga((n) => n + 1)} />
+              {lote && <CompletarContratosGov contratos={contratos} config={config} nomeUsuario={nome} ug={UG_GAPMN} aoTerminar={() => setRecarga((n) => n + 1)} />}
+              {lote && <ImportarCarga contratos={contratos} config={config} nomeUsuario={nome} aoTerminar={() => setRecarga((n) => n + 1)} />}
               <PainelReajustes contratos={contratos} cadastros={cadastros} diasAlerta={config.dias_alerta} aoAbrir={(n) => ir({ contrato: n })} />
             </div>}
     </div>

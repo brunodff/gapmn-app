@@ -4,9 +4,11 @@ import type { ContratoGov } from "../../lib/apostilamento/contratosGov";
 import CompletarAutomatico from "./CompletarAutomatico";
 import { motor } from "../../lib/apostilamento/motor";
 import { buscarIndice, chaveIndice, periodoDoReajuste, SERIES_SGS, urlCalculadora } from "../../lib/apostilamento/indice";
+import { ehFgv, linksFgv } from "../../lib/apostilamento/indiceFgv";
+import { ITENS_CHECKLIST, avisosChecklist, checklistIniciado, marcar, normalizarChecklist } from "../../lib/apostilamento/checklist";
 import { completarReajustesDevidos, dadosIniciais, itensColados, paraMotor, reajustesAplicados, type ContratoScon } from "../../lib/apostilamento/cadastro";
-import { pendenciasCadastro, proximoApostilamento, situacaoCadastro, type CargaGuardada } from "../../lib/apostilamento/carga";
-import type { ConfigApostilamento, DadosReajuste, ItemContrato, ResultadoChecagem, ResultadoGeracao } from "../../lib/apostilamento/tipos";
+import { motivoForaDaAutomacao, pendenciasCadastro, proximoApostilamento, situacaoCadastro, type CargaGuardada } from "../../lib/apostilamento/carga";
+import type { ConfigApostilamento, DadosReajuste, ItemContrato, MarcacaoChecklist, ResultadoChecagem, ResultadoGeracao } from "../../lib/apostilamento/tipos";
 import { Caixa, Campo, CampoNumero, Secao, brl } from "./campos";
 
 type UltimaNE = { ne: string; pi: string; unidade: string } | null;
@@ -37,12 +39,21 @@ function valorParaCalculadora(d: DadosReajuste, n: number): number {
   return v;
 }
 
-/** Busca no Banco Central o índice dos reajustes pedidos agora que ainda estão sem percentual
- *  (só os índices que o BCB publica; INCC e IPCA-E continuam digitados). */
+/** Percentual com as casas da fonte: 6 na Calculadora do Cidadão, 2 na tabela da FGV (INCC) */
+const casasDoIndice = (nome: string) => (ehFgv(nome) ? 2 : 6);
+const pct = (v: number, casas: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+
+/** Busca no Banco Central o índice dos reajustes pedidos agora que ainda estão sem percentual (só os índices
+ *  que o BCB publica). INCC: o percentual vem da tabela anual da FGV, digitado de lá (o link abre na linha). */
 async function indicesFaltando(d: DadosReajuste): Promise<{ dados: DadosReajuste; achados: string[]; avisos: string[] }> {
   const achados: string[] = [], avisos: string[] = [];
   const faltam = d.reajustes.filter((r) => r.novo && r.indice_pct == null);
   if (!faltam.length || !/^\d{2}\/\d{4}$/.test(d.data_base) || !d.indice.nome) return { dados: d, achados, avisos };
+  if (ehFgv(d.indice.nome)) {
+    const linhas = faltam.map((r) => { const per = periodoDoReajuste(d.data_base, r.n); return `${r.n}º linha ${linksFgv(d.indice.nome, per.inicio, per.fim).linha_tabela}`; });
+    avisos.push(`INCC: abra a consulta do índice na FGV (${linhas.join("; ")}, coluna Acumulado 12 meses), digite o percentual e anexe o print.`);
+    return { dados: d, achados, avisos };
+  }
   if (!SERIES_SGS[chaveIndice(d.indice.nome)]) {
     avisos.push(`O ${d.indice.nome} não está no Banco Central: digite o índice e anexe o print da fonte.`);
     return { dados: d, achados, avisos };
@@ -54,7 +65,7 @@ async function indicesFaltando(d: DadosReajuste): Promise<{ dados: DadosReajuste
       const res = await buscarIndice(d.indice.nome, per.inicio, per.fim, valorParaCalculadora({ ...d, reajustes }, r.n));
       if (!res.completo) { avisos.push(`${r.n}º reajuste: o ${res.indice} de ${per.fim} ainda não saiu.`); continue; }
       reajustes = reajustes.map((x) => (x.n === r.n ? { ...x, indice_pct: res.percentual } : x));
-      achados.push(`${r.n}º ${res.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 6 })}%`);
+      achados.push(`${r.n}º ${pct(res.percentual, 6)}%`);
     } catch (e) {
       avisos.push(`${r.n}º reajuste: não consegui o índice no Banco Central (${e instanceof Error ? e.message : String(e)}).`);
     }
@@ -62,8 +73,16 @@ async function indicesFaltando(d: DadosReajuste): Promise<{ dados: DadosReajuste
   return { dados: { ...d, reajustes }, achados, avisos };
 }
 
-/** Tela do reajuste de um contrato: cadastro (salvo no banco), índice do Banco Central, prints da Calculadora,
- *  quadro de checagem e geração dos 4 documentos pelo motor da SCON. */
+function baixar(arquivo: Blob, nome: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(arquivo);
+  a.download = nome;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+
+/** Tela do reajuste de um contrato: cadastro (salvo no banco), índice do Banco Central ou da FGV (INCC), prints
+ *  da consulta do índice, checklist do fiscal, quadro de checagem e geração dos documentos pelo motor da SCON. */
 export default function ReajusteContrato({ contrato, config, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes }: Props) {
   const [d, setD] = useState<DadosReajuste | null>(null);
   const [dedicacao, setDedicacao] = useState(false);
@@ -129,20 +148,31 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
   const totalItens = useMemo(() => (d?.itens ?? []).reduce((s, it) => s + (it.valor_base ?? 0), 0), [d?.itens]);
   const omAssina = d?.om_ordenador || d?.ordenador?.om_sigla || config.ordenador.om_sigla || "GAP-MN";
   const temTextoFixo = !!config.textos_fixos_om[omAssina];
+  // fora da automação: dedicação exclusiva (repactuação) ou a carga do SILOMS diz que não há reajuste por índice
+  const motivoFora = motivoForaDaAutomacao(carga?.siloms, dedicacao);
   // pendências para gerar (mesma regra da importação da carga), recalculadas a cada mudança
-  const pendencias = useMemo(() => (d ? pendenciasCadastro(d, { dedicacao, textosFixos: config.textos_fixos_om, omPadrao: config.ordenador.om_sigla || "GAP-MN" }) : []),
-    [d, dedicacao, config]);
+  const pendencias = useMemo(() => (d ? pendenciasCadastro(d, { dedicacao: !!motivoFora, textosFixos: config.textos_fixos_om, omPadrao: config.ordenador.om_sigla || "GAP-MN" }) : []),
+    [d, motivoFora, config]);
   const novos = (d?.reajustes ?? []).filter((r) => r.novo);
   const printsNovos = novos.map((r) => prints[r.n]).filter((f): f is File => !!f);
 
   if (!d) return <div className="p-6 text-sm text-slate-500">Carregando o contrato…</div>;
+
+  const fgv = ehFgv(d.indice.nome);
+  const casas = casasDoIndice(d.indice.nome);
+  const ck = normalizarChecklist(d.checklist);
+  const comChecklist = checklistIniciado(d.checklist);
+  const avisosCk = avisosChecklist(d.checklist);
+  // o checklist não mexe nos valores: não apaga a checagem nem a conferência
+  const mudaChecklist = (l: MarcacaoChecklist[]) => { setD((x) => (x ? { ...x, checklist: l } : x)); setAlterado(true); };
+  const nDocs = (d.instrumento.toLowerCase().startsWith("termo aditivo") ? 3 : 4) + (comChecklist ? 1 : 0);
 
   async function salvar() {
     if (!d) return;
     setOcupado("Salvando…"); setMsg(null);
     const linha = {
       numero_contrato: contrato.numero_contrato, dados: d, reajustes_aplicados: reajustesAplicados(d), dedicacao_exclusiva: dedicacao,
-      situacao_cadastro: situacaoCadastro(pendencias, dedicacao), pendencias, atualizado_em: new Date().toISOString(),
+      situacao_cadastro: situacaoCadastro(pendencias, !!motivoFora), pendencias, atualizado_em: new Date().toISOString(),
     };
     const r = await armazem.salvar(linha, versao, nomeUsuario);
     const erro = r.erro ?? null;
@@ -180,15 +210,20 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     if (!d) return;
     const q = await checar();
     if (!q?.pode_gerar) { if (q) setMsg({ ok: false, txt: "Há campos marcados com ❌ no quadro de checagem." }); return; }
-    const r = await rodar("Gerando os documentos…", (p) => motor.gerar(paraMotor(d), config, printsNovos, p));
+    const r = await rodar("Gerando os documentos…", (p) => motor.gerar(paraMotor(d), config, printsNovos, p, comChecklist ? ck : undefined));
     if (!r) return;
     setSimulacao(r);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(r.zip);
-    a.download = `Apostilamento - CT ${contrato.numero_contrato.replace(/\//g, "-")}.zip`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    baixar(r.zip, `Apostilamento - CT ${contrato.numero_contrato.replace(/\//g, "-")}.zip`);
     setMsg({ ok: true, txt: `Documentos gerados: ${r.arquivos.length} arquivos no .zip baixado.` });
+  }
+
+  /** Só o checklist do fiscal (.docx), sem gerar os outros documentos de novo; os avisos não impedem */
+  async function gerarChecklist() {
+    if (!d) return;
+    const r = await rodar("Gerando o checklist…", (p) => motor.checklist(paraMotor(d), config, ck, p));
+    if (!r) return;
+    baixar(r.docx, r.arquivo);
+    setMsg({ ok: !r.avisos.length, txt: `Checklist gerado: ${r.arquivo}.` + (r.avisos.length ? ` Confira: ${r.avisos.join(" ")}` : "") });
   }
 
   async function buscarNoBC(idx: number) {
@@ -201,7 +236,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
       const res = await buscarIndice(d!.indice.nome, per.inicio, per.fim, valorParaCalculadora(d!, r.n));
       muda((x) => ({ ...x, reajustes: x.reajustes.map((y, i) => (i === idx ? { ...y, indice_pct: res.percentual } : y)) }));
       setMsg({ ok: res.completo, txt: res.completo
-        ? `${res.indice} ${per.inicio} a ${per.fim}: ${res.percentual.toLocaleString("pt-BR", { minimumFractionDigits: 6 })}% (${res.meses} meses, como na Calculadora). Confira e anexe o print da Calculadora.`
+        ? `${res.indice} ${per.inicio} a ${per.fim}: ${pct(res.percentual, 6)}% (${res.meses} meses, como na Calculadora). Confira e anexe o print da Calculadora.`
         : `${res.indice} ${per.inicio} a ${per.fim}: só ${res.meses} meses divulgados — o índice do último mês ainda não saiu.` });
     } catch (e) {
       setMsg({ ok: false, txt: e instanceof Error ? e.message : String(e) });
@@ -220,7 +255,13 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
         {alterado && <span className="text-xs text-amber-600">alterações não salvas</span>}
       </div>
 
-      {!dedicacao && (pendencias.length
+      {motivoFora && !dedicacao && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-700">
+          A carga do SILOMS marca este contrato sem reajuste por índice: <b>{motivoFora}</b>. Ele fica fora do painel de reajustes;
+          se mesmo assim houver reajuste por índice, preencha e gere normalmente.
+        </div>
+      )}
+      {!motivoFora && (pendencias.length
         ? <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
             <b>Faltam {pendencias.length} dado{pendencias.length > 1 ? "s" : ""} para gerar os documentos:</b>
             <ul className="mt-1 list-disc pl-5 columns-1 md:columns-2">{pendencias.map((p, i) => <li key={i}>{p}</li>)}</ul>
@@ -314,18 +355,21 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
           <div className="pt-4"><Caixa rotulo="Mostrar a coluna de valor unitário na memória" marcado={d.mostrar_unitario} onChange={(v) => set("mostrar_unitario", v)} /></div>
         </div>
         <table className="w-full text-xs mt-3">
-          <thead className="text-slate-500"><tr><th className="text-left py-1">Reajuste</th><th className="text-left">Período (12 índices)</th><th className="text-left">Índice (%)</th><th className="text-left">Situação</th><th className="text-left">Print da Calculadora</th><th /></tr></thead>
+          <thead className="text-slate-500"><tr><th className="text-left py-1">Reajuste</th><th className="text-left">Período (12 índices)</th><th className="text-left">Índice (%)</th><th className="text-left">Situação</th><th className="text-left">Print da consulta do índice</th><th /></tr></thead>
           <tbody>
             {d.reajustes.map((r, i) => {
               const per = /^\d{2}\/\d{4}$/.test(d.data_base) ? periodoDoReajuste(d.data_base, r.n) : null;
-              const link = per && d.indice.nome ? urlCalculadora(d.indice.nome, per.inicio, per.fim, valorParaCalculadora(d, r.n)) : null;
+              // INCC: tabela anual da FGV já rolada até o acumulado; os demais: Calculadora do Cidadão já preenchida
+              const lf = per && fgv ? linksFgv(d.indice.nome, per.inicio, per.fim) : null;
+              const link = lf ? lf.url_print : per && d.indice.nome ? urlCalculadora(d.indice.nome, per.inicio, per.fim, valorParaCalculadora(d, r.n)) : null;
               return (
                 <tr key={i} className="border-t border-slate-100 align-top">
                   <td className="py-1.5 font-medium">{r.n}º</td>
                   <td className="py-1.5 text-slate-600">{per ? `${per.inicio} a ${per.fim} · efeitos 01/${per.aniversario}` : "–"}</td>
                   <td className="py-1.5">
-                    <CampoNumero valor={r.indice_pct} casas={6} className="w-28" onChange={(v) => muda((x) => ({ ...x, reajustes: x.reajustes.map((y, j) => (j === i ? { ...y, indice_pct: v } : y)) }))} />
-                    {r.novo && <button disabled={buscandoIdx != null} onClick={() => buscarNoBC(i)} className="ml-2 text-sky-700 hover:underline disabled:opacity-40">{buscandoIdx === i ? "buscando…" : "Buscar no Banco Central"}</button>}
+                    <CampoNumero valor={r.indice_pct} casas={casas} className="w-28" onChange={(v) => muda((x) => ({ ...x, reajustes: x.reajustes.map((y, j) => (j === i ? { ...y, indice_pct: v } : y)) }))} />
+                    {r.novo && !fgv && <button disabled={buscandoIdx != null} onClick={() => buscarNoBC(i)} className="ml-2 text-sky-700 hover:underline disabled:opacity-40">{buscandoIdx === i ? "buscando…" : "Buscar no Banco Central"}</button>}
+                    {r.novo && lf && <span className="ml-2 text-[10px] text-slate-500">da tabela da FGV, 2 casas</span>}
                   </td>
                   <td className="py-1.5">
                     <select className={cel} value={r.novo ? "novo" : "aplicado"} onChange={(e) => muda((x) => ({ ...x, reajustes: x.reajustes.map((y, j) => (j === i ? { ...y, novo: e.target.value === "novo" } : y)) }))}>
@@ -336,7 +380,9 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
                   <td className="py-1.5">
                     {r.novo && <>
                       <input type="file" accept="image/png,image/jpeg" className="text-[11px] w-48" onChange={(e) => { const f = e.target.files?.[0]; setPrints((p) => { const q = { ...p }; if (f) q[r.n] = f; else delete q[r.n]; return q; }); }} />
-                      {link && <a href={link} target="_blank" rel="noreferrer" className="block text-sky-700 hover:underline">abrir a Calculadora já preenchida ↗</a>}
+                      {link && <a href={link} target="_blank" rel="noreferrer" className="block text-sky-700 hover:underline">{lf ? "Abrir consulta do índice (FGV) ↗" : "abrir a Calculadora já preenchida ↗"}</a>}
+                      {lf && <span className="block text-[10px] text-slate-500">linha {lf.linha_tabela}, coluna Acumulado 12 meses ·{" "}
+                        <a href={lf.url_google} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline">não abriu? buscar no Google</a></span>}
                     </>}
                   </td>
                   <td className="py-1.5 text-right"><button className="text-red-400 hover:text-red-600" onClick={() => muda((x) => ({ ...x, reajustes: x.reajustes.filter((_, j) => j !== i) }))}>✕</button></td>
@@ -346,7 +392,8 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
           </tbody>
         </table>
         <button className="mt-2 text-xs text-sky-700 hover:underline" onClick={() => muda((x) => ({ ...x, reajustes: [...x.reajustes, { n: (x.reajustes.reduce((m, r) => Math.max(m, r.n), 0) || 0) + 1, indice_pct: null, novo: true }] }))}>+ reajuste</button>
-        <p className="text-[11px] text-slate-400 mt-1">Os já aplicados vêm antes dos pedidos agora. Os prints (um por reajuste pedido) vão como anexo do parecer; não ficam guardados — escolha de novo ao gerar.</p>
+        <p className="text-[11px] text-slate-400 mt-1">Os já aplicados vêm antes dos pedidos agora. Os prints (um por reajuste pedido) vão como anexo do parecer; não ficam guardados — escolha de novo ao gerar.
+          {fgv && " INCC: vale o \"Acumulado 12 meses\" da linha do último mês do período, com 2 casas, como na tabela da FGV."}</p>
       </Secao>
 
       <Secao titulo="4. Itens (numeração igual à do contrato)" direita={<button className="text-xs text-sky-700 hover:underline" onClick={() => setColar("")}>Colar da planilha</button>}>
@@ -455,6 +502,35 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
         </div>
       </Secao>
 
+      <Secao titulo="8. Checklist do Fiscal (lista de verificação de documentos)"
+        direita={<button onClick={gerarChecklist} disabled={!!ocupado} className="text-xs text-sky-700 hover:underline disabled:opacity-40">Gerar só o checklist (.docx)</button>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-slate-500"><tr>
+              <th className="text-left py-1 w-8">Nº</th><th className="text-left">Item</th><th className="w-12">SIM</th><th className="w-12">NÃO</th>
+              <th className="text-left w-[34%]">Observação / justificativa</th>
+            </tr></thead>
+            <tbody>
+              {ck.map((m, i) => (
+                <tr key={i} className="border-t border-slate-100">
+                  <td className="py-1.5 text-slate-500">{i + 1}</td>
+                  <td className="py-1.5 pr-2 text-slate-700">{ITENS_CHECKLIST[i]}</td>
+                  <td className="text-center"><input type="checkbox" aria-label={`Item ${i + 1}: SIM`} checked={m.sim} onChange={(e) => mudaChecklist(marcar(ck, i, "sim", e.target.checked))} /></td>
+                  <td className="text-center"><input type="checkbox" aria-label={`Item ${i + 1}: NÃO`} checked={m.nao} onChange={(e) => mudaChecklist(marcar(ck, i, "nao", e.target.checked))} /></td>
+                  <td className="py-1"><input className={`${cel} w-full disabled:cursor-not-allowed disabled:opacity-40`} disabled={!m.nao} placeholder="Justificativa (se NÃO)" value={m.obs}
+                    onChange={(e) => mudaChecklist(ck.map((x, j) => (j === i ? { ...x, obs: e.target.value } : x)))} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {comChecklist && avisosCk.length > 0 && <p className="mt-2 text-[11px] text-amber-700">{avisosCk.join(" · ")}</p>}
+        <p className="mt-1 text-[11px] text-slate-400">
+          Marcado algum item, o checklist vai no .zip como "5 - Checklist do Fiscal" (as justificativas dos itens NÃO saem na Observação).
+          Fica salvo com o cadastro. Os avisos não impedem gerar.
+        </p>
+      </Secao>
+
       {checagem && (
         <Secao titulo={`Quadro de checagem — ${checagem.pode_gerar ? "pode gerar" : "falta preencher"}`}>
           <table className="w-full text-xs">
@@ -482,7 +558,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
           </div>
           {simulacao.resumo.complemento_supressao > 0 && <p className="text-xs text-slate-600 mt-2">Inclui o complemento da supressão: {brl(simulacao.resumo.complemento_supressao)}.</p>}
           <ul className="text-xs text-slate-600 mt-2 list-disc pl-5">
-            {simulacao.resumo.reajustes.map((r) => <li key={r.n}>{r.n}º reajuste {r.novo ? "(pedido agora)" : "(já aplicado)"}: {r.inicio} a {r.fim}, {r.indice_pct.toLocaleString("pt-BR", { minimumFractionDigits: 6 })}%, efeitos {r.efeitos}</li>)}
+            {simulacao.resumo.reajustes.map((r) => <li key={r.n}>{r.n}º reajuste {r.novo ? "(pedido agora)" : "(já aplicado)"}: {r.inicio} a {r.fim}, {pct(r.indice_pct, casas)}%, efeitos {r.efeitos}</li>)}
           </ul>
           {simulacao.avisos.length > 0 && <ul className="text-xs text-amber-700 mt-2 list-disc pl-5">{simulacao.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>}
         </Secao>
@@ -494,7 +570,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
           <button onClick={checar} disabled={!!ocupado} className="rounded-lg border border-sky-300 text-sky-700 hover:bg-sky-50 px-3 py-2 text-sm disabled:opacity-50">Checar dados</button>
           <button onClick={conferir} disabled={!!ocupado} className="rounded-lg border border-sky-300 text-sky-700 hover:bg-sky-50 px-3 py-2 text-sm disabled:opacity-50">Conferir valores</button>
           <button onClick={gerar} disabled={!!ocupado} className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 text-sm font-medium disabled:opacity-50">
-            Gerar os 4 documentos (.zip){novos.length ? ` · ${printsNovos.length}/${novos.length} prints` : ""}
+            Gerar os {nDocs} documentos (.zip){novos.length ? ` · ${printsNovos.length}/${novos.length} prints` : ""}
           </button>
           {ocupado && <span className="text-xs text-slate-500 animate-pulse">{ocupado}</span>}
           {!ocupado && msg && <span className={`text-xs ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.txt}</span>}
@@ -527,6 +603,9 @@ function QuadroCarga({ carga }: { carga: CargaGuardada }) {
         <div>Documentos assinados: {docs.map((x) => [x.numero || x.tipo, x.data_assinatura, x.valor_resultante != null ? brl(x.valor_resultante) : ""].filter(Boolean).join(" ")).join(" · ")}</div>
       )}
       {!!(ne.ne || ne.fonte_dos_dados) && <div>Último empenho: {[ne.ne, ne.data, ne.fonte_dos_dados].filter(Boolean).map(String).join(" · ")}</div>}
+      {!!carga.avisos?.length && (
+        <div className="text-amber-700">A coleta pede para conferir: <ul className="list-disc pl-5">{carga.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul></div>
+      )}
       {carga.coleta?.etapa && carga.coleta.etapa !== "COMPLETO" && <div className="text-amber-700">Coleta da SCON ainda na etapa "{carga.coleta.etapa}": os documentos do contrato não foram lidos.</div>}
     </div>
   );

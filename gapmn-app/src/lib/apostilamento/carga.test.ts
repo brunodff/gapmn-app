@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { casarContratos, cargaMaisNova, lerCarga, mesclarDados, nucleoNumero, pendenciasCadastro, proximoApostilamento, situacaoCadastro } from "./carga.ts";
+import { casarContratos, cargaMaisNova, lerCarga, mesclarDados, motivoForaDaAutomacao, nucleoNumero, pendenciasCadastro, proximoApostilamento, situacaoCadastro } from "./carga.ts";
 import { completarReajustesDevidos } from "./cadastro.ts";
 import type { DadosReajuste } from "./tipos.ts";
 
@@ -33,6 +33,14 @@ test("pendências: completo não tem; vazio tem as de sempre; dedicação exclus
     "Falta o índice de reajuste e/ou a cláusula", "Falta a tabela de itens", "Falta PTRES do último empenho"]) assert.ok(p.includes(t), t);
   assert.deepEqual(pendenciasCadastro({}, { ...op, dedicacao: true }), []);
   assert.equal(situacaoCadastro([], true), "NAO_SE_APLICA");
+});
+
+test("fora da automação: dedicação exclusiva ou o motivo que a carga trouxe (adesão, credenciamento)", () => {
+  assert.equal(motivoForaDaAutomacao({ dedicacao_exclusiva: true }), "dedicação exclusiva de mão de obra (repactuação)");
+  assert.equal(motivoForaDaAutomacao({}, true), "dedicação exclusiva de mão de obra (repactuação)");
+  assert.equal(motivoForaDaAutomacao({ reajuste_nao_aplicavel: "preços pela tabela de referência do credenciamento" }), "preços pela tabela de referência do credenciamento");
+  assert.equal(motivoForaDaAutomacao({ status: "ATIVO" }), null);
+  assert.equal(motivoForaDaAutomacao(undefined), null);
 });
 
 test("pendências: texto fixo da OM, soma dos itens e reajuste aplicado sem documento", () => {

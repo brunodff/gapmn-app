@@ -3,7 +3,9 @@
 //
 //   node scripts/apostilamento/importar_motor.mjs <pasta do pacote>
 //
-// Copia apostilamento/gerar_apostilamento.py e apostilamento/brasao.jpg para src/lib/apostilamento/motor/ (o app os importa como texto e arquivo; roda no navegador pelo Pyodide).
+// Copia apostilamento/gerar_apostilamento.py, os módulos que ele importa (indice_fgv.py, indice_bcb.py e
+// checklist.py, desde a versão 3.3 do pacote) e apostilamento/brasao.jpg para src/lib/apostilamento/motor/
+// (o app os importa como texto e arquivo; roda no navegador pelo Pyodide).
 // Os dados da Ordenadora de Despesas, do Agente de Controle Interno e o texto fixo do "I – CONTRATANTE"
 // saem do código (o repositório é público): o app os passa ao motor a partir da tabela
 // apostilamento_config. Rode de novo sempre que a SCON mandar versão nova do motor.
@@ -56,11 +58,23 @@ motor = trocarBloco(motor, "TEXTOS_FIXOS_OM = {", "TEXTOS_FIXOS_OM = {}  # texto
 const sobrou = pessoais.filter((v) => motor.includes(v));
 if (sobrou.length) throw new Error(`dado pessoal ainda no motor: ${sobrou.join(", ")}`);
 
+// módulos irmãos que o motor importa (_modulo): vão como estão, conferindo que não trazem os dados pessoais
+const MODULOS = ["indice_fgv.py", "indice_bcb.py", "checklist.py"];
+const modulos = MODULOS.map((nome) => {
+  const txt = fs.readFileSync(path.join(origem, "apostilamento", nome), "utf8");
+  const vazou = pessoais.filter((v) => txt.includes(v));
+  if (vazou.length) throw new Error(`dado pessoal em ${nome}: ${vazou.join(", ")}`);
+  return { nome, txt };
+});
+
 fs.mkdirSync(DESTINO, { recursive: true });
 fs.writeFileSync(path.join(DESTINO, "gerar_apostilamento.py"), motor);
+for (const m of modulos) fs.writeFileSync(path.join(DESTINO, m.nome), m.txt);
 fs.copyFileSync(path.join(origem, "apostilamento", "brasao.jpg"), path.join(DESTINO, "brasao.jpg"));
-const hash = crypto.createHash("sha256").update(fonte).digest("hex").slice(0, 12);
+const sha = (t) => crypto.createHash("sha256").update(t).digest("hex").slice(0, 12);
 fs.writeFileSync(path.join(DESTINO, "VERSAO.txt"),
   `Motor de reajuste por apostilamento da SCON (pacote automacao-apostilamento)\n` +
-  `gerar_apostilamento.py original: sha256 ${hash}\nimportado em ${new Date().toISOString().slice(0, 10)}\n`);
-console.log(`✓ src/lib/apostilamento/motor/gerar_apostilamento.py (${motor.length} caracteres, ${pessoais.length} dados pessoais retirados), brasao.jpg, VERSAO.txt`);
+  `gerar_apostilamento.py original: sha256 ${sha(fonte)}\n` +
+  modulos.map((m) => `${m.nome}: sha256 ${sha(m.txt)}\n`).join("") +
+  `importado em ${new Date().toISOString().slice(0, 10)}\n`);
+console.log(`✓ src/lib/apostilamento/motor/gerar_apostilamento.py (${motor.length} caracteres, ${pessoais.length} dados pessoais retirados), ${MODULOS.join(", ")}, brasao.jpg, VERSAO.txt`);

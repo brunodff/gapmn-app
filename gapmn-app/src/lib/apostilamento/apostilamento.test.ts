@@ -15,6 +15,7 @@ test("painel igual ao painel_reajustes.py da SCON", () => {
     [{ contrato: "D", data_base: "07/2024" }, dia(2026, 7, 5), "VERMELHO", 2, "01/07/2027", 361, ["07/2024 a 06/2025/true", "07/2025 a 06/2026/false"]],
     [{ contrato: "E", data_base: "07/2024", vigencia_fim: "2026-01-31" }, dia(2026, 11, 16), "VIGENCIA_ENCERRADA", 2, "01/07/2027", 227, ["07/2024 a 06/2025/true", "07/2025 a 06/2026/true"]],
     [{ contrato: "F", data_base: "07/2024", dedicacao_exclusiva: true }, dia(2026, 11, 16), "NAO_SE_APLICA", 0, null, null, []],
+    [{ contrato: "F2", data_base: "07/2024", nao_aplicavel: "tarifa regulada da concessionária (contrato de adesão)" }, dia(2026, 11, 16), "NAO_SE_APLICA", 0, null, null, []],
     [{ contrato: "G", data_base: "01/2026" }, dia(2026, 11, 2), "AMARELO", 0, "01/01/2027", 60, []],
     [{ contrato: "H", data_base: "12/2025" }, dia(2026, 11, 16), "AMARELO", 0, "01/12/2026", 15, []],
   ];
@@ -85,6 +86,19 @@ test("cadastro inicial a partir do contrato e dados para o motor", () => {
   assert.equal("qtd_inicial" in m.itens[0], false);
   assert.equal("itens_total_inicial" in m, false);
   assert.equal(reajustesAplicados({ ...d, reajustes: [{ n: 1, indice_pct: 5, novo: false }, { n: 2, indice_pct: null, novo: true }] }), 1);
+  // o checklist vai à parte; no IPCA fica o "pesquisa abaixo" do cadastro
+  const ck = paraMotor({ ...d, indice: { nome: "IPCA", clausula: "c", fonte_curta: "pesquisa abaixo" }, checklist: [{ sim: true, nao: false, obs: "" }] });
+  assert.equal("checklist" in ck, false);
+  assert.equal(ck.indice.fonte_curta, "pesquisa abaixo");
+});
+
+test("INCC: sem o 'pesquisa abaixo' padrão, o motor põe 'conforme consulta abaixo' (print da FGV)", () => {
+  const d = dadosIniciais({ id: "1", numero_contrato: "998/GAPMN/2025", pag_nup: null, fornecedor: null, cnpj: null, descricao: null,
+    data_orcamento: "2025-11-01", data_final: null, vl_contratual: null }, 2026);
+  const m = paraMotor({ ...d, indice: { ...d.indice, nome: "INCC", clausula: "c" } });
+  assert.equal("fonte_curta" in m.indice, false);
+  assert.equal(d.indice.fonte_curta, "pesquisa abaixo", "o cadastro não muda");
+  assert.equal(paraMotor({ ...d, indice: { nome: "INCC-M", clausula: "c", fonte_curta: "tabela abaixo" } }).indice.fonte_curta, "tabela abaixo");
 });
 
 test("itens colados de planilha (tabulação, número brasileiro)", () => {

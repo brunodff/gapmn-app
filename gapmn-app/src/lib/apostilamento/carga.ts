@@ -16,6 +16,8 @@ export interface DocumentoCarga {
 
 export interface SilomsCarga {
   codigo?: string; numero_oficial?: string; pag?: string; status?: string; dedicacao_exclusiva?: boolean;
+  /** motivo de não haver reajuste por índice (adesão: tarifa regulada; credenciamento: tabela de referência) */
+  reajuste_nao_aplicavel?: string;
   vigencia_inicio?: string; vigencia_fim?: string; valor_total_siloms?: number; fornecedor_resumido?: string;
   descricao_resumida?: string; vigencia_vencida_no_siloms?: boolean; [k: string]: unknown;
 }
@@ -29,6 +31,8 @@ export interface RegistroCarga {
   ultimo_empenho?: Record<string, unknown>;
   dados?: Partial<DadosReajuste> & Record<string, unknown>;
   pendencias?: string[];
+  /** o que a coleta da SCON pede para conferir (ex.: índice achado no TR) */
+  avisos?: string[];
   situacao?: string;
 }
 
@@ -41,10 +45,17 @@ export interface Carga {
 export interface CargaGuardada {
   chave: string; atualizado_em?: string; gerado_em?: string; fonte?: string;
   siloms?: SilomsCarga; coleta?: RegistroCarga["coleta"]; documentos?: DocumentoCarga[];
-  ultimo_empenho?: Record<string, unknown>; fora_da_carga?: boolean;
+  ultimo_empenho?: Record<string, unknown>; avisos?: string[]; fora_da_carga?: boolean;
 }
 
 export type SituacaoCadastro = "COMPLETO" | "PENDENTE" | "NAO_SE_APLICA";
+
+/** Por que o contrato fica fora do reajuste automático (situação NAO_SE_APLICA), ou null: dedicação
+ *  exclusiva de mão de obra (repactuação) ou o motivo que a carga trouxe (tarifa regulada, tabela). */
+export function motivoForaDaAutomacao(siloms: SilomsCarga | null | undefined, dedicacao?: boolean): string | null {
+  if (dedicacao || siloms?.dedicacao_exclusiva) return "dedicação exclusiva de mão de obra (repactuação)";
+  return siloms?.reajuste_nao_aplicavel ? String(siloms.reajuste_nao_aplicavel) : null;
+}
 
 const vazio = (v: unknown) => v == null || v === "" || (Array.isArray(v) && !v.length) ||
   (typeof v === "object" && !Array.isArray(v) && !Object.keys(v as object).length);
@@ -66,7 +77,8 @@ export function lerCarga(json: unknown): Carga {
   return c;
 }
 
-/** Pendências do cadastro para gerar os documentos (regra do validar_registro da SCON). Vazia = completo. */
+/** Pendências do cadastro para gerar os documentos (regra do validar_registro da SCON). Vazia = completo.
+ *  `dedicacao`: contrato fora da automação (repactuação, tarifa regulada ou tabela), sem pendências. */
 export function pendenciasCadastro(d: Partial<DadosReajuste> | null | undefined,
   op: { dedicacao?: boolean; textosFixos: Record<string, string>; omPadrao: string }): string[] {
   if (op.dedicacao) return [];
@@ -199,7 +211,8 @@ export function mesclarDados(atual: Partial<DadosReajuste> | null | undefined, d
 /** Parte do registro da carga que fica guardada junto do cadastro (para conferência na tela). */
 export function cargaGuardada(reg: RegistroCarga, carga: Carga): CargaGuardada {
   return { chave: reg.chave, atualizado_em: reg.atualizado_em ?? carga.gerado_em, gerado_em: carga.gerado_em, fonte: carga.fonte,
-    siloms: reg.siloms, coleta: reg.coleta, documentos: reg.documentos ?? [], ultimo_empenho: reg.ultimo_empenho };
+    siloms: reg.siloms, coleta: reg.coleta, documentos: reg.documentos ?? [], ultimo_empenho: reg.ultimo_empenho,
+    ...(reg.avisos?.length ? { avisos: reg.avisos } : {}) };
 }
 
 /** A carga é mais nova que a última edição do cadastro no app? A coleta só tem o dia: se o cadastro foi

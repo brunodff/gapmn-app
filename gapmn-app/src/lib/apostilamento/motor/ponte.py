@@ -2,7 +2,8 @@
 """
 Ponte entre o gapmn.app e o motor de reajuste da SCON (gerar_apostilamento.py), rodando no navegador
 (Pyodide). O motor fica igual ao da SCON; aqui só entram os dados da configuração do app (Ordenador de
-Despesas, Agente de Controle Interno, textos fixos do "I – CONTRATANTE"), os prints da Calculadora e o zip.
+Despesas, Agente de Controle Interno, textos fixos do "I – CONTRATANTE"), os prints da consulta do índice,
+o checklist do fiscal e o zip.
 """
 import copy
 import io
@@ -10,10 +11,24 @@ import json
 import os
 import sys
 import tempfile
+import types
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# indice_bcb.py importa o requests, que não existe no navegador. O motor só usa dele o link da Calculadora:
+# quem busca o índice (Banco Central e FGV) é o app, em TypeScript.
+try:
+    import requests  # noqa: F401
+except ImportError:
+    def _sem_rede(*_a, **_k):
+        raise RuntimeError("o motor não acessa a internet no navegador: o app busca o índice")
+    _req = types.ModuleType("requests")
+    _req.get = _sem_rede
+    sys.modules["requests"] = _req
+
 import gerar_apostilamento as ga  # noqa: E402
+import checklist as ck  # noqa: E402
 
 _PADRAO = copy.deepcopy(ga.DEFAULTS)
 
@@ -34,16 +49,44 @@ def _json(x):
     return json.dumps(x, ensure_ascii=False, default=str)
 
 
+def _dados_checklist(dados):
+    """O checklist é assinado pelo mesmo Agente de Controle Interno do parecer (o do contrato ou o da
+    configuração) e diz se o contrato é de despesa ou de receita."""
+    d = dict(dados)
+    d["aci"] = {**ga.DEFAULTS["aci"], **(dados.get("aci") or {})}
+    if not d.get("tipo_contrato"):
+        d["tipo_contrato"] = "Receita" if str(dados.get("contrato", "")).upper().startswith("RECEITA") else "Despesa"
+    return d
+
+
+def _nome_checklist(dados):
+    """Mesmo nome que o motor dá: "5 - Checklist do Fiscal - CT 001-GAPMN-2024 - 2Apost.docx"."""
+    nome = str(dados.get("contrato") or "SEM-NUMERO").replace("/", "-")
+    aditivo = str(dados.get("instrumento", "")).lower().startswith("termo aditivo")
+    n = dados.get("numero_instrumento")
+    inst = (f"{n}TA" if aditivo else f"{n}Apost") if n not in (None, "") else ""
+    return f"5 - Checklist do Fiscal - CT {nome}" + (f" - {inst}" if inst else "") + ".docx"
+
+
+def _linhas_links(links):
+    return [f"{l['n']}º reajuste ({l.get('periodo', '')}) – {l.get('fonte', '')}: {l.get('url_print') or '(sem link)'}"
+            + (f"  [linha {l['linha_tabela']}, coluna Acumulado 12 meses]" if l.get("linha_tabela") else "")
+            for l in links]
+
+
 def checar(dados_json, cfg_json):
     _aplicar_config(json.loads(cfg_json))
     q = ga.checar(json.loads(dados_json))
     return _json({"pode_gerar": not any(x["status"] == "FALTA" for x in q), "itens": q})
 
 
-def gerar(dados_json, cfg_json, prints_json, saida_zip=""):
-    """Gera os documentos. Com `saida_zip`, grava o .zip nesse caminho; sem ele, só devolve o resumo."""
+def gerar(dados_json, cfg_json, prints_json, saida_zip="", checklist_json=""):
+    """Gera os documentos. Com `saida_zip`, grava o .zip nesse caminho; sem ele, só devolve o resumo.
+    Com `checklist_json` (as 8 marcações SIM/NÃO), o .zip leva também o "5 - Checklist do Fiscal"."""
     _aplicar_config(json.loads(cfg_json))
     dados = json.loads(dados_json)
+    dados.pop("checklist", None)  # o checklist sai abaixo, com o ACI do parecer
+    marcacoes = json.loads(checklist_json or "null")
     prints = json.loads(prints_json or "[]")
     if prints:
         dados["prints_indice"] = prints
@@ -53,11 +96,28 @@ def gerar(dados_json, cfg_json, prints_json, saida_zip=""):
     except SystemExit as e:  # o motor usa SystemExit para dado inválido
         raise ValueError(str(e))
     avisos = list(r["avisos"])
+    arquivos = dict(r["arquivos"])
+    if saida_zip and marcacoes:
+        caminho = os.path.join(pasta, _nome_checklist(dados))
+        avisos += ["Checklist: " + a for a in ck.gerar_checklist(_dados_checklist(dados), marcacoes, caminho)]
+        arquivos["checklist"] = caminho
     avisos.append("Conferir no Word se a última página do termo não ficou só com as assinaturas "
                   "(no navegador o motor não consegue conferir sozinho).")
     if saida_zip:
+        links = r["resumo"].get("links_indice") or []
         with zipfile.ZipFile(saida_zip, "w", zipfile.ZIP_DEFLATED) as z:
-            for caminho in r["arquivos"].values():
+            for caminho in arquivos.values():
                 z.write(caminho, os.path.basename(caminho))
-            z.writestr("RESUMO.txt", "\n".join([f"{k}: {v}" for k, v in r["resumo"].items()] + ["", "AVISOS:"] + avisos))
-    return _json({"resumo": r["resumo"], "avisos": avisos, "arquivos": [os.path.basename(c) for c in r["arquivos"].values()]})
+            z.writestr("RESUMO.txt", "\n".join(
+                [f"{k}: {v}" for k, v in r["resumo"].items() if k != "links_indice"]
+                + ["", "CONSULTA DO ÍNDICE (abrir e tirar o print do parecer):"] + _linhas_links(links)
+                + ["", "AVISOS:"] + avisos))
+    return _json({"resumo": r["resumo"], "avisos": avisos, "arquivos": [os.path.basename(c) for c in arquivos.values()]})
+
+
+def checklist(dados_json, cfg_json, marcacoes_json, saida_docx):
+    """Só o checklist do fiscal (.docx), para quando os outros documentos já foram gerados."""
+    _aplicar_config(json.loads(cfg_json))
+    dados = json.loads(dados_json)
+    avisos = ck.gerar_checklist(_dados_checklist(dados), json.loads(marcacoes_json or "[]"), saida_docx)
+    return _json({"avisos": avisos, "arquivo": _nome_checklist(dados)})

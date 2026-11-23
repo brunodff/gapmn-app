@@ -2,6 +2,9 @@
 // python-docx e openpyxl. Nada sai do computador de quem usa: os documentos são gerados aqui e voltam
 // como .zip. Na primeira vez o navegador baixa cerca de 15 MB (Pyodide e pacotes), que ficam em cache.
 import motorPy from "./motor/gerar_apostilamento.py?raw";
+import indiceFgvPy from "./motor/indice_fgv.py?raw";
+import indiceBcbPy from "./motor/indice_bcb.py?raw";
+import checklistPy from "./motor/checklist.py?raw";
 import pontePy from "./motor/ponte.py?raw";
 import brasaoUrl from "./motor/brasao.jpg?url";
 
@@ -17,7 +20,8 @@ type Py = {
 export type Pedido =
   | { id: number; tipo: "iniciar" }
   | { id: number; tipo: "checar"; dados: unknown; config: unknown }
-  | { id: number; tipo: "gerar"; dados: unknown; config: unknown; prints: { nome: string; bytes: ArrayBuffer }[]; zip: boolean };
+  | { id: number; tipo: "gerar"; dados: unknown; config: unknown; prints: { nome: string; bytes: ArrayBuffer }[]; zip: boolean; checklist?: unknown }
+  | { id: number; tipo: "checklist"; dados: unknown; config: unknown; checklist: unknown };
 
 export type Resposta =
   | { id: number; tipo: "progresso"; etapa: string }
@@ -41,6 +45,9 @@ async function carregar(avisar: (etapa: string) => void): Promise<Py> {
   avisar("Carregando o motor da SCON…");
   py.FS.mkdirTree("/motor");
   py.FS.writeFile("/motor/gerar_apostilamento.py", motorPy);
+  py.FS.writeFile("/motor/indice_fgv.py", indiceFgvPy);
+  py.FS.writeFile("/motor/indice_bcb.py", indiceBcbPy);
+  py.FS.writeFile("/motor/checklist.py", checklistPy);
   py.FS.writeFile("/motor/ponte.py", pontePy);
   py.FS.writeFile("/motor/brasao.jpg", new Uint8Array(await (await fetch(brasaoUrl)).arrayBuffer()));
   py.runPython("import sys; sys.path.insert(0, '/motor'); import ponte");
@@ -69,6 +76,16 @@ ctx.onmessage = async (ev: MessageEvent<Pedido>) => {
       ctx.postMessage({ id: p.id, tipo: "ok", resultado: r } satisfies Resposta);
       return;
     }
+    if (p.tipo === "checklist") {
+      avisar("Gerando o checklist…");
+      const destino = "/tmp/checklist.docx";
+      const r = JSON.parse(ponte.checklist(JSON.stringify(p.dados), JSON.stringify(p.config), JSON.stringify(p.checklist), destino));
+      const bytes = py.FS.readFile(destino);
+      py.FS.unlink(destino);
+      const docx = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      ctx.postMessage({ id: p.id, tipo: "ok", resultado: r, zip: docx } satisfies Resposta, [docx]);
+      return;
+    }
     avisar(p.zip ? "Gerando os documentos…" : "Calculando…");
     py.FS.mkdirTree("/tmp/prints");
     const caminhos = p.prints.map((f, i) => {
@@ -78,7 +95,8 @@ ctx.onmessage = async (ev: MessageEvent<Pedido>) => {
       return c;
     });
     const destino = p.zip ? "/tmp/apostilamento.zip" : "";
-    const r = JSON.parse(ponte.gerar(JSON.stringify(p.dados), JSON.stringify(p.config), JSON.stringify(caminhos), destino));
+    const r = JSON.parse(ponte.gerar(JSON.stringify(p.dados), JSON.stringify(p.config), JSON.stringify(caminhos), destino,
+      p.checklist ? JSON.stringify(p.checklist) : ""));
     if (!destino) { ctx.postMessage({ id: p.id, tipo: "ok", resultado: r } satisfies Resposta); return; }
     const bytes = py.FS.readFile(destino);
     py.FS.unlink(destino);

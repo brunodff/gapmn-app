@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { casarContratos, cargaGuardada, cargaMaisNova, lerCarga, mesclarDados, pendenciasCadastro, situacaoCadastro,
+import { casarContratos, cargaGuardada, cargaMaisNova, lerCarga, mesclarDados, motivoForaDaAutomacao, pendenciasCadastro, situacaoCadastro,
   type Carga, type CargaGuardada, type Par, type RegistroCarga } from "../../lib/apostilamento/carga";
 import type { ConfigApostilamento, DadosReajuste } from "../../lib/apostilamento/tipos";
 
@@ -47,12 +47,14 @@ export default function ImportarCarga({ contratos, config, nomeUsuario, aoTermin
         if (!dados.contrato) dados.contrato = numero_contrato;
         if (!dados.nup && reg.siloms?.pag) dados.nup = reg.siloms.pag;
         const dedicacao = reg.siloms?.dedicacao_exclusiva ?? ex?.dedicacao_exclusiva ?? false;
-        const pend = pendenciasCadastro(dados, { ...opPend, dedicacao });
+        // fora da automação: dedicação exclusiva (repactuação) ou sem reajuste por índice (adesão, credenciamento)
+        const fora = !!motivoForaDaAutomacao(reg.siloms, dedicacao);
+        const pend = pendenciasCadastro(dados, { ...opPend, dedicacao: fora });
         return {
           numero_contrato, dados, dedicacao_exclusiva: dedicacao,
           reajustes_aplicados: (dados.reajustes ?? []).filter((r) => !r.novo).length,
           carga: cargaGuardada(reg, carga), carga_em: agora,
-          situacao_cadastro: situacaoCadastro(pend, dedicacao), pendencias: pend,
+          situacao_cadastro: situacaoCadastro(pend, fora), pendencias: pend,
           versao: (ex?.versao ?? 0) + 1,
           atualizado_nome: `carga do SILOMS (${nomeUsuario})`, atualizado_em: agora,
         };
@@ -115,7 +117,7 @@ export default function ImportarCarga({ contratos, config, nomeUsuario, aoTermin
               <div><b>{previa.arquivo}</b> · gerada em {previa.carga.gerado_em ?? "?"} · {previa.carga.contratos.length} contratos
                 {previa.carga.lista_completa ? " (todos os ativos)" : " (coleta parcial)"}</div>
               <div>Achados no app: <b>{previa.pares.length}</b> ({porComo("exato")} pelo nº, {porComo("numero")} pelo nº sem o prefixo, {porComo("pag")} pelo PAG) · {previa.novos} ainda sem cadastro de reajuste</div>
-              <div>Depois da importação: <b className="text-emerald-700">{conta("COMPLETO")} completos</b> · <b className="text-amber-700">{conta("PENDENTE")} com pendências</b> · {conta("NAO_SE_APLICA")} com dedicação exclusiva</div>
+              <div>Depois da importação: <b className="text-emerald-700">{conta("COMPLETO")} completos</b> · <b className="text-amber-700">{conta("PENDENTE")} com pendências</b> · {conta("NAO_SE_APLICA")} fora da automação (repactuação, tarifa regulada ou tabela de credenciamento)</div>
               {!!previa.fora.length && <div>{previa.fora.length} contrato(s) de cargas anteriores não vieram nesta e ficam marcados como fora da carga.</div>}
               {!!previa.semPar.length && (
                 <div className="text-amber-700">Não achei no app ({previa.semPar.length}): {previa.semPar.map((r) => r.chave).join(", ")} — cadastre o contrato em Contratos e importe de novo.</div>

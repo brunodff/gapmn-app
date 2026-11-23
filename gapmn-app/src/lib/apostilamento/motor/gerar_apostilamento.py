@@ -59,8 +59,20 @@ def brl(x, prefixo=True):
     s = f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return ("R$ " + s) if prefixo else s
 
+def _modulo(nome):
+    """Importa um módulo irmão tanto no pacote (site) quanto com o script solto no kit da skill."""
+    import importlib
+    try:
+        return importlib.import_module(f".{nome}", __package__) if __package__ else importlib.import_module(nome)
+    except ImportError:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        return importlib.import_module(nome)
+
+
+CASAS_PCT = 6          # Calculadora do Cidadão: 6 casas; FGV (INCC): 2 casas, como na tabela da FGV
+
 def pct(p):
-    return f"{D(str(p)):.6f}".replace(".", ",") + "%"
+    return f"{D(str(p)):.{CASAS_PCT}f}".replace(".", ",") + "%"
 
 UN = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez",
       "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"]
@@ -655,9 +667,7 @@ def gerar_declaracao(dados, calc, t, caminho):
     par(doc, "COMANDO DA AERONÁUTICA", align=WD_ALIGN_PARAGRAPH.CENTER)
     par(doc, dados["om_contratante_nome"], align=WD_ALIGN_PARAGRAPH.CENTER)
     par(doc); par(doc)
-    inst_up = t["inst_curto"].split(" ", 1)
-    par(doc, f"{inst_up[0]} {inst_up[1].upper()} ao Contrato de Despesa n° {dados['contrato']}",
-        bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    par(doc, "DECLARAÇÃO DE DISPONIBILIDADE ORÇAMENTÁRIA", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
     par(doc, f"PROCESSO: {dados['nup']}", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
     par(doc); par(doc)
     p = par(doc, align=WD_ALIGN_PARAGRAPH.JUSTIFY, indent_first=1.5, line=1.5, after=6)
@@ -1042,12 +1052,36 @@ def checar(dados, hoje=None):
     return q
 
 
+def links_indice(dados, calc):
+    """Um link por reajuste novo, para abrir direto a consulta que vai como print no parecer:
+    Calculadora do Cidadão (já preenchida) ou a tabela anual da FGV (INCC)."""
+    fgv, ib = _modulo("indice_fgv"), _modulo("indice_bcb")
+    nome = (dados.get("indice") or {}).get("nome", "")
+    k0 = len(calc["antigos"]); out = []
+    for i, r in enumerate(calc["novos"]):
+        if fgv.eh_fgv(nome):
+            l = fgv.links(nome, r["inicio"], r["fim"])
+        else:
+            cod = nome.upper().replace(" ", "")
+            valor = float(calc["totais"][k0 + i])
+            l = {"fonte": "Calculadora do Cidadão", "indice": cod, "periodo": f"{r['inicio']} a {r['fim']}",
+                 "valor_correcao": valor,
+                 "url_print": ib.url_calculadora(cod, r["inicio"], r["fim"], valor) if cod in ib.CALCULADORA else None}
+        out.append({"n": r["n"], **l})
+    return out
+
+
 def gerar(dados, saida, verificar_pdf=True):
     """API para uso em sistemas (site): recebe o dict de dados, gera os arquivos em `saida`
     e devolve {"arquivos": {...}, "resumo": {...}, "avisos": [...]}. Não imprime nada."""
     os.makedirs(saida, exist_ok=True)
-    global BRASAO_PATH
+    global BRASAO_PATH, CASAS_PCT
     BRASAO_PATH = achar_brasao(dados)
+    fgv = _modulo("indice_fgv")
+    eh_fgv = fgv.eh_fgv((dados.get("indice") or {}).get("nome"))
+    CASAS_PCT = 2 if eh_fgv else 6
+    if eh_fgv:
+        dados.setdefault("indice", {}).setdefault("fonte_curta", "consulta abaixo")
     calc = calcular(dados); t = textos(dados, calc)
     nome = dados["contrato"].replace("/", "-")
     aditivo = dados.get("instrumento", "").lower().startswith("termo aditivo")
@@ -1064,6 +1098,10 @@ def gerar(dados, saida, verificar_pdf=True):
     if aditivo: arqs.pop("termo")
     else: gerar_termo(dados, calc, t, arqs["termo"])
     avisos = list(calc["avisos"])
+    if dados.get("checklist"):      # checklist do fiscal (SIM/NÃO), mesmo padrão do robô offline
+        gerar_checklist = _modulo("checklist").gerar_checklist
+        arqs["checklist"] = os.path.join(saida, f"5 - Checklist do Fiscal - CT {nome} - {inst}.docx")
+        avisos += ["Checklist: " + a for a in gerar_checklist(dados, dados["checklist"], arqs["checklist"])]
     if not BRASAO_PATH: avisos.append("Brasão não encontrado - documentos saíram com [BRASÃO] no lugar.")
     if verificar_pdf and "termo" in arqs:
         import contextlib, io as _io
@@ -1081,6 +1119,7 @@ def gerar(dados, saida, verificar_pdf=True):
         "complemento_supressao": float(comp["total"]) if comp else 0.0,
         "valor_termo": float(calc["valor_termo"]), "valor_termo_extenso": extenso_reais(calc["valor_termo"]),
         "efeitos_financeiros": calc["efeitos"],
+        "links_indice": links_indice(dados, calc),
     }
     return {"arquivos": arqs, "resumo": resumo, "avisos": avisos}
 
@@ -1100,6 +1139,9 @@ def main():
         print("Complemento supressão:", brl(res["complemento_supressao"]))
     print("Valor do instrumento:", brl(res["valor_termo"]), "-", res["valor_termo_extenso"])
     print("Efeitos financeiros a contar de:", res["efeitos_financeiros"])
+    for l in res.get("links_indice", []):
+        print(f"CONSULTA {l['n']}º reajuste ({l['fonte']}): {l.get('url_print')}"
+              + (f"  -> linha {l['linha_tabela']}, Acumulado 12 meses" if l.get("linha_tabela") else ""))
     for a in r["avisos"]: print(a if a.startswith("INFO") else "AVISO: " + a)
     for k, v in r["arquivos"].items(): print("ARQUIVO:", v)
 

@@ -40,7 +40,7 @@ export default function ConfigReajustes({ config, podeEditar, nomeUsuario, aoSal
   const ro = !podeEditar;
   return (
     <div className="max-w-4xl space-y-4">
-      {ro && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Só ADMIN e DEV alteram a configuração. A SCON vê os dados usados nos documentos.</p>}
+      {ro && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Só ADMIN e DEV alteram a configuração. Os demais usuários veem os dados usados nos documentos.</p>}
       <Secao titulo="Ordenador de Despesas (qualificação no termo e assinatura)">
         <div className="grid sm:grid-cols-2 gap-3">
           <Campo rotulo="Nome" valor={c.ordenador.nome} ro={ro} onChange={(v) => set("ordenador", { ...c.ordenador, nome: v })} />

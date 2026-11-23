@@ -1,4 +1,5 @@
 // Cadastro do reajuste de um contrato: o que vem pronto do contratos_scon e o que a SCON completa.
+import { ehFgv } from "./indiceFgv.ts";
 import { dataBaseDe, hojeLocal, statusContrato } from "./painel.ts";
 import type { DadosReajuste, ItemContrato, Reajuste } from "./tipos.ts";
 
@@ -77,6 +78,10 @@ export const reajustesAplicados = (d: DadosReajuste) => d.reajustes.filter((r) =
 export function paraMotor(d: DadosReajuste): DadosReajuste {
   const x = structuredClone(d) as DadosReajuste & Record<string, unknown>;
   for (const k of ["contratante_paragrafo", "contratada_paragrafo", "om_ordenador", "data_declaracao"] as const) if (!x[k]) delete x[k];
+  delete x.checklist; // vai à parte para o motor (motor.gerar / motor.checklist)
+  // INCC: o parecer diz "conforme consulta abaixo:" (print da tabela da FGV); sem o "pesquisa abaixo" padrão
+  // do cadastro, o motor aplica a regra dele
+  if (ehFgv(x.indice?.nome) && (!x.indice.fonte_curta || x.indice.fonte_curta === "pesquisa abaixo")) delete x.indice.fonte_curta;
   // por contrato (carga do SILOMS): vazio = o da configuração
   for (const k of ["termo_om_nome", "fator_anual"] as const) if (x[k] == null || x[k] === "") delete x[k];
   for (const k of ["ordenador", "aci"] as const) {

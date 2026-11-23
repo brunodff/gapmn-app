@@ -5,6 +5,8 @@ import type { ContratoScon } from "../../lib/apostilamento/cadastro";
 export type Cadastro = {
   numero_contrato: string; data_base: string | null; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string | null;
   situacao_cadastro?: string | null; pendencias?: string[] | null; carga_em?: string | null; fora?: boolean | null;
+  /** motivo da carga do SILOMS para não haver reajuste por índice (adesão, credenciamento) */
+  nao_aplicavel?: string | null;
 };
 
 type Props = {
@@ -31,6 +33,7 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
         data_base: cad?.data_base || dataBaseDe(c.data_orcamento),
         reajustes_aplicados: cad?.reajustes_aplicados ?? 0,
         dedicacao_exclusiva: cad?.dedicacao_exclusiva ?? false,
+        nao_aplicavel: cad?.nao_aplicavel ?? null,
         vigencia_fim: c.data_final,
       };
     });
@@ -109,7 +112,8 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
       </div>
       <p className="text-[11px] text-slate-400">
         Reajuste a cada 12 meses da data do orçamento; efeitos no 1º dia do mês de aniversário; o índice do mês final sai até o dia 12 do mês seguinte.
-        Contratos com dedicação exclusiva de mão de obra são repactuação (fora desta automação).
+        Ficam fora desta automação os contratos com dedicação exclusiva de mão de obra (repactuação) e os que a carga do SILOMS
+        marca sem reajuste por índice (adesão com tarifa regulada, credenciamento com tabela). INCC: o índice vem da tabela anual da FGV.
       </p>
     </div>
   );
@@ -124,6 +128,10 @@ function Situacao({ cad }: { cad: Cadastro | undefined }) {
   if (cad.situacao_cadastro === "PENDENTE") {
     return <span className="text-amber-700 cursor-help" title={pend.join("\n")}>⚠ {pend.length} pendência{pend.length === 1 ? "" : "s"}{cad.fora ? " · fora da carga" : ""}</span>;
   }
-  if (cad.situacao_cadastro === "NAO_SE_APLICA") return <span className="text-slate-500">repactuação</span>;
+  if (cad.situacao_cadastro === "NAO_SE_APLICA") {
+    return cad.dedicacao_exclusiva || !cad.nao_aplicavel
+      ? <span className="text-slate-500">repactuação</span>
+      : <span className="text-slate-500 cursor-help" title={cad.nao_aplicavel}>sem reajuste por índice</span>;
+  }
   return <span className="text-slate-500">{quando || "iniciado"}</span>;
 }
