@@ -2,24 +2,33 @@
 // no navegador (empenhos, crédito), roda aqui e devolve para ela continuar.
 import { supabase } from "../supabase";
 import { executarNoNavegador, type Fonte } from "./navegador.ts";
+import type { Cota } from "./cota.ts";
 
-export type { Fonte };
-export interface RespostaAssistente { resposta: string; fontes: Fonte[]; modelo?: string }
+export type { Fonte, Cota };
+export { textoCota } from "./cota.ts";
+export interface RespostaAssistente { resposta: string; fontes: Fonte[]; modelo?: string; cota?: Cota | null }
 export interface Turno { papel: "usuario" | "assistente"; texto: string }
+/** Erro do assistente com a cota que veio junto (a barra se atualiza mesmo quando a IA não respondeu) */
+export class ErroAssistente extends Error { cota?: Cota | null; constructor(msg: string, cota?: Cota | null) { super(msg); this.cota = cota; } }
 
 const NOMES: Record<string, string> = { execucao_contratos: "a execução dos contratos (planilhas do SIAFI; pode levar uns segundos)", empenhos: "a planilha de empenhos do Tesouro Gerencial (pode levar uns segundos)", credito: "a planilha de crédito" };
 
 async function chamar(corpo: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await supabase.functions.invoke("assistente", { body: corpo });
   if (error) {
-    // a função responde { erro } com status de erro: o supabase-js põe a resposta em error.context
-    let msg = error.message;
-    try { const j = await (error as { context?: Response }).context?.json(); if (j?.erro) msg = j.erro; } catch { /* sem corpo */ }
-    throw new Error(msg);
+    // a função responde { erro, cota } com status de erro: o supabase-js põe a resposta em error.context
+    let msg = error.message, cota: Cota | null | undefined;
+    try { const j = await (error as { context?: Response }).context?.json(); if (j?.erro) msg = j.erro; cota = j?.cota; } catch { /* sem corpo */ }
+    throw new ErroAssistente(msg, cota);
   }
-  if (!data || typeof data !== "object") throw new Error("o assistente não respondeu");
-  if (data.erro) throw new Error(String(data.erro));
+  if (!data || typeof data !== "object") throw new ErroAssistente("o assistente não respondeu");
+  if (data.erro) throw new ErroAssistente(String(data.erro), data.cota);
   return data as Record<string, unknown>;
+}
+
+/** A cota do dia, sem perguntar nada à IA (null = sem a contagem de uso) */
+export async function consultarCota(): Promise<Cota | null> {
+  try { return ((await chamar({ cota: true })).cota as Cota | null) ?? null; } catch { return null; }
 }
 
 export async function perguntar(pergunta: string, historico: Turno[], aoConsultar?: (texto: string) => void): Promise<RespostaAssistente> {
@@ -33,8 +42,8 @@ export async function perguntar(pergunta: string, historico: Turno[], aoConsulta
     aoConsultar?.("Montando a resposta…");
     r = await chamar({ continuar: { estado: r.estado, resultados } });
   }
-  if (typeof r.resposta !== "string") throw new Error("O assistente não terminou a resposta.");
-  return { resposta: r.resposta, fontes: (r.fontes as Fonte[]) ?? [], modelo: r.modelo as string | undefined };
+  if (typeof r.resposta !== "string") throw new ErroAssistente("O assistente não terminou a resposta.", r.cota as Cota | null);
+  return { resposta: r.resposta, fontes: (r.fontes as Fonte[]) ?? [], modelo: r.modelo as string | undefined, cota: r.cota as Cota | null | undefined };
 }
 
 /** Link interno do app (/app?vista=…&busca=…) → tela e busca */

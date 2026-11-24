@@ -8,11 +8,20 @@ export const PREFERENCIA = [/gpt-oss-120b/, /llama-4-maverick/, /qwen3/, /llama-
 export interface OpcoesGroq {
   chave: string; modelo?: string; ferramentas?: unknown[]; maxTokens?: number;
   buscar?: typeof fetch; esperar?: (ms: number) => Promise<void>; log?: (s: string) => void;
+  /** modelos sem cota até o horário (ms), já avisados pelo Groq em outra chamada (tabela assistente_uso) */
+  evitar?: Iterable<[string, number]>;
+  /** o Groq avisou que a cota do dia do modelo acabou (texto do aviso, espera pedida em s) */
+  aoEsgotar?: (modelo: string, texto: string, segundos: number | null) => void;
+  agora?: () => number;
 }
 export interface RespostaGroq { content: string | null; tool_calls?: ChamadaFerramenta[]; modelo: string; uso?: Record<string, number>; limites?: Record<string, string>; esperou_ms?: number }
 
 let modeloDaInstancia = "";
-const esgotados = new Set<string>();
+/** modelo → até quando está sem cota (a cota do Groq volta aos poucos: não vale para sempre) */
+const esgotados = new Map<string, number>();
+let listagem: { chave: string; em: number; ids: string[] } | null = null;
+/** Para os testes: esquece o modelo, os esgotados e a lista de modelos guardados na instância */
+export function esquecerEstado() { modeloDaInstancia = ""; esgotados.clear(); listagem = null; }
 
 /** Segundos de espera que o Groq pede ("try again in 7.52s", "in 1m3.5s") */
 export function segundosDeEspera(texto: string): number | null {
@@ -22,11 +31,18 @@ export function segundosDeEspera(texto: string): number | null {
 }
 export const cotaDoDia = (texto: string) => /per day|\(TPD\)|\(RPD\)|tokens per day|requests per day/i.test(texto);
 
-async function listarModelos(chave: string, buscar: typeof fetch): Promise<string[]> {
+/** Modelos de texto da conta (guardados por 1 hora na instância) */
+export async function listarModelos(chave: string, buscar: typeof fetch = fetch): Promise<string[]> {
+  if (listagem && listagem.chave === chave && Date.now() - listagem.em < 3600_000) return listagem.ids;
   const r = await buscar("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${chave}` } });
   if (!r.ok) throw new Error(`Groq: falha ao listar modelos (HTTP ${r.status})`);
-  return (((await r.json()).data ?? []) as { id: unknown }[]).map((m) => String(m.id)).filter((id: string) => !/whisper|tts|guard|embed|vision|compound|prompt|orpheus|playai/i.test(id));
+  const ids = (((await r.json()).data ?? []) as { id: unknown }[]).map((m) => String(m.id)).filter((id: string) => !/whisper|tts|guard|embed|vision|compound|prompt|orpheus|playai/i.test(id));
+  listagem = { chave, em: Date.now(), ids };
+  return ids;
 }
+
+/** Os modelos que o assistente usa, na ordem da preferência (a cota do chat é a soma deles) */
+export const modelosDaPreferencia = (ids: readonly string[]) => PREFERENCIA.flatMap((rx) => ids.filter((x) => rx.test(x))).filter((x, i, a) => a.indexOf(x) === i);
 
 /** Próximo modelo da preferência que existe na conta e não esgotou a cota hoje */
 export function escolherModelo(ids: string[], evitar: Set<string>): string | null {
@@ -37,7 +53,16 @@ export function escolherModelo(ids: string[], evitar: Set<string>): string | nul
 export async function chamarGroq(mensagens: MsgIA[], op: OpcoesGroq): Promise<RespostaGroq> {
   const buscar = op.buscar ?? fetch;
   const esperar = op.esperar ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const agora = op.agora ?? Date.now;
+  for (const [m, ate] of op.evitar ?? []) if (ate > (esgotados.get(m) ?? 0)) esgotados.set(m, ate);
+  for (const [m, ate] of esgotados) if (ate <= agora()) esgotados.delete(m);
+  const semCota = () => new Set(esgotados.keys());
   let modelo = modeloDaInstancia || op.modelo || "openai/gpt-oss-120b";
+  if (esgotados.has(modelo)) {
+    const proximo = escolherModelo(await listarModelos(op.chave, buscar), semCota());
+    if (!proximo) throw new Error("A cota gratuita de IA do dia acabou. Tente mais tarde.");
+    modelo = proximo; modeloDaInstancia = "";
+  }
   let semRaciocinio = false;
   let esperou = 0;
   let trocouPorMinuto = false;
@@ -62,9 +87,12 @@ export async function chamarGroq(mensagens: MsgIA[], op: OpcoesGroq): Promise<Re
     if (r.status === 400 && /tool_use_failed|failed_generation/i.test(texto) && tentativa <= 2) continue;
     const sumiu = (r.status === 404 || r.status === 400) && /model_not_found|decommissioned|does not exist|not supported/i.test(texto);
     if (sumiu || (r.status === 429 && cotaDoDia(texto))) {
-      esgotados.add(modelo);
-      const proximo = escolherModelo(await listarModelos(op.chave, buscar), esgotados);
-      if (!proximo) throw new Error("A cota gratuita de IA do dia acabou. Tente amanhã.");
+      const s = sumiu ? null : segundosDeEspera(texto);
+      // modelo que sumiu fica de fora até a lista de modelos ser relida; cota do dia, até a hora que o Groq pede
+      esgotados.set(modelo, agora() + (s ?? 3600) * 1000);
+      if (!sumiu) op.aoEsgotar?.(modelo, texto, s);
+      const proximo = escolherModelo(await listarModelos(op.chave, buscar), semCota());
+      if (!proximo) throw new Error("A cota gratuita de IA do dia acabou. Tente mais tarde.");
       modelo = proximo; modeloDaInstancia = ""; semRaciocinio = false;
       continue;
     }
@@ -72,7 +100,7 @@ export async function chamarGroq(mensagens: MsgIA[], op: OpcoesGroq): Promise<Re
       const s = segundosDeEspera(texto) ?? 5;
       // limite por minuto: cada modelo tem a sua cota; trocar é mais rápido que esperar (uma vez por chamada)
       if (s > 6 && !trocouPorMinuto) {
-        const outro = escolherModelo(await listarModelos(op.chave, buscar), new Set([...esgotados, modelo]));
+        const outro = escolherModelo(await listarModelos(op.chave, buscar), new Set([...esgotados.keys(), modelo]));
         if (outro) { trocouPorMinuto = true; modelo = outro; semRaciocinio = false; continue; }
       }
       if (s > 25) throw new Error(`Muitas perguntas agora: o limite da IA gratuita libera em ${Math.ceil(s)} s.`);

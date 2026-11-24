@@ -28,6 +28,7 @@
  */
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { gravarUso } from "../_shared/assistente/cota.ts";
 
 const API = "https://dadosabertos.compras.gov.br";
 const TAM_PAGINA = 500;
@@ -271,6 +272,9 @@ async function extrairItens(texto: string) {
   }
   if (!res.ok) throw new Error(`Groq respondeu HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
+  // a leitura do TR gasta a mesma cota gratuita do Groq que o chat do app: entra na barra de uso do chat
+  await gravarUso(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    [{ origem: "pesquisa-precos", modelo: modeloAtual, tokens: data.usage?.total_tokens ?? 0 }]).catch(() => false);
   const conteudo = data.choices?.[0]?.message?.content ?? "{}";
   const obj = JSON.parse(conteudo);
   return { objeto: obj.objeto ?? null, itens: Array.isArray(obj.itens) ? obj.itens : [] };

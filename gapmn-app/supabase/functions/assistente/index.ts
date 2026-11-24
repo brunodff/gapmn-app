@@ -13,6 +13,10 @@
  * → { resposta, fontes: [{rotulo, link, externo?}], consultas, modelo }
  *   ou { pendentes: [{id, nome, args}], estado }
  *
+ *   ou { cota: true } → { cota }
+ * Toda resposta traz "cota" (quanto resta da IA gratuita do dia, para a barra do chat; ../_shared/assistente/cota.ts):
+ * cada chamada ao Groq grava os tokens na tabela assistente_uso. Sem a tabela, o chat funciona sem a barra.
+ *
  * Só usuário logado (verify_jwt ligado). Teste no servidor: cabeçalho x-assistente-teste = secret
  * ASSISTENTE_TESTE (32+ caracteres; sem o secret, esse caminho não existe).
  *
@@ -22,8 +26,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { DEFINICOES, DO_NAVEGADOR, executarServidor } from "../_shared/assistente/ferramentas.ts";
 import { juntarResultados, rodar, type MsgIA } from "../_shared/assistente/conversa.ts";
-import { chamarGroq } from "../_shared/assistente/groq.ts";
+import { chamarGroq, listarModelos, modelosDaPreferencia } from "../_shared/assistente/groq.ts";
 import { instrucoes } from "../_shared/assistente/prompt.ts";
+import { calcularCota, gravarUso, lerEsgotado, lerUso } from "../_shared/assistente/cota.ts";
 
 const URL_SB = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -50,16 +55,36 @@ Deno.serve(async (req) => {
   // quem pergunta: o login do app (ou o teste do servidor, se o secret existir)
   const auth = req.headers.get("authorization") ?? "";
   let db;
+  let usuario: string | null = null;
   const teste = TESTE.length >= 32 && req.headers.get("x-assistente-teste") === TESTE;
   if (teste) db = createClient(URL_SB, SERVICO, { auth: { persistSession: false } });
   else {
     db = createClient(URL_SB, ANON, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
     const { data } = await db.auth.getUser(auth.replace(/^Bearer\s+/i, ""));
     if (!data?.user) return json({ erro: "Faça login no gapmn.app para usar o assistente." }, 401);
+    usuario = data.user.id;
   }
+
+  // uso da IA nas últimas 24 h (null = tabela assistente_uso ainda não criada) e o que esta chamada gastar
+  const usoAntes = lerUso(URL_SB, SERVICO, Date.now()).catch(() => null);
+  const novas: Record<string, unknown>[] = [];
+  const cota = async () => {
+    const antes = await usoAntes;
+    if (!antes) return null;
+    let ids: string[] = [];
+    try { ids = modelosDaPreferencia(await listarModelos(GROQ)); } catch { /* sem a lista: os modelos que aparecem no uso */ }
+    const linhas = [...antes, ...novas.map((n) => ({ usuario, origem: "assistente", tokens: 0, resposta: false, esgotado_ate: null, limite_dia: null, usado_dia: null, ...n }))];
+    return calcularCota(linhas, ids, Date.now(), usuario);
+  };
+  /** grava o uso desta chamada e devolve a resposta com a cota atualizada */
+  const responder = async (corpoResp: Record<string, unknown>, status = 200) => {
+    const [, c] = await Promise.all([gravarUso(URL_SB, SERVICO, novas.map((n) => ({ usuario, ...n }))).catch(() => false), cota().catch(() => null)]);
+    return json({ ...corpoResp, cota: c }, status);
+  };
 
   let corpo;
   try { corpo = await req.json(); } catch { return json({ erro: "corpo inválido" }, 400); }
+  if (corpo?.cota) return responder({});
   const hoje = hojeManaus();
   if (teste && corpo?.modelos) {
     const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${GROQ}` } });
@@ -87,6 +112,9 @@ Deno.serve(async (req) => {
   let modelo = "";
   const uso = { entrada: 0, saida: 0 };
   const diag: unknown[] = [];
+  // modelos que o Groq já disse estarem sem cota (outra chamada, outra instância): nem tenta
+  const evitar = ((await usoAntes) ?? []).filter((l) => l.esgotado_ate && Date.parse(l.esgotado_ate) > Date.now())
+    .map((l) => [l.modelo, Date.parse(l.esgotado_ate)] as [string, number]);
   try {
     const saida = await rodar(estado, {
       doNavegador: DO_NAVEGADOR,
@@ -98,17 +126,24 @@ Deno.serve(async (req) => {
         return r;
       },
       chamarIA: async (mensagens, comFerramentas) => {
-        const r = await chamarGroq(mensagens, { chave: GROQ, modelo: MODELO, ferramentas: comFerramentas ? DEFINICOES : undefined, maxTokens: comFerramentas ? 700 : 1500, log: console.log });
+        const r = await chamarGroq(mensagens, {
+          chave: GROQ, modelo: MODELO, ferramentas: comFerramentas ? DEFINICOES : undefined, maxTokens: comFerramentas ? 700 : 1500, log: console.log, evitar,
+          aoEsgotar: (m, texto, s) => {
+            const { limite, usado } = lerEsgotado(texto);
+            novas.push({ em: new Date().toISOString(), modelo: m, esgotado_ate: new Date(Date.now() + (s ?? 3600) * 1000).toISOString(), limite_dia: limite, usado_dia: usado });
+          },
+        });
         modelo = r.modelo;
         uso.entrada += r.uso?.prompt_tokens ?? 0; uso.saida += r.uso?.completion_tokens ?? 0;
+        novas.push({ em: new Date().toISOString(), modelo: r.modelo, tokens: r.uso?.total_tokens ?? (r.uso?.prompt_tokens ?? 0) + (r.uso?.completion_tokens ?? 0), resposta: !r.tool_calls?.length });
         if (teste) diag.push({ modelo: r.modelo, entrada: r.uso?.prompt_tokens, saida: r.uso?.completion_tokens, esperou_ms: r.esperou_ms, limites: r.limites });
         return r;
       },
     });
-    if (saida.tipo === "pendente") return json({ pendentes: saida.pendentes, estado: saida.estado, modelo, ...(teste ? { diag } : {}) });
-    return json({ resposta: saida.resposta, fontes: saida.fontes, consultas: saida.consultas, modelo, ...(teste ? { uso, diag } : {}) });
+    if (saida.tipo === "pendente") return responder({ pendentes: saida.pendentes, estado: saida.estado, modelo, ...(teste ? { diag } : {}) });
+    return responder({ resposta: saida.resposta, fontes: saida.fontes, consultas: saida.consultas, modelo, ...(teste ? { uso, diag } : {}) });
   } catch (e) {
     console.error("assistente:", e);
-    return json({ erro: String(e?.message ?? e) }, 502);
+    return responder({ erro: String(e?.message ?? e) }, 502);
   }
 });

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { padrao, palavras } from "./texto.ts";
 import { DEFINICOES, DO_NAVEGADOR, executarServidor } from "./ferramentas.ts";
 import { caber, juntarResultados, rodar, type MsgIA } from "./conversa.ts";
-import { chamarGroq, escolherModelo, segundosDeEspera, cotaDoDia } from "./groq.ts";
+import { chamarGroq, escolherModelo, esquecerEstado, modelosDaPreferencia, segundosDeEspera, cotaDoDia } from "./groq.ts";
+import { calcularCota, gravarUso, lerEsgotado, TPD_PADRAO, type LinhaUso } from "./cota.ts";
 
 // ── Banco falso: o mínimo do PostgREST que as ferramentas usam (ilike com * e _, or, gte/lte/lt/eq/in, order, limit)
 type Linha = Record<string, unknown>;
@@ -163,4 +164,93 @@ test("Groq: espera pedida, cota do dia e escolha do modelo", async () => {
   assert.equal(r.modelo, "openai/gpt-oss-120b");
   assert.deepEqual(chamadas, ["chat/completions llama-3.3-70b-versatile", "models ", "chat/completions openai/gpt-oss-120b", "chat/completions openai/gpt-oss-120b"]);
   assert.deepEqual(esperas, [2400]);
+});
+
+const HORA = 3600_000;
+const AGORA = Date.parse("2026-11-24T15:00:00Z");
+const M3 = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
+const uso = (x: Partial<LinhaUso>): LinhaUso => ({ em: new Date(AGORA - HORA).toISOString(), usuario: "u1", origem: "assistente", modelo: M3[0], tokens: 0, resposta: false,
+  esgotado_ate: null, limite_dia: null, usado_dia: null, ...x });
+
+test("cota: soma das últimas 24 h por modelo, média por pergunta e perguntas de quem pergunta", () => {
+  assert.deepEqual(modelosDaPreferencia(["allam-2-7b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"]), [M3[0], M3[2], M3[1]]);
+  const vazia = calcularCota([], M3, AGORA, "u1");
+  assert.equal(vazia.restante_pct, 100);
+  assert.equal(vazia.limite_tokens, 3 * TPD_PADRAO);
+  assert.equal(vazia.perguntas_restantes, Math.floor(600_000 / 4500));
+  const linhas = [
+    uso({ tokens: 2000 }), uso({ tokens: 3000, resposta: true }),
+    uso({ tokens: 1000, resposta: true, usuario: "u2" }), uso({ tokens: 4000, resposta: true, modelo: M3[1] }), uso({ tokens: 5000, resposta: true, modelo: M3[1] }),
+    uso({ tokens: 135_000, origem: "pesquisa-precos", usuario: null }),
+    uso({ tokens: 90_000, em: new Date(AGORA - 25 * HORA).toISOString(), resposta: true }), // fora da janela
+  ];
+  const c = calcularCota(linhas, M3, AGORA, "u1");
+  assert.equal(c.restante_tokens, 600_000 - 150_000);
+  assert.equal(c.restante_pct, 75);
+  assert.equal(c.perguntas_24h, 4);
+  assert.equal(c.suas_perguntas_24h, 3);
+  assert.equal(c.perguntas_restantes, Math.floor(450_000 / (15_000 / 4))); // média só do chat
+  assert.equal(c.libera_em, undefined);
+});
+
+test("cota: aviso de esgotada do Groq zera o modelo até a hora pedida e corrige o uso enquanto sai da janela", () => {
+  const aviso = "Rate limit reached for model `openai/gpt-oss-120b` on tokens per day (TPD): Limit 200000, Used 199912, Requested 3512. Please try again in 24m48.384s.";
+  assert.deepEqual(lerEsgotado(aviso), { limite: 200000, usado: 199912 });
+  assert.deepEqual(lerEsgotado("on requests per day (RPD): Limit 1000, Used 1000"), { limite: null, usado: null });
+  const ate = new Date(AGORA + 20 * 60_000).toISOString();
+  const c = calcularCota([uso({ esgotado_ate: ate, limite_dia: 200000, usado_dia: 199912 })], M3, AGORA, "u1");
+  assert.equal(c.modelos[0].restante_pct, 0);
+  assert.equal(c.restante_pct, 66);
+  // 12 h depois do aviso, metade do uso informado saiu da janela; mais o que foi gasto depois
+  const t = AGORA - 12 * HORA;
+  const d = calcularCota([uso({ em: new Date(t).toISOString(), esgotado_ate: new Date(t + HORA).toISOString(), usado_dia: 200000, limite_dia: 200000 }),
+    uso({ em: new Date(t + 2 * HORA).toISOString(), tokens: 10_000, resposta: true })], [M3[0]], AGORA, "u1");
+  assert.equal(d.restante_tokens, 200_000 - 100_000 - 10_000);
+  // todos esgotados: 0% e a hora em que o primeiro volta
+  const fim = calcularCota(M3.map((m, i) => uso({ modelo: m, esgotado_ate: new Date(AGORA + (i + 1) * HORA).toISOString() })), M3, AGORA, "u1");
+  assert.equal(fim.restante_pct, 0);
+  assert.equal(fim.libera_em, new Date(AGORA + HORA).toISOString());
+  // quase no fim ainda mostra 1%, não 0%
+  assert.equal(calcularCota([uso({ tokens: 199_900 })], [M3[0]], AGORA, null).restante_pct, 1);
+});
+
+test("cota: gravação manda as mesmas colunas em todas as linhas", async () => {
+  let corpo: Record<string, unknown>[] = [];
+  const buscar = (async (_u: string, init?: RequestInit) => { corpo = JSON.parse(String(init?.body)); return new Response(null, { status: 201 }); }) as typeof fetch;
+  assert.equal(await gravarUso("https://x.supabase.co", "chave", [{ modelo: "a", tokens: 10.4, resposta: true }, { modelo: "b", esgotado_ate: "2026-11-24T16:00:00Z", usado_dia: 5 }], buscar), true);
+  assert.deepEqual(Object.keys(corpo[0]), Object.keys(corpo[1]));
+  assert.equal(corpo[0].tokens, 10);
+  assert.equal(corpo[1].origem, "assistente");
+  assert.equal(await gravarUso("", "", [{ modelo: "a" }], buscar), false);
+});
+
+test("Groq: modelo já esgotado não é tentado; cota do dia avisa e troca; esgotado volta depois da hora", async () => {
+  esquecerEstado();
+  const lista = '{"data":[{"id":"openai/gpt-oss-120b"},{"id":"openai/gpt-oss-20b"}]}';
+  const ok = () => new Response('{"choices":[{"message":{"content":"ok"}}],"usage":{"total_tokens":50}}', { status: 200 });
+  let agora = AGORA;
+  const chamadas: string[] = [];
+  let respostas: Response[] = [new Response(lista), ok()];
+  const buscar = (async (url: string, init?: RequestInit) => {
+    chamadas.push(`${url.split("/v1/")[1]} ${init?.body ? JSON.parse(String(init.body)).model : ""}`.trim());
+    return respostas.shift()!;
+  }) as typeof fetch;
+  const op = { chave: "k", modelo: "openai/gpt-oss-120b", buscar, esperar: async () => {}, agora: () => agora };
+  const r1 = await chamarGroq([{ role: "user", content: "oi" }], { ...op, evitar: [["openai/gpt-oss-120b", AGORA + HORA]] });
+  assert.equal(r1.modelo, "openai/gpt-oss-20b");
+  assert.deepEqual(chamadas, ["models", "chat/completions openai/gpt-oss-20b"]);
+
+  esquecerEstado(); chamadas.length = 0;
+  const avisos: [string, number | null][] = [];
+  respostas = [new Response('{"error":{"message":"Rate limit reached on tokens per day (TPD): Limit 200000, Used 199912. Please try again in 24m48.384s."}}', { status: 429 }), new Response(lista), ok()];
+  const r2 = await chamarGroq([{ role: "user", content: "oi" }], { ...op, aoEsgotar: (m, _t, s) => { avisos.push([m, s]); } });
+  assert.equal(r2.modelo, "openai/gpt-oss-20b");
+  assert.deepEqual(avisos, [["openai/gpt-oss-120b", 1488.384]]);
+
+  // passou a hora pedida: o 120b volta a ser tentado
+  esquecerEstado(); agora = AGORA + 30 * 60_000; chamadas.length = 0; respostas = [ok()];
+  const r3 = await chamarGroq([{ role: "user", content: "oi" }], { ...op, evitar: [["openai/gpt-oss-120b", AGORA + 25 * 60_000]] });
+  assert.equal(r3.modelo, "openai/gpt-oss-120b");
+  assert.deepEqual(chamadas, ["chat/completions openai/gpt-oss-120b"]);
+  esquecerEstado();
 });

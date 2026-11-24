@@ -25,7 +25,7 @@ import FerramentasGestao from "./FerramentasGestao";
 // OrdensBancarias removido
 import PainelAnalytics from "../components/PainelAnalytics";
 import CalendarioLicitacoes from "../components/CalendarioLicitacoes";
-import { lerLinkApp, perguntar as perguntarAssistente, type Fonte as FonteAssistente } from "../lib/assistente/cliente";
+import { consultarCota, ErroAssistente, lerLinkApp, perguntar as perguntarAssistente, textoCota, type Cota as CotaIA, type Fonte as FonteAssistente } from "../lib/assistente/cliente";
 import PesquisaPrecos from "../components/PesquisaPrecos";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -899,12 +899,33 @@ function TextoAssistente({ texto }: { texto: string }) {
 
 type MsgCelia = { from: "bot" | "user"; text: string; fontes?: FonteAssistente[]; aviso?: string };
 
+/** Quanto resta da IA gratuita do dia (clique mostra a explicação) */
+function BarraCota({ cota, aberto, alternar }: { cota: CotaIA; aberto: boolean; alternar: () => void }) {
+  const t = textoCota(cota);
+  const cor = t.nivel === "ok" ? T.green : t.nivel === "atencao" ? T.gold : T.rose;
+  return (
+    <button onClick={alternar} title={t.detalhe} aria-expanded={aberto}
+      style={{ marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", padding: 0,
+        display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+      <span style={{ fontSize: 10, color: T.muted, fontFamily: T.font, whiteSpace: "nowrap" }}>{t.rotulo}</span>
+      <span role="progressbar" aria-label="Cota da IA que ainda resta" aria-valuemin={0} aria-valuemax={100} aria-valuenow={cota.restante_pct}
+        style={{ display: "block", width: 120, height: 5, borderRadius: 3, background: T.surf2, overflow: "hidden" }}>
+        <span style={{ display: "block", height: "100%", width: `${cota.restante_pct > 0 ? Math.max(cota.restante_pct, 3) : 0}%`,
+          background: cor, borderRadius: 3, transition: "width 0.4s" }} />
+      </span>
+    </button>
+  );
+}
+
 function CeliaWidget({ kpis, onAbrir }: { kpis: KPIs; onAbrir: (link: string) => void }) {
   const [phase, setPhase] = useState<"balloon" | "chat" | "idle">("balloon");
   const [msgs,  setMsgs]  = useState<MsgCelia[]>([{ from: "bot", text: "👋 Bem-vindo ao GAP-MN! Pergunte sobre contratos, reajustes, licitações, atas, empenhos, crédito, solicitações, DOU, TCU ou AGU: respondo com os dados do app e mostro onde ver." }]);
   const [inp,   setInp]   = useState("");
   const [busy,  setBusy]  = useState(false);
   const [etapa, setEtapa] = useState("");
+  const [cota,  setCota]  = useState<CotaIA | null>(null);
+  const [verCota, setVerCota] = useState(false);
+  const cotaEm    = useRef(0);
   const endRef    = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
 
@@ -912,6 +933,16 @@ function CeliaWidget({ kpis, onAbrir }: { kpis: KPIs; onAbrir: (link: string) =>
     const t = setTimeout(() => setPhase(p => p === "balloon" ? "idle" : p), 6500);
     return () => clearTimeout(t);
   }, []);
+
+  // a cota do dia ao abrir o chat (relida se a última tiver mais de 1 minuto)
+  useEffect(() => {
+    if (phase !== "chat" || Date.now() - cotaEm.current < 60_000) return;
+    cotaEm.current = Date.now();
+    let vivo = true;
+    consultarCota().then(c => { if (vivo && c) setCota(c); });
+    return () => { vivo = false; };
+  }, [phase]);
+  const novaCota = (c: CotaIA | null | undefined) => { if (c) { setCota(c); cotaEm.current = Date.now(); } };
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy, etapa]);
 
@@ -925,8 +956,10 @@ function CeliaWidget({ kpis, onAbrir }: { kpis: KPIs; onAbrir: (link: string) =>
     setBusy(true); setEtapa("Consultando os dados do app…");
     try {
       const r = await perguntarAssistente(t, historico, setEtapa);
+      novaCota(r.cota);
       setMsgs(p => [...p, { from: "bot", text: r.resposta, fontes: r.fontes }]);
     } catch (e) {
+      if (e instanceof ErroAssistente) novaCota(e.cota);
       // sem a IA (cota do dia, rede): a resposta fixa de antes, com o aviso
       setMsgs(p => [...p, { from: "bot", text: getCeliaResponse(t, kpis), aviso: `Respondi sem consultar o banco: ${(e as Error)?.message ?? e}` }]);
     } finally {
@@ -970,11 +1003,17 @@ function CeliaWidget({ kpis, onAbrir }: { kpis: KPIs; onAbrir: (link: string) =>
               <div style={{ color: T.txt, fontSize: 12, fontWeight: 700, fontFamily: T.font }}>Cel Int Susan Kelly</div>
               <div style={{ color: T.green, fontSize: 10, fontFamily: T.font }}>● online</div>
             </div>
+            {cota && <BarraCota cota={cota} aberto={verCota} alternar={() => setVerCota(v => !v)} />}
             <button onClick={() => setPhase("idle")}
-              style={{ marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", color: T.muted, fontSize: 16 }}>✕</button>
+              style={{ marginLeft: cota ? 6 : "auto", background: "transparent", border: "none", cursor: "pointer", color: T.muted, fontSize: 16 }}>✕</button>
           </div>
+          {cota && verCota && (
+            <div style={{ padding: "8px 14px", fontSize: 10.5, lineHeight: 1.5, color: T.muted, fontFamily: T.font, borderBottom: `1px solid ${T.bdr}`, background: T.surf }}>
+              {textoCota(cota).detalhe}
+            </div>
+          )}
 
-          <div style={{ height: "min(420px, calc(100vh - 260px))", overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ height: `min(420px, calc(100vh - ${cota && verCota ? 410 : 260}px))`, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: 8 }}>
             {msgs.map((m, i) => (
               <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.from === "user" ? "flex-end" : "flex-start", gap: 5 }}>
                 <div style={{
