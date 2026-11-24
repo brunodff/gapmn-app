@@ -1,0 +1,93 @@
+{
+  "_sobre": "Sugestões de riscos para o Mapa de Riscos do termo aditivo. O fiscal escolhe, edita ou escreve outros. Probabilidade/impacto aqui são só sugestão inicial: quem decide é o fiscal. 'aplica_a': todos | servicos | demo (dedicação exclusiva de mão de obra) | fornecimento.",
+  "ajuda_fiscal": {
+    "titulo": "Como funciona o Gerenciamento de Riscos (IN SEGES/MP nº 05/2017, arts. 25 e 26)",
+    "texto": [
+      "O Gerenciamento de Riscos consiste em: I – identificar os principais riscos que possam comprometer a efetividade do Planejamento da Contratação, da Seleção do Fornecedor e da Gestão Contratual ou que impeçam o alcance dos resultados que atendam às necessidades da contratação; II – avaliar os riscos identificados, medindo a probabilidade de ocorrência e o impacto de cada risco; III – tratar os riscos considerados inaceitáveis, definindo ações para reduzir a probabilidade de ocorrência ou suas consequências (ações preventivas); IV – para os riscos que persistirem inaceitáveis após o tratamento, definir as ações de contingência para o caso de os eventos se concretizarem; V – definir os responsáveis pelas ações de tratamento e de contingência.",
+      "O Gerenciamento de Riscos materializa-se no Mapa de Riscos, que deve ser atualizado e juntado aos autos, pelo menos: ao final dos Estudos Preliminares; ao final do Termo de Referência ou Projeto Básico; após a Seleção do Fornecedor; e após eventos relevantes durante a gestão do contrato – como a prorrogação por termo aditivo.",
+      "Como preencher cada risco: dê um nome curto ao risco; marque a probabilidade (Baixa, Média, Alta) e o impacto (Baixo, Médio, Alto); descreva o dano (o que acontece se o risco se concretizar); a ação preventiva (o que a fiscalização faz para evitar); e a ação de contingência (o que se faz se acontecer). O responsável, em regra, é o FISCAL. O modelo prevê pelo menos 2 riscos."
+    ]
+  },
+  "riscos": [
+    {
+      "id": "habilitacao",
+      "aplica_a": "todos",
+      "nome": "Empresa não manter as condições de habilitação",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Dar causa à rescisão contratual em caso de não manutenção da regularidade fiscal e trabalhista.",
+      "acao_preventiva": "Mensalmente, a fiscalização fará consultas ao SICAF para acompanhar a situação da empresa.",
+      "acao_contingencia": "Notificar a empresa contratada sempre que ela estiver inadimplente quanto às regularidades fiscal, trabalhista e previdenciária, para que a situação seja regularizada."
+    },
+    {
+      "id": "prazo_aditivo",
+      "aplica_a": "todos",
+      "nome": "Termo aditivo não ser assinado antes do fim da vigência",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Encerramento do contrato e interrupção do serviço ou do fornecimento, com necessidade de nova contratação.",
+      "acao_preventiva": "Iniciar a instrução do aditivo com antecedência e acompanhar os prazos do subprocesso.",
+      "acao_contingencia": "Comunicar de imediato à SCON e ao Ordenador de Despesas para priorizar a análise e a assinatura."
+    },
+    {
+      "id": "orcamento",
+      "aplica_a": "todos",
+      "nome": "Indisponibilidade orçamentária para o novo período",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Impossibilidade de empenhar a despesa do período prorrogado e risco de execução sem cobertura contratual.",
+      "acao_preventiva": "Informar antecipadamente a necessidade de crédito do novo período ao setor de orçamento da OM.",
+      "acao_contingencia": "Solicitar crédito suplementar ou readequar o quantitativo do contrato, comunicando ao Ordenador de Despesas."
+    },
+    {
+      "id": "preco_mercado",
+      "aplica_a": "todos",
+      "nome": "Preços contratados deixarem de ser vantajosos",
+      "probabilidade": "Baixa",
+      "impacto": "Médio",
+      "dano": "Prorrogação com valores acima dos praticados no mercado, contrariando a vantajosidade exigida.",
+      "acao_preventiva": "Realizar a pesquisa de preços antes da prorrogação e comparar com os valores contratados.",
+      "acao_contingencia": "Negociar a redução dos preços com a contratada ou não prorrogar e iniciar nova contratação."
+    },
+    {
+      "id": "execucao_servico",
+      "aplica_a": "servicos",
+      "nome": "Prestação do serviço de forma inadequada ou descontinuada",
+      "probabilidade": "Baixa",
+      "impacto": "Médio",
+      "dano": "Prejuízo às atividades da OM atendida pelo serviço.",
+      "acao_preventiva": "Acompanhamento contínuo da execução, com registro das ocorrências no relatório de fiscalização.",
+      "acao_contingencia": "Contatar o preposto da empresa para regularização imediata e, persistindo a falha, notificar a empresa e propor a abertura de processo de apuração."
+    },
+    {
+      "id": "trabalhista",
+      "aplica_a": "demo",
+      "nome": "Empresa não honrar o pagamento de direitos e encargos trabalhistas e previdenciários dos funcionários",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Funcionários insatisfeitos trabalhando por não terem seus direitos respeitados e responsabilização solidária e subsidiária da Administração.",
+      "acao_preventiva": "Acompanhar a adimplência da empresa mês a mês, empregado por empregado, verificando folha de pagamento, férias, décimo terceiro, auxílio-transporte e alimentação e recolhimento de FGTS, entre outros.",
+      "acao_contingencia": "Notificar a empresa sempre que estiver inadimplente quanto aos direitos trabalhistas e previdenciários dos funcionários, cobrando sua regularização."
+    },
+    {
+      "id": "pessoal_material",
+      "aplica_a": "demo",
+      "nome": "Falta de pessoal ou de material para a execução do serviço",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Serviço não prestado ou prestado de forma inadequada nas áreas atendidas.",
+      "acao_preventiva": "Controle da presença do pessoal da empresa e da quantidade de material suficiente para a prestação do serviço.",
+      "acao_contingencia": "Contatar o encarregado da empresa para a reposição de pessoal ou material e dar continuidade aos serviços."
+    },
+    {
+      "id": "entrega",
+      "aplica_a": "fornecimento",
+      "nome": "Atraso na entrega ou entrega fora da especificação",
+      "probabilidade": "Baixa",
+      "impacto": "Médio",
+      "dano": "Desabastecimento da OM e prejuízo às atividades que dependem do material.",
+      "acao_preventiva": "Acompanhar os prazos de entrega e conferir o material no recebimento provisório.",
+      "acao_contingencia": "Recusar o material fora da especificação, notificar a empresa para substituição e, persistindo, propor a abertura de processo de apuração."
+    }
+  ]
+}

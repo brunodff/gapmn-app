@@ -28,6 +28,7 @@ import CalendarioLicitacoes from "../components/CalendarioLicitacoes";
 import AcompanhamentoPca from "../components/pca/AcompanhamentoPca";
 import { consultarCota, ErroAssistente, lerLinkApp, perguntar as perguntarAssistente, textoCota, type Cota as CotaIA, type Fonte as FonteAssistente } from "../lib/assistente/cliente";
 import PesquisaPrecos from "../components/PesquisaPrecos";
+import TermosAditivos from "../components/aditivos/TermosAditivos";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 // Neutros do shell em variáveis CSS: trocam entre noite e dia pelo data-tema do <html>
@@ -64,10 +65,10 @@ type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
   | "calendario" | "pca" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
-  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu" | "agu" | "mapa-compras" | "dou";
+  | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "aditivos" | "tcu" | "agu" | "mapa-compras" | "dou";
 
 // Telas que abrem pelo endereço (?vista=…): o Painel de Governança usa ?painel=governanca; administração fica fora
-const VISTAS_URL: View[] = ["processos", "contratos", "reajustes", "reajuste-om", "tcu", "agu", "mapa-compras", "dou", "indicadores", "atas",
+const VISTAS_URL: View[] = ["processos", "contratos", "reajustes", "reajuste-om", "aditivos", "tcu", "agu", "mapa-compras", "dou", "indicadores", "atas",
   "solicitacoes", "calendario", "pca", "pesquisa-precos", "painel-orcamento", "painel-rp", "painel-execucao", "painel-contratos", "ferramentas"];
 const vistaDaUrl = (v: string | null): View | null => (v && (VISTAS_URL as string[]).includes(v) ? (v as View) : null);
 
@@ -81,6 +82,7 @@ const VIEW_LABELS: Record<View, string> = {
   contratos:          "Contratos SCON",
   reajustes:          "Reajustes (apostilamento)",
   "reajuste-om":      "Reajuste de contratos de outra UG",
+  aditivos:           "Termos Aditivos",
   tcu:                "TCU — jurisprudência e sanções",
   agu:                "AGU — pareceres referenciais",
   "mapa-compras":     "Mapa das compras",
@@ -364,6 +366,7 @@ const NAV: NavNode[] = [
     { label: "Contratos SCON",        path: "view:contratos",   icon: "📑" },
     { label: "Reajustes",             path: "view:reajustes",   icon: "📈" },
     { label: "Reajuste de outra UG",  path: "view:reajuste-om", icon: "🗂️" },
+    { label: "Termos Aditivos",       path: "view:aditivos",    icon: "📝" },
   ]},
   { id: "eo",      label: "Exec. Orçamentária",   icon: "💰", children: [
     { label: "Indicadores de Lotação", path: "view:indicadores",    icon: "📊" },
@@ -1347,14 +1350,17 @@ export default function AppChat() {
   const [alvo,           setAlvo]       = useState<{ busca: string; n: number }>(() => ({ busca: params.get("busca") ?? "", n: 0 }));
   const [filterTipo,     setFilterTipo] = useState("todos");
 
-  // Reajustes fica no endereço (?vista=reajustes&contrato=…), para o link do contrato abrir direto nele.
-  function setView(v: View, contrato?: string) {
+  // Reajustes fica no endereço (?vista=reajustes&contrato=…), para o link do contrato abrir direto nele;
+  // Termos Aditivos também (?vista=aditivos&aditivo=<id>), e a Pesquisa de Preços de um aditivo (?vista=pesquisa-precos&aditivo=<id>).
+  function setView(v: View, contrato?: string, aditivo?: string | null) {
     setViewRaw(v);
     setAlvo(a => ({ busca: "", n: a.n }));
     logActivity("page_view", v);
     const p = new URLSearchParams(params);
-    p.delete("vista"); p.delete("contrato"); p.delete("aba"); p.delete("busca");
+    p.delete("vista"); p.delete("contrato"); p.delete("aba"); p.delete("busca"); p.delete("aditivo");
     if (v === "reajustes") { p.set("vista", "reajustes"); if (contrato) p.set("contrato", contrato); }
+    if (v === "aditivos") { p.set("vista", "aditivos"); if (aditivo) p.set("aditivo", aditivo); }
+    if (v === "pesquisa-precos" && aditivo) { p.set("vista", "pesquisa-precos"); p.set("aditivo", aditivo); }
     if (v === "reajuste-om") p.set("vista", "reajuste-om");
     if (v === "painel-governanca") p.set("painel", "governanca");
     else if (p.get("painel") === "governanca") for (const k of ["painel", "div", "cat", "st", "q", "comp"]) p.delete(k);
@@ -1368,6 +1374,7 @@ export default function AppChat() {
     const v = vistaDaUrl(l.vista);
     if (!v) return;
     if (v === "reajustes") { setView("reajustes", l.contrato ?? undefined); return; }
+    if (v === "aditivos" || (v === "pesquisa-precos" && l.aditivo)) { setView(v, undefined, l.aditivo); return; }
     setView(v);
     setAlvo(a => ({ busca: l.busca ?? "", n: a.n + 1 }));
   }
@@ -1901,6 +1908,7 @@ export default function AppChat() {
             {/* overflow visível: a barra de ações do reajuste fica presa no rodapé da área rolável */}
             {view === "reajustes"     && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><Reajustes /></div>}
             {view === "reajuste-om"   && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><ReajusteOM /></div>}
+            {view === "aditivos"      && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><TermosAditivos aditivoId={params.get("aditivo")} usuario={user.nome} onAbrirAditivo={(id) => setView("aditivos", undefined, id)} onAbrir={abrirLink} /></div>}
             {view === "tcu"           && <div className="svdark" style={{ padding: 16 }}><PainelTcu key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
             {view === "agu"           && <div className="svdark" style={{ padding: 16 }}><PainelAgu key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
             {view === "mapa-compras"  && <div className="svdark" style={{ padding: 16 }}><MapaCompras /></div>}
@@ -1910,7 +1918,7 @@ export default function AppChat() {
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canManage={canManageSolicit} /></div>}
             {view === "pca"           && <div className="svdark"><AcompanhamentoPca key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} /></div>}
             {view === "calendario"    && <div className="svdark"><CalendarioLicitacoes key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} userNome={user.nome} /></div>}
-            {view === "pesquisa-precos" && <div className="svdark"><PesquisaPrecos /></div>}
+            {view === "pesquisa-precos" && <div className="svdark"><PesquisaPrecos key={params.get("aditivo") ?? "livre"} aditivoId={params.get("aditivo")} onVoltarAditivo={(id) => setView("aditivos", undefined, id)} /></div>}
 
             {/* ── Panel views ── */}
             {view === "painel-orcamento"  && <PainelOrcamentario />}

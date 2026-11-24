@@ -1,0 +1,777 @@
+{
+ "hoje": "2026-11-24",
+ "exemplos": [
+  {
+   "nome": "BAMN_sem_valor_supressao",
+   "dados": {
+    "pag": "67298.000139/2025-01",
+    "numero_aditivo": 1,
+    "merito_administrativo": "Considerando que o serviço é de natureza contínua e essencial ao funcionamento da OM, que a contratada manifestou interesse na prorrogação, que a pesquisa de preços demonstrou a vantajosidade da manutenção do contrato e que a interrupção causaria prejuízo às atividades da unidade, propõe-se a prorrogação por mais 12 meses.",
+    "parecer_referencial": {
+     "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+     "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+     "data": "01/11/2024",
+     "validade": "01/11/2028"
+    },
+    "contrato": "001/GAPMN-BAMN/2025",
+    "om_nome": "Base Aérea de Manaus",
+    "om_signataria": {
+     "nome": "Base Aérea de Manaus",
+     "sigla": "BAMN",
+     "artigo": "da",
+     "ug": "120631"
+    },
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "sem_valor",
+      "meses": 6,
+      "inicio": "15/02/2027"
+     },
+     "supressao": {
+      "valor": 120000,
+      "percentual": 30.5,
+      "descricao": "redução de 2 postos"
+     }
+    },
+    "valor_atual": 2400000,
+    "autoridade_superior": "Comandante da Base Aérea de Manaus (preencher)"
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao",
+      "supressao"
+     ],
+     "pareceres": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+       "data": "01/11/2024",
+       "validade": "01/11/2028",
+       "cobre": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "fundamenta": [
+        "prorrogacao"
+       ],
+       "motivo_texto": "Fundamenta a prorrogação de vigência deste termo aditivo."
+      }
+     ],
+     "vencidos": [],
+     "descobertas": [
+      "supressão (30,50%, acima do limite de 25%)"
+     ],
+     "vai_para_cju": true
+    },
+    "observacao_parecer": "não há parecer referencial vigente que fundamente: supressão (30,50%, acima do limite de 25%); o termo aditivo deve ser submetido à análise jurídica",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     },
+     {
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência deste termo aditivo."
+     },
+     {
+      "chave": "atestado_adequacao",
+      "texto": "Atestado de adequação ao PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU."
+     }
+    ],
+    "objeto": "I - Prorrogar a vigência do Contrato nº 001/GAPMN-BAMN/2025 por mais 6 (seis) meses, em sentido estrito, sem renovação do valor contratual;\nII - Suprimir o valor do Contrato nº 001/GAPMN-BAMN/2025 em R$ 120.000,00 – 30,50%, referente a redução de 2 postos.",
+    "valor_atual": 2400000.0,
+    "valor_novo": 2280000.0,
+    "erros_ficha": [],
+    "avisos_ficha": [
+     "Supressão de 30,50% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir."
+    ],
+    "passa_1_milhao": true,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "ficha"
+    ]
+   }
+  },
+  {
+   "nome": "acrescimo_32pct_CJU",
+   "dados": {
+    "contrato": "010/GAPMN-2GDAAE/2025",
+    "pag": "67298.000139/2025-01",
+    "om_nome": "2º Grupo de Defesa Antiaérea",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do"
+    },
+    "numero_aditivo": 1,
+    "empenho": {
+     "numero": "2026NE000000",
+     "gestao_unidade": "120630",
+     "fonte": "1050000140",
+     "programa_trabalho": "168919",
+     "acao": null,
+     "plano_interno": "A0630340600",
+     "natureza_despesa": "339039",
+     "exercicio": 2026
+    },
+    "consulta_socio": true,
+    "representante_mudou": false,
+    "inexigibilidade": false,
+    "nao_anexados": {},
+    "riscos": [
+     {
+      "nome": "Empresa não manter as condições de habilitação",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Dar causa à rescisão contratual em caso de não manutenção da regularidade fiscal e trabalhista.",
+      "acao_preventiva": "Mensalmente, a fiscalização fará consultas ao SICAF para acompanhar a situação da empresa.",
+      "acao_contingencia": "Notificar a empresa contratada sempre que ela estiver inadimplente quanto às regularidades fiscal, trabalhista e previdenciária, para que a situação seja regularizada."
+     },
+     {
+      "nome": "Prestação do serviço de forma inadequada ou descontinuada",
+      "probabilidade": "baixa",
+      "impacto": "medio",
+      "dano": "Prejuízo às atividades da OM atendida pelo serviço.",
+      "acao_preventiva": "Acompanhamento contínuo da execução, com registro das ocorrências no relatório de fiscalização.",
+      "acao_contingencia": "Contatar o preposto da empresa para regularização imediata e, persistindo a falha, notificar a empresa e propor a abertura de processo de apuração."
+     },
+     {
+      "nome": "Termo aditivo não ser assinado antes do fim da vigência",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Encerramento do contrato e interrupção do serviço, com necessidade de nova contratação.",
+      "acao_preventiva": "Iniciar a instrução do aditivo com antecedência e acompanhar os prazos do subprocesso.",
+      "acao_contingencia": "Comunicar de imediato à SCON e ao Ordenador de Despesas para priorizar a análise e a assinatura."
+     }
+    ],
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "01/01/2027"
+     },
+     "reajuste": {
+      "indice": "IPCA",
+      "percentual": "4,724910%",
+      "valor": 49612.56
+     },
+     "acrescimo": {
+      "valor": 336000.0,
+      "percentual": 32,
+      "descricao": "ampliação do serviço"
+     },
+     "supressao": null
+    },
+    "valor_atual": 1050000.0,
+    "merito_administrativo": "Considerando que o serviço é de natureza contínua e essencial ao funcionamento da OM, que a contratada manifestou interesse na prorrogação, que a pesquisa de preços demonstrou a vantajosidade da manutenção do contrato e que a interrupção causaria prejuízo às atividades da unidade, propõe-se a prorrogação por mais 12 meses.",
+    "pareceres_referenciais": [
+     {
+      "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+      "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+      "data": "01/11/2024",
+      "validade": "01/11/2028",
+      "cobre": [
+       "prorrogacao",
+       "reajuste"
+      ]
+     },
+     {
+      "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
+      "objeto": "Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.",
+      "data": "03/09/2025",
+      "validade": "03/09/2027",
+      "cobre": [
+       "acrescimo",
+       "supressao"
+      ],
+      "limite_percentual": 25
+     }
+    ]
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao",
+      "reajuste",
+      "acrescimo"
+     ],
+     "pareceres": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+       "data": "01/11/2024",
+       "validade": "01/11/2028",
+       "cobre": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "fundamenta": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "motivo_texto": "Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+      }
+     ],
+     "vencidos": [],
+     "descobertas": [
+      "acréscimo (32,00%, acima do limite de 25%)"
+     ],
+     "vai_para_cju": true
+    },
+    "observacao_parecer": "não há parecer referencial vigente que fundamente: acréscimo (32,00%, acima do limite de 25%); o termo aditivo deve ser submetido à análise jurídica",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "calculadora",
+      "texto": "Calculadora do Cidadão (consulta anexada ao Parecer Técnico)."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "consulta_cpf_socio",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CPF do sócio majoritário."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     },
+     {
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+     },
+     {
+      "chave": "atestado_adequacao",
+      "texto": "Atestado de adequação ao PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU."
+     },
+     {
+      "chave": "memoria_calculo",
+      "texto": "Memória de Cálculo – Reajuste."
+     }
+    ],
+    "objeto": "I - Prorrogar o Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Reajustar o Contrato nº 010/GAPMN-2GDAAE/2025, conforme índice IPCA (4,724910%);\nIII - Acrescer o valor do Contrato nº 010/GAPMN-2GDAAE/2025 em R$ 336.000,00 – 32,00%, referente a ampliação do serviço.",
+    "valor_atual": 1050000.0,
+    "valor_novo": 1435612.56,
+    "erros_ficha": [],
+    "avisos_ficha": [
+     "Acréscimo de 32,00% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir."
+    ],
+    "passa_1_milhao": true,
+    "tem_reajuste": true,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "mapa",
+     "ficha"
+    ]
+   }
+  },
+  {
+   "nome": "completo_010-GAPMN-2GDAAE",
+   "dados": {
+    "contrato": "010/GAPMN-2GDAAE/2025",
+    "pag": "67298.000139/2025-01",
+    "om_nome": "2º Grupo de Defesa Antiaérea",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do"
+    },
+    "numero_aditivo": 1,
+    "empenho": {
+     "numero": "2026NE000000",
+     "gestao_unidade": "120630",
+     "fonte": "1050000140",
+     "programa_trabalho": "168919",
+     "acao": null,
+     "plano_interno": "A0630340600",
+     "natureza_despesa": "339039",
+     "exercicio": 2026
+    },
+    "consulta_socio": true,
+    "representante_mudou": false,
+    "inexigibilidade": false,
+    "nao_anexados": {},
+    "riscos": [
+     {
+      "nome": "Empresa não manter as condições de habilitação",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Dar causa à rescisão contratual em caso de não manutenção da regularidade fiscal e trabalhista.",
+      "acao_preventiva": "Mensalmente, a fiscalização fará consultas ao SICAF para acompanhar a situação da empresa.",
+      "acao_contingencia": "Notificar a empresa contratada sempre que ela estiver inadimplente quanto às regularidades fiscal, trabalhista e previdenciária, para que a situação seja regularizada."
+     },
+     {
+      "nome": "Prestação do serviço de forma inadequada ou descontinuada",
+      "probabilidade": "baixa",
+      "impacto": "medio",
+      "dano": "Prejuízo às atividades da OM atendida pelo serviço.",
+      "acao_preventiva": "Acompanhamento contínuo da execução, com registro das ocorrências no relatório de fiscalização.",
+      "acao_contingencia": "Contatar o preposto da empresa para regularização imediata e, persistindo a falha, notificar a empresa e propor a abertura de processo de apuração."
+     },
+     {
+      "nome": "Termo aditivo não ser assinado antes do fim da vigência",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Encerramento do contrato e interrupção do serviço, com necessidade de nova contratação.",
+      "acao_preventiva": "Iniciar a instrução do aditivo com antecedência e acompanhar os prazos do subprocesso.",
+      "acao_contingencia": "Comunicar de imediato à SCON e ao Ordenador de Despesas para priorizar a análise e a assinatura."
+     }
+    ],
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "01/01/2027"
+     },
+     "reajuste": {
+      "indice": "IPCA",
+      "percentual": "4,724910%",
+      "valor": 49612.56
+     },
+     "acrescimo": {
+      "valor": 105000.0,
+      "percentual": 10,
+      "descricao": "inclusão de 1 posto de atendimento"
+     },
+     "supressao": null
+    },
+    "valor_atual": 1050000.0,
+    "merito_administrativo": "Considerando que o serviço é de natureza contínua e essencial ao funcionamento da OM, que a contratada manifestou interesse na prorrogação, que a pesquisa de preços demonstrou a vantajosidade da manutenção do contrato e que a interrupção causaria prejuízo às atividades da unidade, propõe-se a prorrogação por mais 12 meses.",
+    "pareceres_referenciais": [
+     {
+      "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+      "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+      "data": "01/11/2024",
+      "validade": "01/11/2028",
+      "cobre": [
+       "prorrogacao",
+       "reajuste"
+      ]
+     },
+     {
+      "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
+      "objeto": "Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.",
+      "data": "03/09/2025",
+      "validade": "03/09/2027",
+      "cobre": [
+       "acrescimo",
+       "supressao"
+      ],
+      "limite_percentual": 25
+     }
+    ],
+    "pesquisa_precos": {
+     "fonte_tr": "Termo de Referência da contratação (exemplo fictício)",
+     "data_pesquisa": "24/11/2026",
+     "atualizacao": "IPCA até 10/2026",
+     "criterio": "mediana",
+     "itens": [
+      {
+       "item": 1,
+       "descricao": "Serviço de outsourcing de impressão – franquia mensal de páginas monocromáticas (exemplo)",
+       "codigo": "CATSER 00000",
+       "unidade": "mês",
+       "quantidade": 12,
+       "preco_contratado": 1394.17,
+       "precos": [
+        {
+         "fonte": "Compras.gov.br – UASG 000001 – Pregão 90001/2026",
+         "data": "10/03/2026",
+         "valor": 1420.0,
+         "valor_atualizado": 1441.3
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000002 – Pregão 90002/2026",
+         "data": "22/04/2026",
+         "valor": 1380.0,
+         "valor_atualizado": 1396.56
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000003 – Pregão 90003/2026",
+         "data": "05/06/2026",
+         "valor": 1510.0,
+         "valor_atualizado": 1521.33
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000004 – Pregão 90004/2026",
+         "data": "18/07/2026",
+         "valor": 690.0,
+         "valor_atualizado": 693.45,
+         "excluido": true,
+         "motivo_exclusao": "inexequível (menos de 50% da média)"
+        }
+       ]
+      },
+      {
+       "item": 2,
+       "descricao": "Página colorida excedente à franquia (exemplo)",
+       "codigo": "CATSER 00001",
+       "unidade": "página",
+       "quantidade": 6000,
+       "preco_contratado": 0.62,
+       "precos": [
+        {
+         "fonte": "Compras.gov.br – UASG 000005 – Pregão 90005/2026",
+         "data": "02/05/2026",
+         "valor": 0.6,
+         "valor_atualizado": 0.61
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000006 – Pregão 90006/2026",
+         "data": "14/08/2026",
+         "valor": 0.7,
+         "valor_atualizado": 0.7
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao",
+      "reajuste",
+      "acrescimo"
+     ],
+     "pareceres": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+       "data": "01/11/2024",
+       "validade": "01/11/2028",
+       "cobre": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "fundamenta": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "motivo_texto": "Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+      },
+      {
+       "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
+       "objeto": "Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.",
+       "data": "03/09/2025",
+       "validade": "03/09/2027",
+       "cobre": [
+        "acrescimo",
+        "supressao"
+       ],
+       "limite_percentual": 25,
+       "fundamenta": [
+        "acrescimo"
+       ],
+       "motivo_texto": "Fundamenta o acréscimo deste termo aditivo."
+      }
+     ],
+     "vencidos": [],
+     "descobertas": [],
+     "vai_para_cju": false
+    },
+    "observacao_parecer": null,
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "calculadora",
+      "texto": "Calculadora do Cidadão (consulta anexada ao Parecer Técnico)."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "consulta_cpf_socio",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CPF do sócio majoritário."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     },
+     {
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+     },
+     {
+      "chave": "atestado_adequacao",
+      "texto": "Atestado de adequação ao PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU."
+     },
+     {
+      "chave": "parecer_referencial_2",
+      "texto": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU\nObjeto: Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.\nVigência: de 03/09/2025, válido até 03/09/2027.\nMotivo: Fundamenta o acréscimo deste termo aditivo."
+     },
+     {
+      "chave": "atestado_adequacao_2",
+      "texto": "Atestado de adequação ao PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU."
+     },
+     {
+      "chave": "memoria_calculo",
+      "texto": "Memória de Cálculo – Reajuste."
+     }
+    ],
+    "objeto": "I - Prorrogar o Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Reajustar o Contrato nº 010/GAPMN-2GDAAE/2025, conforme índice IPCA (4,724910%);\nIII - Acrescer o valor do Contrato nº 010/GAPMN-2GDAAE/2025 em R$ 105.000,00 – 10,00%, referente a inclusão de 1 posto de atendimento.",
+    "valor_atual": 1050000.0,
+    "valor_novo": 1204612.56,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": true,
+    "tem_reajuste": true,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "mapa",
+     "pesquisa",
+     "ficha"
+    ]
+   }
+  },
+  {
+   "nome": "parecer_vencido",
+   "dados": {
+    "om_nome": "Hospital de Aeronáutica de Manaus",
+    "pag": "67700.000100/2024-01",
+    "contrato": "003/GAPMN-HAMN/2024",
+    "reajuste": false,
+    "om_aci": "GAP-MN",
+    "parecer_referencial": {
+     "numero": "PARECER REFERENCIAL n. 00010/2024/CONJUR-EB/CGU/AGU",
+     "objeto": "teste",
+     "data": "27/11/2024",
+     "validade": "20/11/2026"
+    },
+    "nao_anexados": {}
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao"
+     ],
+     "pareceres": [],
+     "vencidos": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00010/2024/CONJUR-EB/CGU/AGU",
+       "objeto": "teste",
+       "data": "27/11/2024",
+       "validade": "20/11/2026",
+       "cobre": [
+        "prorrogacao",
+        "reajuste"
+       ]
+      }
+     ],
+     "descobertas": [
+      "prorrogação de vigência (o PARECER REFERENCIAL n. 00010/2024/CONJUR-EB/CGU/AGU teve validade até 20/11/2026)"
+     ],
+     "vai_para_cju": true
+    },
+    "observacao_parecer": "não há parecer referencial vigente para este aditivo (o PARECER REFERENCIAL n. 00010/2024/CONJUR-EB/CGU/AGU teve validade até 20/11/2026)",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     }
+    ],
+    "objeto": "",
+    "valor_atual": null,
+    "valor_novo": null,
+    "erros_ficha": [
+     "Nenhuma opção marcada no aditivo (prorrogação, reajuste, acréscimo ou supressão).",
+     "Valor atual do contrato não informado (valor_atual)."
+    ],
+    "avisos_ficha": [],
+    "passa_1_milhao": false,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao"
+    ]
+   }
+  }
+ ]
+}

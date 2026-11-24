@@ -1,0 +1,11 @@
+Kit de Termos Aditivos da SCON importado em 2026-11-24 de aditivos_pacote
+pareceres.py  sha256 ba92fb4f9a7f
+gerar_lista_verificacao.py  sha256 e11d69dde5d1
+gerar_declaracao_orcamentaria.py  sha256 4d0d5fe1d5fd
+gerar_mapa_riscos.py  sha256 0d42865d0343
+gerar_pesquisa_precos.py  sha256 f67f84e16095
+gerar_ficha_autorizacao.py  sha256 276d1e7c8483
+verificar_sicaf.py  sha256 0fa82c848ee8
+consultar_regularidade.py  sha256 b2a2a13f1058
+biblioteca_riscos.json  sha256 f8666dfff876
+brasao.png  sha256 37766d9c84a8

@@ -47,11 +47,11 @@ export async function perguntar(pergunta: string, historico: Turno[], aoConsulta
 }
 
 /** Link interno do app (/app?vista=…&busca=…) → tela e busca */
-export function lerLinkApp(link: string): { vista: string; busca: string | null; contrato: string | null } | null {
+export function lerLinkApp(link: string): { vista: string; busca: string | null; contrato: string | null; aditivo: string | null } | null {
   try {
     const u = new URL(link, "https://gapmn.app");
     if (u.origin !== "https://gapmn.app" || u.pathname !== "/app") return null;
     const vista = u.searchParams.get("vista");
-    return vista ? { vista, busca: u.searchParams.get("busca"), contrato: u.searchParams.get("contrato") } : null;
+    return vista ? { vista, busca: u.searchParams.get("busca"), contrato: u.searchParams.get("contrato"), aditivo: u.searchParams.get("aditivo") } : null;
   } catch { return null; }
 }

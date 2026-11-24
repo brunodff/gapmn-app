@@ -12,6 +12,9 @@ import {
 import type { Trecho } from "../lib/trParser";
 import { unidadeDoRegistro, unidadePadrao } from "../lib/precos/ajustes";
 import { exportarPdf, exportarXlsx, type CabecalhoRelatorio, type LinhaRelatorio } from "../lib/pesquisaPrecosExport";
+import { carregarAditivo, enviarPesquisaAoAditivo, trDoContrato } from "../lib/aditivos/dados";
+import { pesquisaParaAditivo } from "../lib/aditivos/pesquisa";
+import type { RegistroAditivo } from "../lib/aditivos/tipos";
 
 // ── Tipos de estado ──────────────────────────────────────────────────────────
 
@@ -113,8 +116,12 @@ function avaliar(item: ItemTR, res: ResultadoItem | undefined): Avaliacao {
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export default function PesquisaPrecos() {
+/** aditivoId: pesquisa de um Termo Aditivo (Contratos › Termos Aditivos), com rascunho próprio e o TR do contrato */
+export default function PesquisaPrecos({ aditivoId = null, onVoltarAditivo }: { aditivoId?: string | null; onVoltarAditivo?: (id: string) => void } = {}) {
+  const chaveRascunho = aditivoId ? `${RASCUNHO_KEY}:aditivo:${aditivoId}` : RASCUNHO_KEY;
   const [etapa, setEtapa] = useState<Etapa>("tr");
+  const [aditivo, setAditivo] = useState<RegistroAditivo | null>(null);
+  const [envio, setEnvio] = useState<{ ok: boolean; txt: string } | null>(null);
 
   // Cabeçalho / TR
   const [cab, setCab] = useState<CabecalhoRelatorio>({
@@ -143,7 +150,7 @@ export default function PesquisaPrecos() {
   // ── Inicialização: rascunho, TRs cadastrados, status da API do Compras.gov.br, responsável ──
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(RASCUNHO_KEY);
+      const raw = localStorage.getItem(chaveRascunho);
       if (raw) {
         const r = JSON.parse(raw);
         if (r.itens?.length) {
@@ -174,23 +181,63 @@ export default function PesquisaPrecos() {
           if (nome) setCab((c) => (c.responsavel ? c : { ...c, responsavel: nome }));
         });
     });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Termo Aditivo: cabeçalho com o contrato e o PAG; sem rascunho, já lê o TR vinculado ao contrato
+  useEffect(() => {
+    if (!aditivoId) return;
+    let vivo = true;
+    let temRascunho = false;
+    try { temRascunho = !!JSON.parse(localStorage.getItem(chaveRascunho) ?? "null")?.itens?.length; } catch { /* sem rascunho */ }
+    carregarAditivo(aditivoId).then(async (reg) => {
+      if (!vivo) return;
+      setAditivo(reg);
+      if (temRascunho) return;
+      setCab((c) => ({ ...c, objeto: c.objeto || reg.estado.objeto_contrato, nup: c.nup || reg.dados.pag }));
+      const tr = await trDoContrato(reg.numero_contrato);
+      if (!tr || !vivo) return;
+      setLendo(`Lendo o Termo de Referência do contrato (${tr.nome})…`);
+      try {
+        const res = await fetch(tr.url);
+        if (!res.ok) throw new Error(`Falha ao baixar o TR do contrato (HTTP ${res.status})`);
+        const { texto, trechos } = await lerPdf(await res.arrayBuffer());
+        if (!vivo) return;
+        trechosRef.current = trechos;
+        setTextoTR(texto);
+        setNomeArquivo(`Termo de Referência do Contrato nº ${reg.dados.contrato} (${tr.nome})`);
+      } catch (e) { if (vivo) setErroTR((e as Error).message); } finally { if (vivo) setLendo(null); }
+    }).catch((e) => vivo && setErroTR(`Não abri o termo aditivo: ${(e as Error).message}`));
+    return () => { vivo = false; };
+  }, [aditivoId, chaveRascunho]);
+
+  async function enviarAoAditivo() {
+    if (!aditivoId) return;
+    setEnvio({ ok: true, txt: "Enviando ao termo aditivo…" });
+    try {
+      const linhas = itens.map((it) => ({ item: it, validos: avaliacoes[it.id].registrosValidos, considerados: avaliacoes[it.id].considerados, criterio: (resultados[it.id] ?? resultadoVazio()).criterio }));
+      const hoje = new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10).split("-").reverse().join("/");
+      const p = pesquisaParaAditivo(linhas, { fonteTr: nomeArquivo || "Termo de Referência do contrato", atualizacao: cab.correcao || "preços da data da compra (sem atualização)", hoje }, aditivo?.dados.pesquisa_precos ?? null);
+      const reg = await enviarPesquisaAoAditivo(aditivoId, p, cab.responsavel || null);
+      setAditivo(reg);
+      setEnvio({ ok: true, txt: `Pesquisa gravada no ${reg.numero_aditivo ?? ""}º Termo Aditivo (${p.itens.length} itens). Volte ao aditivo para informar o preço contratado do novo período.` });
+    } catch (e) { setEnvio({ ok: false, txt: (e as Error).message }); }
+  }
 
   // Salva rascunho (com fallback sem amostras se estourar a cota do localStorage)
   useEffect(() => {
     if (!itens.length) return;
     const t = setTimeout(() => {
       const snap = { cab, itens, params, resultados, etapa };
-      try { localStorage.setItem(RASCUNHO_KEY, JSON.stringify(snap)); }
+      try { localStorage.setItem(chaveRascunho, JSON.stringify(snap)); }
       catch {
-        try { localStorage.setItem(RASCUNHO_KEY, JSON.stringify({ ...snap, resultados: {} })); } catch { /* sem espaço */ }
+        try { localStorage.setItem(chaveRascunho, JSON.stringify({ ...snap, resultados: {} })); } catch { /* sem espaço */ }
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [cab, itens, params, resultados, etapa]);
+  }, [cab, itens, params, resultados, etapa, chaveRascunho]);
 
   function novaPesquisa() {
-    try { localStorage.removeItem(RASCUNHO_KEY); } catch { /* ok */ }
+    try { localStorage.removeItem(chaveRascunho); } catch { /* ok */ }
     setCab((c) => ({ objeto: "", nup: "", numeroCompra: "", responsavel: c.responsavel, periodoMeses: 12, uf: "" }));
     setTextoTR(""); setNomeArquivo(""); setItens([]); setResultados({});
     setRascunhoRestaurado(false); setEtapa("tr");
@@ -411,6 +458,13 @@ export default function PesquisaPrecos() {
           )}
         </div>
       </div>
+
+      {aditivoId && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
+          <span>Pesquisa de preços do <b>{aditivo?.numero_aditivo ?? "?"}º Termo Aditivo</b>{aditivo ? <> do Contrato nº <b>{aditivo.dados.contrato}</b> (PAG {aditivo.dados.pag || "—"})</> : null}. No relatório, use "Enviar ao termo aditivo".</span>
+          {onVoltarAditivo && <button onClick={() => onVoltarAditivo(aditivoId)} className="ml-auto rounded-lg border border-violet-200 bg-white px-3 py-1 font-semibold text-violet-700 hover:bg-violet-100">← Voltar ao aditivo</button>}
+        </div>
+      )}
 
       {rascunhoRestaurado && (
         <div className="text-xs rounded-lg border border-sky-200 bg-sky-50 text-sky-700 px-3 py-2">
@@ -783,7 +837,20 @@ export default function PesquisaPrecos() {
               className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-sm font-bold text-slate-700">
               ⬇ Planilha XLSX (resumo + amostras)
             </button>
+            {aditivoId && (
+              <button onClick={() => void enviarAoAditivo()}
+                className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold">
+                ↩ Enviar ao termo aditivo
+              </button>
+            )}
+            {aditivoId && envio?.ok && onVoltarAditivo && !/Enviando/.test(envio.txt) && (
+              <button onClick={() => onVoltarAditivo(aditivoId)}
+                className="px-5 py-2.5 rounded-xl border border-violet-300 bg-white hover:bg-violet-50 text-sm font-bold text-violet-700">
+                ← Voltar ao aditivo
+              </button>
+            )}
           </div>
+          {envio && <div className={`text-xs rounded-lg border px-3 py-2 ${envio.ok ? "border-violet-200 bg-violet-50 text-violet-700" : "border-red-200 bg-red-50 text-red-700"}`}>{envio.txt}</div>}
           <p className="text-xs text-slate-500">
             O relatório traz metodologia (arts. 5º e 6º da IN SEGES/ME 65/2021), resumo estatístico por item, justificativas
             de ajustes, o anexo com cada preço considerado (UASG, fornecedor, marca, data) e, na última página, as FONTES:
