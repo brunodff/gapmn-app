@@ -126,7 +126,7 @@ function fmtMoney(v: number | null) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
-type Props = { canEdit: boolean; userNome: string | null };
+type Props = { canEdit: boolean; userNome: string | null; buscaInicial?: string };
 
 // ── Helpers de campo ─────────────────────────────────────────────────────────
 
@@ -135,12 +135,12 @@ const INP = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-sl
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function CalendarioLicitacoes({ canEdit, userNome }: Props) {
+export default function CalendarioLicitacoes({ canEdit, userNome, buscaInicial }: Props) {
   const currentYear = new Date().getFullYear();
   const [anoFiltro, setAnoFiltro] = useState(currentYear);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(buscaInicial ?? "");
 
   const [modal, setModal] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [form, setForm] = useState<FormData>(EMPTY_FORM);

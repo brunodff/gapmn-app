@@ -172,6 +172,7 @@ const RESULTADO_CLASS: Record<ResultadoEnvio, string> = {
 
 interface Props {
   canManage: boolean;
+  buscaInicial?: string;
 }
 
 interface Pendencia {
@@ -179,7 +180,7 @@ interface Pendencia {
   motivo: string;
 }
 
-export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
+export default function PainelSolicitacoesEmpenho({ canManage, buscaInicial }: Props) {
   const fileRef    = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const pdfTargetId = useRef<string | null>(null);
@@ -201,7 +202,7 @@ export default function PainelSolicitacoesEmpenho({ canManage }: Props) {
   // Filtros
   const [filterStatus, setFilterStatus]     = useState<"" | Status>("");
   const [filterSemEmail, setFilterSemEmail] = useState(false);
-  const [search, setSearch]                 = useState("");
+  const [search, setSearch]                 = useState(buscaInicial ?? "");
   const [showVerificados, setShowVerificados] = useState(false);
 
   // Modais

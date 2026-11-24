@@ -31,14 +31,14 @@ async function chamarSync(body: Record<string, unknown>) {
   return data as { achadas: number; novas: number; avisos: string[] };
 }
 
-export default function PainelDou({ podeApagarTermo }: { podeApagarTermo: boolean }) {
+export default function PainelDou({ podeApagarTermo, buscaInicial }: { podeApagarTermo: boolean; buscaInicial?: string }) {
   const [rodada, setRodada] = useState<Rodada | null>(null);
   const [lista, setLista] = useState<Publicacao[] | null>(null);
   const [termos, setTermos] = useState<Termo[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [filtroTermo, setFiltroTermo] = useState("");
   const [secao, setSecao] = useState("");
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(buscaInicial ?? "");
   const [novoTermo, setNovoTermo] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; txt: string } | null>(null);

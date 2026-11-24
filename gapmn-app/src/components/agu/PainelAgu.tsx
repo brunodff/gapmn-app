@@ -27,15 +27,16 @@ const dataBR = (d: string | null | undefined) => (d ? new Date(d.length === 10 ?
 const horaBR = (d: string | null | undefined) => (d ? new Date(d).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–");
 const hojeIso = () => new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10); // Manaus
 
-export default function PainelAgu({ podeAtualizar }: { podeAtualizar: boolean }) {
+export default function PainelAgu({ podeAtualizar, buscaInicial }: { podeAtualizar: boolean; buscaInicial?: string }) {
   const [rodada, setRodada] = useState<Rodada | null>(null);
   const [lista, setLista] = useState<Referencial[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [grupo, setGrupo] = useState<Filtro>("proximos");
-  const [soVigentes, setSoVigentes] = useState(true);
-  const [soLicitacoes, setSoLicitacoes] = useState(true);
-  const [busca, setBusca] = useState("");
-  const [termo, setTermo] = useState("");
+  // vindo do assistente (busca), abre sem os filtros de vigência e de licitações, para o parecer achado aparecer
+  const [grupo, setGrupo] = useState<Filtro>(buscaInicial ? "todos" : "proximos");
+  const [soVigentes, setSoVigentes] = useState(!buscaInicial);
+  const [soLicitacoes, setSoLicitacoes] = useState(!buscaInicial);
+  const [busca, setBusca] = useState(buscaInicial ?? "");
+  const [termo, setTermo] = useState(buscaInicial ?? "");
   const [aberto, setAberto] = useState<number | null>(null);
   const [ementas, setEmentas] = useState<Record<number, string>>({});
   const [atualizando, setAtualizando] = useState(false);

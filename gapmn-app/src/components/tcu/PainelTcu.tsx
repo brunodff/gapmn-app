@@ -28,8 +28,8 @@ const horaBR = (d: string | null | undefined) => (d ? new Date(d).toLocaleString
 const fmtCnpj = (c: string) => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-export default function PainelTcu({ podeAtualizar }: { podeAtualizar: boolean }) {
-  const [aba, setAba] = useState<Aba>("fornecedores");
+export default function PainelTcu({ podeAtualizar, buscaInicial }: { podeAtualizar: boolean; buscaInicial?: string }) {
+  const [aba, setAba] = useState<Aba>(buscaInicial ? "acordaos" : "fornecedores");
   const [rodada, setRodada] = useState<Rodada | null>(null);
   const [sancoes, setSancoes] = useState<Sancao[] | null>(null);
   const [atualizando, setAtualizando] = useState(false);
@@ -103,7 +103,7 @@ export default function PainelTcu({ podeAtualizar }: { podeAtualizar: boolean })
       </div>
 
       {aba === "fornecedores" && <Fornecedores sancoes={sancoes} total={resumo.fornecedores} pendentes={resumo.cadirreg_pendentes} />}
-      {aba === "acordaos" && <Acordaos />}
+      {aba === "acordaos" && <Acordaos buscaInicial={buscaInicial} />}
       {aba === "informativos" && <Informativos />}
     </div>
   );
@@ -157,11 +157,11 @@ function Fornecedores({ sancoes, total, pendentes }: { sancoes: Sancao[] | null;
 }
 
 // ── Acórdãos recentes sobre licitações e contratos ───────────────────────────
-function Acordaos() {
+function Acordaos({ buscaInicial }: { buscaInicial?: string }) {
   const [lista, setLista] = useState<Acordao[] | null>(null);
   const [tema, setTema] = useState<string | null>(null);
   const [soDefesa, setSoDefesa] = useState(false);
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(buscaInicial ?? "");
   const [aberto, setAberto] = useState<string | null>(null);
 
   useEffect(() => {

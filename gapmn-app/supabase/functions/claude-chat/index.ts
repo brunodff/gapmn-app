@@ -1,20 +1,22 @@
 // @ts-nocheck
 /**
  * Edge Function: claude-chat
- * Proxy para a API do Groq (gratuito, modelo Llama 3.3 70B).
+ * Proxy para a API do Groq (gratuito). Sem uso no app desde nov/2026: o chat usa a função "assistente".
+ * Exige login (antes aceitava qualquer chamada e podia gastar a cota do Groq).
  *
  * Deploy:
- *   supabase functions deploy claude-chat --no-verify-jwt
+ *   supabase functions deploy claude-chat
  *
  * Secret:
  *   supabase secrets set GROQ_API_KEY=gsk_...
  */
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 
-const SYSTEM_PROMPT = `Você é o assistente do Aplicativo do GAP-MN (Grupo de Apoio ao Parque de Material de Manutenção da Força Aérea Brasileira, UASG 120630).
+const SYSTEM_PROMPT = `Você é o assistente do Aplicativo do GAP-MN (Grupamento de Apoio de Manaus, Força Aérea Brasileira, UASG 120630).
 
 Sua função EXCLUSIVA é responder perguntas sobre os dados do aplicativo:
 - Contratos gerenciados pela SCON (contratado, objeto, valor, fiscal, vigência, saldo a empenhar, a liquidar)
@@ -31,6 +33,14 @@ Responda sempre em português do Brasil, de forma direta e objetiva. Não invent
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // só usuário logado do app (a chave pública sozinha não basta)
+  const auth = req.headers.get("authorization") ?? "";
+  const sb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "", { global: { headers: { Authorization: auth } } });
+  const { data: quem } = await sb.auth.getUser(auth.replace(/^Bearer\s+/i, ""));
+  if (!quem?.user) {
+    return new Response(JSON.stringify({ error: "login necessário" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
   try {
@@ -57,7 +67,7 @@ Deno.serve(async (req: Request) => {
         "Authorization": `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: Deno.env.get("GROQ_MODEL") ?? "openai/gpt-oss-120b",
         max_tokens: 1024,
         messages: [
           { role: "system", content: systemContent },

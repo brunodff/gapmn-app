@@ -25,6 +25,7 @@ import FerramentasGestao from "./FerramentasGestao";
 // OrdensBancarias removido
 import PainelAnalytics from "../components/PainelAnalytics";
 import CalendarioLicitacoes from "../components/CalendarioLicitacoes";
+import { lerLinkApp, perguntar as perguntarAssistente, type Fonte as FonteAssistente } from "../lib/assistente/cliente";
 import PesquisaPrecos from "../components/PesquisaPrecos";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -63,6 +64,11 @@ type View =
   | "calendario" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
   | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu" | "agu" | "mapa-compras" | "dou";
+
+// Telas que abrem pelo endereço (?vista=…): o Painel de Governança usa ?painel=governanca; administração fica fora
+const VISTAS_URL: View[] = ["processos", "contratos", "reajustes", "reajuste-om", "tcu", "agu", "mapa-compras", "dou", "indicadores", "atas",
+  "solicitacoes", "calendario", "pesquisa-precos", "painel-orcamento", "painel-rp", "painel-execucao", "painel-contratos", "ferramentas"];
+const vistaDaUrl = (v: string | null): View | null => (v && (VISTAS_URL as string[]).includes(v) ? (v as View) : null);
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
 type KPIs     = { empenhos: number; processos: number; contratos: number; il: number; atas: number };
@@ -873,11 +879,32 @@ function StatCard({ icon, label, value, accent, trend, pct, spark }: StatProps) 
 }
 
 // ── Celia chat ────────────────────────────────────────────────────────────────
-function CeliaWidget({ kpis }: { kpis: KPIs }) {
+// Texto da resposta do assistente: parágrafos, marcadores (- •) e **negrito**
+function TextoAssistente({ texto }: { texto: string }) {
+  const negrito = (linha: string) => linha.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
+    /^\*\*[^*]+\*\*$/.test(p) ? <strong key={i}>{p.slice(2, -2)}</strong> : <span key={i}>{p.replace(/`/g, "")}</span>);
+  return (
+    <>
+      {texto.split("\n").map((l, i) => {
+        const t = l.trim();
+        if (!t) return <div key={i} style={{ height: 6 }} />;
+        if (/^#{1,4}\s/.test(t)) return <div key={i} style={{ fontWeight: 700, marginTop: 2 }}>{negrito(t.replace(/^#+\s*/, ""))}</div>;
+        const m = /^([-*•]|\d+[.)])\s+(.*)$/.exec(t);
+        if (m) return <div key={i} style={{ display: "flex", gap: 6, paddingLeft: 2 }}><span style={{ color: T.cyan }}>{/\d/.test(m[1]) ? m[1] : "•"}</span><span>{negrito(m[2])}</span></div>;
+        return <div key={i}>{negrito(t)}</div>;
+      })}
+    </>
+  );
+}
+
+type MsgCelia = { from: "bot" | "user"; text: string; fontes?: FonteAssistente[]; aviso?: string };
+
+function CeliaWidget({ kpis, onAbrir }: { kpis: KPIs; onAbrir: (link: string) => void }) {
   const [phase, setPhase] = useState<"balloon" | "chat" | "idle">("balloon");
-  const [msgs,  setMsgs]  = useState([{ from: "bot", text: "👋 Bem-vindo ao GAP-MN! Como posso ajudar?" }]);
+  const [msgs,  setMsgs]  = useState<MsgCelia[]>([{ from: "bot", text: "👋 Bem-vindo ao GAP-MN! Pergunte sobre contratos, reajustes, licitações, atas, empenhos, crédito, solicitações, DOU, TCU ou AGU: respondo com os dados do app e mostro onde ver." }]);
   const [inp,   setInp]   = useState("");
   const [busy,  setBusy]  = useState(false);
+  const [etapa, setEtapa] = useState("");
   const endRef    = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
 
@@ -886,18 +913,25 @@ function CeliaWidget({ kpis }: { kpis: KPIs }) {
     return () => clearTimeout(t);
   }, []);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy, etapa]);
 
   async function send(override?: string) {
     const t = (override ?? inp).trim();
     if (!t || busy) return;
     setInp("");
+    const historico = msgs.slice(1).filter(m => !m.aviso).map(m => ({ papel: m.from === "user" ? "usuario" as const : "assistente" as const, texto: m.text }));
     setMsgs(p => [...p, { from: "user", text: t }]);
     logActivity("chatbot_query", undefined, t);
-    setBusy(true);
-    await new Promise(r => setTimeout(r, 750));
-    setBusy(false);
-    setMsgs(p => [...p, { from: "bot", text: getCeliaResponse(t, kpis) }]);
+    setBusy(true); setEtapa("Consultando os dados do app…");
+    try {
+      const r = await perguntarAssistente(t, historico, setEtapa);
+      setMsgs(p => [...p, { from: "bot", text: r.resposta, fontes: r.fontes }]);
+    } catch (e) {
+      // sem a IA (cota do dia, rede): a resposta fixa de antes, com o aviso
+      setMsgs(p => [...p, { from: "bot", text: getCeliaResponse(t, kpis), aviso: `Respondi sem consultar o banco: ${(e as Error)?.message ?? e}` }]);
+    } finally {
+      setBusy(false); setEtapa("");
+    }
   }
 
   return (
@@ -919,7 +953,7 @@ function CeliaWidget({ kpis }: { kpis: KPIs }) {
 
       {phase === "chat" && (
         <div style={{
-          width: 310, background: T.pop, backdropFilter: "blur(24px)",
+          width: "min(420px, calc(100vw - 32px))", background: T.pop, backdropFilter: "blur(24px)",
           border: `1px solid ${T.bdr2}`, borderRadius: 16, overflow: "hidden",
           boxShadow: "0 24px 64px rgba(0,0,0,0.65)", animation: "dashFadeIn 0.22s ease-out",
           display: "flex", flexDirection: "column",
@@ -940,28 +974,39 @@ function CeliaWidget({ kpis }: { kpis: KPIs }) {
               style={{ marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", color: T.muted, fontSize: 16 }}>✕</button>
           </div>
 
-          <div style={{ height: 210, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ height: "min(420px, calc(100vh - 260px))", overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: 8 }}>
             {msgs.map((m, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: m.from === "user" ? "flex-end" : "flex-start" }}>
+              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.from === "user" ? "flex-end" : "flex-start", gap: 5 }}>
                 <div style={{
-                  maxWidth: "88%", padding: "8px 12px", fontSize: 12, lineHeight: 1.5,
+                  maxWidth: "92%", padding: "8px 12px", fontSize: 12, lineHeight: 1.5,
                   borderRadius: m.from === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
                   background: m.from === "user" ? T.cyan2 : T.surf2,
-                  color: T.txt, fontFamily: T.font,
-                }}>{m.text}</div>
+                  color: T.txt, fontFamily: T.font, wordBreak: "break-word",
+                }}>{m.from === "bot" ? <TextoAssistente texto={m.text} /> : m.text}</div>
+                {m.aviso && <div style={{ maxWidth: "92%", fontSize: 10, color: T.muted, fontFamily: T.font }}>⚠ {m.aviso}</div>}
+                {!!m.fontes?.length && (
+                  <div style={{ maxWidth: "92%", display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {m.fontes.map((f, j) => f.externo
+                      ? <a key={j} href={f.link} target="_blank" rel="noreferrer"
+                          style={{ fontSize: 10, color: T.cyan, border: `1px solid ${T.cyan}55`, borderRadius: 6, padding: "2px 8px", textDecoration: "none", fontFamily: T.font }}>↗ {f.rotulo}</a>
+                      : <button key={j} onClick={() => onAbrir(f.link)}
+                          style={{ fontSize: 10, color: T.cyan, background: "transparent", border: `1px solid ${T.cyan}55`, borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontFamily: T.font }}>📍 {f.rotulo}</button>)}
+                  </div>
+                )}
               </div>
             ))}
             {busy && (
-              <div style={{ display: "flex" }}>
-                <div style={{ padding: "8px 14px", borderRadius: "12px 12px 12px 3px",
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ padding: "8px 14px", borderRadius: "12px 12px 12px 3px", alignSelf: "flex-start",
                   background: T.surf2, color: T.muted, fontSize: 13, letterSpacing: 3 }}>• • •</div>
+                {etapa && <div style={{ fontSize: 10, color: T.muted, fontFamily: T.font }}>{etapa}</div>}
               </div>
             )}
             <div ref={endRef} />
           </div>
 
           <div style={{ padding: "4px 12px 6px", display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {["Empenhos", "Processos", "ATAs", "Ferramentas"].map(q => (
+            {["Contratos que vencem em 90 dias", "Reajustes devidos", "Licitações em andamento", "Saldo de crédito disponível"].map(q => (
               <button key={q} onClick={() => send(q)}
                 style={{ background: T.surf, border: `1px solid ${T.bdr}`, borderRadius: 6,
                   padding: "3px 9px", fontSize: 10, color: T.muted, cursor: "pointer",
@@ -975,7 +1020,7 @@ function CeliaWidget({ kpis }: { kpis: KPIs }) {
           <div style={{ padding: "6px 12px 12px", display: "flex", gap: 8, alignItems: "center" }}>
             <input value={inp} onChange={e => setInp(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") send(); }}
-              placeholder="Mensagem…"
+              placeholder="Pergunte sobre os dados do app…"
               style={{ flex: 1, background: T.surf, border: `1px solid ${T.bdr}`,
                 borderRadius: 8, padding: "7px 10px", fontSize: 12,
                 color: T.txt, outline: "none", fontFamily: T.font }} />
@@ -1254,30 +1299,36 @@ export default function AppChat() {
   // dele poderem ser compartilhados por link; as outras telas seguem só no estado.
   // ?vista=ferramentas abre a Central de Ferramentas: é para onde vão os endereços antigos
   // /ferramentas e /cnet; vale só na entrada e sai do endereço na primeira troca de tela.
+  // ?vista=<tela>&busca=<texto> abre a tela já filtrada (links do assistente; vale só na entrada).
   const [params,         setParams]     = useSearchParams();
   const [view,           setViewRaw]    = useState<View>(() => (
-    params.get("painel") === "governanca" ? "painel-governanca"
-      : params.get("vista") === "ferramentas" ? "ferramentas"
-      : params.get("vista") === "reajustes" ? "reajustes"
-      : params.get("vista") === "reajuste-om" ? "reajuste-om"
-      : params.get("vista") === "tcu" ? "tcu"
-      : params.get("vista") === "agu" ? "agu"
-      : params.get("vista") === "mapa-compras" ? "mapa-compras"
-      : params.get("vista") === "dou" ? "dou"
-      : "dashboard"));
+    params.get("painel") === "governanca" ? "painel-governanca" : vistaDaUrl(params.get("vista")) ?? "dashboard"));
+  const [alvo,           setAlvo]       = useState<{ busca: string; n: number }>(() => ({ busca: params.get("busca") ?? "", n: 0 }));
   const [filterTipo,     setFilterTipo] = useState("todos");
 
   // Reajustes fica no endereço (?vista=reajustes&contrato=…), para o link do contrato abrir direto nele.
   function setView(v: View, contrato?: string) {
     setViewRaw(v);
+    setAlvo(a => ({ busca: "", n: a.n }));
     logActivity("page_view", v);
     const p = new URLSearchParams(params);
-    p.delete("vista"); p.delete("contrato"); p.delete("aba");
+    p.delete("vista"); p.delete("contrato"); p.delete("aba"); p.delete("busca");
     if (v === "reajustes") { p.set("vista", "reajustes"); if (contrato) p.set("contrato", contrato); }
     if (v === "reajuste-om") p.set("vista", "reajuste-om");
     if (v === "painel-governanca") p.set("painel", "governanca");
     else if (p.get("painel") === "governanca") for (const k of ["painel", "div", "cat", "st", "q", "comp"]) p.delete(k);
     if (p.toString() !== params.toString()) setParams(p, { replace: true });
+  }
+
+  // Botão "📍" do assistente: abre a tela do app com a busca (link de fora do app abre em outra aba)
+  function abrirLink(link: string) {
+    const l = lerLinkApp(link);
+    if (!l) { window.open(link, "_blank", "noopener"); return; }
+    const v = vistaDaUrl(l.vista);
+    if (!v) return;
+    if (v === "reajustes") { setView("reajustes", l.contrato ?? undefined); return; }
+    setView(v);
+    setAlvo(a => ({ busca: l.busca ?? "", n: a.n + 1 }));
   }
   const [showProf,       setShowProf]   = useState(false);
   const [userNotifs,     setUserNotifs] = useState<BellItem[]>([]);
@@ -1804,19 +1855,19 @@ export default function AppChat() {
             )}
 
             {/* ── Setor views ── */}
-            {view === "processos"     && <div className="svdark"><GerenciamentoProcessos canImport={canImportPrc} canEdit={canEdit} canEditElaboracao={canImportPrc} /></div>}
-            {view === "contratos"     && <div className="svdark"><GerenciamentoContratos canImport={canImportCtr} canEdit={canEdit} canEditBudget={canImportCtr} onAbrirReajuste={(n) => setView("reajustes", n)} /></div>}
+            {view === "processos"     && <div className="svdark"><GerenciamentoProcessos key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canImport={canImportPrc} canEdit={canEdit} canEditElaboracao={canImportPrc} /></div>}
+            {view === "contratos"     && <div className="svdark"><GerenciamentoContratos key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canImport={canImportCtr} canEdit={canEdit} canEditBudget={canImportCtr} onAbrirReajuste={(n) => setView("reajustes", n)} /></div>}
             {/* overflow visível: a barra de ações do reajuste fica presa no rodapé da área rolável */}
             {view === "reajustes"     && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><Reajustes /></div>}
             {view === "reajuste-om"   && <div className="svdark" style={{ overflow: "visible", padding: 16 }}><ReajusteOM /></div>}
-            {view === "tcu"           && <div className="svdark" style={{ padding: 16 }}><PainelTcu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
-            {view === "agu"           && <div className="svdark" style={{ padding: 16 }}><PainelAgu podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
+            {view === "tcu"           && <div className="svdark" style={{ padding: 16 }}><PainelTcu key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
+            {view === "agu"           && <div className="svdark" style={{ padding: 16 }}><PainelAgu key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} podeAtualizar={isDev || ["SLIC", "SCON", "ADMIN"].includes(user.setor ?? "")} /></div>}
             {view === "mapa-compras"  && <div className="svdark" style={{ padding: 16 }}><MapaCompras /></div>}
-            {view === "dou"           && <div className="svdark" style={{ padding: 16 }}><PainelDou podeApagarTermo={isDev || user.setor === "ADMIN"} /></div>}
-            {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao canImport={canImportInd} /></div>}
-            {view === "atas"          && <div className="svdark"><AtasRegistroPreco canSync={canImportPrc} /></div>}
-            {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho canManage={canManageSolicit} /></div>}
-            {view === "calendario"    && <div className="svdark"><CalendarioLicitacoes canEdit={canImportPrc} userNome={user.nome} /></div>}
+            {view === "dou"           && <div className="svdark" style={{ padding: 16 }}><PainelDou key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} podeApagarTermo={isDev || user.setor === "ADMIN"} /></div>}
+            {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canImport={canImportInd} /></div>}
+            {view === "atas"          && <div className="svdark"><AtasRegistroPreco key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canSync={canImportPrc} /></div>}
+            {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canManage={canManageSolicit} /></div>}
+            {view === "calendario"    && <div className="svdark"><CalendarioLicitacoes key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} userNome={user.nome} /></div>}
             {view === "pesquisa-precos" && <div className="svdark"><PesquisaPrecos /></div>}
 
             {/* ── Panel views ── */}
@@ -1831,7 +1882,7 @@ export default function AppChat() {
                 </div>
               </div>
             )}
-            {view === "painel-execucao"  && <PainelExecucao />}
+            {view === "painel-execucao"  && <PainelExecucao key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} />}
             {view === "painel-governanca" && (
               isDev || user.setor === "ADMIN"
                 ? <PainelGovernanca />
@@ -1874,7 +1925,7 @@ export default function AppChat() {
           </div>
         </div>
 
-        <CeliaWidget kpis={kpis} />
+        <CeliaWidget kpis={kpis} onAbrir={abrirLink} />
 
         {showProf && (
           <ProfileModal user={user} onSave={saveProfile} onClose={() => setShowProf(false)} />

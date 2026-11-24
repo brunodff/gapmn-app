@@ -204,12 +204,12 @@ export async function fetchInccRange(inicio: string, fim: string): Promise<IpcaR
 }
 
 // ── componente principal ────────────────────────────────────────────────────
-interface Props { canSync: boolean }
+interface Props { canSync: boolean; buscaInicial?: string }
 
-export default function AtasRegistroPreco({ canSync }: Props) {
+export default function AtasRegistroPreco({ canSync, buscaInicial }: Props) {
   const [atas, setAtas]         = useState<Ata[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [busca, setBusca]       = useState("");
+  const [busca, setBusca]       = useState(buscaInicial ?? "");
   const [filtro, setFiltro]     = useState<"todas" | "ativas" | "encerradas">("ativas");
   const [filtroCompra, setFiltroCompra] = useState<string>("");
   const [expanded, setExpanded] = useState<string | null>(null);

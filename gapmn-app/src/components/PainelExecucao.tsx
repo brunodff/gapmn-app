@@ -156,11 +156,11 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 
 type Ordem = "valor" | "aLiquidar" | "liquidadoPagar" | "emissao" | "assinatura" | "ne";
 
-export default function PainelExecucao() {
+export default function PainelExecucao({ buscaInicial }: { buscaInicial?: string } = {}) {
   const [dados, setDados] = useState<DadosExecucao | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [f, setF] = useState<Filtros>(FILTROS_VAZIOS);
+  const [f, setF] = useState<Filtros>(() => (buscaInicial ? { ...FILTROS_VAZIOS, busca: buscaInicial } : FILTROS_VAZIOS));
   const [ordem, setOrdem] = useState<Ordem>("valor");
   const [limite, setLimite] = useState(30);
   const [abertas, setAbertas] = useState<Set<string>>(new Set());

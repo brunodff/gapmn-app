@@ -32,7 +32,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 const API = "https://dadosabertos.compras.gov.br";
 const TAM_PAGINA = 500;
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
-const GROQ_MODEL = Deno.env.get("GROQ_MODEL") ?? "llama-3.3-70b-versatile";
+const GROQ_MODEL = Deno.env.get("GROQ_MODEL") ?? "openai/gpt-oss-120b"; // o llama-3.3-70b saiu do plano gratuito em 2026
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

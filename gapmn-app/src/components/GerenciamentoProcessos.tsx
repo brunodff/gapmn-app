@@ -179,8 +179,8 @@ function montarLinhas(processos: Processo[], cnet: CnetProcesso[]): Linha[] {
 }
 
 // ─── Componente principal ────────────────────────────────────────────────────
-interface GerProcessosProps { canImport?: boolean; canEdit?: boolean; canEditElaboracao?: boolean; }
-export default function GerenciamentoProcessos({ canImport = true }: GerProcessosProps) {
+interface GerProcessosProps { canImport?: boolean; canEdit?: boolean; canEditElaboracao?: boolean; buscaInicial?: string }
+export default function GerenciamentoProcessos({ canImport = true, buscaInicial }: GerProcessosProps) {
   const [processos, setProcessos] = useState<Processo[]>([]);
   const [cnet, setCnet]           = useState<CnetProcesso[]>([]);
   const [logPublico, setLogPublico] = useState<SyncLog | null>(null);
@@ -196,7 +196,7 @@ export default function GerenciamentoProcessos({ canImport = true }: GerProcesso
   const [filtroAno,   setFiltroAno]   = useState("todos");
   const [filtroSit,   setFiltroSit]   = useState("todos");
   const [filtroMod,   setFiltroMod]   = useState("todos");
-  const [filtroTexto, setFiltroTexto] = useState("");
+  const [filtroTexto, setFiltroTexto] = useState(buscaInicial ?? "");
 
   useEffect(() => { load(); }, []);
 

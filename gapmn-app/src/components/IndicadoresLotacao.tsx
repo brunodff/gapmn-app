@@ -265,9 +265,9 @@ function parseEmpenhoBuffer(buf: ArrayBuffer): Partial<EmpenhoSeo>[] {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-interface Props { canImport: boolean; }
+interface Props { canImport: boolean; buscaInicial?: string }
 
-export default function IndicadoresLotacao({ canImport }: Props) {
+export default function IndicadoresLotacao({ canImport, buscaInicial }: Props) {
   type SubTab = "indicadores" | "empenhos" | "gerenciamento";
   const [subTab, setSubTab] = useState<SubTab>("indicadores");
   const [showHelp, setShowHelp] = useState(false);
@@ -302,7 +302,7 @@ export default function IndicadoresLotacao({ canImport }: Props) {
   const [filtroNatureza,    setFiltroNatureza]    = useState("todos");
   const [filtroPI,          setFiltroPI]          = useState("todos");
   const [filtroUgCred,      setFiltroUgCred]      = useState("todos");
-  const [filtroTexto,       setFiltroTexto]       = useState("");
+  const [filtroTexto,       setFiltroTexto]       = useState(buscaInicial ?? "");
   const [filtroContrato,    setFiltroContrato]    = useState("");
 
   // ── PI descriptions (from pi_descricoes table, synced daily from Google Sheets) ──

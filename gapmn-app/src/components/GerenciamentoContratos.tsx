@@ -416,8 +416,10 @@ interface GerContratoProps {
   canImport?: boolean; canEdit?: boolean; canEditBudget?: boolean;
   /** abre a tela de Reajustes do app (no contrato, se vier o número) */
   onAbrirReajuste?: (numeroContrato?: string) => void;
+  /** busca já preenchida (link do assistente: /app?vista=contratos&busca=…) */
+  buscaInicial?: string;
 }
-export default function GerenciamentoContratos({ canImport = true, canEdit = true, canEditBudget = false, onAbrirReajuste }: GerContratoProps) {
+export default function GerenciamentoContratos({ canImport = true, canEdit = true, canEditBudget = false, onAbrirReajuste, buscaInicial }: GerContratoProps) {
   // fora do app (sem a função), vai para a tela de Reajustes do app pelo endereço
   const abrirReajuste = (numero?: string) => {
     if (onAbrirReajuste) { onAbrirReajuste(numero); return; }
@@ -548,7 +550,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [savingForm, setSavingForm] = useState(false);
 
   // Filtros
-  const [filtroTexto, setFiltroTexto]     = useState("");
+  const [filtroTexto, setFiltroTexto]     = useState(buscaInicial ?? "");
   const [filtroStatus, setFiltroStatus]   = useState("todos");
   const [filtroAno, setFiltroAno]         = useState("todos");
   const [filtroUgr, setFiltroUgr]         = useState("todos");
