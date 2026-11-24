@@ -25,6 +25,7 @@ import FerramentasGestao from "./FerramentasGestao";
 // OrdensBancarias removido
 import PainelAnalytics from "../components/PainelAnalytics";
 import CalendarioLicitacoes from "../components/CalendarioLicitacoes";
+import AcompanhamentoPca from "../components/pca/AcompanhamentoPca";
 import { consultarCota, ErroAssistente, lerLinkApp, perguntar as perguntarAssistente, textoCota, type Cota as CotaIA, type Fonte as FonteAssistente } from "../lib/assistente/cliente";
 import PesquisaPrecos from "../components/PesquisaPrecos";
 
@@ -61,13 +62,13 @@ const GOV_URL = "https://app.powerbi.com/view?r=eyJrIjoiMGI0ZDUxZDAtOTQzOC00YmNi
 // ── Types ──────────────────────────────────────────────────────────────────────
 type View =
   | "dashboard" | "processos" | "contratos" | "indicadores" | "atas" | "solicitacoes"
-  | "calendario" | "pesquisa-precos"
+  | "calendario" | "pca" | "pesquisa-precos"
   | "painel-orcamento" | "painel-rp" | "painel-processos" | "painel-execucao"
   | "painel-contratos" | "painel-governanca" | "ferramentas" | "admin" | "analytics" | "reajustes" | "reajuste-om" | "tcu" | "agu" | "mapa-compras" | "dou";
 
 // Telas que abrem pelo endereço (?vista=…): o Painel de Governança usa ?painel=governanca; administração fica fora
 const VISTAS_URL: View[] = ["processos", "contratos", "reajustes", "reajuste-om", "tcu", "agu", "mapa-compras", "dou", "indicadores", "atas",
-  "solicitacoes", "calendario", "pesquisa-precos", "painel-orcamento", "painel-rp", "painel-execucao", "painel-contratos", "ferramentas"];
+  "solicitacoes", "calendario", "pca", "pesquisa-precos", "painel-orcamento", "painel-rp", "painel-execucao", "painel-contratos", "ferramentas"];
 const vistaDaUrl = (v: string | null): View | null => (v && (VISTAS_URL as string[]).includes(v) ? (v as View) : null);
 
 type UserInfo = { id?: string; nome: string; avatarKey?: string | null; setor?: string | null };
@@ -94,6 +95,7 @@ const VIEW_LABELS: Record<View, string> = {
   "painel-contratos":   "Painel de Contratos",
   "painel-governanca":  "Painel de Governança",
   calendario:           "Planejamento",
+  pca:                  "Acompanhamento do PCA",
   "pesquisa-precos":    "Pesquisa de Preços",
   ferramentas:          "Ferramentas de Gestão",
   admin:                "Administração",
@@ -351,7 +353,7 @@ const NAV: NavNode[] = [
   { id: "lic",     label: "Licitações",           icon: "⚖️", children: [
     { label: "Processos",   path: "view:processos",  icon: "📋" },
     { label: "Atas de RP",  path: "view:atas",       icon: "📄" },
-    { label: "Planejamento", path: "view:calendario", icon: "📅", slicOnly: true },
+    { label: "Acompanhamento do PCA", path: "view:pca", icon: "📅" },
     { label: "Pesquisa de Preços", path: "view:pesquisa-precos", icon: "💲" },
     { label: "Mapa das compras", path: "view:mapa-compras", icon: "🗺️" },
     { label: "TCU: jurisprudência e sanções", path: "view:tcu", icon: "🏛️" },
@@ -1906,6 +1908,7 @@ export default function AppChat() {
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canManage={canManageSolicit} /></div>}
+            {view === "pca"           && <div className="svdark"><AcompanhamentoPca key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} /></div>}
             {view === "calendario"    && <div className="svdark"><CalendarioLicitacoes key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} userNome={user.nome} /></div>}
             {view === "pesquisa-precos" && <div className="svdark"><PesquisaPrecos /></div>}
 
