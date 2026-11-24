@@ -6,6 +6,7 @@ import TermoApostilamentoContrato from "./TermoApostilamentoContrato";
 import { montarHistorico, projetarContratos, coberturaMeses, type CfgPrevisao, type Regime } from "../lib/previsaoContratos";
 import { useExecucaoContratos } from "../lib/contratos/useExecucaoContratos";
 import { neCanonica } from "../lib/contratos/execucao.ts";
+import { contarTipos, tipoDoContrato, TIPOS_CONTRATO, type TipoContrato } from "../lib/contratos/tipoContrato";
 import ExecucaoContrato from "./ExecucaoContrato";
 import { carregarCfgs, salvarCfg } from "../lib/previsaoConfig";
 import { PrevisaoResumoContrato, RegimeEditor, PrevisaoNoCard, type EstadoSiafi } from "./PrevisaoContratos";
@@ -553,6 +554,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const [filtroUgr, setFiltroUgr]         = useState("todos");
   const [filtroFiscal, setFiltroFiscal]   = useState("todos");
   const [filtroPi, setFiltroPi]           = useState("todos");
+  const [filtroTipo, setFiltroTipo]       = useState<TipoContrato | "todos">("todos");
   const [sortBy, setSortBy]               = useState<"none" | "saldo_asc" | "saldo_desc" | "liquidar_asc" | "liquidar_desc" | "vencimento_asc" | "reajuste_asc" | "credito_desc">("none");
 
   // ── Carga ────────────────────────────────────────────────────────────────
@@ -943,6 +945,7 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
   const filtered = useMemo(() => {
     const q = filtroTexto.trim().toLowerCase();
     return contratos.filter((c) => {
+      if (filtroTipo !== "todos" && tipoDoContrato(c.numero_contrato) !== filtroTipo) return false;
       if (filtroAno !== "todos" && !c.data_inicio?.startsWith(filtroAno)) return false;
       if (filtroUgr !== "todos" && c.ugr !== filtroUgr) return false;
       if (filtroFiscal !== "todos" && c.fiscal !== filtroFiscal) return false;
@@ -959,7 +962,8 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       }
       return true;
     });
-  }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal, filtroPi, piByPag]);
+  }, [contratos, filtroTexto, filtroAno, filtroUgr, filtroStatus, filtroFiscal, filtroPi, filtroTipo, piByPag]);
+  const contagemTipos = useMemo(() => contarTipos(contratos.map((c) => c.numero_contrato)), [contratos]);
 
   // ── Previsão orçamentária ────────────────────────────────────────────────
   // Data de referência fixa na sessão: a previsão não troca de mês com a tela aberta
@@ -1284,6 +1288,19 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
       {/* Filtros */}
       <Card>
         <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={filtroTipo}
+            onChange={(e) => setFiltroTipo(e.target.value as TipoContrato | "todos")}
+            title="Tipo do contrato (começo do número no SILOMS)"
+            className="rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+          >
+            <option value="todos">Todos os tipos ({contratos.length})</option>
+            {TIPOS_CONTRATO.filter(({ tipo }) => contagemTipos.get(tipo)).map(({ tipo, rotulo }) => (
+              <option key={tipo} value={tipo}>{rotulo} ({contagemTipos.get(tipo)})</option>
+            ))}
+            {!!contagemTipos.get("OUTRO") && <option value="OUTRO">Sem tipo no número ({contagemTipos.get("OUTRO")})</option>}
+          </select>
+
           <select
             value={filtroAno}
             onChange={(e) => setFiltroAno(e.target.value)}

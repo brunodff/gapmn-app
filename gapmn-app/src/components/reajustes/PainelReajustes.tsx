@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { painel, dataBaseDe, isoDaVigencia, ROTULOS, CORES, type StatusReajuste } from "../../lib/apostilamento/painel";
 import type { ContratoScon } from "../../lib/apostilamento/cadastro";
+import { contarTipos, tipoDoContrato, TIPOS_CONTRATO, type TipoContrato } from "../../lib/contratos/tipoContrato";
 
 export type Cadastro = {
   numero_contrato: string; data_base: string | null; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string | null;
@@ -25,10 +26,13 @@ const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, 
 export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAbrir }: Props) {
   const [filtro, setFiltro] = useState<StatusReajuste | "TODOS" | "PRONTOS">("TODOS");
   const [busca, setBusca] = useState("");
+  const [tipo, setTipo] = useState<TipoContrato | "TODOS">("TODOS");
+  const contagemTipos = useMemo(() => contarTipos(contratos.map((c) => c.numero_contrato)), [contratos]);
 
   const linhas = useMemo(() => {
-    const porNumero = new Map(contratos.map((c) => [c.numero_contrato, c]));
-    const entrada = contratos.map((c) => {
+    const doTipo = tipo === "TODOS" ? contratos : contratos.filter((c) => tipoDoContrato(c.numero_contrato) === tipo);
+    const porNumero = new Map(doTipo.map((c) => [c.numero_contrato, c]));
+    const entrada = doTipo.map((c) => {
       const cad = cadastros.get(c.numero_contrato);
       return {
         contrato: c.numero_contrato,
@@ -41,7 +45,7 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
       };
     });
     return painel(entrada, undefined, diasAlerta).map((l) => ({ ...l, c: porNumero.get(l.contrato)!, cad: cadastros.get(l.contrato), data_base: entrada.find((e) => e.contrato === l.contrato)?.data_base ?? null }));
-  }, [contratos, cadastros, diasAlerta]);
+  }, [contratos, cadastros, diasAlerta, tipo]);
 
   const contagem = useMemo(() => {
     const m = new Map<StatusReajuste, number>();
@@ -73,8 +77,16 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
             {ROTULOS[s]} ({contagem.get(s)})
           </button>
         ))}
+        <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoContrato | "TODOS")} title="Tipo do contrato (começo do número no SILOMS)"
+          className="ml-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-sky-300">
+          <option value="TODOS">Todos os tipos ({contratos.length})</option>
+          {TIPOS_CONTRATO.filter((t) => contagemTipos.get(t.tipo)).map((t) => (
+            <option key={t.tipo} value={t.tipo}>{t.rotulo} ({contagemTipos.get(t.tipo)})</option>
+          ))}
+          {!!contagemTipos.get("OUTRO") && <option value="OUTRO">Sem tipo no número ({contagemTipos.get("OUTRO")})</option>}
+        </select>
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar contrato, empresa ou objeto…"
-          className="ml-auto w-72 rounded-lg border border-slate-200 px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-sky-300" />
+          className="w-72 rounded-lg border border-slate-200 px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-sky-300" />
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-xs">
