@@ -125,7 +125,7 @@
 .po-vazio-escuro { color: var(--po-cinza); }
 
 /* Cartões de resumo */
-.po-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 6px; }
+.po-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 12px 6px; }
 .po-kpi {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   min-width: 0; padding: 2px 14px; border-left: 1px solid #3d4650;
@@ -134,6 +134,10 @@
 .po-kpi-rot { font-size: 12px; color: #3d4650; }
 .po-kpi-val { font-size: clamp(16px, 1.9cqi, 22px); font-weight: 700; white-space: nowrap; color: var(--po-escuro); font-variant-numeric: tabular-nums; }
 .po-kpi-ico { flex: none; color: var(--po-escuro); }
+@container po (max-width: 900px) {
+  .po-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+  .po-kpi:nth-child(odd) { margin-left: 0; }
+}
 @container po (max-width: 620px) {
   .po-kpis { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .po-kpi + .po-kpi { margin-left: 0; }

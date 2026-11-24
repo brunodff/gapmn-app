@@ -193,8 +193,10 @@ export function montarPainel(d: DadosOrcamento, f: FiltroCredito, hoje = hojeEmM
   const disponivelND = d.disponivel.filter(daND);
   const disponivel = disponivelPorUnidade(disponivelND, recebidoNoDia, creditosPorLinha(d.recebido), hoje);
 
+  const disponivelSelecao = f.om ? disponivel.filter((u) => u.sigla === f.om).reduce((s, u) => s + u.valor, 0) : disponivelND.reduce((s, l) => s + l.valor, 0);
   return {
     hoje, ano, atualizadoEm, recebido, empenhado,
+    disponivelSelecao, semExplicacao: Math.round((recebido - empenhado - disponivelSelecao) * 100) / 100,
     pctEmpenhado: recebido ? empenhado / recebido : null,
     faixa, porMes, porPI, porOM, disponivel,
     totalDisponivel: disponivelND.reduce((s, l) => s + l.valor, 0),

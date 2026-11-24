@@ -321,3 +321,15 @@ test("número curto da nota de crédito", () => {
   assert.equal(fmtNC(" 2026nc000001 "), "2026NC000001");
   assert.equal(fmtNC("SEM PADRAO"), "SEM PADRAO");
 });
+
+test("recebido − empenhado − disponível: o que o SIAFI consumiu e a planilha de empenhos não mostra", () => {
+  const p = montarPainel(BASE, { om: null, nd: null });
+  const dispTotal = BASE.disponivel.reduce((t, l) => t + l.valor, 0);
+  assert.equal(p.disponivelSelecao, dispTotal);
+  assert.equal(p.totalDisponivel, dispTotal);
+  assert.equal(p.semExplicacao, Math.round((p.recebido - p.empenhado - dispTotal) * 100) / 100);
+  // com a OM escolhida, o cartão soma só o saldo dela (a lista lateral continua com todas, como no BI)
+  const bamn = montarPainel(BASE, { om: "BAMN", nd: null });
+  assert.equal(bamn.disponivelSelecao, BASE.disponivel.filter((l) => l.sigla === "BAMN").reduce((t, l) => t + l.valor, 0));
+  assert.equal(bamn.totalDisponivel, dispTotal);
+});

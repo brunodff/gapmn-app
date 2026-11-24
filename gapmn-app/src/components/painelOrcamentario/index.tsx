@@ -3,7 +3,7 @@
 // 5 minutos; as medidas ficam em lib/orcamento/calculo.ts. Aqui só se busca, filtra e desenha.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BanknoteArrowUp, HandCoins, Maximize, Minimize, Percent, RefreshCw, X } from "lucide-react";
+import { BanknoteArrowUp, HandCoins, Maximize, Minimize, Percent, RefreshCw, Wallet, X } from "lucide-react";
 import { montarPainel } from "../../lib/orcamento/calculo.ts";
 import { buscarOrcamento, orcamentoGuardado, type ResultadoOrcamento } from "../../lib/orcamento/fonte.ts";
 import { fmtCompacto, fmtData, fmtHora, fmtMoeda, fmtPct } from "../../lib/orcamento/formato.ts";
@@ -173,9 +173,18 @@ export default function PainelOrcamentario({ publico = false }: { publico?: bool
 
           <section className="po-cartao po-kpis" aria-label="Resumo">
             <Kpi rotulo="Crédito Recebido" valor={`R$ ${fmtCompacto(painel.recebido)}`} dica={fmtMoeda(painel.recebido)} Icone={HandCoins} />
-            <Kpi rotulo="Empenhado" valor={`R$ ${fmtCompacto(painel.empenhado)}`} dica={fmtMoeda(painel.empenhado)} Icone={BanknoteArrowUp} />
+            <Kpi rotulo="Empenhado" valor={`R$ ${fmtCompacto(painel.empenhado)}`} dica={`${fmtMoeda(painel.empenhado)} · soma das notas de empenho da planilha de NE`} Icone={BanknoteArrowUp} />
             <Kpi rotulo="% Empenhado" valor={fmtPct(painel.pctEmpenhado)} dica="Empenhado ÷ crédito recebido" Icone={Percent} />
+            <Kpi rotulo="Disponível (SIAFI)" valor={`R$ ${fmtCompacto(painel.disponivelSelecao)}`} dica={`${fmtMoeda(painel.disponivelSelecao)} · saldo da planilha de crédito disponível, o mesmo da lista ao lado`} Icone={Wallet} />
           </section>
+          {Math.abs(painel.semExplicacao) >= Math.max(1000, 0.005 * painel.recebido) && (
+            <div className="po-aviso" role="note">
+              <b>Recebido − Empenhado = R$ {fmtCompacto(painel.recebido - painel.empenhado)} não é o saldo disponível.</b>{" "}
+              O saldo disponível no SIAFI é <b>R$ {fmtCompacto(painel.disponivelSelecao)}</b>: valem os números da lista de crédito disponível.
+              Os outros R$ {fmtCompacto(painel.semExplicacao)} do crédito recebido já foram consumidos no SIAFI sem aparecer como empenho
+              nesta planilha (empenhos de outra UG, crédito recolhido ou remanejado, ou empenho em PI/ND diferente do crédito).
+            </div>
+          )}
 
           <Faixa faixa={painel.faixa} ano={painel.ano} />
 

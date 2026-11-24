@@ -129,6 +129,16 @@ export type PainelCredito = {
   porOM: ValorRotulado[];
   disponivel: UnidadeDisponivel[];
   totalDisponivel: number;
+  /**
+   * Saldo disponível (SIAFI) do que está selecionado: a ND filtra e a OM também (a lista lateral não filtra pela OM,
+   * como no BI, mas o cartão acompanha o filtro, para poder ser comparado com recebido e empenhado).
+   */
+  disponivelSelecao: number;
+  /**
+   * Recebido − empenhado − disponível: crédito que o SIAFI já deu como consumido e que a planilha de empenhos
+   * não explica. Quando é grande, "recebido − empenhado" NÃO é o saldo disponível.
+   */
+  semExplicacao: number;
   opcoesOM: string[];
   opcoesND: OpcaoND[];
 };

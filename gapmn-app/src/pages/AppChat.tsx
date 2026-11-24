@@ -347,7 +347,7 @@ function fmtSetor(s?: string | null) {
 }
 
 // ── Nav tree ──────────────────────────────────────────────────────────────────
-type NavChild = { label: string; path: string; icon: string; wip?: boolean; adminOnly?: boolean; seoOnly?: boolean; slicOnly?: boolean };
+type NavChild = { label: string; path: string; icon: string; wip?: boolean; adminOnly?: boolean; seoOnly?: boolean; slicOnly?: boolean; sconOnly?: boolean };
 type NavNode  = { id: string; label: string; icon: string; path?: string; children?: NavChild[] };
 
 const NAV: NavNode[] = [
@@ -355,7 +355,7 @@ const NAV: NavNode[] = [
   { id: "lic",     label: "Licitações",           icon: "⚖️", children: [
     { label: "Processos",   path: "view:processos",  icon: "📋" },
     { label: "Atas de RP",  path: "view:atas",       icon: "📄" },
-    { label: "Acompanhamento do PCA", path: "view:pca", icon: "📅" },
+    { label: "Acompanhamento do PCA", path: "view:pca", icon: "📅", sconOnly: true },
     { label: "Pesquisa de Preços", path: "view:pesquisa-precos", icon: "💲" },
     { label: "Mapa das compras", path: "view:mapa-compras", icon: "🗺️" },
     { label: "TCU: jurisprudência e sanções", path: "view:tcu", icon: "🏛️" },
@@ -641,7 +641,8 @@ function Sidebar({ user, navTo, onView, collapsed, onLogout, onEdit }: {
                 {n.children.filter(c =>
                   (!c.adminOnly || user.setor === "ADMIN" || user.setor === "DEV") &&
                   (!c.seoOnly   || user.setor === "SEO"   || user.setor === "ADMIN" || user.setor === "DEV") &&
-                  (!c.slicOnly  || user.setor === "SLIC"  || user.setor === "ADMIN" || user.setor === "DEV")
+                  (!c.slicOnly  || user.setor === "SLIC"  || user.setor === "ADMIN" || user.setor === "DEV") &&
+                  (!c.sconOnly  || user.setor === "SCON"  || user.setor === "ADMIN" || user.setor === "DEV")
                 ).map(c => {
                   const cid = `${n.id}:${c.label}`;
                   return (
@@ -1916,7 +1917,10 @@ export default function AppChat() {
             {view === "indicadores"   && <div className="svdark"><IndicadoresLotacao key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canImport={canImportInd} /></div>}
             {view === "atas"          && <div className="svdark"><AtasRegistroPreco key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canSync={canImportPrc} /></div>}
             {view === "solicitacoes"  && <div className="svdark"><PainelSolicitacoesEmpenho key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canManage={canManageSolicit} /></div>}
-            {view === "pca"           && <div className="svdark"><AcompanhamentoPca key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} /></div>}
+            {/* por enquanto, só SCON, ADMIN e DEV veem o Acompanhamento do PCA (decisão do Bruno, 24/11/2026) */}
+            {view === "pca"           && (user.setor === "SCON" || user.setor === "ADMIN" || user.setor === "DEV"
+              ? <div className="svdark"><AcompanhamentoPca key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} /></div>
+              : <div className="svdark" style={{ padding: 24, fontSize: 14 }}>Esta tela está liberada, por enquanto, só para SCON, ADMIN e DEV.</div>)}
             {view === "calendario"    && <div className="svdark"><CalendarioLicitacoes key={`${view}-${alvo.n}`} buscaInicial={alvo.busca} canEdit={canImportPrc} userNome={user.nome} /></div>}
             {view === "pesquisa-precos" && <div className="svdark"><PesquisaPrecos key={params.get("aditivo") ?? "livre"} aditivoId={params.get("aditivo")} onVoltarAditivo={(id) => setView("aditivos", undefined, id)} /></div>}
 
