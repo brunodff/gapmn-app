@@ -7,7 +7,7 @@ export type { Fonte };
 export interface RespostaAssistente { resposta: string; fontes: Fonte[]; modelo?: string }
 export interface Turno { papel: "usuario" | "assistente"; texto: string }
 
-const NOMES: Record<string, string> = { empenhos: "a planilha de empenhos do Tesouro Gerencial (pode levar uns segundos)", credito: "a planilha de crédito" };
+const NOMES: Record<string, string> = { execucao_contratos: "a execução dos contratos (planilhas do SIAFI; pode levar uns segundos)", empenhos: "a planilha de empenhos do Tesouro Gerencial (pode levar uns segundos)", credito: "a planilha de crédito" };
 
 async function chamar(corpo: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await supabase.functions.invoke("assistente", { body: corpo });

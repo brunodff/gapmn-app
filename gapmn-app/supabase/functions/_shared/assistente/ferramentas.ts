@@ -13,7 +13,7 @@ export interface Contexto { db: Db; hoje: string; buscar?: typeof fetch }
 type Args = Record<string, unknown>;
 
 /** Ferramentas que o navegador executa (o servidor devolve o pedido) */
-export const DO_NAVEGADOR = new Set(["empenhos", "credito"]);
+export const DO_NAVEGADOR = new Set(["execucao_contratos", "empenhos", "credito"]);
 
 const s = (v: unknown) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v));
 const app = (vista: string, busca?: string) => `/app?vista=${vista}${busca ? `&busca=${encodeURIComponent(busca)}` : ""}`;
@@ -31,10 +31,12 @@ const E = (d: string, valores: string[]) => ({ type: "string", enum: valores, de
 const TEXTO = T("palavras-chave (objeto, empresa, nº, CNPJ); deixe vazio para listar");
 
 export const DEFINICOES = [
-  ["contratos", "Contratos da SCON: empresa, objeto, vigência, valores (contratual, a empenhar, empenhado, liquidado), fiscal, PAG.",
+  ["contratos", "Cadastro dos contratos da SCON: empresa, objeto, vigência, valor contratual, fiscal, PAG. Empenhos, pagamentos e saldo a empenhar: execucao_contratos.",
     obj({ texto: TEXTO, tipo: E("tipo do contrato", ["DESPESA", "CREDENCIAMENTO", "ADESAO", "RECEITA"]),
       situacao: E("vigência", ["vigente", "encerrado"]), vence_ate: T("vigência termina até (AAAA-MM-DD)"),
-      ordem: E("ordenação", ["vencimento", "valor", "a_empenhar"]) })],
+      ordem: E("ordenação", ["vencimento", "valor"]) })],
+  ["execucao_contratos", "Execução de contrato(s): as notas de empenho do contrato, empenhado, a liquidar, pago e saldo a empenhar — a mesma conta da aba Execução do contrato. Use para quantos/quais empenhos de um contrato e valores executados.",
+    obj({ texto: T("nº do contrato (ex.: DESPESA 008/GAPMN-DACTAIV/2025), empresa ou objeto") })],
   ["reajustes", "Reajustes por apostilamento: situação de cada contrato (reajuste devido, próximo, sem data do orçamento), períodos devidos e cadastro.",
     obj({ texto: TEXTO, situacao: E("filtro", ["devido", "pronto_para_gerar", "proximo", "sem_data", "fora_da_automacao", "encerrado"]) })],
   ["licitacoes", "Processos licitatórios do GAP-MN (pregões, dispensas…): objeto, situação, valores estimado e homologado, datas, SRP; com_itens traz os itens.",
@@ -53,7 +55,7 @@ export const DEFINICOES = [
   ["agu", "Pareceres referenciais da AGU (CGU/AGU), com assunto, validade e link.", obj({ texto: T("assunto") })],
   ["pncp", "Busca ao vivo no PNCP (todo o Brasil): editais, atas ou contratos de outros órgãos.",
     obj({ texto: T("objeto"), tipo: E("documento", ["edital", "ata", "contrato"]), uf: T("UF, ex.: AM"), abertos: B("só editais recebendo propostas") })],
-  ["empenhos", "Notas de empenho (Tesouro Gerencial, desde 2022): favorecido, valor, natureza, PI, OM, observação, liquidado e pago.",
+  ["empenhos", "Notas de empenho em geral (Tesouro Gerencial, desde 2022) por favorecido, objeto, natureza, PI ou OM. As NEs de um contrato: execucao_contratos.",
     obj({ texto: T("NE, favorecido, CNPJ, objeto ou PI"), ano: T("ano"), om: T("sigla da OM"), natureza: T("natureza de despesa, ex.: 339039"),
       ordem: E("ordenação", ["valor", "data"]) })],
   ["credito", "Crédito orçamentário (Tesouro Gerencial): saldo disponível ou notas de crédito recebidas, por PI, ND, ação e OM.",
@@ -88,7 +90,8 @@ function vazio(p: unknown): boolean {
 
 const EXECUTORES: Record<string, (a: Args, ctx: Contexto) => Promise<Resultado>> = {
   async contratos(a, { db, hoje }) {
-    const COLS = "numero_contrato,fornecedor,cnpj,descricao,status,data_inicio,data_final,vl_contratual,vl_atual,vl_a_empenhar,vl_empenhado,vl_liquidado,fiscal,pag_nup,ugr,categoria";
+    // empenhado/liquidado/saldo do cadastro (SILOMS) divergem da aba Execução: esses valores vêm de execucao_contratos
+    const COLS = "numero_contrato,fornecedor,cnpj,descricao,status,data_inicio,data_final,vl_contratual,vl_atual,fiscal,pag_nup,ugr,categoria";
     const filtrar = (q: Db) => {
       q = comPalavras(q, ["numero_contrato", "fornecedor", "descricao", "cnpj", "pag_nup", "fiscal", "ugr", "categoria"], s(a.texto));
       const tipo = s(a.tipo).toUpperCase();
@@ -103,20 +106,20 @@ const EXECUTORES: Record<string, (a: Args, ctx: Contexto) => Promise<Resultado>>
     };
     let q = filtrar(db.from("contratos_scon").select(COLS, { count: "exact" }));
     q = a.ordem === "valor" ? q.order("vl_contratual", { ascending: false, nullsFirst: false })
-      : a.ordem === "a_empenhar" ? q.order("vl_a_empenhar", { ascending: false, nullsFirst: false })
       : q.order("data_final", { ascending: true, nullsFirst: false });
     const { data, count, error } = await q.limit(12);
     erro(error);
-    const { data: todos } = await filtrar(db.from("contratos_scon").select("vl_contratual,vl_atual,vl_a_empenhar,vl_empenhado,vl_liquidado")).limit(1000);
+    const { data: todos } = await filtrar(db.from("contratos_scon").select("vl_contratual,vl_atual")).limit(1000);
     const linhas = (data ?? []) as Record<string, unknown>[];
     const t = (todos ?? []) as Record<string, unknown>[];
     return {
       paraIA: {
         tela: "Contratos › Contratos SCON", total: count ?? linhas.length, mostrados: linhas.length,
-        somas_de_todos: { contratual: somar(t, "vl_contratual"), atual: somar(t, "vl_atual"), a_empenhar: somar(t, "vl_a_empenhar"), empenhado: somar(t, "vl_empenhado"), liquidado: somar(t, "vl_liquidado") },
+        somas_de_todos: { contratual: somar(t, "vl_contratual"), atual: somar(t, "vl_atual") },
+        obs: "empenhos, pagamentos e saldo a empenhar: consulte execucao_contratos",
         contratos: linhas.map((c) => ({ numero: c.numero_contrato, empresa: c.fornecedor, cnpj: c.cnpj, objeto: corta(c.descricao, 140), status: c.status,
-          inicio: c.data_inicio, fim: c.data_final, valor_contratual: r2(c.vl_contratual), valor_atual: r2(c.vl_atual), a_empenhar: r2(c.vl_a_empenhar),
-          empenhado: r2(c.vl_empenhado), liquidado: r2(c.vl_liquidado), fiscal: c.fiscal || undefined, pag: c.pag_nup || undefined, ugr: c.ugr || undefined })),
+          inicio: c.data_inicio, fim: c.data_final, valor_contratual: r2(c.vl_contratual), valor_atual: r2(c.vl_atual),
+          fiscal: c.fiscal || undefined, pag: c.pag_nup || undefined, ugr: c.ugr || undefined })),
       },
       fontes: [
         ...(s(a.texto) ? [{ rotulo: `Contratos SCON: "${s(a.texto)}"`, link: app("contratos", s(a.texto)) }] : []),

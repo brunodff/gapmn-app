@@ -4,6 +4,8 @@
 import type { NotaEmpenho } from "../execucao/empenhos.ts";
 import type { Financeiro } from "../execucao/painel.ts";
 import type { LinhaDisponivel, LinhaRecebido } from "../orcamento/tipos.ts";
+import { chaveContrato, citacoes, saldoAEmpenhar, type ExecucaoContrato } from "../contratos/execucao.ts";
+import type { ContratoExec } from "../contratos/useExecucaoContratos.ts";
 
 export interface Fonte { rotulo: string; link: string; externo?: boolean }
 export interface ResultadoNavegador { paraIA: unknown; fontes: Fonte[] }
@@ -48,6 +50,66 @@ export function consultarEmpenhos(nes: NotaEmpenho[], financeiro: Map<string, Fi
   };
 }
 
+// ── Execução de contratos (a mesma conta da aba Execução do contrato) ─────────
+export type ContratoInfo = ContratoExec & { fornecedor?: string | null; descricao?: string | null };
+
+/** Contratos pedidos: pelo número citado no texto ("008/GAPMN-DACTAIV/2025", "contrato 8/2025"); sem número,
+ *  pelas palavras (empresa, objeto, CNPJ, PAG). */
+export function acharContratos(contratos: ContratoInfo[], texto: string): ContratoInfo[] {
+  const cits = [...citacoes(texto), ...(chaveContrato(texto) ? [{ ...chaveContrato(texto)!, forte: true }] : [])];
+  if (cits.length) {
+    const achados = contratos.filter((c) => {
+      const k = chaveContrato(c.numero_contrato);
+      return !!k && cits.some((x) => x.num === k.num && (k.num >= 100000 || x.ano === k.ano) && (!x.unidade || !k.unidade || x.unidade.includes(k.unidade) || k.unidade.includes(x.unidade)));
+    });
+    if (achados.length) return achados;
+  }
+  const ps = termos(texto);
+  return ps.length ? contratos.filter((c) => todas(`${c.numero_contrato} ${c.fornecedor ?? ""} ${c.descricao ?? ""} ${c.cnpj ?? ""} ${c.pag_nup ?? ""}`, ps)) : [];
+}
+
+export function consultarExecucaoContratos(contratos: ContratoInfo[], porContrato: ReadonlyMap<string, ExecucaoContrato>, a: Args): ResultadoNavegador {
+  const achados = acharContratos(contratos, s(a.texto));
+  const tela = "Contratos › Contratos SCON › aba Execução do contrato";
+  const regra = "NEs ligadas ao contrato pela mesma regra da aba Execução: citação do contrato na NE, PAG do contrato e mesmo fornecedor no PAG";
+  if (!achados.length) return { paraIA: { tela, total: 0, obs: `nenhum contrato encontrado para "${s(a.texto)}"` }, fontes: [] };
+  const exec = (c: ContratoInfo) => porContrato.get(c.id);
+  const tot = (c: ContratoInfo) => exec(c)?.totais;
+  const saldo = (c: ContratoInfo) => saldoAEmpenhar(c.vl_contratual, exec(c), c.vl_a_empenhar);
+  const fonte = (c: ContratoInfo) => ({ rotulo: `Execução do ${c.numero_contrato}`, link: app("contratos", c.numero_contrato) });
+  if (achados.length === 1) {
+    const c = achados[0], e = exec(c), t = tot(c), sa = saldo(c);
+    return {
+      paraIA: {
+        tela, regra, total: 1,
+        contrato: c.numero_contrato, empresa: c.fornecedor ?? undefined, objeto: corta(c.descricao, 120), vigencia: `${c.data_inicio ?? "?"} a ${c.data_final ?? "?"}`,
+        valor_contratual: c.vl_contratual ?? undefined,
+        saldo_a_empenhar: sa.valor == null ? "sem cálculo" : r2(sa.valor), saldo_fonte: sa.fonte === "SILOMS" ? "SILOMS (o histórico de NEs do contrato está incompleto nas planilhas)" : sa.fonte ?? undefined,
+        totais: t ? { quantidade_de_nes: t.nNE, empenhado: r2(t.empenhado), a_liquidar: r2(t.aLiquidar), liquidado_a_pagar: r2(t.liquidadoPagar), pago: r2(t.pago), empenhado_no_ano: r2(t.empenhadoAno) } : undefined,
+        notas_de_empenho: (e?.nes ?? []).slice(0, 30).map((n) => ({ ne: n.ne, empenhado: r2(n.empenhado), a_liquidar: r2(n.aLiquidar), liquidado_a_pagar: r2(n.liquidadoPagar), pago: r2(n.pago), descricao: corta(n.descricao, 80) })),
+        ...(e && e.nes.length > 30 ? { obs_lista: `mostradas 30 de ${e.nes.length} NEs` } : {}),
+        ...(e?.empenhadoIncompleto ? { aviso: "o contrato começou antes de 2022 ou tem NE sem itens: o empenhado das NEs pode estar a menor" } : {}),
+        ...(e?.citamOutro.length ? { nes_do_mesmo_pag_que_citam_outro_contrato: e.citamOutro.map((n) => n.ne) } : {}),
+      },
+      fontes: [fonte(c)],
+    };
+  }
+  const soma = (f: (c: ContratoInfo) => number) => r2(achados.reduce((x, c) => x + f(c), 0));
+  return {
+    paraIA: {
+      tela, regra, total: achados.length, mostrados: Math.min(12, achados.length),
+      somas_de_todos: { empenhado: soma((c) => tot(c)?.empenhado ?? 0), pago: soma((c) => tot(c)?.pago ?? 0), a_liquidar: soma((c) => tot(c)?.aLiquidar ?? 0) },
+      contratos: achados.slice(0, 12).map((c) => {
+        const t = tot(c), sa = saldo(c);
+        return { contrato: c.numero_contrato, empresa: c.fornecedor ?? undefined, fim: c.data_final ?? undefined, valor_contratual: c.vl_contratual ?? undefined,
+          nes: t?.nNE ?? 0, empenhado: r2(t?.empenhado ?? 0), pago: r2(t?.pago ?? 0), a_liquidar: r2(t?.aLiquidar ?? 0),
+          saldo_a_empenhar: sa.valor == null ? undefined : r2(sa.valor) };
+      }),
+    },
+    fontes: achados.slice(0, 3).map(fonte),
+  };
+}
+
 // ── Crédito ──────────────────────────────────────────────────────────────────
 export function consultarCredito(tipo: "disponivel" | "recebido", linhas: (LinhaDisponivel | LinhaRecebido)[], a: Args): ResultadoNavegador {
   const ps = termos(s(a.texto));
@@ -87,8 +149,18 @@ async function baixarCSV(url: string): Promise<string[][]> {
   return parseCSV(await r.text());
 }
 
-/** Roda a consulta pedida pela IA (nome = "empenhos" | "credito") */
+/** Roda a consulta pedida pela IA (nome = "execucao_contratos" | "empenhos" | "credito") */
 export async function executarNoNavegador(nome: string, a: Args): Promise<ResultadoNavegador> {
+  if (nome === "execucao_contratos") {
+    // as mesmas planilhas (baixar) e a mesma conta (calcularExecucao) da aba Execução do contrato, com todos os contratos
+    const [{ baixar, calcularExecucao }, { supabase }] = await Promise.all([import("../contratos/useExecucaoContratos.ts"), import("../supabase")]);
+    const [dados, contratos] = await Promise.all([baixar(), lembrar("contratos", async () => {
+      const { data, error } = await supabase.from("contratos_scon").select("id,numero_contrato,pag_nup,cnpj,data_inicio,data_final,vl_contratual,vl_a_empenhar,fornecedor,descricao").limit(5000);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as ContratoInfo[];
+    })]);
+    return consultarExecucaoContratos(contratos, calcularExecucao(dados, contratos).porContrato, a);
+  }
   if (nome === "empenhos") {
     const [{ buscarExecucao }, { omDe }] = await Promise.all([import("../execucao/fonte.ts"), import("../execucao/painel.ts")]);
     const d = await lembrar("execucao", buscarExecucao);

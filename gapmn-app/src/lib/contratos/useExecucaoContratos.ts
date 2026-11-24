@@ -24,7 +24,7 @@ type Itens = {
   desde: number;
   ate: number;
 };
-type Planilhas = { situacao: ExecucaoLinha[]; rps: LinhaRPNE[]; itens: Itens | null };
+export type Planilhas = { situacao: ExecucaoLinha[]; rps: LinhaRPNE[]; itens: Itens | null };
 let cache: { em: number; promessa: Promise<Planilhas> } | null = null;
 const VALIDADE_MS = 5 * 60_000;
 
@@ -52,7 +52,8 @@ function lerItens(rows: string[][]): Itens {
   return { itens, lancamentos, emissao, desde: Math.min(...anos), ate: Math.max(...anos) };
 }
 
-function baixar(): Promise<Planilhas> {
+/** As planilhas da execução (uma vez por sessão, relidas depois de 5 minutos). O assistente do chat usa a mesma. */
+export function baixar(): Promise<Planilhas> {
   if (cache && Date.now() - cache.em < VALIDADE_MS) return cache.promessa;
   const promessa = Promise.all([
     fetchCSV(SHEET_URLS.execucao).then((rows) => toExecucaoLinhas(rows).linhas),
@@ -66,7 +67,21 @@ function baixar(): Promise<Planilhas> {
   return promessa;
 }
 
-type ContratoExec = ContratoVinculo & { data_inicio?: string | null; vl_contratual?: number | null; vl_a_empenhar?: number | null };
+export type ContratoExec = ContratoVinculo & { data_inicio?: string | null; vl_contratual?: number | null; vl_a_empenhar?: number | null };
+
+/** Exercício, NEs, vínculo de cada NE ao contrato e execução por contrato — a conta da aba Execução, fora do React
+ *  (o hook abaixo e o assistente do chat usam esta mesma função, para darem os mesmos números). */
+export function calcularExecucao(dados: Planilhas, contratos: readonly ContratoExec[], anoHoje = new Date().getFullYear()) {
+  // o exercício é o ano mais recente da planilha de itens (no começo do ano ela pode ainda estar no anterior)
+  const anoAtual = dados.itens?.ate && Number.isFinite(dados.itens.ate) ? dados.itens.ate : anoHoje;
+  const nes = juntarNEs(dados.situacao, dados.rps, [...(dados.itens?.itens.values() ?? [])].map(notaItensDe), anoAtual);
+  // a emissão da NE desempata, pela vigência, contratos do mesmo fornecedor no mesmo PAG
+  const vinculos = vincularNEs(contratos, nes.values(), (ne) => dados.itens?.emissao.get(ne) ?? null);
+  // valor das NEs completo desde o primeiro ano da planilha de itens (sem ela, só o ano e o anterior)
+  const cobertura = dados.itens && Number.isFinite(dados.itens.desde) ? `${dados.itens.desde}-01-01` : undefined;
+  const porContrato = execucaoPorContrato(contratos, nes, vinculos, anoAtual, cobertura);
+  return { anoAtual, nes, vinculos, porContrato };
+}
 
 export type ExecucaoContratos = {
   estado: EstadoPlanilhas;
@@ -109,23 +124,7 @@ export function useExecucaoContratos(contratos: readonly ContratoExec[]): Execuc
     return () => { vivo = false; };
   }, []);
 
-  // o exercício é o ano mais recente da planilha de itens (no começo do ano ela pode ainda estar no anterior)
-  const anoAtual = dados.itens?.ate && Number.isFinite(dados.itens.ate) ? dados.itens.ate : anoHoje;
-  const nes = useMemo(
-    () => juntarNEs(dados.situacao, dados.rps, [...(dados.itens?.itens.values() ?? [])].map(notaItensDe), anoAtual),
-    [dados, anoAtual],
-  );
-  // a emissão da NE desempata, pela vigência, contratos do mesmo fornecedor no mesmo PAG
-  const vinculos = useMemo(
-    () => vincularNEs(contratos, nes.values(), (ne) => dados.itens?.emissao.get(ne) ?? null),
-    [contratos, nes, dados],
-  );
-  // valor das NEs completo desde o primeiro ano da planilha de itens (sem ela, só o ano e o anterior)
-  const cobertura = dados.itens && Number.isFinite(dados.itens.desde) ? `${dados.itens.desde}-01-01` : undefined;
-  const porContrato = useMemo(
-    () => execucaoPorContrato(contratos, nes, vinculos, anoAtual, cobertura),
-    [contratos, nes, vinculos, anoAtual, cobertura],
-  );
+  const { anoAtual, nes, vinculos, porContrato } = useMemo(() => calcularExecucao(dados, contratos, anoHoje), [dados, contratos, anoHoje]);
 
   const ok = estado === "ok";
   const saldo = useMemo(
