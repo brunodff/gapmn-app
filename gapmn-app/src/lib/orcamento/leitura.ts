@@ -2,7 +2,7 @@
 // Reproduz os passos do Power Query do BI: cabeçalho, "preencher para baixo" e,
 // nos empenhos, a soma por nota usando o último valor de cada item.
 
-import type { Empenho, LinhaDisponivel, LinhaRecebido } from "./tipos.ts";
+import type { Empenho, EmpenhoSiafi, LinhaDisponivel, LinhaRecebido } from "./tipos.ts";
 import { REGRAS_DISPONIVEL, REGRAS_RECEBIDO, siglaDe } from "./unidades.ts";
 
 export class ErroFormato extends Error {}
@@ -156,4 +156,29 @@ export function lerDisponivel(linhas: string[][]): LinhaDisponivel[] {
     });
   }
   return saida;
+}
+
+/**
+ * Situação dos empenhos (planilha "SituaçãoEmpenhoGAPMN", relatório do Tesouro Gerencial): uma linha por NE com o
+ * saldo das contas 622920101 (a liquidar), 622920103 (liquidados a pagar) e 622920104 (pagos); a soma é o valor
+ * atual da NE. Colunas: PI, (nome), UG Responsável, (nome), NE, favorecido (2 colunas, NÃO lidas), descrição,
+ * processo e os três saldos. PI e UG vêm só na primeira linha do grupo (preencher para baixo).
+ */
+export function lerSituacao(linhas: string[][]): EmpenhoSiafi[] {
+  const iCab = linhas.findIndex((l) => txt(l[0]).toUpperCase() === "PI" && l.some((c) => /^NE/i.test(txt(c))));
+  if (iCab < 0) throw new ErroFormato("Planilha de situação dos empenhos sem o cabeçalho \"PI\".");
+  const porNE = new Map<string, EmpenhoSiafi>();
+  let pi = "", ug = "", ugNome = "";
+  for (const l of linhas.slice(iCab + 1)) {
+    if (txt(l[0])) pi = txt(l[0]);
+    if (txt(l[2])) { ug = txt(l[2]); ugNome = txt(l[3]); }
+    const m = /(\d{4}NE\d{6})\s*$/i.exec(txt(l[4]));
+    if (!m) continue;
+    const valor = (numeroBR(l[9]) ?? 0) + (numeroBR(l[10]) ?? 0) + (numeroBR(l[11]) ?? 0);
+    const ne = m[1].toUpperCase();
+    const atual = porNE.get(ne);
+    if (atual) atual.valor += valor;
+    else porNE.set(ne, { ne, ug, ugNome, sigla: siglaDe(ugNome, REGRAS_RECEBIDO), pi, valor });
+  }
+  return [...porNE.values()];
 }

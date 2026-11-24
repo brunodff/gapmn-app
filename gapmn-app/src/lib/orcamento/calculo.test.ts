@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SEM_SIGLA, creditosPorLinha, hojeEmManaus, idadeDoSaldo, montarPainel, notasDoSaldo } from "./calculo.ts";
+import { SEM_SIGLA, creditosPorLinha, empenhadoSiafi, hojeEmManaus, idadeDoSaldo, montarPainel, notasDoSaldo } from "./calculo.ts";
+import { lerSituacao } from "./leitura.ts";
 import { fmtCompacto, fmtData, fmtDias, fmtMoeda, fmtNC, fmtPct } from "./formato.ts";
 import { dataBR, lerDisponivel, lerEmpenhos, lerRecebido, numeroBR, parseCSV } from "./leitura.ts";
 import type { DadosOrcamento, Empenho, LinhaDisponivel, LinhaRecebido } from "./tipos.ts";
@@ -327,9 +328,36 @@ test("recebido − empenhado − disponível: o que o SIAFI consumiu e a planilh
   const dispTotal = BASE.disponivel.reduce((t, l) => t + l.valor, 0);
   assert.equal(p.disponivelSelecao, dispTotal);
   assert.equal(p.totalDisponivel, dispTotal);
-  assert.equal(p.semExplicacao, Math.round((p.recebido - p.empenhado - dispTotal) * 100) / 100);
   // com a OM escolhida, o cartão soma só o saldo dela (a lista lateral continua com todas, como no BI)
   const bamn = montarPainel(BASE, { om: "BAMN", nd: null });
   assert.equal(bamn.disponivelSelecao, BASE.disponivel.filter((l) => l.sigla === "BAMN").reduce((t, l) => t + l.valor, 0));
   assert.equal(bamn.totalDisponivel, dispTotal);
+});
+
+test("empenhado pelo SIAFI (situação): fecha com o disponível mesmo com a planilha de NE cortada", () => {
+  const sit = lerSituacao([
+    ["SituaçãoEmpenhoGAPMN"], [],
+    ["PI", "", "UG Responsável", "", "NE CCor", "NE CCor - Favorecido", "", "NE CCor - Descrição", "Conta Contábil", "622920101", "622920103", "622920104"],
+    ["P1", "PI UM", "120154", "HOSPITAL DE AERONAUTICA DE MANAUS", "120630000012026NE000001", "x", "x", "d", "", "100,00", "", "50,00"],
+    ["", "", "", "", "120630000012026NE000002", "x", "x", "d", "", "300,00", "", ""],
+    ["", "", "", "", "120630000012025NE000009", "x", "x", "d", "", "999,00", "", ""],
+  ]);
+  assert.deepEqual(sit.map((e) => [e.ne, e.ug, e.pi, e.valor]), [["2026NE000001", "120154", "P1", 150], ["2026NE000002", "120154", "P1", 300], ["2025NE000009", "120154", "P1", 999]]);
+  assert.equal(sit[0].sigla, "HAMN");
+  // a NE 000002 não está na planilha de NE (cortada): sem ND, vai para a ND em que o crédito foi consumido
+  const d = {
+    recebido: [
+      { data: "2026-03-01", ug: "120154", ugNome: "HOSPITAL DE AERONAUTICA DE MANAUS", sigla: "HAMN", pi: "P1", piNome: "PI UM", nd: "339030", ndNome: "", valor: 200 },
+      { data: "2026-03-01", ug: "120154", ugNome: "HOSPITAL DE AERONAUTICA DE MANAUS", sigla: "HAMN", pi: "P1", piNome: "PI UM", nd: "339039", ndNome: "", valor: 400 },
+    ],
+    disponivel: [{ ptres: "", pi: "P1", piNome: "", nd: "339030", ndNome: "", ug: "120154", ugNome: "", sigla: "HAMN", valor: 50 }],
+    empenhos: [{ ne: "120630000012026NE000001", data: "2026-03-02", ugNome: "", sigla: "HAMN", nd: "339030", piNome: "PI UM", valor: 150 }],
+    situacao: sit,
+  };
+  assert.equal(empenhadoSiafi(d, { om: null, nd: null }, 2026), 450);
+  assert.equal(empenhadoSiafi(d, { om: null, nd: "339030" }, 2026), 150);
+  assert.equal(empenhadoSiafi(d, { om: null, nd: "339039" }, 2026), 300);
+  assert.equal(empenhadoSiafi(d, { om: "BAMN", nd: null }, 2026), 0);
+  const p = montarPainel(d, { om: null, nd: null });
+  assert.equal(p.recebido - p.empenhado, p.totalDisponivel + 100, "com dados coerentes, recebido − empenhado = disponível");
 });

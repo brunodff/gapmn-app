@@ -5,7 +5,7 @@
 // não couberem no armazenamento do navegador, o resto do painel continua abrindo na hora.
 
 import { lerLancamentos, type LancamentosEmpenho } from "./lancamentos.ts";
-import { lerDisponivel, lerEmpenhos, lerRecebido, parseCSV } from "./leitura.ts";
+import { lerDisponivel, lerEmpenhos, lerRecebido, lerSituacao, parseCSV } from "./leitura.ts";
 import { linhasDoAno } from "../execucao/empenhos.ts";
 import type { DadosOrcamento } from "./tipos.ts";
 
@@ -18,6 +18,8 @@ export const PLANILHAS_ORCAMENTO = {
   disponivel: csv("1u_C28gNt0klzmSaaTWg9wK9YJAvnSImmvDmc65V8aDo", "1376861542"),
   /** Notas de empenho; no BI, tabela "Dados". */
   empenhos: csv("1XQ5CGcB0dTVADeEGfKjtXRhqtHxsNf1J1H_9VKjBklM", "1297815245"),
+  /** Situação dos empenhos (valor atual de cada NE pelo SIAFI): o empenhado do cartão, que fecha com o disponível. */
+  situacao: csv("1WXiRR3_QnjgYJHWeBQ5QPivF5z6bJsooqAw7BdH00JI", "837657910"),
 };
 
 export type ResultadoOrcamento = {
@@ -26,7 +28,7 @@ export type ResultadoOrcamento = {
   lidoEm: string;
 };
 
-const CHAVE = "gapmn_orcamento_credito_v3";
+const CHAVE = "gapmn_orcamento_credito_v4";
 const CHAVE_LANCAMENTOS = "gapmn_orcamento_lancamentos_v2";
 const TEMPO_LIMITE_MS = 45_000;
 
@@ -49,15 +51,19 @@ export async function buscarOrcamento(): Promise<ResultadoOrcamento> {
   const ctl = new AbortController();
   const relogio = setTimeout(() => ctl.abort(), TEMPO_LIMITE_MS);
   try {
-    const [rec, disp, todasNEs] = await Promise.all([
+    const [rec, disp, todasNEs, sit] = await Promise.all([
       baixar(PLANILHAS_ORCAMENTO.recebido, ctl.signal),
       baixar(PLANILHAS_ORCAMENTO.disponivel, ctl.signal),
       baixar(PLANILHAS_ORCAMENTO.empenhos, ctl.signal),
+      // sem a situação o painel segue com o empenhado da planilha de NE
+      baixar(PLANILHAS_ORCAMENTO.situacao, ctl.signal).catch(() => null),
     ]);
+    let situacao;
+    try { situacao = sit ? lerSituacao(sit) : undefined; } catch { situacao = undefined; }
     // A planilha de NE traz os anos anteriores (para Contratos e Painel de Execução): o painel é do exercício
     const emp = linhasDoAno(todasNEs);
     const res: ResultadoOrcamento = {
-      dados: { recebido: lerRecebido(rec), disponivel: lerDisponivel(disp), empenhos: lerEmpenhos(emp), lancamentos: lerLancamentos(emp) },
+      dados: { recebido: lerRecebido(rec), disponivel: lerDisponivel(disp), empenhos: lerEmpenhos(emp), situacao, lancamentos: lerLancamentos(emp) },
       lidoEm: new Date().toISOString(),
     };
     const { lancamentos, ...semLancamentos } = res.dados;

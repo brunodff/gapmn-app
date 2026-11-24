@@ -33,6 +33,20 @@ export type Empenho = {
   valor: number;
 };
 
+/**
+ * Valor atual de uma nota de empenho pelo SIAFI (planilha "SituaçãoEmpenhoGAPMN": a liquidar + liquidados a pagar
+ * + pagos). Traz todas as NEs; a planilha de NE, que tem a ND, pode vir cortada (ver montarPainel).
+ */
+export type EmpenhoSiafi = {
+  /** "2026NE000123" */
+  ne: string;
+  ug: string;
+  ugNome: string;
+  sigla: string | null;
+  pi: string;
+  valor: number;
+};
+
 /** Uma linha de saldo de crédito disponível (planilha "Crédito Disponível"). */
 export type LinhaDisponivel = {
   ptres: string;
@@ -83,6 +97,8 @@ export type DadosOrcamento = {
   recebido: LinhaRecebido[];
   empenhos: Empenho[];
   disponivel: LinhaDisponivel[];
+  /** Valor de cada NE pelo SIAFI (planilha de situação); sem ela, o empenhado sai da planilha de NE. */
+  situacao?: EmpenhoSiafi[];
   /** Emissões, reforços e anulações de empenho, dia a dia (lista "Empenhos do dia"). */
   lancamentos?: LancamentosEmpenho;
 };
@@ -134,11 +150,6 @@ export type PainelCredito = {
    * como no BI, mas o cartão acompanha o filtro, para poder ser comparado com recebido e empenhado).
    */
   disponivelSelecao: number;
-  /**
-   * Recebido − empenhado − disponível: crédito que o SIAFI já deu como consumido e que a planilha de empenhos
-   * não explica. Quando é grande, "recebido − empenhado" NÃO é o saldo disponível.
-   */
-  semExplicacao: number;
   opcoesOM: string[];
   opcoesND: OpcaoND[];
 };

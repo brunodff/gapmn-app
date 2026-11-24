@@ -150,6 +150,52 @@ export function disponivelPorUnidade(
   return lista.map((u) => ({ ...u, rank: valores.indexOf(u.valor) + 1 }));
 }
 
+/**
+ * Empenhado pelo SIAFI (planilha de situação: valor atual de cada NE). É o que fecha com o crédito: recebido −
+ * empenhado = disponível. A planilha de NE do Tesouro Gerencial chega cortada quando traz os anos anteriores
+ * (em 24/11/2026: ordenada pelo texto da data, parou no dia 24 e perdeu 316 NEs de 2026, R$ 6,25 mi).
+ * A situação não traz a ND: com o filtro de ND, vale a ND da NE na planilha de NE; a NE que só está na situação
+ * entra pela parte do crédito daquela UG e PI que o SIAFI deu como consumida naquela ND.
+ */
+export function empenhadoSiafi(d: DadosOrcamento, f: FiltroCredito, ano: number | null): number {
+  const sit = (d.situacao ?? []).filter((e) => (ano === null || e.ne.startsWith(String(ano))) && (!f.om || e.sigla === f.om));
+  if (!f.nd) return sit.reduce((s, e) => s + e.valor, 0);
+  const ndDaNE = new Map<string, string>();
+  for (const e of d.empenhos) { const m = /(\d{4}NE\d{6})\s*$/i.exec(e.ne); if (m) ndDaNE.set(m[1].toUpperCase(), e.nd); }
+  const grupo = (x: { ug: string; pi: string }) => `${x.ug}|${x.pi}`;
+  let total = 0;
+  const semND = new Map<string, number>();
+  const conhecido = new Map<string, number>(); // UG|PI|ND
+  for (const e of sit) {
+    const nd = ndDaNE.get(e.ne);
+    if (nd === undefined) { semND.set(grupo(e), (semND.get(grupo(e)) ?? 0) + e.valor); continue; }
+    conhecido.set(`${grupo(e)}|${nd}`, (conhecido.get(`${grupo(e)}|${nd}`) ?? 0) + e.valor);
+    if (nd === f.nd) total += e.valor;
+  }
+  if (!semND.size) return total;
+  // consumido segundo o SIAFI em cada UG|PI|ND = recebido − disponível; o que falta explicar vai para as NEs sem ND
+  const consumido = new Map<string, number>();
+  for (const r of d.recebido) if (ano === null || r.data.startsWith(String(ano))) {
+    const k = `${grupo(r)}|${r.nd}`; consumido.set(k, (consumido.get(k) ?? 0) + r.valor);
+  }
+  for (const l of d.disponivel) { const k = `${grupo(l)}|${l.nd}`; consumido.set(k, (consumido.get(k) ?? 0) - l.valor); }
+  const falta = new Map<string, Map<string, number>>(); // grupo → ND → falta
+  for (const [k, v] of consumido) {
+    const [ug, pi, nd] = k.split("|");
+    const g = `${ug}|${pi}`;
+    if (!semND.has(g)) continue;
+    const resto = Math.max(0, v - (conhecido.get(k) ?? 0));
+    if (!falta.has(g)) falta.set(g, new Map());
+    falta.get(g)!.set(nd, resto);
+  }
+  for (const [g, valor] of semND) {
+    const porND = falta.get(g);
+    const soma = porND ? [...porND.values()].reduce((s, v) => s + v, 0) : 0;
+    if (soma > 0) total += valor * ((porND!.get(f.nd) ?? 0) / soma);
+  }
+  return Math.round(total * 100) / 100;
+}
+
 export function montarPainel(d: DadosOrcamento, f: FiltroCredito, hoje = hojeEmManaus()): PainelCredito {
   const atualizadoEm = ultimaData(d);
   const ano = atualizadoEm ? Number(atualizadoEm.slice(0, 4)) : null;
@@ -162,7 +208,7 @@ export function montarPainel(d: DadosOrcamento, f: FiltroCredito, hoje = hojeEmM
   const empenhosFiltrados = d.empenhos.filter((e) => doAno(e) && daND(e) && daOM(e));
 
   const recebido = recebidoFiltrado.reduce((s, r) => s + r.valor, 0);
-  const empenhado = empenhosFiltrados.reduce((s, e) => s + e.valor, 0);
+  const empenhado = d.situacao?.length ? empenhadoSiafi(d, f, ano) : empenhosFiltrados.reduce((s, e) => s + e.valor, 0);
 
   // Faixa: todas as apoiadas (inclusive as sem crédito), maior para menor; só a ND filtra.
   const porSiglaND = somarPor(recebidoND.filter((r) => r.sigla), (r) => r.sigla!, (r) => r.valor);
@@ -196,7 +242,7 @@ export function montarPainel(d: DadosOrcamento, f: FiltroCredito, hoje = hojeEmM
   const disponivelSelecao = f.om ? disponivel.filter((u) => u.sigla === f.om).reduce((s, u) => s + u.valor, 0) : disponivelND.reduce((s, l) => s + l.valor, 0);
   return {
     hoje, ano, atualizadoEm, recebido, empenhado,
-    disponivelSelecao, semExplicacao: Math.round((recebido - empenhado - disponivelSelecao) * 100) / 100,
+    disponivelSelecao,
     pctEmpenhado: recebido ? empenhado / recebido : null,
     faixa, porMes, porPI, porOM, disponivel,
     totalDisponivel: disponivelND.reduce((s, l) => s + l.valor, 0),
