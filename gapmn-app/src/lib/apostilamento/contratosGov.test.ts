@@ -92,3 +92,29 @@ test("objeto resumido sugerido", () => {
   assert.equal(resumirObjeto("O presente contrato tem por objeto a contratação de empresa especializada na prestação de serviços de vigilância armada, nos termos do edital."), "Serviços de vigilância armada");
   assert.equal(resumirObjeto(""), "");
 });
+
+test("item 5 pelas regras da SCON: nº do termo, apostila sem reajuste fora, supressão nas alterações, lista maior fica", () => {
+  const hist = [
+    { tipo: "Contrato", numero: "00010/2022", data_assinatura: "2022-03-01", valor_global: "100.000,00", novo_valor_global: "0,00" },
+    // o 1º aditivo não está no sistema: o que está é o 00002/2025
+    { tipo: "Termo Aditivo", numero: "00002/2025", data_assinatura: "2025-02-20", valor_global: "100.000,00", novo_valor_global: "110.000,00", qualificacao_termo: [{ descricao: "VIGÊNCIA" }, { descricao: "REAJUSTE" }] },
+    { tipo: "Termo de Apostilamento", numero: "00001/2025", data_assinatura: "2025-04-10", valor_global: "110.000,00", observacao: "Alteração da dotação orçamentária" },
+    { tipo: "Termo Aditivo", numero: "00003/2025", data_assinatura: "2025-09-01", valor_global: "110.000,00", novo_valor_global: "82.500,00", qualificacao_termo: [{ descricao: "ACRÉSCIMO / SUPRESSÃO" }], observacao: "Supressão de 25% do valor do contrato" },
+    { tipo: "Termo de Apostilamento", numero: "00002/2025", data_assinatura: "2025-10-01", valor_global: "82.500,00", novo_valor_global: "86.000,00", observacao: "Reajuste pelo IPCA de 4,25%" },
+  ];
+  const r = dadosDoContratosGov(ct037, itens037, hist, []);
+  assert.deepEqual(r.dados.historico_valores, [
+    { documento: "Contrato inicial", valor: 100000 }, { documento: "2º Termo Aditivo", valor: 110000 },
+    { documento: "3º Termo Aditivo", valor: 82500 }, { documento: "2º Termo de Apostilamento", valor: 86000 },
+  ], "nº do termo pelo número no Contratos.gov.br; a 1ª apostila (sem reajuste) fica fora do histórico");
+  assert.deepEqual(r.dados.alteracoes_quantitativas, [{ documento: "3º Termo Aditivo", data_assinatura: "01/09/2025", descricao: "Supressão de 25% do valor do contrato" }]);
+  assert.equal(r.dados.complemento_supressao, true);
+  assert.equal(r.dados.numero_instrumento, 3, "a apostila sem reajuste conta para o nº do próximo apostilamento");
+
+  // completar: só o contrato inicial conta como vazio; lista maior não é trocada por menor
+  const soInicial = completarCadastro({ historico_valores: [{ documento: "Contrato inicial", valor: 100000 }] }, r.dados);
+  assert.equal(soInicial.dados.historico_valores?.length, 4);
+  assert.ok(soInicial.preenchidos.includes("historico_valores") && soInicial.preenchidos.includes("complemento_supressao"));
+  const maior = [{ documento: "Contrato inicial", valor: 100000 }, { documento: "1º Termo Aditivo", valor: 100000 }, { documento: "2º Termo Aditivo", valor: 110000 }, { documento: "3º Termo Aditivo", valor: 82500 }, { documento: "1º Termo de Apostilamento", valor: 86000 }];
+  assert.deepEqual(completarCadastro({ historico_valores: maior }, r.dados).dados.historico_valores, maior);
+});

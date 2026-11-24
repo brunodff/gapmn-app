@@ -9,7 +9,7 @@ Gerador dos 4 documentos de REAJUSTE (SCON/GAP-MN):
 
 Uso:  python3 gerar_apostilamento.py dados.json PASTA_SAIDA
 """
-import sys, json, io, os
+import sys, json, io, os, re
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date
 
@@ -242,6 +242,8 @@ def calcular_complemento(dados, calc, alt):
     """Reajuste devido sobre as unidades suprimidas entre o início dos efeitos financeiros e a assinatura do TA."""
     import calendar
     from datetime import timedelta
+    if not re.fullmatch(r"\d{2}/\d{2}/\d{4}", str(alt.get("data_assinatura") or "")):
+        return {"linhas": [], "total": D(0), "doc": alt.get("documento", ""), "periodo": "", "meses_total": D(0)}
     d, m, a = map(int, alt["data_assinatura"].split("/"))
     fim_excl = date(a, m, d)                         # TA produz efeitos na assinatura
     reaj = calc["reajustes"]; novos = calc["novos"]; k_atual = len(calc["antigos"])
@@ -730,7 +732,8 @@ def gerar_parecer(dados, calc, t, caminho):
     p = item(4, partes=[("OBJETO RESUMIDO: ", False)]); run(p, dados["objeto_resumido"], italic=True)
     item(5, "VALORES TOTAIS DO CONTRATO:", after=4)
     for h in dados["historico_valores"]:
-        par(doc, f"{h['documento'].upper()}: {brl(h['valor'])}", after=2)
+        v = h.get("valor")
+        par(doc, f"{h['documento'].upper()}: {brl(v) if v not in (None, '') else 'R$ (VALOR A PREENCHER)'}", after=2)
     par(doc, after=6)
     vt = calc["valor_termo"]
     ref = (f"referente ao {t['reaj_ord']} reajuste{'s' if len(novos)>1 else ''} do valor {base} do contrato.")

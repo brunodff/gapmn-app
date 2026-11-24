@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cargaGuardada, casarContratos, cargaMaisNova, fonteDaDataBase, lerCarga, mesclarDados, motivoForaDaAutomacao, nucleoNumero, pendenciasCadastro, proximoApostilamento, situacaoCadastro } from "./carga.ts";
+import { cargaGuardada, casarContratos, cargaMaisNova, fonteDaDataBase, historicoEntra, lerCarga, mesclarDados, motivoForaDaAutomacao, nucleoNumero, pendenciasCadastro, proximoApostilamento, situacaoCadastro } from "./carga.ts";
 import { completarReajustesDevidos } from "./cadastro.ts";
 import type { DadosReajuste } from "./tipos.ts";
 
@@ -117,4 +117,17 @@ test("nº do apostilamento, data da carga e reajustes devidos", () => {
   assert.deepEqual(completarReajustesDevidos({ data_base: "06/2024", reajustes: [{ n: 1, indice_pct: 5, novo: false, documento: "1º TA" }] }, hoje),
     [{ n: 1, indice_pct: 5, novo: false, documento: "1º TA" }, { n: 2, indice_pct: null, novo: true }]);
   assert.equal(completarReajustesDevidos({ data_base: "", reajustes: [] }, hoje), null);
+});
+
+test("item 5: pendências de termo sem valor e supressão sem data; carga não troca histórico maior por menor", () => {
+  const d = { ...completo(), historico_valores: [{ documento: "Contrato inicial", valor: 100 }, { documento: "1º Termo Aditivo", valor: null }],
+    alteracoes_quantitativas: [{ documento: "1º Termo Aditivo", data_assinatura: "", descricao: "supressão" }] };
+  const p = pendenciasCadastro(d, { textosFixos: {}, omPadrao: "GAP-MN" });
+  assert.ok(p.includes("Item 5: falta o valor do 1º Termo Aditivo"));
+  assert.ok(p.includes("Item 5: falta a data de assinatura do 1º Termo Aditivo (supressão/acréscimo)"));
+  const app = [{ documento: "Contrato inicial", valor: 100 }, { documento: "1º Termo Aditivo", valor: 110 }, { documento: "2º Termo Aditivo", valor: 120 }];
+  const carga = [{ documento: "Contrato inicial", valor: 100 }, { documento: "1º Termo Aditivo", valor: 110 }];
+  assert.deepEqual(mesclarDados({ historico_valores: app }, { historico_valores: carga }, true).historico_valores, app, "carga mais nova, mas com menos termos");
+  assert.deepEqual(mesclarDados({ historico_valores: [{ documento: "Contrato inicial", valor: 100 }] }, { historico_valores: carga }, false).historico_valores, carga, "só o contrato inicial conta como vazio");
+  assert.equal(historicoEntra(carga, [{ documento: "Contrato inicial", valor: null }], true), false);
 });

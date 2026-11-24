@@ -110,6 +110,9 @@ export function pendenciasCadastro(d: Partial<DadosReajuste> | null | undefined,
     soma += Number(it.valor_base) || 0;
   }
   if (vazio(x.historico_valores)) p.push("Falta o histórico de valores (contrato inicial e termos assinados)");
+  // item 5 (carga.py da SCON, 23/11/2026): termo sem valor e supressão/acréscimo sem data
+  for (const h of x.historico_valores ?? []) if (h.valor == null || (h.valor as unknown) === "" || h.valor === 0) p.push(`Item 5: falta o valor do ${h.documento || "documento"}`);
+  for (const a of x.alteracoes_quantitativas ?? []) if (!a.data_assinatura) p.push(`Item 5: falta a data de assinatura do ${a.documento || "termo"} (supressão/acréscimo)`);
   if (itens.length && x.itens_total_inicial != null && vazio(x.alteracoes_quantitativas)
       && Math.abs(Math.round(soma * 100) - Math.round(Number(x.itens_total_inicial) * 100)) > 5) {
     p.push(`Soma dos itens (${brl(soma)}) diferente do valor do contrato na base (${brl(Number(x.itens_total_inicial))})`);
@@ -176,6 +179,21 @@ export function casarContratos(regs: RegistroCarga[], contratos: ContratoApp[]):
   return { pares, semPar };
 }
 
+// ── Item 5: histórico de valores (docs/ITEM5_HISTORICO.md da SCON) ────────────
+type Historico = DadosReajuste["historico_valores"] | null | undefined;
+/** Documentos do histórico com valor */
+export const documentosComValor = (h: Historico) => (h ?? []).filter((x) => x.valor != null && (x.valor as unknown) !== "" && x.valor !== 0).length;
+/** Histórico vazio ou só com o "Contrato inicial" conta como vazio: os termos ainda não foram lançados */
+export const historicoSoInicial = (h: Historico) => !(h ?? []).some((x) => !/^contrato inicial$/i.test(String(x.documento ?? "").trim()));
+/** O histórico novo entra? Só no lugar de um vazio ou só com o contrato inicial (ou, se `substitui`, de qualquer um),
+ *  e nunca uma lista com menos documentos com valor no lugar de uma maior. */
+export function historicoEntra(atual: Historico, novo: Historico, substitui: boolean): boolean {
+  if (!(novo ?? []).length) return false;
+  if (!(atual ?? []).length) return true;
+  if (!substitui && !historicoSoInicial(atual)) return false;
+  return documentosComValor(novo) >= documentosComValor(atual) && (novo ?? []).length >= (atual ?? []).length;
+}
+
 // ── Junção com o cadastro que já está no banco ───────────────────────────────
 const OBJETOS = ["empresa", "indice", "orcamento", "ordenador", "aci", "fiscal"];
 
@@ -190,6 +208,10 @@ export function mesclarDados(atual: Partial<DadosReajuste> | null | undefined, d
   for (const [k, v] of Object.entries(nova)) {
     if (vazio(v)) continue;
     if (k === "reajustes") continue;
+    if (k === "historico_valores") {
+      if (historicoEntra(out[k] as Historico, v as Historico, cargaManda)) out[k] = structuredClone(v);
+      continue;
+    }
     const tem = !vazio(out[k]);
     if (OBJETOS.includes(k) && typeof v === "object" && !Array.isArray(v)) {
       const base = (tem ? out[k] : {}) as Record<string, unknown>;

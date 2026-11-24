@@ -4,8 +4,8 @@
 // índice e cláusula, data do orçamento, endereço) vem da leitura dos PDFs (lerPdfs.ts).
 // Conferido em 18/11/2026 com o CT 037/GAPMN-CINDACTAIV/2025, que a SCON cadastrou à mão: mesmos
 // itens, valores, histórico e dotação.
-import { proximoApostilamento, type DocumentoCarga } from "./carga.ts";
-import type { DadosReajuste, HistoricoValor, ItemContrato, Orcamento, Reajuste } from "./tipos.ts";
+import { historicoEntra, proximoApostilamento, type DocumentoCarga } from "./carga.ts";
+import type { AlteracaoQuantitativa, DadosReajuste, HistoricoValor, ItemContrato, Orcamento, Reajuste } from "./tipos.ts";
 
 export interface ContratoGov {
   id: number; numero: string; processo: string | null; objeto: string | null; categoria?: string | null;
@@ -124,28 +124,50 @@ export function dadosDoContratosGov(c: ContratoGov, itens: ItemGov[], historico:
     Math.abs(i.qtd * i.valor_unit - i.valor_base) <= Math.max(0.05, i.valor_base * 0.001);
   if (its.length && its.every(bate)) dados.fator_anual = 1;
 
-  // termos em ordem de assinatura: o contrato, os aditivos e as apostilas
+  // termos em ordem de assinatura: o contrato, os aditivos e as apostilas. Item 5 pelas regras da SCON
+  // (docs/ITEM5_HISTORICO.md, 23/11/2026): nº do termo pelo número dele no Contratos.gov.br ("00002/2025" → 2º);
+  // apostila sem reajuste/repactuação fica fora do histórico (não muda o valor); aditivo com a qualificação
+  // "ACRÉSCIMO / SUPRESSÃO" também vai para "Supressões e acréscimos".
   const termos = historico
     .map((h) => ({ h, tipo: tipoTermo(h.tipo) }))
     .filter((x): x is { h: HistoricoGov; tipo: NonNullable<ReturnType<typeof tipoTermo>> } => !!x.tipo)
     .sort((a, b) => (iso(a.h.data_assinatura) ?? "").localeCompare(iso(b.h.data_assinatura) ?? ""));
   const historico_valores: HistoricoValor[] = [];
+  const alteracoes: AlteracaoQuantitativa[] = [];
   const documentos: DocumentoCarga[] = [];
   const reajustes: Reajuste[] = [];
-  let kTa = 0, kAp = 0;
+  let kTa = 0, kAp = 0, supressao = false, semTipo = false;
   for (const { h, tipo } of termos) {
     const novo = numBR(h.novo_valor_global);
     const valor = novo && novo > 0 ? novo : numBR(h.valor_global);
-    const nome = tipo === "CONTRATO" ? "Contrato inicial" : tipo === "TERMO_ADITIVO" ? `${ORD(++kTa)} Termo Aditivo` : `${ORD(++kAp)} Termo de Apostilamento`;
-    historico_valores.push({ documento: nome, valor });
-    documentos.push({ tipo, numero: h.numero, natureza: (h.qualificacao_termo ?? []).map((q) => q.descricao), data_assinatura: brData(h.data_assinatura),
-      valor_resultante: valor, resumo: (h.observacao ?? "").replace(/\s+/g, " ").trim().slice(0, 300), origem: "Contratos.gov.br" });
-    if (tipo === "APOSTILAMENTO" && /reajust/i.test(h.observacao ?? "") && !/repactua/i.test(h.observacao ?? "")) {
-      const pct = /(\d{1,2},\d{2,6})\s*%/.exec(h.observacao ?? "")?.[1];
+    const nTermo = /^0*(\d{1,3})\s*\//.exec(String(h.numero ?? "").trim());
+    const ordem = tipo === "TERMO_ADITIVO" ? ++kTa : tipo === "APOSTILAMENTO" ? ++kAp : 0;
+    const k = nTermo && Number(nTermo[1]) > 0 ? Number(nTermo[1]) : ordem;
+    if (tipo !== "CONTRATO" && !nTermo) avisos.push(`${h.tipo} ${h.numero || "sem número"}: número do termo não lido, ficou ${ORD(k)} pela ordem de assinatura — confira`);
+    const nome = tipo === "CONTRATO" ? "Contrato inicial" : tipo === "TERMO_ADITIVO" ? `${ORD(k)} Termo Aditivo` : `${ORD(k)} Termo de Apostilamento`;
+    const natureza = (h.qualificacao_termo ?? []).map((q) => q.descricao);
+    const obs = (h.observacao ?? "").replace(/\s+/g, " ").trim();
+    const comReajuste = /reajust|repactua/i.test(`${obs} ${natureza.join(" ")}`);
+    if (tipo !== "APOSTILAMENTO" || comReajuste) historico_valores.push({ documento: nome, valor });
+    if (tipo === "TERMO_ADITIVO" && natureza.some((q) => /acr[ée]scimo|supress/i.test(q))) {
+      alteracoes.push({ documento: nome, data_assinatura: brData(h.data_assinatura) ?? "", descricao: obs });
+      if (/supress/i.test(obs)) supressao = true;
+      else if (!/acr[ée]scimo|acrescent/i.test(obs)) semTipo = true;
+    }
+    documentos.push({ tipo, numero: h.numero, natureza, data_assinatura: brData(h.data_assinatura),
+      valor_resultante: valor, resumo: obs.slice(0, 300), origem: "Contratos.gov.br" });
+    if (tipo === "APOSTILAMENTO" && /reajust/i.test(obs) && !/repactua/i.test(obs)) {
+      const pct = /(\d{1,2},\d{2,6})\s*%/.exec(obs)?.[1];
       reajustes.push({ n: reajustes.length + 1, indice_pct: pct ? numBR(pct) : null, novo: false, documento: nome });
     }
   }
   if (historico_valores.length) dados.historico_valores = historico_valores;
+  if (alteracoes.length) {
+    dados.alteracoes_quantitativas = alteracoes;
+    // regra da SCON: com supressão, o complemento da supressão entra no termo
+    if (supressao) dados.complemento_supressao = true;
+    else if (semTipo) avisos.push("Aditivo de acréscimo/supressão: a observação não diz se é supressão — marque \"Incluir o complemento\" se for");
+  }
   // nº do próximo apostilamento pelas apostilas registradas (confira: apostila fora do sistema não entra na conta)
   if (termos.length) dados.numero_instrumento = proximoApostilamento(documentos);
   if (reajustes.length) {
@@ -199,6 +221,16 @@ export function completarCadastro(atual: Partial<DadosReajuste>, gov: Partial<Da
     if (k === "reajustes") {
       const temAplicado = ((out.reajustes ?? []) as Reajuste[]).some((r) => !r.novo);
       if (!temAplicado) { out.reajustes = [...(v as Reajuste[]), ...((out.reajustes ?? []) as Reajuste[]).filter((r) => r.novo)]; preenchidos.push("reajustes já aplicados"); }
+      continue;
+    }
+    // histórico só com o "Contrato inicial" conta como vazio; lista maior nunca é trocada por uma menor
+    if (k === "historico_valores") {
+      if (historicoEntra(out.historico_valores as HistoricoValor[] | undefined, v as HistoricoValor[], false)) { out.historico_valores = structuredClone(v); preenchidos.push(k); }
+      continue;
+    }
+    // o complemento da supressão acompanha as supressões que entraram agora
+    if (k === "complemento_supressao") {
+      if (preenchidos.includes("alteracoes_quantitativas")) { out.complemento_supressao = v; preenchidos.push(k); }
       continue;
     }
     if (typeof v === "object" && !Array.isArray(v)) {
