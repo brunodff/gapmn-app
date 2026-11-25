@@ -5,7 +5,9 @@ import { useExecucaoContratos } from "../../lib/contratos/useExecucaoContratos";
 import type { ContratoScon } from "../../lib/apostilamento/cadastro";
 import { CONFIG_VAZIA, type ConfigApostilamento } from "../../lib/apostilamento/tipos";
 import PainelReajustes, { type Cadastro } from "./PainelReajustes";
-import ConfigReajustes from "./ConfigReajustes";
+import UnidadesApoiadas from "./UnidadesApoiadas";
+import { carregarUnidades } from "../../lib/apostilamento/unidadesBanco";
+import { configDaUnidade, unidadePadrao, type UnidadeApoiada } from "../../lib/apostilamento/unidades";
 import ReajusteContrato from "./ReajusteContrato";
 import ImportarCarga from "./ImportarCarga";
 import CompletarContratosGov from "./CompletarContratosGov";
@@ -27,6 +29,7 @@ export default function Reajustes() {
   const [params, setParams] = useSearchParams();
   const aberto = params.get("contrato");
   const aba: Aba = params.get("aba") === "config" ? "config" : "painel";
+  const novaUnidade = params.get("nova");
 
   const [logado, setLogado] = useState(false);
   const [setor, setSetor] = useState<string | null>(null);
@@ -35,6 +38,8 @@ export default function Reajustes() {
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [cadastros, setCadastros] = useState<Map<string, Cadastro>>(new Map());
   const [config, setConfig] = useState<ConfigApostilamento>(CONFIG_VAZIA);
+  const [unidades, setUnidades] = useState<UnidadeApoiada[]>([]);
+  const [tabelaUnidades, setTabelaUnidades] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [recarga, setRecarga] = useState(0);
@@ -56,45 +61,51 @@ export default function Reajustes() {
 
   const pode = logado;
   const lote = !!setor && SETORES_LOTE.includes(setor);
-  const admin = setor === "ADMIN" || setor === "DEV";
 
   useEffect(() => {
     if (!pode) return;
     let vivo = true;
     (async () => {
       setCarregando(true);
-      const [c, a, g] = await Promise.all([
+      const [c, a, u] = await Promise.all([
         supabase.from("contratos_scon")
           .select("id, numero_contrato, pag_nup, fornecedor, cnpj, descricao, data_orcamento, data_inicio, data_final, vl_contratual, status")
           .order("numero_contrato"),
         supabase.from("contratos_apostilamento")
           .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga, nao_aplicavel:carga->siloms->>reajuste_nao_aplicavel, vig_siloms:carga->siloms->>vigencia_fim"),
-        supabase.from("apostilamento_config").select("ordenador, aci, cidade, ug_apoio, textos_fixos_om, dias_alerta").eq("id", "padrao").maybeSingle(),
+        carregarUnidades(),
       ]);
       if (!vivo) return;
-      const falhas = [c.error && `contratos: ${c.error.message}`, a.error && `cadastros: ${a.error.message}`, g.error && `configuração: ${g.error.message}`].filter(Boolean);
-      if (a.error?.code === "42P01" || g.error?.code === "42P01" || /does not exist|schema cache/i.test(`${a.error?.message} ${g.error?.message}`))
+      const falhas = [c.error && `contratos: ${c.error.message}`, a.error && `cadastros: ${a.error.message}`].filter(Boolean);
+      if (a.error?.code === "42P01" || /does not exist|schema cache/i.test(`${a.error?.message}`))
         setErro("O banco ainda não tem as tabelas ou colunas do reajuste (migração pendente: 20261116_reajuste_apostilamento ou 20261117b_reajuste_carga_siloms).");
       else setErro(falhas.length ? `Não carregou ${falhas.join("; ")}` : null);
       setContratos((c.data ?? []) as Contrato[]);
       setCadastros(new Map(((a.data ?? []) as unknown as Cadastro[]).map((x) => [x.numero_contrato, x])));
-      if (g.data) setConfig({ ...CONFIG_VAZIA, ...(g.data as Partial<ConfigApostilamento>),
-        ordenador: { ...CONFIG_VAZIA.ordenador, ...((g.data as Partial<ConfigApostilamento>).ordenador ?? {}) },
-        aci: { ...CONFIG_VAZIA.aci, ...((g.data as Partial<ConfigApostilamento>).aci ?? {}) },
-        ug_apoio: { ...CONFIG_VAZIA.ug_apoio, ...((g.data as Partial<ConfigApostilamento>).ug_apoio ?? {}) },
-        textos_fixos_om: (g.data as Partial<ConfigApostilamento>).textos_fixos_om ?? {} });
+      // configuração base = a da unidade padrão (GAP-MN); cada contrato usa a da OM que assina (ReajusteContrato)
+      setUnidades(u.unidades); setTabelaUnidades(u.tabela);
+      const padrao = unidadePadrao(u.unidades);
+      if (padrao) setConfig(configDaUnidade(padrao, padrao.sigla));
       setCarregando(false);
     })();
     return () => { vivo = false; };
   }, [pode, recarga]);
 
   const contrato = useMemo(() => contratos.find((c) => c.numero_contrato === aberto) ?? null, [contratos, aberto]);
-  const ir = (p: { contrato?: string; aba?: Aba }) => {
+  // depois de salvar uma unidade: relê só as unidades (a tela de Configurações continua aberta, com a mensagem)
+  const recarregarUnidades = async () => {
+    const u = await carregarUnidades();
+    setUnidades(u.unidades); setTabelaUnidades(u.tabela);
+    const padrao = unidadePadrao(u.unidades);
+    if (padrao) setConfig(configDaUnidade(padrao, padrao.sigla));
+  };
+  const ir = (p: { contrato?: string; aba?: Aba; nova?: string }) => {
     // mantém o resto do endereço (vista=reajustes)
     const q = new URLSearchParams(params);
-    q.delete("contrato"); q.delete("aba");
+    q.delete("contrato"); q.delete("aba"); q.delete("nova");
     if (p.contrato) q.set("contrato", p.contrato);
     if (p.aba === "config") q.set("aba", "config");
+    if (p.nova) q.set("nova", p.nova);
     setParams(q);
   };
 
@@ -125,18 +136,20 @@ export default function Reajustes() {
       {erro && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erro}</div>}
       {configIncompleta && !carregando && !erro && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          Faltam os dados do Ordenador de Despesas ou do Agente de Controle Interno em Configurações{admin ? "" : " (só ADMIN e DEV preenchem)"}: sem eles o termo e o parecer saem com o campo em branco.
+          Faltam os dados do Ordenador de Despesas ou do Agente de Controle Interno da unidade padrão em Configurações: sem eles o termo e o parecer saem com o campo em branco.
         </div>
       )}
 
       {carregando ? <div className="p-6 text-sm text-slate-500">Carregando os contratos…</div>
         : aberto ? (contrato
           ? <DetalheComNE contratos={contratos} contrato={contrato} config={config} nomeUsuario={nome} ugGov={UG_GAPMN}
+              unidades={unidades} aoCadastrarUnidade={(sigla) => ir({ aba: "config", nova: sigla })}
               aoVoltar={() => ir({})}
               aoSalvar={(r) => setCadastros((m) => new Map(m).set(r.numero_contrato, r))} />
           : <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Contrato {aberto} não encontrado. <button className="text-sky-700 hover:underline" onClick={() => ir({})}>Voltar ao painel</button></div>)
         : aba === "config"
-          ? <ConfigReajustes config={config} podeEditar={admin} nomeUsuario={nome} aoSalvar={setConfig} />
+          ? <UnidadesApoiadas unidades={unidades} tabela={tabelaUnidades} nomeUsuario={nome} aoMudar={() => void recarregarUnidades()}
+              novaSigla={novaUnidade} aoUsarNovaSigla={() => { const q = new URLSearchParams(params); q.delete("nova"); setParams(q, { replace: true }); }} />
           : <div className="space-y-3">
               {lote && <CompletarContratosGov contratos={contratos} config={config} nomeUsuario={nome} ug={UG_GAPMN} aoTerminar={() => setRecarga((n) => n + 1)} />}
               {lote && <ImportarCarga contratos={contratos} config={config} nomeUsuario={nome} aoTerminar={() => setRecarga((n) => n + 1)} />}

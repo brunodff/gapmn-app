@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Caixa, Campo, CampoNumero, Secao } from "../reajustes/campos";
 import {
-  alertasDoAditivo, alteracoes, analisarPareceres, brl, eCefa, fimPrevisto, fraseObservacaoParecer, itensDaLista, numero, objetoDaFicha,
-  pareceresSugeridos, passa1Milhao, valorNovo, NOMES, type AguParecer,
+  alertasDoAditivo, alteracoes, analisarPareceres, brl, citarPareceres, daBiblioteca, eCefa, ementaDoParecer, faltandoNoZip, fimPrevisto,
+  fraseObjetoVantajosidade, fraseObservacaoParecer, geradosPrevistos, incisosVantajosidade, itensDaLista, numero, objetoDaFicha, pareceresDoAditivo,
+  limparObjeto, pareceresSugeridos, passa1Milhao, valorNovo, AUTORIDADE_CEFA, GERADOS_PELO_SITE, NOMES, SUGESTOES_VANTAJOSIDADE, type AguParecer,
 } from "../../lib/aditivos/regras";
-import { carregarAditivo, omsCadastradas, pareceresAgu, salvarAditivo, salvarOm, cadastroReajuste, type OmCadastrada } from "../../lib/aditivos/dados";
+import { bytesDeBase64, carregarAditivo, consultaAutomatica, omDaUnidade, pareceresAgu, salvarAditivo, cadastroReajuste } from "../../lib/aditivos/dados";
 import { kitAditivo, type DocumentoGerado } from "../../lib/aditivos/kitAditivo";
-import { ALTERACOES, NATUREZAS, type Alteracao, type DadosAditivo, type EstadoAditivo, type ParecerReferencial, type RegistroAditivo } from "../../lib/aditivos/tipos";
+import { ALTERACOES, NATUREZAS, type Alteracao, type AnexoGuardado, type DadosAditivo, type EstadoAditivo, type ParecerReferencial, type RegistroAditivo, type Vantajosidade } from "../../lib/aditivos/tipos";
 import MapaRiscos from "./MapaRiscos";
 import { Regularidade, Sicaf } from "./Consultas";
-import { anexosVazios, type AnexosConsultas, type Arquivo } from "../../lib/aditivos/anexos";
+import { anexosVazios, apagarAnexos, baixarAnexo, guardarAnexo, type AnexosConsultas, type Arquivo } from "../../lib/aditivos/anexos";
 import { MemoriaAditivo, PesquisaAditivo } from "./PesquisaMemoria";
+import { acharUnidade, type UnidadeApoiada } from "../../lib/apostilamento/unidades";
+import { carregarUnidades } from "../../lib/apostilamento/unidadesBanco";
+
+/** Itens da Lista que o fiscal junta como PDF (anuência, parecer técnico, procuração…): os outros o site gera ou têm tela própria */
+const ITENS_COM_TELA = ["sicaf", "consulta_cnpj", "consulta_cpf_socio", "memoria_calculo", "bol_aci", "bol_od", "bol_fiscalizacao", "calculadora"];
+const anexavel = (chave: string) => !chave.startsWith("parecer_referencial") && !GERADOS_PELO_SITE.includes(chave) && !ITENS_COM_TELA.includes(chave);
 
 const hojeISO = () => new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10);
 const botao = "rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50";
@@ -27,17 +34,23 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
   const [msg, setMsg] = useState<{ ok: boolean; txt: string } | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [agu, setAgu] = useState<AguParecer[]>([]);
-  const [oms, setOms] = useState<OmCadastrada[]>([]);
+  const [unidades, setUnidades] = useState<UnidadeApoiada[] | null>(null);
   const [anexos, setAnexos] = useState<AnexosConsultas>(anexosVazios());
   const [memoria, setMemoria] = useState<Arquivo | null>(null);
-  const [geracao, setGeracao] = useState<{ docs: Record<string, DocumentoGerado>; zip: Blob; nome: string } | null>(null);
+  /** PDFs dos itens da Lista que o fiscal junta (anuência, parecer técnico, procuração…), por chave */
+  const [listaArq, setListaArq] = useState<Record<string, Arquivo[]>>({});
+  const [restaurando, setRestaurando] = useState(false);
+  const [indiceContrato, setIndiceContrato] = useState("");
+  const [geracao, setGeracao] = useState<{ docs: Record<string, DocumentoGerado>; zip: Blob; nome: string; faltando: string[] } | null>(null);
   const hoje = hojeISO();
 
   useEffect(() => {
     let vivo = true;
-    Promise.all([carregarAditivo(id), pareceresAgu(), omsCadastradas()]).then(([r, a, o]) => {
+    Promise.all([carregarAditivo(id), pareceresAgu(), carregarUnidades()]).then(([r, a, u]) => {
       if (!vivo) return;
-      setReg(r); setD(r.dados); setE(r.estado); setAgu(a); setOms(o);
+      setReg(r); setD(r.dados); setE(r.estado); setAgu(a); setUnidades(u.unidades);
+      void restaurarAnexos(r.estado, () => vivo);
+      void cadastroReajuste(r.numero_contrato).then((c) => vivo && setIndiceContrato(c.dados?.indice?.nome ?? "")).catch(() => undefined);
     }).catch((x) => vivo && setErro(x instanceof Error ? x.message : String(x)));
     return () => { vivo = false; };
   }, [id]);
@@ -46,14 +59,100 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
   const mudarE = (p: Partial<EstadoAditivo>) => { setE((x) => (x ? { ...x, ...p } : x)); setSujo(true); };
 
   // pareceres: seguem o catálogo da SCON conforme as alterações, a natureza e a lei, até a SCON editar a lista à mão
-  const sugeridos = useMemo(() => (d && e ? pareceresSugeridos(alteracoes(d), e.natureza, e.lei, agu).map((p) => { const q: ParecerReferencial & { conferido?: boolean; url?: string | null } = { ...p }; delete q.conferido; delete q.url; return q as ParecerReferencial; }) : []), [d, e, agu]);
+  const sugeridos = useMemo(() => (d && e ? pareceresSugeridos(alteracoes(d), e.natureza, e.lei, agu).map((p) => {
+    const q: ParecerReferencial & { conferido?: boolean; url?: string | null } = { ...p };
+    if (q.url && !daBiblioteca(q.numero)) q.pdf = q.url;
+    delete q.conferido; delete q.url; return q as ParecerReferencial;
+  }) : []), [d, e, agu]);
   const manuais = !!e?.pareceres_manuais;
-  const dx = useMemo(() => (d ? (manuais ? d : { ...d, pareceres_referenciais: sugeridos }) : null), [d, manuais, sugeridos]);
+  // o que vai ao kit: pareceres (sugeridos ou da SCON) e o objeto do contrato (Atestado e Declaração de Vantajosidade)
+  const dx = useMemo(() => (d && e ? { ...d, objeto_contrato: e.objeto_contrato, ...(manuais ? {} : { pareceres_referenciais: sugeridos }) } : null), [d, e, manuais, sugeridos]);
 
+  const unidadeOm = useMemo(() => (unidades && d ? acharUnidade(unidades, d.om_signataria.sigla) : null), [unidades, d]);
   const an = useMemo(() => (dx ? analisarPareceres(dx, hoje) : null), [dx, hoje]);
   const itens = useMemo(() => (dx ? itensDaLista(dx, hoje) : []), [dx, hoje]);
-  const alertas = useMemo(() => (dx && e ? alertasDoAditivo(dx, e, hoje, { sicaf: anexos.sicaf.length > 0, regularidade: !!anexos.consolidada }) : []), [dx, e, hoje, anexos]);
+  const alertas = useMemo(() => (dx && e ? alertasDoAditivo(dx, e, hoje, { sicaf: anexos.sicaf.length > 0, regularidade: !!(anexos.consolidada || anexos.item13) },
+    { unidadeCadastrada: unidades ? !!unidadeOm : null }) : []), [dx, e, hoje, anexos, unidades, unidadeOm]);
   const bloqueios = alertas.filter((a) => a.bloqueia);
+  // o .zip: o que o site gera + o que está anexado (memória da aba, restaurada do que ficou guardado no aditivo)
+  const temArquivo = (c: string) => (dx ? geradosPrevistos(dx, hoje).includes(c) : false) || (c === "sicaf" && anexos.sicaf.length > 0)
+    || (c === "consulta_cnpj" && !!(anexos.item13 || anexos.consolidada)) || (c === "consulta_cpf_socio" && anexos.socio.length > 0)
+    || (c === "memoria_calculo" && !!memoria) || !!listaArq[c]?.length;
+  const faltando = dx ? faltandoNoZip(dx, hoje, temArquivo) : [];
+
+  // ── anexos guardados no aditivo (depósito aditivos-docs): cada anexo novo é enviado e o aditivo é salvo junto ──
+  const refs = useRef<{ reg: RegistroAditivo | null; dx: DadosAditivo | null; e: EstadoAditivo | null; anexos: AnexosConsultas; fila: Promise<void> }>({ reg: null, dx: null, e: null, anexos: anexosVazios(), fila: Promise.resolve() });
+  refs.current.reg = reg; refs.current.dx = dx; refs.current.e = e; refs.current.anexos = anexos;
+  async function restaurarAnexos(est: EstadoAditivo, vivo: () => boolean) {
+    const g = est.anexos ?? {};
+    const i13 = est.anexos_item13 ?? {};
+    if (!Object.keys(g).length && !i13.consolidada && !Object.keys(i13.complementos ?? {}).length) return;
+    setRestaurando(true);
+    // um arquivo que não abre não impede os outros: ele só fica de fora (e a tela avisa qual)
+    const falhas: string[] = [];
+    const um = async (a: AnexoGuardado | null | undefined) => { if (!a) return null; try { return await baixarAnexo(a); } catch { falhas.push(a.nome); return null; } };
+    const varios = async (l?: AnexoGuardado[]) => (await Promise.all((l ?? []).map(um))).filter((x): x is Arquivo => !!x);
+    const [sicaf, item13, consolidada, mem] = await Promise.all([varios(g.sicaf), um(g.consulta_cnpj?.[0]), um(i13.consolidada), um(g.memoria_calculo?.[0])]);
+    const complementos: Record<string, Arquivo> = {};
+    for (const [k, a] of Object.entries(i13.complementos ?? {})) { const x = await um(a); if (x) complementos[k] = x; }
+    const outros: Record<string, Arquivo[]> = {};
+    for (const [k, l] of Object.entries(g)) if (anexavel(k)) outros[k] = await varios(l);
+    if (!vivo()) return;
+    setAnexos((x) => ({ ...x, sicaf, item13, consolidada, complementos }));
+    setMemoria(mem); setListaArq(outros); setRestaurando(false);
+    if (falhas.length) setMsg({ ok: false, txt: `Não consegui abrir ${falhas.length} anexo(s) guardado(s): ${falhas.join(", ")}. Anexe de novo para irem no .zip.` });
+  }
+  /** Envia os arquivos novos, grava o estado novo no aditivo e tira do depósito os que foram trocados (uma tarefa por vez) */
+  function guardarNoAditivo(tarefa: (g: Record<string, AnexoGuardado[]>, i13: NonNullable<EstadoAditivo["anexos_item13"]>, velhos: AnexoGuardado[], id: string) => Promise<void>) {
+    refs.current.fila = refs.current.fila.then(async () => {
+      const r0 = refs.current.reg, e0 = refs.current.e;
+      if (!r0 || !e0) return;
+      const g = { ...(e0.anexos ?? {}) };
+      const i13 = { consolidada: e0.anexos_item13?.consolidada ?? null, complementos: { ...(e0.anexos_item13?.complementos ?? {}) } };
+      const velhos: AnexoGuardado[] = [];
+      try {
+        await tarefa(g, i13, velhos, r0.id);
+        const atual = refs.current;
+        const r = await salvarAditivo(atual.reg ?? r0, atual.dx ?? r0.dados, { ...(atual.e ?? e0), anexos: g, anexos_item13: i13 }, usuario);
+        // a próxima tarefa da fila parte do que acabou de ser salvo (sem esperar a tela redesenhar)
+        refs.current.reg = r; refs.current.e = r.estado; refs.current.dx = r.dados;
+        setReg(r); setD(r.dados); setE(r.estado); setSujo(false);
+        await apagarAnexos(velhos);
+        setMsg({ ok: true, txt: "Anexo guardado no aditivo (vai no .zip mesmo em outra sessão; o aditivo foi salvo junto)." });
+      } catch (x) { setMsg({ ok: false, txt: `${x instanceof Error ? x.message : String(x)} O arquivo vale nesta sessão.` }); }
+    });
+  }
+  function aoAnexar(p: Partial<AnexosConsultas>) {
+    const antes = refs.current.anexos;
+    setAnexos((x) => ({ ...x, ...p }));
+    const por = usuario;
+    guardarNoAditivo(async (g, i13, velhos, idAd) => {
+      if (p.sicaf) { velhos.push(...(g.sicaf ?? [])); g.sicaf = await Promise.all(p.sicaf.map((a) => guardarAnexo(idAd, "sicaf", a, por))); }
+      if ("item13" in p) { velhos.push(...(g.consulta_cnpj ?? [])); if (p.item13) g.consulta_cnpj = [await guardarAnexo(idAd, "consulta_cnpj", p.item13, por)]; else delete g.consulta_cnpj; }
+      if ("consolidada" in p) { if (i13.consolidada) velhos.push(i13.consolidada); i13.consolidada = p.consolidada ? await guardarAnexo(idAd, "consolidada", p.consolidada, por) : null; }
+      if (p.complementos) {
+        const novo: Record<string, AnexoGuardado> = {};
+        for (const [k, a] of Object.entries(p.complementos)) novo[k] = antes.complementos[k] === a && i13.complementos?.[k] ? i13.complementos[k] : await guardarAnexo(idAd, `complemento_${k}`, a, por);
+        for (const [k, a] of Object.entries(i13.complementos ?? {})) if (novo[k] !== a) velhos.push(a);
+        i13.complementos = novo;
+      }
+      // item 14 (CPF do sócio): só nesta sessão, o CPF não é guardado no site
+    });
+  }
+  function aoMemoria(a: Arquivo) {
+    setMemoria(a);
+    guardarNoAditivo(async (g, _i, velhos, idAd) => { velhos.push(...(g.memoria_calculo ?? [])); g.memoria_calculo = [await guardarAnexo(idAd, "memoria_calculo", a, usuario)]; });
+  }
+  async function anexarItem(chave: string, files: FileList | null) {
+    if (!files?.length) return;
+    const novos = await Promise.all(Array.from(files).map(async (f) => ({ nome: f.name, bytes: await f.arrayBuffer() })));
+    setListaArq((x) => ({ ...x, [chave]: [...(x[chave] ?? []), ...novos] }));
+    guardarNoAditivo(async (g, _i, _v, idAd) => { g[chave] = [...(g[chave] ?? []), ...(await Promise.all(novos.map((a) => guardarAnexo(idAd, chave, a, usuario))))]; });
+  }
+  function removerItem(chave: string, i: number) {
+    setListaArq((x) => ({ ...x, [chave]: (x[chave] ?? []).filter((_, j) => j !== i) }));
+    guardarNoAditivo(async (g, _i, velhos) => { const l = g[chave] ?? []; if (l[i]) velhos.push(l[i]); g[chave] = l.filter((_, j) => j !== i); if (!g[chave].length) delete g[chave]; });
+  }
 
   if (erro) return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erro} <button className="ml-2 underline" onClick={onVoltar}>voltar</button></div>;
   if (!reg || !d || !dx || !e || !an) return <p className="text-sm text-slate-500">Abrindo o aditivo…</p>;
@@ -66,20 +165,20 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
     if (!reg || !dx || !e) return null;
     setOcupado(true); setMsg(null);
     try {
-      const r = await salvarAditivo(reg, dx, e, usuario, situacao);
+      await refs.current.fila;
+      const r = await salvarAditivo(refs.current.reg ?? reg, dx, e, usuario, situacao);
       setD(r.dados);
       setReg(r); setSujo(false);
       setMsg({ ok: true, txt: "Aditivo salvo." });
       return r;
     } catch (x) { setMsg({ ok: false, txt: x instanceof Error ? x.message : String(x) }); return null; } finally { setOcupado(false); }
   }
-  async function guardarOm() {
-    if (!d) return;
-    try {
-      await salvarOm({ sigla: d.om_signataria.sigla, nome: d.om_signataria.nome, ug: d.om_signataria.ug || null, artigo: d.om_signataria.artigo, autoridade_superior: d.autoridade_superior }, usuario);
-      setOms(await omsCadastradas());
-      setMsg({ ok: true, txt: `Dados da ${d.om_signataria.sigla} guardados para os próximos aditivos.` });
-    } catch (x) { setMsg({ ok: false, txt: x instanceof Error ? x.message : String(x) }); }
+  /** Traz para este aditivo nome, UG, artigo e autoridade do cadastro da unidade (Reajustes › Configurações) */
+  function usarCadastroDaUnidade() {
+    if (!unidadeOm) return;
+    const { om, autoridade_superior } = omDaUnidade(unidadeOm);
+    mudar((x) => ({ ...x, om_signataria: om, autoridade_superior: autoridade_superior ?? x.autoridade_superior }));
+    setMsg({ ok: true, txt: `Dados da ${om.sigla} trazidos do cadastro de unidades apoiadas.` });
   }
   async function recarregarCadastro() {
     if (!reg) return;
@@ -114,36 +213,62 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
     if (!manuais) mudarE({ pareceres_manuais: true });
   }
   const parecer = (i: number, p: Partial<ParecerReferencial>) => listaPareceres((l) => l.map((q, j) => (j === i ? { ...q, ...p } : q)));
+  /** Parecer fora da biblioteca da SCON: objeto pela EMENTA do PDF da AGU (seção 2.4.1) */
+  async function lerEmenta(i: number) {
+    const p = dx?.pareceres_referenciais[i];
+    if (!p?.pdf) return;
+    setMsg({ ok: true, txt: "Baixando o PDF do parecer na AGU e lendo a ementa…" });
+    try {
+      const x = await consultaAutomatica<{ ok: boolean; error?: string; pdf_base64?: string }>({ acao: "parecer_pdf", url: p.pdf });
+      if (!x.ok || !x.pdf_base64) throw new Error(x.error ?? "a AGU não devolveu o PDF");
+      const { textoDoPdf } = await import("../../lib/apostilamento/pdfTexto");
+      const ementa = ementaDoParecer(await textoDoPdf(new Uint8Array(bytesDeBase64(x.pdf_base64))), p.cobre);
+      if (!ementa) throw new Error("não achei o bloco EMENTA no PDF: copie o objeto à mão");
+      parecer(i, { objeto: ementa, fonte_objeto: "Ementa do PDF do parecer" });
+      setMsg({ ok: true, txt: "Objeto tirado da ementa do parecer: confira e ajuste se precisar." });
+    } catch (x) { setMsg({ ok: false, txt: `Não li a ementa: ${x instanceof Error ? x.message : String(x)}` }); }
+  }
+  const vant: Vantajosidade = d.vantajosidade ?? { motivos: [] };
+  const setVant = (p: Partial<Vantajosidade>) => mudar((x) => ({ ...x, vantajosidade: { ...(x.vantajosidade ?? { motivos: [] }), ...p } }));
+  const objetoAuto = fraseObjetoVantajosidade({ objeto_contrato: e.objeto_contrato, vantajosidade: null });
+  const cabecalhoAuto = (d.om_signataria.nome ?? "").toUpperCase();
   async function irParaPesquisa() {
     if (sujo && !(await salvar())) return;
     onAbrir(`/app?vista=pesquisa-precos&aditivo=${reg!.id}`);
   }
   async function gerar() {
     if (!dx || !reg || !e) return;
-    const r0 = sujo ? await salvar() : reg;
+    await refs.current.fila; // anexos ainda sendo guardados
+    const r0 = sujo ? await salvar() : refs.current.reg ?? reg;
     if (!r0) return;
     setOcupado(true); setGeracao(null); setMsg({ ok: true, txt: "Preparando o kit da SCON (na primeira vez o navegador baixa o Python, cerca de 15 MB)…" });
     try {
       const ct = dx.contrato.replace(/\//g, "-");
-      const extras: { nome: string; bytes: ArrayBuffer }[] = [];
-      anexos.sicaf.forEach((a, i) => extras.push({ nome: `12 - SICAF - CT ${ct}${anexos.sicaf.length > 1 ? ` (${i + 1})` : ""}.pdf`, bytes: a.bytes }));
-      if (anexos.item13) extras.push({ nome: anexos.item13.nome, bytes: anexos.item13.bytes });
-      else if (anexos.consolidada) extras.push({ nome: `13 - Consulta Consolidada - CT ${ct}.pdf`, bytes: anexos.consolidada.bytes });
-      anexos.socio.forEach((a, i) => extras.push({ nome: `14 - Consulta CPF do socio - CT ${ct} (${i + 1}).pdf`, bytes: a.bytes }));
-      if (memoria && ad.reajuste) extras.push({ nome: memoria.nome, bytes: memoria.bytes });
-      const r = await kitAditivo.gerar(dx, extras, (t) => setMsg({ ok: true, txt: t }));
-      const nome = `${dx.numero_aditivo ?? ""}º Termo Aditivo - CT ${ct}.zip`;
-      setGeracao({ docs: r.documentos, zip: r.zip, nome });
+      // anexos por item da Lista: o montar_zip.py do kit numera pela Lista e junta vários PDFs da mesma chave num só
+      const extras: { chave: string; nome: string; bytes: ArrayBuffer }[] = [];
+      anexos.sicaf.forEach((a) => extras.push({ chave: "sicaf", ...a }));
+      const i13 = anexos.item13 ?? anexos.consolidada;
+      if (i13) extras.push({ chave: "consulta_cnpj", ...i13 });
+      anexos.socio.forEach((a) => extras.push({ chave: "consulta_cpf_socio", ...a }));
+      if (memoria && ad.reajuste) extras.push({ chave: "memoria_calculo", ...memoria });
+      for (const [k, l] of Object.entries(listaArq)) l.forEach((a) => extras.push({ chave: k, ...a }));
+      // unidade do CEFA que o kit não reconhece pelo nome: autoridade do campo 19 = DIRAD
+      const dk = unidadeOm?.cefa && !eCefa(dx.om_signataria) && !dx.autoridade_superior?.trim() ? { ...dx, autoridade_superior: AUTORIDADE_CEFA } : dx;
+      const r = await kitAditivo.gerar(dk, extras, (t) => setMsg({ ok: true, txt: t }));
+      const nome = `Termo Aditivo ${dx.numero_aditivo ?? ""} - CT ${ct}.zip`;
+      setGeracao({ docs: r.documentos, zip: r.zip, nome, faltando: r.faltando ?? [] });
       const falhas = Object.values(r.documentos).filter((x) => !x.ok);
       setMsg({ ok: !falhas.length, txt: falhas.length ? `${falhas.length} documento(s) não saíram: veja os erros abaixo.` : `${r.arquivos.length} arquivo(s) no .zip.` });
       baixarBlob(r.zip, nome);
-      const atualizado = await salvarAditivo(r0, dx, { ...e, gerado_em: new Date().toISOString(), arquivos_gerados: r.arquivos }, usuario, "gerado");
+      const atualizado = await salvarAditivo(r0, dx, { ...(refs.current.e ?? e), gerado_em: new Date().toISOString(), arquivos_gerados: r.arquivos }, usuario, "gerado");
       setReg(atualizado); setE(atualizado.estado); setSujo(false);
     } catch (x) { setMsg({ ok: false, txt: x instanceof Error ? x.message : String(x) }); } finally { setOcupado(false); }
   }
 
-  const cefa = eCefa(d.om_signataria);
-  const omCad = oms.find((o) => o.sigla.toUpperCase() === d.om_signataria.sigla.toUpperCase());
+  const cefa = eCefa(d.om_signataria) || !!unidadeOm?.cefa;
+  const pareceresEfetivos = pareceresDoAditivo(dx.pareceres_referenciais);
+  const orgaos = new Set(an.pareceres.map((p) => pareceresEfetivos.find((q) => q.numero === p.numero)?.orgao_consultivo ?? null));
+  const atestado = an.pareceres.length > 0 && !an.descobertas.length;
   return (
     <div className="space-y-3 pb-24">
       <div className="flex flex-wrap items-center gap-2">
@@ -153,6 +278,7 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
         <span className="text-[11px] text-slate-400">salvo por {reg.atualizado_nome ?? "—"} em {new Date(reg.atualizado_em).toLocaleString("pt-BR")}</span>
       </div>
       {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-sky-200 bg-sky-50 text-sky-700" : "border-red-200 bg-red-50 text-red-700"}`}>{msg.txt}</div>}
+      {restaurando && <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">Abrindo os anexos guardados neste aditivo…</div>}
 
       <Secao titulo="Contrato e OMs" direita={<button className={botao} onClick={() => void recarregarCadastro()}>↻ Trazer do cadastro dos Reajustes</button>}>
         <div className="grid gap-2 sm:grid-cols-4">
@@ -174,7 +300,16 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
             <label className="block"><span className="block text-[11px] font-medium text-slate-600 mb-0.5">Artigo</span>
               <select className={sel} value={d.om_signataria.artigo} onChange={(ev) => mudar((x) => ({ ...x, om_signataria: { ...x.om_signataria, artigo: ev.target.value as "do" | "da" } }))}><option value="do">do</option><option value="da">da</option></select></label>
           </div>
-          <button className={`${botao} mt-2`} onClick={() => void guardarOm()}>Guardar esta OM para os próximos aditivos{omCad ? " (atualizar)" : ""}</button>
+          {unidades && (unidadeOm
+            ? <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                <span>Dados da contratante: <b>cadastro {unidadeOm.sigla}</b>{unidadeOm.atualizado_em ? ` (atualizado em ${new Date(unidadeOm.atualizado_em).toLocaleDateString("pt-BR")}${unidadeOm.atualizado_nome ? ` por ${unidadeOm.atualizado_nome}` : ""})` : ""}{unidadeOm.cefa ? " · CEFA" : ""}</span>
+                <button className={botao} onClick={usarCadastroDaUnidade}>↻ Usar os dados do cadastro</button>
+                <button className={botao} onClick={() => onAbrir(`/app?vista=reajustes&aba=config&nova=${encodeURIComponent(unidadeOm.sigla)}`)}>Editar o cadastro ↗</button>
+              </div>
+            : <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                A OM signatária <b>{d.om_signataria.sigla || "?"}</b> não está cadastrada em Reajustes › Configurações: cadastre antes de gerar os documentos.
+                <button className="ml-2 rounded-md border border-amber-300 bg-white px-2 py-0.5 font-medium hover:bg-amber-100" onClick={() => onAbrir(`/app?vista=reajustes&aba=config&nova=${encodeURIComponent(d.om_signataria.sigla)}`)}>Cadastrar esta unidade ↗</button>
+              </div>)}
         </div>
       </Secao>
 
@@ -237,15 +372,29 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
         <ul className="mt-2 space-y-1 text-xs">
           {an.pareceres.map((p) => <li key={p.numero} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-800">🟢 {p.fundamenta.map((a) => NOMES[a]).join(" e ").replace(/^./, (c) => c.toUpperCase())}: fundamentados no {p.numero} (válido até {p.validade ?? "?"}).</li>)}
           {an.descobertas.map((x) => <li key={x} className="rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold text-red-700">🔴 {x.replace(/^./, (c) => c.toUpperCase())}: sem parecer referencial vigente. Este termo aditivo deverá ir para análise jurídica (CJU).</li>)}
+          {atestado
+            ? <li className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">📄 Atestado de adequação: <b>um só</b>, do processo {citarPareceres(an.pareceres)} — gerado e incluído no .zip.{(orgaos.size !== 1 || orgaos.has(null)) && <span className="text-amber-700"> Órgão consultivo não identificado (ou diferente entre os pareceres): confira o trecho "a cargo da…" do atestado.</span>}</li>
+            : an.pareceres.length > 0 && <li className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Sem Atestado de adequação: com alteração sem parecer referencial, o aditivo vai para a CJU.</li>}
         </ul>
         <div className="mt-2 space-y-2">
-          {dx.pareceres_referenciais.map((p, i) => (
+          {dx.pareceres_referenciais.map((p, i) => {
+            const bib = daBiblioteca(p.numero);
+            const objetoEfetivo = pareceresDoAditivo([p])[0]?.objeto ?? p.objeto ?? "";
+            return (
             <div key={i} className="rounded-lg border border-slate-200 p-2 text-xs">
               <div className="grid gap-2 sm:grid-cols-4">
                 <div className="sm:col-span-2"><Campo rotulo="Nº completo do parecer" valor={p.numero} onChange={(v) => parecer(i, { numero: v })} /></div>
-                <Campo rotulo="Data" valor={p.data ?? ""} onChange={(v) => parecer(i, { data: v || null })} />
-                <Campo rotulo="Válido até" valor={p.validade ?? ""} onChange={(v) => parecer(i, { validade: v || null })} />
-                <div className="sm:col-span-4"><Campo rotulo="Objeto (ementa)" valor={p.objeto ?? ""} longo onChange={(v) => parecer(i, { objeto: v })} /></div>
+                <Campo rotulo="Data" valor={p.data ?? bib?.data ?? ""} onChange={(v) => parecer(i, { data: v || null })} />
+                <Campo rotulo="Válido até" valor={p.validade ?? bib?.validade ?? ""} onChange={(v) => parecer(i, { validade: v || null })} />
+                <div className="sm:col-span-4">
+                  <Campo rotulo="Objeto (texto do próprio parecer, voltado para a alteração)" valor={objetoEfetivo} longo onChange={(v) => parecer(i, { objeto: v, objeto_fixo: true })} />
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                    {bib && !p.objeto_fixo && <span>📚 da biblioteca de pareceres da SCON ({bib.fonte_objeto})</span>}
+                    {bib && p.objeto_fixo && <button className="text-sky-700 underline" onClick={() => parecer(i, { objeto: bib.objeto, objeto_fixo: false })}>voltar ao objeto da biblioteca da SCON</button>}
+                    {!bib && p.pdf && <button className={botao} onClick={() => void lerEmenta(i)}>📄 Ler a ementa no PDF do parecer</button>}
+                    {!bib && !p.pdf && <span>Fora da biblioteca da SCON e sem o PDF: escreva o objeto pela ementa do parecer.</span>}
+                  </div>
+                </div>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-3">
                 <span className="text-slate-600">Fundamenta:</span>
@@ -254,12 +403,13 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
                 <button className="ml-auto text-red-600 underline" onClick={() => listaPareceres((l) => l.filter((_, j) => j !== i))}>remover</button>
               </div>
             </div>
-          ))}
+            );
+          })}
           <div className="flex flex-wrap gap-2 text-xs">
             <select className="max-w-[520px] rounded-lg border border-slate-200 px-2 py-1" value="" onChange={(ev) => {
               const a = agu.find((x) => String(x.id) === ev.target.value);
               if (!a) return;
-              listaPareceres((l) => [...l, { numero: a.parecer ?? "", objeto: a.assunto ?? "", data: a.data ? a.data.split("-").reverse().join("/") : null, validade: a.validade ? a.validade.split("-").reverse().join("/") : null, cobre: [] }]);
+              listaPareceres((l) => [...l, { numero: a.parecer ?? "", objeto: limparObjeto(a.assunto), data: a.data ? a.data.split("-").reverse().join("/") : null, validade: a.validade ? a.validade.split("-").reverse().join("/") : null, cobre: [], pdf: a.url ?? null }]);
             }}>
               <option value="">+ Incluir um parecer da página AGU (pareceres referenciais vigentes)…</option>
               {agu.filter((a) => !a.validade || a.validade >= hoje).map((a) => <option key={a.id} value={a.id}>{(a.parecer ?? "").slice(0, 70)} — {(a.assunto ?? "").slice(0, 80)}</option>)}
@@ -286,6 +436,12 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
                   <label className="flex shrink-0 items-center gap-1 text-[11px] text-slate-600"><input type="checkbox" checked={nao} onChange={(ev) => naoAnexado(it.chave, ev.target.checked)} /> não será anexado</label>
                 </div>
                 {nao && <input className="mt-1 w-full rounded border border-amber-300 px-2 py-1" placeholder="Justificativa (obrigatória; vai para a Observação)" value={d.nao_anexados[it.chave]} onChange={(ev) => mudar((x) => ({ ...x, nao_anexados: { ...x.nao_anexados, [it.chave]: ev.target.value } }))} />}
+                {!nao && anexavel(it.chave) && (
+                  <div className="mt-1 flex flex-wrap items-center gap-2 pl-7 text-[11px]">
+                    {(listaArq[it.chave] ?? []).map((a, j) => <span key={j} className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800">📎 {a.nome} <button className="text-red-600" title="tirar do aditivo" onClick={() => removerItem(it.chave, j)}>✕</button></span>)}
+                    <label className="cursor-pointer text-sky-700 underline">anexar PDF (vai no .zip)<input type="file" accept="application/pdf,.docx" multiple className="hidden" onChange={(ev) => { void anexarItem(it.chave, ev.target.files); ev.target.value = ""; }} /></label>
+                  </div>
+                )}
               </li>
             );
           })}
@@ -304,32 +460,64 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
         </div>
       </Secao>
 
-      <Secao titulo="5. Mapa de Riscos">
+      {ad.prorrogacao && (
+        <Secao titulo="5. Declaração de Vantajosidade Econômica (prorrogação de vigência)">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Campo rotulo="OM do cabeçalho (a que assina o contrato)" valor={vant.om_cabecalho ?? cabecalhoAuto}
+              onChange={(v) => setVant({ om_cabecalho: v.trim() && v.trim().toUpperCase() !== cabecalhoAuto.trim() ? v : null })} dica="vazio = o nome da OM signatária" />
+            <Campo rotulo='Objeto na declaração ("cujo objeto é …")' valor={vant.objeto ?? objetoAuto}
+              onChange={(v) => setVant({ objeto: v.trim() && v.trim() !== objetoAuto ? v : null })} dica="montado do objeto do contrato; corrija se precisar" />
+          </div>
+          <div className="mt-2 space-y-1 text-xs">
+            <span className="block text-[11px] font-medium text-slate-600">Motivos da vantajosidade (incisos I, II, III… – pelo menos 1)</span>
+            {vant.motivos.map((m, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="w-8 shrink-0 pt-1.5 text-right font-semibold text-slate-500">{["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][i] ?? i + 1} –</span>
+                <textarea className="min-h-[44px] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs" value={m} onChange={(ev) => setVant({ motivos: vant.motivos.map((x, j) => (j === i ? ev.target.value : x)) })} />
+                <button className="pt-1.5 text-red-600" title="tirar este motivo" onClick={() => setVant({ motivos: vant.motivos.filter((_, j) => j !== i) })}>🗑</button>
+              </div>
+            ))}
+            <div className="flex flex-wrap gap-2">
+              <button className={botao} onClick={() => setVant({ motivos: [...vant.motivos, ""] })}>+ Adicionar motivo</button>
+              {SUGESTOES_VANTAJOSIDADE(indiceContrato || ad.reajuste?.indice || "").filter((t) => !vant.motivos.includes(t)).map((t, i) => (
+                <button key={i} className="rounded-lg border border-dashed border-slate-300 px-2 py-1 text-left text-[11px] text-slate-600 hover:bg-slate-50" title={t} onClick={() => setVant({ motivos: [...vant.motivos.filter((x) => x.trim()), t] })}>Usar sugestão: {t.slice(0, 60)}…</button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 rounded-md bg-slate-50 p-2 text-[11px] text-slate-700">
+            <b>Prévia:</b> Considerando a prorrogação de vigência do Contrato nº {d.contrato}, cujo objeto é {fraseObjetoVantajosidade({ objeto_contrato: e.objeto_contrato, vantajosidade: vant }) || "«objeto»"}, declaro que é vantajosa economicamente a prorrogação do contrato em questão, pois:
+            {incisosVantajosidade(vant.motivos).map(([n, t]) => <div key={n} className="pl-4">{n} – {t}</div>)}
+            <div className="mt-1 text-slate-500">Assinam: Gestor do Contrato e Ordenador de Despesas (só o cargo). Vai no .zip como item da Lista.</div>
+          </div>
+        </Secao>
+      )}
+
+      <Secao titulo="6. Mapa de Riscos">
         <MapaRiscos riscos={d.riscos} tipo={e.tipo_risco} onChange={(r) => mudar((x) => ({ ...x, riscos: r }))} onTipo={(t) => mudarE({ tipo_risco: t })} />
       </Secao>
 
-      <Secao titulo="6. SICAF (item 12 – obrigatório)">
-        <Sicaf estado={e} anexos={anexos} onEstado={mudarE} onAnexos={(a) => setAnexos((x) => ({ ...x, ...a }))} />
+      <Secao titulo="7. SICAF (obrigatório)">
+        <Sicaf estado={e} anexos={anexos} onEstado={mudarE} onAnexos={aoAnexar} />
       </Secao>
 
-      <Secao titulo="7. Regularidade CEIS / CNEP / CNJ / TCU (item 13 – obrigatório)">
-        <Regularidade estado={e} anexos={anexos} contrato={d.contrato} consultaSocio={d.consulta_socio} onEstado={mudarE} onAnexos={(a) => setAnexos((x) => ({ ...x, ...a }))} />
+      <Secao titulo="8. Regularidade CEIS / CNEP / CNJ / TCU (obrigatório)">
+        <Regularidade estado={e} anexos={anexos} contrato={d.contrato} consultaSocio={d.consulta_socio} onEstado={mudarE} onAnexos={aoAnexar} />
       </Secao>
 
-      <Secao titulo="8. Pesquisa de Preços (obrigatória)">
+      <Secao titulo="9. Pesquisa de Preços (obrigatória)">
         <PesquisaAditivo d={d} numeroContrato={reg.numero_contrato} onPesquisa={(p) => mudar((x) => ({ ...x, pesquisa_precos: p }))} onFazer={() => void irParaPesquisa()} />
       </Secao>
 
       {ad.reajuste && (
-        <Secao titulo="9. Memória de Cálculo + Calculadora do Cidadão (reajuste)">
-          <MemoriaAditivo d={d} numeroContrato={reg.numero_contrato} memoria={memoria} onMemoria={setMemoria}
+        <Secao titulo="10. Memória de Cálculo + Calculadora do Cidadão (reajuste)">
+          <MemoriaAditivo d={d} numeroContrato={reg.numero_contrato} memoria={memoria} onMemoria={aoMemoria}
             onReajuste={(rj) => mudar((x) => ({ ...x, aditivo: { ...x.aditivo, reajuste: rj } }))}
             onAbrirReajustes={() => onAbrir(`/app?vista=reajustes&contrato=${encodeURIComponent(reg.numero_contrato)}`)} />
         </Secao>
       )}
 
       {acimaMilhao && (
-        <Secao titulo="10. Ficha para a Autorização da Prorrogação (acima de R$ 1 milhão)">
+        <Secao titulo="11. Ficha para a Autorização da Prorrogação (acima de R$ 1 milhão)">
           <pre className="whitespace-pre-wrap rounded-md bg-slate-50 p-2 text-[11px] text-slate-700">{objetoDaFicha(dx)}</pre>
           <div className="mt-2"><Campo rotulo="9. Mérito administrativo (justificativa do fiscal) – obrigatório" valor={d.merito_administrativo} longo onChange={(v) => mudar((x) => ({ ...x, merito_administrativo: v }))} /></div>
           {!cefa && <div className="mt-2"><Campo rotulo="19. Cargo da autoridade que autoriza (OM fora do CEFA)" valor={d.autoridade_superior ?? ""} onChange={(v) => mudar((x) => ({ ...x, autoridade_superior: v || null }))} dica="GAP-MN e Prefeitura: Diretor de Administração da Aeronáutica (automático)." /></div>}
@@ -347,6 +535,7 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
       <Secao titulo="Alertas e geração dos documentos">
         <ul className="space-y-1 text-xs">
           {alertas.length === 0 && <li className="text-emerald-700">Nenhum alerta.</li>}
+          {faltando.length > 0 && <li className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">⚠️ O .zip vai sair sem: {faltando.map((x) => `item ${x.n} – ${x.nome}`).join("; ")}. Anexe o PDF no item da Lista ou marque "não será anexado" com a justificativa.</li>}
           {alertas.map((a, i) => <li key={i} className={`rounded-md border px-2 py-1 ${a.nivel === "critico" ? "border-red-200 bg-red-50 text-red-700" : a.nivel === "atencao" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}>{a.bloqueia ? "⛔ " : a.nivel === "critico" ? "🔴 " : a.nivel === "atencao" ? "⚠️ " : "ℹ️ "}{a.texto}</li>)}
         </ul>
         {geracao && (
@@ -354,6 +543,7 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
             {Object.values(geracao.docs).map((doc) => (
               <div key={doc.nome} className={doc.ok ? "text-emerald-700" : "text-red-700"}>{doc.ok ? "✔" : "✖"} {doc.nome}{doc.erros.length ? `: ${doc.erros.join("; ")}` : ""}{doc.avisos.length ? <span className="text-amber-700"> · {doc.avisos.join("; ")}</span> : null}</div>
             ))}
+            {geracao.faltando.length > 0 && <div className="text-amber-700">Ficaram fora do .zip: {geracao.faltando.join("; ")}.</div>}
             <button className={botao} onClick={() => baixarBlob(geracao.zip, geracao.nome)}>⬇ Baixar de novo: {geracao.nome}</button>
           </div>
         )}

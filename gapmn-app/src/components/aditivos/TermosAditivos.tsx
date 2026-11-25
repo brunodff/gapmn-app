@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "../../lib/supabase";
 import { aditivosEmAndamento, apagarAditivo, contratosParaAditivo, iniciarAditivo, type ContratoParaAditivo } from "../../lib/aditivos/dados";
 import type { RegistroAditivo } from "../../lib/aditivos/tipos";
+import type { ContratoScon } from "../../lib/apostilamento/cadastro";
+import { CONFIG_VAZIA, type ConfigApostilamento } from "../../lib/apostilamento/tipos";
+import { configDaUnidade, unidadePadrao } from "../../lib/apostilamento/unidades";
+import { carregarUnidades } from "../../lib/apostilamento/unidadesBanco";
+import CompletarContratosGov from "../reajustes/CompletarContratosGov";
 import AditivoContrato from "./AditivoContrato";
 
+/** UG do GAP-MN no Contratos.gov.br (a mesma dos Reajustes) e quem usa as ferramentas em lote (as mesmas dos Reajustes) */
+const UG_GAPMN = "120630";
+const SETORES_LOTE = ["SCON", "ADMIN", "DEV"];
+
 // Termos Aditivos (Contratos › Termos Aditivos): pedido da SCON (Ten Thiago, 24/11/2026). A tela monta os
-// documentos do aditivo com o kit da SCON no navegador: Lista de Verificação, Declaração Orçamentária, Mapa de
-// Riscos, Pesquisa de Preços, Ficha de Autorização (> R$ 1 milhão), SICAF, regularidade e Memória de Cálculo.
+// documentos do aditivo com o kit da SCON no navegador: Lista de Verificação, Declaração Orçamentária, Declaração de
+// Vantajosidade, Mapa de Riscos, Pesquisa de Preços, Atestado de adequação, Ficha de Autorização (> R$ 1 milhão), SICAF,
+// regularidade e Memória de Cálculo; os anexos ficam guardados no aditivo e o .zip sai numerado pela Lista (revisão 4).
 type Linha = Pick<RegistroAditivo, "id" | "numero_contrato" | "numero_aditivo" | "situacao" | "atualizado_em" | "atualizado_nome">;
 const botao = "rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50";
 const sem = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -15,6 +26,31 @@ export default function TermosAditivos({ aditivoId, usuario, onAbrirAditivo, onA
 }) {
   if (aditivoId) return <AditivoContrato key={aditivoId} id={aditivoId} usuario={usuario} onVoltar={() => onAbrirAditivo(null)} onAbrir={onAbrir} />;
   return <Lista usuario={usuario} onAbrirAditivo={onAbrirAditivo} />;
+}
+
+/** "Completar todos pelo Contratos.gov.br" (revisão 4 da SCON, seção 6.1): o mesmo componente e a mesma rotina dos
+ *  Reajustes, na mesma base de contratos (o que uma aba completa aparece na outra). */
+function CompletarTodos({ usuario, aoTerminar }: { usuario: string | null; aoTerminar: () => void }) {
+  const [ctx, setCtx] = useState<{ contratos: (ContratoScon & { data_inicio: string | null })[]; config: ConfigApostilamento } | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const { data: s } = await supabase.auth.getSession();
+      const uid = s.session?.user.id;
+      if (!uid) return;
+      const { data: p } = await supabase.from("profiles").select("setor").eq("id", uid).maybeSingle();
+      if (!SETORES_LOTE.includes(String((p as { setor?: string | null } | null)?.setor ?? "").toUpperCase())) return;
+      const [c, u] = await Promise.all([
+        supabase.from("contratos_scon").select("id, numero_contrato, pag_nup, fornecedor, cnpj, descricao, data_orcamento, data_inicio, data_final, vl_contratual, status").order("numero_contrato"),
+        carregarUnidades(),
+      ]);
+      const padrao = unidadePadrao(u.unidades);
+      if (vivo && !c.error) setCtx({ contratos: (c.data ?? []) as (ContratoScon & { data_inicio: string | null })[], config: padrao ? configDaUnidade(padrao, padrao.sigla) : CONFIG_VAZIA });
+    })().catch(() => undefined);
+    return () => { vivo = false; };
+  }, []);
+  if (!ctx) return null;
+  return <CompletarContratosGov contratos={ctx.contratos} config={ctx.config} nomeUsuario={usuario ?? ""} ug={UG_GAPMN} aoTerminar={aoTerminar} />;
 }
 
 function Lista({ usuario, onAbrirAditivo }: { usuario: string | null; onAbrirAditivo: (id: string) => void }) {
@@ -56,9 +92,11 @@ function Lista({ usuario, onAbrirAditivo }: { usuario: string | null; onAbrirAdi
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-bold text-slate-800">Termos Aditivos</h2>
-        <p className="text-xs text-slate-500">Prorrogação, reajuste, acréscimo e supressão: o site preenche com o cadastro do contrato nos Reajustes e a carga do SILOMS, confere os pareceres referenciais da AGU e gera os documentos da Lista de Verificação com o kit da SCON.</p>
+        <p className="text-xs text-slate-500">Prorrogação, reajuste, acréscimo e supressão: o site preenche com o cadastro do contrato nos Reajustes e a carga do SILOMS, confere os pareceres referenciais da AGU e gera os documentos da Lista de Verificação com o kit da SCON. Os dados da OM que assina vêm de Reajustes › Configurações (unidades apoiadas).</p>
       </div>
       {erro && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{erro}</div>}
+
+      <CompletarTodos usuario={usuario} aoTerminar={() => setRecarga((n) => n + 1)} />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-semibold text-slate-800">Iniciar um aditivo</h3>

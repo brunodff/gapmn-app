@@ -11,6 +11,7 @@ import { completarReajustesDevidos, dadosIniciais, itensColados, paraMotor, reaj
 import { motivoForaDaAutomacao, pendenciasCadastro, proximoApostilamento, situacaoCadastro, type CargaGuardada, type FonteDataBase } from "../../lib/apostilamento/carga";
 import type { ConfigApostilamento, DadosReajuste, ItemContrato, MarcacaoChecklist, ResultadoChecagem, ResultadoGeracao } from "../../lib/apostilamento/tipos";
 import { Caixa, Campo, CampoNumero, Secao, brl } from "./campos";
+import { acharUnidade, configDaUnidade, configSemCadastro, pendenciasUnidade, type UnidadeApoiada } from "../../lib/apostilamento/unidades";
 
 type UltimaNE = { ne: string; pi: string; unidade: string } | null;
 type Props = {
@@ -28,6 +29,10 @@ type Props = {
   contratoGov?: ContratoGov;
   /** valores para o primeiro cadastro (outras OMs: sigla e nome da OM) */
   padroes?: Partial<DadosReajuste>;
+  /** unidades apoiadas (GAP-MN): os documentos usam o cadastro da OM que assina o contrato; sem a lista, vale `config` */
+  unidades?: UnidadeApoiada[];
+  /** abre Configurações com o formulário da unidade (OM signatária sem cadastro) */
+  aoCadastrarUnidade?: (sigla: string) => void;
 };
 
 const INDICES = ["IPCA", "INPC", "IGP-M", "IGP-DI", "IPCA-E", "INCC"];
@@ -85,7 +90,7 @@ function baixar(arquivo: Blob, nome: string) {
 
 /** Tela do reajuste de um contrato: cadastro (salvo no banco), índice do Banco Central ou da FGV (INCC), prints
  *  da consulta do índice, checklist do fiscal, quadro de checagem e geração dos documentos pelo motor da SCON. */
-export default function ReajusteContrato({ contrato, config, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes }: Props) {
+export default function ReajusteContrato({ contrato, config: configBase, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes, unidades, aoCadastrarUnidade }: Props) {
   const [d, setD] = useState<DadosReajuste | null>(null);
   const [dedicacao, setDedicacao] = useState(false);
   const [versao, setVersao] = useState<number | null>(null);
@@ -147,8 +152,12 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
     else if (r.avisos.length) setMsg({ ok: false, txt: r.avisos.join(" ") });
   }
 
+  // OM que assina (a "OM do Ordenador") → cadastro da unidade apoiada; sem cadastro, campos em branco (nunca os do GAP-MN)
+  const omAssina = d?.om_ordenador || d?.ordenador?.om_sigla || configBase.ordenador.om_sigla || "GAP-MN";
+  const unidade = unidades ? acharUnidade(unidades, omAssina) : null;
+  const config = useMemo(() => (!unidades ? configBase : unidade ? configDaUnidade(unidade, omAssina, configBase.dias_alerta) : configSemCadastro(omAssina, configBase.dias_alerta)),
+    [unidades, unidade, omAssina, configBase]);
   const totalItens = useMemo(() => (d?.itens ?? []).reduce((s, it) => s + (it.valor_base ?? 0), 0), [d?.itens]);
-  const omAssina = d?.om_ordenador || d?.ordenador?.om_sigla || config.ordenador.om_sigla || "GAP-MN";
   const temTextoFixo = !!config.textos_fixos_om[omAssina];
   // fora da automação: dedicação exclusiva (repactuação) ou a carga do SILOMS diz que não há reajuste por índice
   const motivoFora = motivoForaDaAutomacao(carga?.siloms, dedicacao);
@@ -266,6 +275,16 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
         {alterado && <span className="text-xs text-amber-600">alterações não salvas</span>}
       </div>
 
+      {unidades && (unidade
+        ? <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
+            Dados da contratante: <b>cadastro {unidade.sigla}</b>{unidade.atualizado_em ? ` (atualizado em ${new Date(unidade.atualizado_em).toLocaleDateString("pt-BR")}${unidade.atualizado_nome ? ` por ${unidade.atualizado_nome}` : ""})` : ""} — Ordenador, ACI, unidade de apoio e texto fixo vêm de Configurações.
+            {pendenciasUnidade(unidade).length > 0 && <span className="text-amber-700"> Falta no cadastro: {pendenciasUnidade(unidade).join(", ")}.</span>}
+          </div>
+        : <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            A OM signatária <b>{omAssina}</b> não está cadastrada em Configurações – cadastre antes de gerar os documentos (sem cadastro, o Ordenador, o ACI e a unidade de apoio saem em branco).
+            {aoCadastrarUnidade && <button className="ml-2 rounded-md border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100" onClick={() => aoCadastrarUnidade(omAssina)}>Cadastrar esta unidade</button>}
+          </div>)}
+
       {motivoFora && !dedicacao && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-700">
           A carga do SILOMS marca este contrato sem reajuste por índice: <b>{motivoFora}</b>. Ele fica fora do painel de reajustes;
@@ -291,7 +310,7 @@ export default function ReajusteContrato({ contrato, config, nomeUsuario, ultima
           <Campo rotulo="NUP / PAG" valor={d.nup} onChange={(v) => set("nup", v)} />
           <Campo rotulo="OM contratante (sigla, vai no cabeçalho)" valor={d.om_contratante_sigla} onChange={(v) => set("om_contratante_sigla", v)} dica="sugerida pelo número do contrato — confira (ex.: 2º GDAAE)" />
           <Campo rotulo="OM contratante (nome por extenso)" valor={d.om_contratante_nome} onChange={(v) => set("om_contratante_nome", v)} placeholder="2º GRUPO DE DEFESA ANTIAÉREA" />
-          <Campo rotulo="OM do Ordenador que assina" valor={d.om_ordenador ?? ""} onChange={(v) => set("om_ordenador", v.toUpperCase())} placeholder={config.ordenador.om_sigla || "GAP-MN"} dica="vazio = a da configuração" />
+          <Campo rotulo="OM do Ordenador que assina" valor={d.om_ordenador ?? ""} onChange={(v) => set("om_ordenador", v.toUpperCase())} placeholder={configBase.ordenador.om_sigla || "GAP-MN"} dica={unidades ? "vazio = a unidade padrão; o cadastro da OM vem de Configurações" : "vazio = a da configuração"} />
           <Campo rotulo="Cabeçalho do termo (nome da OM que assina)" valor={d.termo_om_nome ?? ""} onChange={(v) => set("termo_om_nome", v)} placeholder={config.ug_apoio.nome} dica="vazio = o da unidade de apoio (Configurações)" />
         </div>
         {d.ordenador?.nome

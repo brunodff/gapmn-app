@@ -8,6 +8,7 @@
  *      mostra o caminho manual (abrir o site, baixar o PDF e anexar). Não repete a chamada.
  * POST { acao: "cnj", documento, tipoPessoa: "J"|"F" } → certidão do CNIA (CNJ): pesquisa e baixa a Negativa ou a
  *      Positiva (PDF direto, sem login nem captcha).
+ * POST { acao: "parecer_pdf", url } → PDF de um parecer referencial da AGU (só agu.gov.br), para a tela tirar a ementa.
  * → { ok, ... , pdf_base64 } (o PDF vai junto, em base64)
  *
  * Só usuário logado (verify_jwt ligado + auth.getUser). Deploy: supabase functions deploy aditivos-consultas --use-api
@@ -30,6 +31,21 @@ function base64(bytes: Uint8Array): string {
   return btoa(s);
 }
 const ehPdf = (b: Uint8Array) => b.length > 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
+
+/** PDF de um parecer referencial (página AGU do site), para a tela tirar a EMENTA quando o parecer não está na
+ *  biblioteca da SCON (revisão 2, seção 2.4.1). Só os endereços da AGU; o navegador não baixa direto (CORS). */
+async function parecerPdf(url: string) {
+  let u: URL;
+  try { u = new URL(url); } catch { return { ok: false, error: "Endereço do parecer inválido." }; }
+  if (u.protocol !== "https:" || !/(^|\.)agu\.gov\.br$/i.test(u.hostname)) return { ok: false, error: "Só baixo pareceres dos endereços da AGU (agu.gov.br)." };
+  const r = await fetch(u.toString(), { headers: UA, redirect: "follow", signal: AbortSignal.timeout(60000) });
+  if (r.url && !/(^|\.)agu\.gov\.br$/i.test(new URL(r.url).hostname)) return { ok: false, error: "O link do parecer levou para fora da AGU." };
+  if (!r.ok) return { ok: false, error: `A AGU respondeu ${r.status}.` };
+  const b = new Uint8Array(await r.arrayBuffer());
+  if (b.length > 15 * 1024 * 1024) return { ok: false, error: "PDF grande demais (mais de 15 MB)." };
+  if (!ehPdf(b)) return { ok: false, error: "O link do parecer não devolve um PDF (abra no navegador e copie a ementa)." };
+  return { ok: true, pdf_base64: base64(b) };
+}
 
 async function tcu(cnpj: string) {
   const url = `https://certidoes-apf.apps.tcu.gov.br/api/rest/publico/certidoes/${cnpj}`;
@@ -96,6 +112,7 @@ Deno.serve(async (req) => {
       if ((tipo === "J" && d.length !== 14) || (tipo === "F" && d.length !== 11)) return json({ ok: false, error: "CPF/CNPJ inválido." }, 400);
       return json(await cnj(d, tipo));
     }
+    if (corpo?.acao === "parecer_pdf") return json(await parecerPdf(String(corpo.url ?? "")));
     return json({ ok: false, error: "ação desconhecida" }, 400);
   } catch (e) {
     return json({ ok: false, bloqueado: !!e?.bloqueado, error: String(e?.message ?? e) }, e?.bloqueado ? 200 : 502);

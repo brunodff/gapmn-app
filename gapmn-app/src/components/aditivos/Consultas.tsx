@@ -6,7 +6,8 @@ import type { EstadoAditivo, ResultadoRegularidade } from "../../lib/aditivos/ti
 
 // Itens 12 (SICAF) e 13 (CEIS, CNEP, CNJ e TCU) da Lista: o SICAF exige login gov.br no perfil Governo, então o
 // fiscal anexa o PDF e o kit confere; a Consulta Consolidada do TCU é tentada sozinha (servidor do site) e, se o
-// firewall do TCU recusar, o fiscal baixa e anexa. Os PDFs ficam só na memória desta aba (vão juntos no .zip).
+// firewall do TCU recusar, o fiscal baixa e anexa. Os PDFs ficam guardados no aditivo e vão juntos no .zip (o do item
+// 14, CPF do sócio, fica só nesta sessão).
 
 const SICAF_URL = "https://www3.comprasnet.gov.br/sicaf-web/private/geral/consultarSituacaoFornecedor.jsf";
 const TCU_URL = "https://certidoes-apf.apps.tcu.gov.br/";
@@ -50,7 +51,7 @@ export function Sicaf({ estado, anexos, onEstado, onAnexos, ro }: {
       {s && (
         <div className={`rounded-lg border p-2 ${s.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
           <div className="font-semibold">{s.ok ? "✅ SICAF OK – atende ao item 12" : "⛔ SICAF com pendências"} <span className="font-normal text-slate-500">({s.arquivo}; emitido em {s.emitido_em ?? "?"})</span></div>
-          {!anexos.sicaf.length && <div className="text-amber-700">Anexe o PDF de novo para ele ir junto no .zip (os arquivos não ficam guardados no site).</div>}
+          {!anexos.sicaf.length && <div className="text-amber-700">O PDF não está guardado no aditivo: anexe de novo para ele ir junto no .zip.</div>}
           <ul className="mt-1 list-disc pl-5">{s.alertas.map((a, i) => <li key={i} className={/^🟡/.test(a) ? "text-amber-700" : "text-red-700"}>{a}</li>)}</ul>
           <div className="mt-1 text-slate-600">{Object.entries(s.certidoes).map(([k, c]) => `${k.replace(/_/g, " ")}: ${c.situacao}${c.validade ? ` (${c.validade})` : ""}`).join(" · ")}</div>
         </div>
@@ -104,8 +105,12 @@ export function Regularidade({ estado, anexos, contrato, consultaSocio, onEstado
       const x = await consultaAutomatica<{ ok: boolean; error?: string; tipo?: string; consta?: boolean | null; pdf_base64?: string; nome_pdf?: string }>({ acao: "cnj", documento: cnpj, tipoPessoa: "J" });
       if (!x.ok || !x.pdf_base64) { setMsg({ ok: false, txt: x.error ?? "O CNJ não respondeu: abra o site e anexe a certidão." }); return; }
       onAnexos({ complementos: { ...anexos.complementos, cnj_cnia: { nome: x.nome_pdf ?? "Certidao_CNJ.pdf", bytes: bytesDeBase64(x.pdf_base64) } }, item13: null });
-      if (r) guardar(r, r.fonte, { ...r.complementos, cnj_cnia: `CNJ automático (${x.tipo})` });
-      setMsg({ ok: x.consta === false, txt: x.consta ? "🔴 CNJ/CNIA: CONSTA registro – verificar antes do aditivo." : x.consta === null ? `⚠️ A pesquisa do CNJ não confirmou se há registro: a certidão ${x.tipo} foi anexada, confira o PDF.` : `Certidão ${x.tipo} do CNJ anexada.` });
+      if (r) {
+        const cad = r.cadastros.cnj_cnia;
+        const cadastros = x.consta && cad ? { ...r.cadastros, cnj_cnia: { ...cad, situacao: "consta" as const, resultado: `certidão ${x.tipo}` } } : r.cadastros;
+        guardar({ ...r, cadastros }, r.fonte, { ...r.complementos, cnj_cnia: `CNJ automático (${x.tipo})` });
+      }
+      setMsg({ ok: x.consta === false, txt: x.consta ? "🔴 CONSTA registro no CNIA – verificar antes do aditivo (certidão Positiva do CNJ)." : x.consta === null ? `⚠️ A pesquisa do CNJ não confirmou se há registro: a certidão ${x.tipo} foi anexada, confira o PDF.` : `Certidão ${x.tipo} do CNJ anexada.` });
     } catch (e) { setMsg({ ok: false, txt: e instanceof Error ? e.message : String(e) }); } finally { setOcupado(false); }
   }
   async function anexarComplemento(chave: string, f: File | undefined) {
@@ -153,14 +158,14 @@ export function Regularidade({ estado, anexos, contrato, consultaSocio, onEstado
               </div>
             );
           })}
-          {!anexos.consolidada && <p className="text-amber-700">O PDF da consolidada não está anexado nesta sessão: anexe (ou consulte de novo) para montar o item 13.</p>}
+          {!anexos.consolidada && !anexos.item13 && <p className="text-amber-700">O PDF da consolidada não está guardado no aditivo: anexe (ou consulte de novo) para montar o item 13.</p>}
           {!ro && <button type="button" className={botao} disabled={ocupado || !anexos.consolidada} onClick={() => void montar()}>📄 Montar o PDF do item 13</button>}
           {anexos.item13 && <button type="button" className={`${botao} ml-2`} onClick={() => baixar(anexos.item13!)}>⬇ {anexos.item13.nome}</button>}
         </div>
       )}
       {consultaSocio && (
         <div className="rounded-lg border border-slate-200 p-2">
-          <b>Item 14 – CPF do sócio majoritário</b>: a consolidada do TCU é só para CNPJ. Consulte CNJ, CEIS/CNEP e TCU pelo CPF e anexe os PDFs (vão juntos no .zip; o CPF não fica guardado no site).
+          <b>CPF do sócio majoritário</b>: a consolidada do TCU é só para CNPJ. Consulte CNJ, CEIS/CNEP e TCU pelo CPF e anexe os PDFs (vão juntos no .zip desta sessão; o CPF não fica guardado no site).
           {!ro && <label className={`${botao} ml-2 cursor-pointer`}>📎 Anexar PDFs do item 14<input type="file" accept="application/pdf" multiple className="hidden" onChange={async (e) => onAnexos({ socio: await Promise.all(Array.from(e.target.files ?? []).map(lerArquivo)) })} /></label>}
           {anexos.socio.length > 0 && <span className="ml-2 text-slate-600">{anexos.socio.length} arquivo(s)</span>}
         </div>

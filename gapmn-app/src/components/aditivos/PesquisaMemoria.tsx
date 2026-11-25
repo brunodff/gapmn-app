@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { unzipSync } from "fflate";
-import { supabase } from "../../lib/supabase";
 import { motor } from "../../lib/apostilamento/motor";
 import { paraMotor } from "../../lib/apostilamento/cadastro";
-import { CONFIG_VAZIA, type ConfigApostilamento } from "../../lib/apostilamento/tipos";
+import type { ConfigApostilamento, DadosReajuste } from "../../lib/apostilamento/tipos";
+import { acharUnidade, configDaUnidade, configSemCadastro, unidadePadrao } from "../../lib/apostilamento/unidades";
+import { carregarUnidades } from "../../lib/apostilamento/unidadesBanco";
 import { cadastroReajuste } from "../../lib/aditivos/dados";
 import { brl, estatistica, numero, resumoPesquisa } from "../../lib/aditivos/regras";
 import type { DadosAditivo, PesquisaPrecosAditivo, ReajusteAditivo } from "../../lib/aditivos/tipos";
@@ -80,9 +81,13 @@ export function PesquisaAditivo({ d, numeroContrato, onPesquisa, onFazer, ro }: 
 
 // Memória de Cálculo (seção 3F): o mesmo motor dos Reajustes, com o instrumento "Termo Aditivo"; o reajuste é
 // preparado na tela de Reajustes (índice e período) e aqui só se calcula e se gera a memória.
-async function configReajuste(): Promise<ConfigApostilamento> {
-  const { data } = await supabase.from("apostilamento_config").select("ordenador, aci, cidade, ug_apoio, textos_fixos_om, dias_alerta").eq("id", "padrao").maybeSingle();
-  return { ...CONFIG_VAZIA, ...(data ?? {}) } as ConfigApostilamento;
+/** Configuração do motor = o cadastro da unidade apoiada da OM que assina o contrato (Reajustes › Configurações) */
+async function configReajuste(dados: DadosReajuste): Promise<ConfigApostilamento> {
+  const { unidades } = await carregarUnidades();
+  const padrao = unidadePadrao(unidades);
+  const omAssina = dados.om_ordenador || dados.ordenador?.om_sigla || padrao?.sigla || "GAP-MN";
+  const u = acharUnidade(unidades, omAssina);
+  return u ? configDaUnidade(u, omAssina, padrao?.dias_alerta) : configSemCadastro(omAssina);
 }
 export function MemoriaAditivo({ d, numeroContrato, memoria, onReajuste, onMemoria, onAbrirReajustes, ro }: {
   d: DadosAditivo; numeroContrato: string; memoria: Arquivo | null; onReajuste: (r: ReajusteAditivo) => void; onMemoria: (a: Arquivo) => void; onAbrirReajustes: () => void; ro?: boolean;
@@ -93,7 +98,7 @@ export function MemoriaAditivo({ d, numeroContrato, memoria, onReajuste, onMemor
     const { dados } = await cadastroReajuste(numeroContrato);
     if (!dados) throw new Error("O contrato não tem cadastro nos Reajustes: abra-o nos Reajustes e complete o cadastro.");
     if (!dados.reajustes?.some((r) => r.novo)) throw new Error("Nenhum reajuste pedido agora no cadastro dos Reajustes: abra o contrato nos Reajustes, confira o índice e o período e volte.");
-    return { dados: paraMotor({ ...dados, instrumento: "Termo Aditivo", numero_instrumento: d.numero_aditivo }), config: await configReajuste() };
+    return { dados: paraMotor({ ...dados, instrumento: "Termo Aditivo", numero_instrumento: d.numero_aditivo }), config: await configReajuste(dados) };
   }
   async function calcular() {
     setOcupado(true); setMsg({ ok: true, txt: "Calculando no motor dos Reajustes…" });

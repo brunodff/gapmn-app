@@ -18,9 +18,10 @@ const DESTINO = path.join(AQUI, "..", "..", "src", "lib", "aditivos", "kit");
 const KIT = path.join(origem, "kit");
 
 const ARQUIVOS = [
-  "pareceres.py", "gerar_lista_verificacao.py", "gerar_declaracao_orcamentaria.py", "gerar_mapa_riscos.py",
-  "gerar_pesquisa_precos.py", "gerar_ficha_autorizacao.py", "verificar_sicaf.py", "consultar_regularidade.py",
-  "biblioteca_riscos.json", "brasao.png",
+  "pareceres.py", "gerar_lista_verificacao.py", "gerar_declaracao_orcamentaria.py", "gerar_declaracao_vantajosidade.py",
+  "gerar_mapa_riscos.py", "gerar_pesquisa_precos.py", "gerar_ficha_autorizacao.py", "gerar_atestado_adequacao.py",
+  "montar_zip.py", "verificar_sicaf.py", "consultar_regularidade.py", "biblioteca_riscos.json", "biblioteca_pareceres.json",
+  "brasao.png",
 ];
 const PESSOAL = [/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/, /[\w.-]+@[\w-]+\.[\w.]+/, /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/];
 
@@ -41,4 +42,9 @@ for (const nome of ARQUIVOS) {
   versao.push(`${nome}  sha256 ${crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 12)}`);
 }
 fs.writeFileSync(path.join(DESTINO, "VERSAO.txt"), versao.join("\n") + "\n");
+// a tela usa a biblioteca de pareceres (objeto, órgão consultivo) sem import de JSON (os testes rodam no node puro)
+const bib = JSON.parse(fs.readFileSync(path.join(KIT, "biblioteca_pareceres.json"), "utf8"));
+fs.writeFileSync(path.join(DESTINO, "..", "bibliotecaPareceres.ts"),
+  "// Gerado por scripts/aditivos/importar_kit.mjs a partir de kit/biblioteca_pareceres.json (não editar à mão).\n" +
+  `export const BIBLIOTECA_PARECERES = ${JSON.stringify(bib.pareceres, null, 1)} as const;\n`);
 console.log(versao.join("\n"));

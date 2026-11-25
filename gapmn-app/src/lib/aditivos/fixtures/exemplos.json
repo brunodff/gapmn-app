@@ -34,7 +34,13 @@
      }
     },
     "valor_atual": 2400000,
-    "autoridade_superior": "Comandante da Base Aérea de Manaus (preencher)"
+    "autoridade_superior": "Comandante da Base Aérea de Manaus (preencher)",
+    "vantajosidade": {
+     "motivos": [
+      "Os preços do setor abarcado pela contratação estão atrelados às variações inflacionárias ordinárias, e não sujeitos a flutuações abruptas e imprevisíveis."
+     ]
+    },
+    "objeto_contrato": "Prestação de serviços de manutenção predial (exemplo fictício)"
    },
    "conferir": {
     "pareceres": {
@@ -45,13 +51,17 @@
      "pareceres": [
       {
        "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
-       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (",
        "data": "01/11/2024",
        "validade": "01/11/2028",
        "cobre": [
         "prorrogacao",
         "reajuste"
        ],
+       "limite_percentual": null,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_4_2024_c34a16.pdf",
+       "fonte_objeto": "Ementa e conclusão do parecer",
        "fundamenta": [
         "prorrogacao"
        ],
@@ -65,6 +75,233 @@
      "vai_para_cju": true
     },
     "observacao_parecer": "não há parecer referencial vigente que fundamente: supressão (30,50%, acima do limite de 25%); o termo aditivo deve ser submetido à análise jurídica",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual e a supressão de 30,50% do valor inicial atualizado do contrato."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual e a supressão de 30,50% do valor inicial atualizado do contrato."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     },
+     {
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência deste termo aditivo."
+     }
+    ],
+    "objeto": "I - Prorrogar a vigência do Contrato nº 001/GAPMN-BAMN/2025 por mais 6 (seis) meses, em sentido estrito, sem renovação do valor contratual;\nII - Suprimir o valor do Contrato nº 001/GAPMN-BAMN/2025 em R$ 120.000,00 – 30,50%, referente a redução de 2 postos.",
+    "valor_atual": 2400000.0,
+    "valor_novo": 2280000.0,
+    "erros_ficha": [],
+    "avisos_ficha": [
+     "Supressão de 30,50% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir."
+    ],
+    "passa_1_milhao": true,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "vantajosidade",
+     "ficha"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual",
+     "a supressão de 30,50% do valor inicial atualizado do contrato"
+    ],
+    "objeto_vantajosidade": "a prestação de serviços de manutenção predial (exemplo fictício)"
+   }
+  },
+  {
+   "nome": "CLARO_020-GAPMN-2022_4TA",
+   "dados": {
+    "contrato": "020/GAPMN/2022",
+    "pag": "67298.000000/2022-00",
+    "om_nome": "Grupamento de Apoio de Manaus",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do"
+    },
+    "numero_aditivo": 4,
+    "objeto_contrato": "Serviço móvel pessoal – SMP",
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "01/01/2027"
+     },
+     "reajuste": null,
+     "acrescimo": {
+      "valor": 21464.01,
+      "percentual": 25,
+      "descricao": "ampliação das linhas"
+     },
+     "supressao": null
+    },
+    "valor_atual": 85856.03,
+    "pareceres_referenciais": [
+     {
+      "numero": "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU",
+      "objeto": "Prorrogação do prazo de vigência de contratos de serviços contínua sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 8.666/93. PARECER n. 00002/2024/COORD/E-CJU/SSEM/CGU/AGU, substituído pelo PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU, conforme DESPACHO Nº 00018/2026/CONSER/SCGP/CGU/AGU constante do NUP 00688.000881/2020-39",
+      "data": "27/09/2023",
+      "validade": "27/09/2027",
+      "cobre": [
+       "prorrogacao"
+      ]
+     },
+     {
+      "numero": "PARECER REFERENCIAL n. 00002/2023/CGSEM/SCGP/CGU/AGU",
+      "objeto": "alteração unilateral de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com fundamento no art. 65, inc. I, da Lei n. 8.666/93",
+      "data": "03/11/2023",
+      "validade": "03/11/2027",
+      "cobre": [
+       "acrescimo"
+      ]
+     }
+    ],
+    "nao_anexados": {},
+    "anexos": {
+     "sicaf": [
+      "exemplos/simulados/sicaf_ok.pdf",
+      "exemplos/simulados/sicaf_uniao_vencida.pdf"
+     ],
+     "consulta_cnpj": "exemplos/simulados/item13_juntado_consolidada+cnj.pdf"
+    },
+    "riscos": [
+     {
+      "nome": "Empresa não manter as condições de habilitação",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Dar causa à rescisão contratual em caso de não manutenção da regularidade fiscal e trabalhista.",
+      "acao_preventiva": "Mensalmente, a fiscalização fará consultas ao SICAF para acompanhar a situação da empresa.",
+      "acao_contingencia": "Notificar a empresa contratada sempre que ela estiver inadimplente quanto às regularidades fiscal, trabalhista e previdenciária, para que a situação seja regularizada."
+     },
+     {
+      "nome": "Prestação do serviço de forma inadequada ou descontinuada",
+      "probabilidade": "baixa",
+      "impacto": "medio",
+      "dano": "Prejuízo às atividades da OM atendida pelo serviço.",
+      "acao_preventiva": "Acompanhamento contínuo da execução, com registro das ocorrências no relatório de fiscalização.",
+      "acao_contingencia": "Contatar o preposto da empresa para regularização imediata e, persistindo a falha, notificar a empresa e propor a abertura de processo de apuração."
+     },
+     {
+      "nome": "Termo aditivo não ser assinado antes do fim da vigência",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Encerramento do contrato e interrupção do serviço, com necessidade de nova contratação.",
+      "acao_preventiva": "Iniciar a instrução do aditivo com antecedência e acompanhar os prazos do subprocesso.",
+      "acao_contingencia": "Comunicar de imediato à SCON e ao Ordenador de Despesas para priorizar a análise e a assinatura."
+     }
+    ],
+    "empenho": {
+     "numero": "2026NE000000",
+     "gestao_unidade": "120630",
+     "fonte": "1050000140",
+     "programa_trabalho": "168919",
+     "acao": null,
+     "plano_interno": "A0630340600",
+     "natureza_despesa": "339039",
+     "exercicio": 2026
+    },
+    "vantajosidade": {
+     "motivos": [
+      "Os preços praticados no mercado encontram-se mais caros do que os preços do contrato atual vigente."
+     ]
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao",
+      "acrescimo"
+     ],
+     "pareceres": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 8.666/1993, com ou sem pedido de reajuste.",
+       "data": "27/09/2023",
+       "validade": "27/09/2027",
+       "cobre": [
+        "prorrogacao"
+       ],
+       "limite_percentual": null,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_1_2023_1a5f42.pdf",
+       "fonte_objeto": "Ementa e conclusão (item 9) do parecer",
+       "fundamenta": [
+        "prorrogacao"
+       ],
+       "motivo_texto": "Fundamenta a prorrogação de vigência deste termo aditivo."
+      },
+      {
+       "numero": "PARECER REFERENCIAL n. 00002/2023/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Alteração contratual unilateral fundamentada no art. 65, inciso I, da Lei nº 8.666/1993, em contratos de serviços continuados sem dedicação exclusiva de mão de obra: acréscimos ou supressões que o contratado fica obrigado a aceitar, nas mesmas condições contratuais, até o limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 65, § 1º).",
+       "data": "03/11/2023",
+       "validade": "03/11/2027",
+       "cobre": [
+        "acrescimo"
+       ],
+       "limite_percentual": 25,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_2_2023.pdf",
+       "fonte_objeto": "Ementa e item 4.1, alínea \"g\", do parecer",
+       "fundamenta": [
+        "acrescimo"
+       ],
+       "motivo_texto": "Fundamenta o acréscimo deste termo aditivo."
+      }
+     ],
+     "vencidos": [],
+     "descobertas": [],
+     "vai_para_cju": false
+    },
+    "observacao_parecer": null,
     "itens": [
      {
       "chave": "anuencia_consulta",
@@ -115,32 +352,37 @@
       "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
      },
      {
-      "chave": "ficha_autorizacao",
-      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 8.666/1993, com ou sem pedido de reajuste.\nVigência: de 27/09/2023, válido até 27/09/2027.\nMotivo: Fundamenta a prorrogação de vigência deste termo aditivo."
      },
      {
-      "chave": "parecer_referencial",
-      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência deste termo aditivo."
+      "chave": "parecer_referencial_2",
+      "texto": "PARECER REFERENCIAL n. 00002/2023/CGSEM/SCGP/CGU/AGU\nObjeto: Alteração contratual unilateral fundamentada no art. 65, inciso I, da Lei nº 8.666/1993, em contratos de serviços continuados sem dedicação exclusiva de mão de obra: acréscimos ou supressões que o contratado fica obrigado a aceitar, nas mesmas condições contratuais, até o limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 65, § 1º).\nVigência: de 03/11/2023, válido até 03/11/2027.\nMotivo: Fundamenta o acréscimo deste termo aditivo."
      },
      {
       "chave": "atestado_adequacao",
-      "texto": "Atestado de adequação ao PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU."
+      "texto": "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00001/2023/CGSEM/SCGP/CGU/AGU e nº 00002/2023/CGSEM/SCGP/CGU/AGU."
      }
     ],
-    "objeto": "I - Prorrogar a vigência do Contrato nº 001/GAPMN-BAMN/2025 por mais 6 (seis) meses, em sentido estrito, sem renovação do valor contratual;\nII - Suprimir o valor do Contrato nº 001/GAPMN-BAMN/2025 em R$ 120.000,00 – 30,50%, referente a redução de 2 postos.",
-    "valor_atual": 2400000.0,
-    "valor_novo": 2280000.0,
+    "objeto": "I - Prorrogar o Contrato nº 020/GAPMN/2022 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Acrescer o valor do Contrato nº 020/GAPMN/2022 em R$ 21.464,01 – 25,00%, referente a ampliação das linhas.",
+    "valor_atual": 85856.03,
+    "valor_novo": 107320.04,
     "erros_ficha": [],
-    "avisos_ficha": [
-     "Supressão de 30,50% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir."
-    ],
-    "passa_1_milhao": true,
+    "avisos_ficha": [],
+    "passa_1_milhao": false,
     "tem_reajuste": false,
     "documentos": [
      "lista",
      "declaracao",
-     "ficha"
-    ]
+     "vantajosidade",
+     "mapa",
+     "atestado"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "o serviço móvel pessoal – SMP"
    }
   },
   {
@@ -238,7 +480,13 @@
       ],
       "limite_percentual": 25
      }
-    ]
+    ],
+    "vantajosidade": {
+     "motivos": [
+      "Os preços praticados no mercado encontram-se mais caros do que os preços do contrato atual vigente."
+     ]
+    },
+    "objeto_contrato": "Contratação de serviços de outsourcing de impressão"
    },
    "conferir": {
     "pareceres": {
@@ -250,13 +498,17 @@
      "pareceres": [
       {
        "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
-       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (",
        "data": "01/11/2024",
        "validade": "01/11/2028",
        "cobre": [
         "prorrogacao",
         "reajuste"
        ],
+       "limite_percentual": null,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_4_2024_c34a16.pdf",
+       "fonte_objeto": "Ementa e conclusão do parecer",
        "fundamenta": [
         "prorrogacao",
         "reajuste"
@@ -274,11 +526,11 @@
     "itens": [
      {
       "chave": "anuencia_consulta",
-      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual e o acréscimo de 32,00% do valor inicial atualizado do contrato."
      },
      {
       "chave": "anuencia_resposta",
-      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual e o acréscimo de 32,00% do valor inicial atualizado do contrato."
      },
      {
       "chave": "disp_orcamentaria",
@@ -334,11 +586,7 @@
      },
      {
       "chave": "parecer_referencial",
-      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
-     },
-     {
-      "chave": "atestado_adequacao",
-      "texto": "Atestado de adequação ao PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU."
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
      },
      {
       "chave": "memoria_calculo",
@@ -357,9 +605,16 @@
     "documentos": [
      "lista",
      "declaracao",
+     "vantajosidade",
      "mapa",
      "ficha"
-    ]
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual",
+     "o acréscimo de 32,00% do valor inicial atualizado do contrato"
+    ],
+    "objeto_vantajosidade": "a contratação de serviços de outsourcing de impressão"
    }
   },
   {
@@ -523,6 +778,13 @@
        ]
       }
      ]
+    },
+    "objeto_contrato": "Contratação de serviços de outsourcing de impressão",
+    "vantajosidade": {
+     "motivos": [
+      "O índice oficial IPCA, fixado no contrato, é adequado e suficiente para refletir os valores atuais de mercado dos serviços prestados.",
+      "Os preços praticados no mercado, conforme a Pesquisa de Preços juntada aos autos, são superiores aos preços do contrato vigente."
+     ]
     }
    },
    "conferir": {
@@ -535,13 +797,17 @@
      "pareceres": [
       {
        "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
-       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (",
        "data": "01/11/2024",
        "validade": "01/11/2028",
        "cobre": [
         "prorrogacao",
         "reajuste"
        ],
+       "limite_percentual": null,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_4_2024_c34a16.pdf",
+       "fonte_objeto": "Ementa e conclusão do parecer",
        "fundamenta": [
         "prorrogacao",
         "reajuste"
@@ -550,7 +816,7 @@
       },
       {
        "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
-       "objeto": "Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.",
+       "objeto": "Alteração contratual unilateral quantitativa (acréscimo ou supressão de valor), com fundamento no art. 124, inciso I, alínea \"b\", da Lei nº 14.133/2021, em contratos de serviços de natureza continuada sem mão de obra exclusiva, com observância do limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 125).",
        "data": "03/09/2025",
        "validade": "03/09/2027",
        "cobre": [
@@ -558,6 +824,9 @@
         "supressao"
        ],
        "limite_percentual": 25,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_6_2025.pdf",
+       "fonte_objeto": "Ementa e item 3, alínea \"e\", do parecer",
        "fundamenta": [
         "acrescimo"
        ],
@@ -632,19 +901,15 @@
      },
      {
       "chave": "parecer_referencial",
-      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
-     },
-     {
-      "chave": "atestado_adequacao",
-      "texto": "Atestado de adequação ao PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU."
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
      },
      {
       "chave": "parecer_referencial_2",
-      "texto": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU\nObjeto: Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.\nVigência: de 03/09/2025, válido até 03/09/2027.\nMotivo: Fundamenta o acréscimo deste termo aditivo."
+      "texto": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU\nObjeto: Alteração contratual unilateral quantitativa (acréscimo ou supressão de valor), com fundamento no art. 124, inciso I, alínea \"b\", da Lei nº 14.133/2021, em contratos de serviços de natureza continuada sem mão de obra exclusiva, com observância do limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 125).\nVigência: de 03/09/2025, válido até 03/09/2027.\nMotivo: Fundamenta o acréscimo deste termo aditivo."
      },
      {
-      "chave": "atestado_adequacao_2",
-      "texto": "Atestado de adequação ao PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU."
+      "chave": "atestado_adequacao",
+      "texto": "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00004/2024/CGSEM/SCGP/CGU/AGU e nº 00006/2025/CONSER/SCGP/CGU/AGU."
      },
      {
       "chave": "memoria_calculo",
@@ -661,10 +926,17 @@
     "documentos": [
      "lista",
      "declaracao",
+     "vantajosidade",
      "mapa",
      "pesquisa",
+     "atestado",
      "ficha"
-    ]
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "a contratação de serviços de outsourcing de impressão"
    }
   },
   {
@@ -692,7 +964,7 @@
      "vencidos": [
       {
        "numero": "PARECER REFERENCIAL n. 00010/2024/CONJUR-EB/CGU/AGU",
-       "objeto": "teste",
+       "objeto": "Teste",
        "data": "27/11/2024",
        "validade": "20/11/2026",
        "cobre": [
@@ -770,7 +1042,12 @@
     "documentos": [
      "lista",
      "declaracao"
-    ]
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": ""
    }
   }
  ]

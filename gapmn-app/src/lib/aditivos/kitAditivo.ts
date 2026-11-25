@@ -43,6 +43,7 @@ export interface Conferencia {
   pareceres: { descobertas: string[]; pareceres: { numero: string; motivo_texto: string }[] };
   itens: { chave: string; texto: string }[]; objeto: string; valor_atual: number | null; valor_novo: number | null;
   erros_ficha: string[]; avisos_ficha: string[]; passa_1_milhao: boolean; documentos: string[];
+  tem_prorrogacao: boolean; motivos_anuencia: string[]; objeto_vantajosidade: string;
 }
 
 export const kitAditivo = {
@@ -57,11 +58,11 @@ export const kitAditivo = {
     const r = await pedir({ tipo: "juntar", pdfs: copias }, progresso, copias);
     return new Blob([r.arquivo!], { type: "application/pdf" });
   },
-  /** Gera os documentos que se aplicam e o .zip (com os anexos extras: item 13, SICAF, memória de cálculo) */
-  gerar: async (dados: DadosAditivo, extras: { nome: string; bytes: ArrayBuffer }[], progresso?: (etapa: string) => void) => {
-    const copias = extras.map((x) => ({ nome: x.nome, bytes: x.bytes.slice(0) }));
+  /** Gera os documentos que se aplicam e o .zip numerado pela Lista (montar_zip.py), com os anexos por item da Lista */
+  gerar: async (dados: DadosAditivo, extras: { chave: string; nome: string; bytes: ArrayBuffer }[], progresso?: (etapa: string) => void) => {
+    const copias = extras.map((x) => ({ chave: x.chave, nome: x.nome, bytes: x.bytes.slice(0) }));
     const r = await pedir({ tipo: "gerar", dados, extras: copias }, progresso, copias.map((x) => x.bytes));
-    const res = r.resultado as { documentos: Record<string, DocumentoGerado>; arquivos: string[] };
+    const res = r.resultado as { documentos: Record<string, DocumentoGerado>; arquivos: string[]; faltando: string[] };
     return { ...res, zip: new Blob([r.arquivo!], { type: "application/zip" }) };
   },
 };

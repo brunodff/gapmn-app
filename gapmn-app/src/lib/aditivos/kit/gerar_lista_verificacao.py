@@ -6,13 +6,18 @@ Gera a LISTA DE VERIFICAÇÃO DE DOCUMENTOS do termo aditivo (.docx).
 Uso:  python3 gerar_lista_verificacao.py dados.json saida/
       (brasao.png precisa estar na mesma pasta deste script)
 
-Itens fixos: 1-7, 9-13. Itens condicionais (só entram quando se aplicam):
+Itens condicionais (só entram quando se aplicam):
+   1-2 Anuência da contratada ............ prorrogação, acréscimo > 25% ou supressão > 25%
+                                          (reajuste e acréscimo/supressão até 25% a contratada é obrigada a aceitar)
+  19 Atestado de adequação ............... NÃO entra quando o aditivo vai para a CJU
   8  Calculadora do Cidadão ........ reajuste = true
   14 Consulta CPF do sócio ......... consulta_socio = true
   15 Procuração ................... representante_mudou = true
   16 Atestado de exclusividade .... inexigibilidade = true
   17 Ficha de autorização ......... acima_1_milhao = true
-  18 Parecer(es) referencial(is) + atestado(s)  um par para cada parecer que fundamenta alguma alteração (pareceres.py)
+  18 Parecer(es) referencial(is) ........... um por parecer que fundamenta alguma alteração (pareceres.py)
+  19 Atestado de adequação ................ UM só, citando todos os pareceres (se nenhuma alteração ficou sem parecer)
+   4 Declaração de vantajosidade ........... só com prorrogação de vigência
   19 Memória de cálculo ........... reajuste = true
 A numeração é refeita na ordem acima, sem buracos.
 """
@@ -29,12 +34,55 @@ FONTE = "Arial"
 
 # ---------------------------------------------------------------- itens
 # chave, texto (lista de trechos: (texto, negrito, italico)), condição
+def tem_prorrogacao(d):
+    """Prorrogação de vigência marcada (formato antigo, sem bloco 'aditivo', é sempre prorrogação)."""
+    ad = d.get("aditivo")
+    return True if ad is None else bool(ad.get("prorrogacao"))
+
+
 def tem_reajuste(d):
     """Reajuste marcado na aba do aditivo (bloco 'aditivo') ou no campo antigo 'reajuste'."""
     ad = d.get("aditivo")
     if ad is not None:
         return bool(ad.get("reajuste"))
     return bool(d.get("reajuste"))
+
+
+LIMITE_ANUENCIA = 25.0   # acima disso a contratada não é obrigada a aceitar (art. 125 da Lei 14.133 / art. 65 § 1º da 8.666)
+
+
+def _pct(bloco):
+    try:
+        return float(str((bloco or {}).get("percentual")).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def motivos_anuencia(d):
+    """O que exige a anuência da contratada: prorrogação de vigência, acréscimo acima de 25% ou supressão acima de 25%.
+    Reajuste e acréscimo/supressão até 25% a contratada é obrigada a aceitar → sem anuência na Lista.
+    Percentual não informado num acréscimo/supressão → entra por segurança (e o site deve avisar)."""
+    ad = d.get("aditivo")
+    if ad is None:                                   # formato antigo = prorrogação
+        return ["a prorrogação contratual"]
+    m = []
+    if ad.get("prorrogacao"):
+        m.append("a prorrogação contratual")
+    for k, nome, art in (("acrescimo", "acréscimo", "o"), ("supressao", "supressão", "a")):
+        if not ad.get(k):
+            continue
+        pct = _pct(ad[k])
+        if pct is None:
+            m.append(f"{art} {nome} (percentual não informado – conferir)")
+        elif pct > LIMITE_ANUENCIA:
+            m.append(f"{art} {nome} de " + f"{pct:.2f}".replace(".", ",") +
+                     "% do valor inicial atualizado do contrato")
+    return m
+
+
+def _juntar(itens):
+    itens = list(itens)
+    return itens[0] if len(itens) == 1 else ", ".join(itens[:-1]) + " e " + itens[-1]
 
 
 def passa_1_milhao(d):
@@ -61,10 +109,14 @@ def itens_da_lista(d):
     def add(chave, trechos, cond=True):
         if cond:
             L.append((chave, trechos))
-    add("anuencia_consulta", [("Consulta formal à contratada quanto à anuência para a prorrogação contratual.", False, False)])
-    add("anuencia_resposta", [("Resposta da contratada contendo a anuência para a prorrogação contratual.", False, False)])
+    # anuência: só com prorrogação, acréscimo > 25% ou supressão > 25% (no resto a contratada é obrigada a aceitar)
+    ma = motivos_anuencia(d)
+    para = ("para " + _juntar(ma)) if ma else ""
+    add("anuencia_consulta", [(f"Consulta formal à contratada quanto à anuência {para}.", False, False)], bool(ma))
+    add("anuencia_resposta", [(f"Resposta da contratada contendo a anuência {para}.", False, False)], bool(ma))
     add("disp_orcamentaria", [("Declaração de Disponibilidade Orçamentária.", False, False)])
-    add("vantajosidade", [("Declaração quanto à vantajosidade da prorrogação contratual.", False, False)])
+    add("vantajosidade", [("Declaração quanto à vantajosidade da prorrogação contratual.", False, False)],
+        tem_prorrogacao(d))                      # só quando há prorrogação de vigência
     add("parecer_tecnico", [("Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária.", False, False)])
     add("mapa_riscos", [("Mapa de Riscos para Termo Aditivo ", False, False),
                         ("(Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP).", False, True)])
@@ -92,7 +144,8 @@ def itens_da_lista(d):
     add("ficha_autorizacao", [("Ficha para a Autorização da Prorrogação Contratual ", False, False),
                               ("(atividade de custeio acima de R$ 1.000.000,00).", False, True)], passa_1_milhao(d))
     # pareceres referenciais: um bloco (parecer + atestado) para CADA parecer que fundamenta alguma alteração
-    for i, p in enumerate(analise_pareceres(d)["pareceres"]):
+    an = analise_pareceres(d)
+    for i, p in enumerate(an["pareceres"]):
         num = p["numero"].strip()
         tre = [(num, True, False)]
         if p.get("objeto"):
@@ -105,9 +158,12 @@ def itens_da_lista(d):
         if vig:
             tre += [("\nVigência: ", True, False), (", ".join(vig) + ".", False, False)]
         tre += [("\nMotivo: ", True, False), (p["motivo_texto"], False, False)]
-        suf = "" if i == 0 else f"_{i + 1}"
-        add("parecer_referencial" + suf, tre)
-        add("atestado_adequacao" + suf, [("Atestado de adequação ao " + num + ".", False, False)])
+        add("parecer_referencial" + ("" if i == 0 else f"_{i + 1}"), tre)
+    # UM único atestado para todos os pareceres – só quando todas as alterações estão fundamentadas
+    if an["pareceres"] and not an["descobertas"]:
+        import pareceres as P
+        rot = "Atestado de adequação do processo " + P.citar(an["pareceres"])
+        add("atestado_adequacao", [(rot + ".", False, False)])
     add("memoria_calculo", [("Memória de Cálculo – Reajuste.", False, False)], tem_reajuste(d))
     return L
 

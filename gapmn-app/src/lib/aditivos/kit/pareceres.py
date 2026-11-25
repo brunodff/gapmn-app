@@ -23,7 +23,9 @@ dados.json:
   ]
   (o campo antigo "parecer_referencial" – um só – continua aceito e vale para prorrogação e reajuste)
 """
-import datetime
+import datetime, json, os, re
+
+AQUI = os.path.dirname(os.path.abspath(__file__))
 
 NOMES = {"prorrogacao": "prorrogação de vigência", "reajuste": "reajuste",
          "acrescimo": "acréscimo", "supressao": "supressão"}
@@ -55,6 +57,21 @@ def lista_juntada(itens):
     return ", ".join(itens[:-1]) + " e " + itens[-1]
 
 
+def numero_curto(numero):
+    """'PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU' → 'nº 00006/2025/CONSER/SCGP/CGU/AGU'"""
+    t = re.sub(r"^\s*PARECER\s+REFERENCIAL\s*", "", str(numero), flags=re.I).strip()
+    t = re.sub(r"^(n[º°o]?\.?|N[º°O]?\.?)\s*", "", t).strip()
+    return "nº " + t
+
+
+def citar(pareceres_lista, artigo=True):
+    """'ao PARECER REFERENCIAL nº X' ou 'aos PARECERES REFERENCIAIS nº X e nº Y'"""
+    nums = [numero_curto(p["numero"] if isinstance(p, dict) else p) for p in pareceres_lista]
+    if len(nums) == 1:
+        return ("ao " if artigo else "") + "PARECER REFERENCIAL " + nums[0]
+    return ("aos " if artigo else "") + "PARECERES REFERENCIAIS " + lista_juntada(nums)
+
+
 def alteracoes(d):
     """Alterações marcadas no aditivo, na ordem padrão."""
     ad = d.get("aditivo")
@@ -64,13 +81,53 @@ def alteracoes(d):
     return [k for k in ORDEM if ad.get(k)]
 
 
+def chave(numero):
+    """'PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/...' → (4, '2024', 'CGSEM')"""
+    m = re.search(r"(\d+)\s*/\s*(\d{4})\s*/\s*([A-Z]+)", str(numero or "").upper().replace(" ", ""))
+    return (int(m.group(1)), m.group(2), m.group(3)) if m else None
+
+
+def biblioteca():
+    try:
+        with open(os.path.join(AQUI, "biblioteca_pareceres.json"), encoding="utf-8") as f:
+            return {chave(p["numero"]): p for p in json.load(f)["pareceres"]}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def limpar_objeto(t):
+    """Tira do texto da página AGU as anotações que não são objeto (substituições, renovações, links)."""
+    t = str(t or "").strip()
+    t = re.sub(r"\s*(PARECER\s+n\.?.{0,80}substitu[ií]do.*|Renovado pelo PARECER.*|Vig[eê]ncia renovada pelo.*|"
+               r"Obs\.?:.*|-?\s*NUP\s*:.*)$", "", t, flags=re.I | re.S).strip()
+    t = re.sub(r"servi[cç]os cont[ií]nua\b", "serviços continuados", t, flags=re.I)
+    t = re.sub(r"\s+", " ", t)
+    return t[:1].upper() + t[1:] if t else t
+
+
 def pareceres(d):
     ps = d.get("pareceres_referenciais")
     if ps is None and d.get("parecer_referencial"):
         p = dict(d["parecer_referencial"])
         p.setdefault("cobre", ["prorrogacao", "reajuste"])
         ps = [p]
-    return [dict(p) for p in (ps or []) if p and str(p.get("numero", "")).strip()]
+    bib = biblioteca()
+    saida = []
+    for p in (ps or []):
+        if not p or not str(p.get("numero", "")).strip():
+            continue
+        p = dict(p)
+        b = bib.get(chave(p["numero"]))
+        if b:
+            for k in ("cobre", "limite_percentual", "validade", "data", "orgao_consultivo", "pdf"):
+                if p.get(k) in (None, "", []):
+                    p[k] = b.get(k)
+            if not p.get("objeto_fixo"):          # objeto redigido a partir do próprio parecer
+                p["objeto"] = b["objeto"]
+                p["fonte_objeto"] = b.get("fonte_objeto")
+        p["objeto"] = limpar_objeto(p.get("objeto"))
+        saida.append(p)
+    return saida
 
 
 def analisar(d, hoje=None):

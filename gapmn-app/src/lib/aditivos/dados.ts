@@ -1,18 +1,20 @@
-// Termos Aditivos: leitura e gravação (contratos_aditivos, aditivos_om) e o aditivo inicial montado com o cadastro
-// do contrato nos Reajustes (contratos_apostilamento: dados do motor + carga do SILOMS).
+// Termos Aditivos: leitura e gravação (contratos_aditivos) e o aditivo inicial montado com o cadastro do contrato nos
+// Reajustes (contratos_apostilamento: dados do motor + carga do SILOMS). A OM que assina vem do cadastro de unidades
+// apoiadas (Reajustes › Configurações, revisão 4 da SCON, seção 6.2).
 import { supabase } from "../supabase";
 import type { DadosReajuste } from "../apostilamento/tipos";
-import { isoParaBr, proximoAditivo, type AguParecer } from "./regras.ts";
+import { acharUnidade, unidadePadrao, type UnidadeApoiada } from "../apostilamento/unidades";
+import { carregarUnidades } from "../apostilamento/unidadesBanco";
+import { AUTORIDADE_CEFA, eCefa, isoParaBr, proximoAditivo, type AguParecer } from "./regras.ts";
 import type { DadosAditivo, EstadoAditivo, Lei, NaturezaObjeto, PesquisaPrecosAditivo, RegistroAditivo } from "./tipos.ts";
 
-/** Nomes por extenso das OMs mais comuns (o resto a tela pede uma vez e guarda em aditivos_om) */
+/** Nomes por extenso das OMs mais comuns, quando a unidade ainda não tem cadastro */
 const NOMES_OM: Record<string, string> = {
   "GAP-MN": "Grupamento de Apoio de Manaus", "BAMN": "Base Aérea de Manaus", "HAMN": "Hospital de Aeronáutica de Manaus",
   "PAMN": "Prefeitura de Aeronáutica de Manaus", "DACTA IV": "Quarto Centro Integrado de Defesa Aérea e Controle de Tráfego Aéreo",
   "CINDACTA IV": "Quarto Centro Integrado de Defesa Aérea e Controle de Tráfego Aéreo", "COMARA": "Comissão de Aeroportos da Região Amazônica",
   "VII COMAR": "Sétimo Comando Aéreo Regional", "COMAR VII": "Sétimo Comando Aéreo Regional", "2GDAAE": "2º Grupo de Defesa Antiaérea",
 };
-export interface OmCadastrada { sigla: string; nome: string | null; ug: string | null; artigo: "do" | "da"; autoridade_superior: string | null }
 export const artigoProvavel = (nome: string) => (/^(base|prefeitura|ala|comiss|escola|diretoria|se[cç][aã]o|ag[eê]ncia|divis)/i.test(nome.trim()) ? "da" : "do");
 const siglaNorm = (s: string) => s.trim().toUpperCase().replace(/\s+/g, " ");
 
@@ -40,13 +42,13 @@ export async function aditivosEmAndamento(): Promise<Pick<RegistroAditivo, "id" 
   if (error) throw new Error(/does not exist|schema cache/i.test(error.message) ? "As tabelas dos Termos Aditivos ainda não existem no banco (migração 20261125b_termos_aditivos)." : error.message);
   return data ?? [];
 }
-export async function omsCadastradas(): Promise<OmCadastrada[]> {
-  const { data } = await supabase.from("aditivos_om").select("sigla, nome, ug, artigo, autoridade_superior");
-  return (data ?? []) as OmCadastrada[];
-}
-export async function salvarOm(om: OmCadastrada, quem: string | null): Promise<void> {
-  const { error } = await supabase.from("aditivos_om").upsert({ ...om, sigla: siglaNorm(om.sigla), atualizado_em: new Date().toISOString(), atualizado_nome: quem }, { onConflict: "sigla" });
-  if (error) throw new Error(error.message);
+/** OM signatária do aditivo pelo cadastro da unidade apoiada (nome, sigla, UG, artigo; CEFA/autoridade do campo 19) */
+export function omDaUnidade(u: UnidadeApoiada): { om: DadosAditivo["om_signataria"]; autoridade_superior: string | null } {
+  const nome = u.nome || NOMES_OM[siglaNorm(u.sigla)] || u.sigla;
+  const om = { nome, sigla: u.sigla, ug: u.ug ?? "", artigo: u.artigo };
+  // unidade do CEFA que o kit não reconhece pelo nome: a autoridade do campo 19 vai pronta (DIRAD)
+  const autoridade = u.cefa ? (eCefa(om) ? null : AUTORIDADE_CEFA) : (u.autoridade_superior ?? null);
+  return { om, autoridade_superior: autoridade };
 }
 export async function pareceresAgu(): Promise<AguParecer[]> {
   const { data } = await supabase.from("agu_referenciais").select("id, parecer, numero, ano, assunto, data, validade, url").eq("licitacoes", true).limit(2000);
@@ -69,13 +71,15 @@ function naturezaProvavel(objeto: string, demo: boolean): NaturezaObjeto {
 }
 
 /** Aditivo inicial com o que o app já sabe do contrato (seção 1.1: o site preenche sozinho) */
-export function montarAditivo(numero_contrato: string, dados: Partial<DadosReajuste> | null, carga: Record<string, any> | null, oms: OmCadastrada[]): { dados: DadosAditivo; estado: EstadoAditivo } { // eslint-disable-line @typescript-eslint/no-explicit-any
+export function montarAditivo(numero_contrato: string, dados: Partial<DadosReajuste> | null, carga: Record<string, any> | null, unidades: UnidadeApoiada[]): { dados: DadosAditivo; estado: EstadoAditivo } { // eslint-disable-line @typescript-eslint/no-explicit-any
   const s = carga?.siloms ?? {};
-  const om = (sigla: string) => oms.find((o) => siglaNorm(o.sigla) === siglaNorm(sigla));
   const solicitante = String(s.ug_responsavel || s.ug_fiscal || "").trim();
-  const sigSigla = String(dados?.om_contratante_sigla || "GAP-MN").trim();
-  const sigCad = om(sigSigla);
-  const sigNome = sigCad?.nome || (dados?.om_contratante_nome ? dados.om_contratante_nome : NOMES_OM[siglaNorm(sigSigla)] ?? sigSigla);
+  // OM que assina = a "OM do Ordenador" do cadastro do contrato (vazia = a unidade padrão), a mesma dos Reajustes
+  const sigSigla = String(dados?.om_ordenador || dados?.ordenador?.om_sigla || unidadePadrao(unidades)?.sigla || "GAP-MN").trim();
+  const sigCad = acharUnidade(unidades, sigSigla);
+  const doCadastro = sigCad ? omDaUnidade(sigCad) : null;
+  const sigNome = doCadastro?.om.nome || NOMES_OM[siglaNorm(sigSigla)] || sigSigla;
+  const nomeSolicitante = acharUnidade(unidades, solicitante)?.nome;
   const historico = (dados?.historico_valores ?? []).filter((h) => h.valor != null);
   const valorAtual = historico.length ? historico[historico.length - 1].valor : (dados?.itens?.length ? dados.itens.reduce((t, i) => t + (i.valor_base ?? 0), 0) || null : null);
   const orc = dados?.orcamento;
@@ -87,8 +91,8 @@ export function montarAditivo(numero_contrato: string, dados: Partial<DadosReaju
     dados: {
       contrato: (dados?.contrato || numero_contrato).replace(/^(DESPESA|CREDENCIAMENTO|CRED|ADES[AÃ]O|RECEITA)\s+/i, ""),
       pag: dados?.nup || s.pag || "",
-      om_nome: om(solicitante)?.nome || NOMES_OM[siglaNorm(solicitante)] || solicitante || sigNome,
-      om_signataria: { nome: sigNome, sigla: sigSigla, ug: sigCad?.ug || "", artigo: sigCad?.artigo ?? artigoProvavel(sigNome) },
+      om_nome: nomeSolicitante || NOMES_OM[siglaNorm(solicitante)] || solicitante || sigNome,
+      om_signataria: doCadastro?.om ?? { nome: sigNome, sigla: sigSigla, ug: "", artigo: artigoProvavel(sigNome) },
       numero_aditivo: proximoAditivo(carga?.documentos),
       empenho: {
         numero: carga?.ultimo_empenho?.ne ?? null,
@@ -97,9 +101,10 @@ export function montarAditivo(numero_contrato: string, dados: Partial<DadosReaju
       },
       aditivo: { prorrogacao: { modalidade: "com_valor", meses: 12, inicio: diaSeguinte(s.vigencia_fim) }, reajuste: null, acrescimo: null, supressao: null },
       valor_atual: valorAtual ?? null,
-      merito_administrativo: "", parecer_juridico: null, ratificacao: null, aprovacao_superior: null, autoridade_superior: sigCad?.autoridade_superior ?? null,
+      merito_administrativo: "", parecer_juridico: null, ratificacao: null, aprovacao_superior: null, autoridade_superior: doCadastro?.autoridade_superior ?? null,
       consulta_socio: false, representante_mudou: false, inexigibilidade: false,
       pareceres_referenciais: [], nao_anexados: {}, observacao: "", pesquisa_precos: null, riscos: [],
+      objeto_contrato: objeto, vantajosidade: { motivos: [] },
     },
     estado: {
       natureza, lei, cnpj: dados?.empresa?.cnpj ?? "", objeto_contrato: objeto,
@@ -110,12 +115,12 @@ export function montarAditivo(numero_contrato: string, dados: Partial<DadosReaju
 }
 
 export async function iniciarAditivo(numero_contrato: string, quem: string | null): Promise<RegistroAditivo> {
-  const [r, oms] = await Promise.all([
+  const [r, u] = await Promise.all([
     supabase.from("contratos_apostilamento").select("dados, carga").eq("numero_contrato", numero_contrato).maybeSingle(),
-    omsCadastradas(),
+    carregarUnidades(),
   ]);
   if (r.error) throw new Error(r.error.message);
-  const { dados, estado } = montarAditivo(numero_contrato, (r.data?.dados ?? null) as Partial<DadosReajuste> | null, (r.data?.carga ?? null) as Record<string, unknown> | null, oms);
+  const { dados, estado } = montarAditivo(numero_contrato, (r.data?.dados ?? null) as Partial<DadosReajuste> | null, (r.data?.carga ?? null) as Record<string, unknown> | null, u.unidades);
   const { data, error } = await supabase.from("contratos_aditivos").insert({
     numero_contrato, numero_aditivo: dados.numero_aditivo, dados, estado, criado_nome: quem, atualizado_nome: quem,
   }).select("*").single();

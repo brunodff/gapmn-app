@@ -5,6 +5,7 @@ import {
   type Alerta, type Alteracao, type DadosAditivo, type EstadoAditivo, type ItemPesquisa, type Lei, type NaturezaObjeto,
   type ParecerReferencial, ALTERACOES,
 } from "./tipos.ts";
+import { BIBLIOTECA_PARECERES } from "./bibliotecaPareceres.ts";
 
 export const NOMES: Record<Alteracao, string> = { prorrogacao: "prorrogação de vigência", reajuste: "reajuste", acrescimo: "acréscimo", supressao: "supressão" };
 const COM_ARTIGO: Record<Alteracao, string> = { prorrogacao: "a prorrogação de vigência", reajuste: "o reajuste", acrescimo: "o acréscimo", supressao: "a supressão" };
@@ -45,6 +46,33 @@ export function alteracoes(d: Pick<DadosAditivo, "aditivo">): Alteracao[] {
   return ALTERACOES.filter((k) => !!d.aditivo?.[k]);
 }
 export const temReajuste = (d: Pick<DadosAditivo, "aditivo">) => !!d.aditivo?.reajuste;
+/** Prorrogação de vigência marcada (formato antigo, sem bloco "aditivo", é sempre prorrogação) */
+export const temProrrogacao = (d: Pick<DadosAditivo, "aditivo">) => (d.aditivo == null ? true : !!d.aditivo.prorrogacao);
+
+export const LIMITE_ANUENCIA = 25; // acima disso a contratada não é obrigada a aceitar (art. 125 da Lei 14.133 / art. 65 § 1º da 8.666)
+/** float(str(x).replace(",", ".")) do kit: número ou null */
+function pctKit(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (v == null) return null;
+  const s = String(v).replace(",", ".").trim();
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s)) return null;
+  return Number(s);
+}
+/** O que exige a anuência da contratada (motivos_anuencia do kit): prorrogação, acréscimo > 25% ou supressão > 25%.
+ *  Percentual não informado num acréscimo/supressão → entra por segurança (e a tela avisa). */
+export function motivosAnuencia(d: Pick<DadosAditivo, "aditivo">): string[] {
+  const ad = d.aditivo;
+  if (ad == null) return ["a prorrogação contratual"];
+  const m: string[] = [];
+  if (ad.prorrogacao) m.push("a prorrogação contratual");
+  for (const [k, nome, art] of [["acrescimo", "acréscimo", "o"], ["supressao", "supressão", "a"]] as const) {
+    if (!ad[k]) continue;
+    const pct = pctKit(ad[k]!.percentual);
+    if (pct == null) m.push(`${art} ${nome} (percentual não informado – conferir)`);
+    else if (pct > LIMITE_ANUENCIA) m.push(`${art} ${nome} de ${pct.toFixed(2).replace(".", ",")}% do valor inicial atualizado do contrato`);
+  }
+  return m;
+}
 
 /** Valor que o contrato passará a ter: valor atual + reajuste + acréscimo − supressão (ou o informado) */
 export function valorNovo(d: Pick<DadosAditivo, "aditivo" | "valor_atual" | "valor_novo">): number | null {
@@ -109,6 +137,92 @@ export function objetoDaFicha(d: Pick<DadosAditivo, "aditivo" | "contrato">): st
 }
 
 // ── Pareceres referenciais (seção 2.4; pareceres.py) ─────────────────────────
+/** 'PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/...' → '4|2024|CGSEM' (a chave() do kit) */
+export function chaveParecer(numero: string | null | undefined): string | null {
+  const m = /(\d+)\s*\/\s*(\d{4})\s*\/\s*([A-Z]+)/.exec(String(numero ?? "").toUpperCase().replace(/ /g, ""));
+  return m ? `${Number(m[1])}|${m[2]}|${m[3]}` : null;
+}
+export type ParecerBiblioteca = (typeof BIBLIOTECA_PARECERES)[number];
+export function daBiblioteca(numero: string | null | undefined): ParecerBiblioteca | null {
+  const k = chaveParecer(numero);
+  return (k && BIBLIOTECA_PARECERES.find((b) => chaveParecer(b.numero) === k)) || null;
+}
+/** Tira do texto da página AGU as anotações que não são objeto (limpar_objeto do kit) */
+export function limparObjeto(t: string | null | undefined): string {
+  let s = String(t ?? "").trim();
+  s = s.replace(/\s*(PARECER\s+n\.?[\s\S]{0,80}substitu[ií]do[\s\S]*|Renovado pelo PARECER[\s\S]*|Vig[eê]ncia renovada pelo[\s\S]*|Obs\.?:[\s\S]*|-?\s*NUP\s*:[\s\S]*)$/iu, "").trim();
+  s = s.replace(/servi[cç]os cont[ií]nua(?![\p{L}\p{N}_])/giu, "serviços continuados");
+  s = s.replace(/\s+/g, " ");
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+const vazioKit = (v: unknown) => v == null || v === "" || (Array.isArray(v) && !v.length);
+/** Pareceres do aditivo como o kit os usa: completa pela biblioteca e troca o objeto pelo de lá (salvo objeto_fixo) */
+export function pareceresDoAditivo(lista: ParecerReferencial[]): ParecerReferencial[] {
+  const saida: ParecerReferencial[] = [];
+  for (const p0 of lista) {
+    if (!p0 || !String(p0.numero ?? "").trim()) continue;
+    const p: ParecerReferencial = { ...p0 };
+    const b = daBiblioteca(p.numero);
+    if (b) {
+      const q = p as unknown as Record<string, unknown>;
+      for (const k of ["cobre", "limite_percentual", "validade", "data", "orgao_consultivo", "pdf"] as const) {
+        if (vazioKit(q[k])) q[k] = Array.isArray(b[k]) ? [...(b[k] as readonly string[])] : b[k];
+      }
+      if (!p.objeto_fixo) { p.objeto = b.objeto; p.fonte_objeto = b.fonte_objeto; }
+    }
+    p.objeto = limparObjeto(p.objeto);
+    saida.push(p);
+  }
+  return saida;
+}
+// Parecer fora da biblioteca (seção 2.4.1, item 2): o objeto sai da EMENTA do próprio PDF, sem a parte padrão
+// (manifestação jurídica referencial, ON AGU nº 55, portaria, validade), mais a frase do parecer sobre a alteração.
+const PALAVRAS_ALTERACAO: Record<Alteracao, RegExp> = {
+  prorrogacao: /prorroga[çc][ãa]o|vig[êe]ncia/i, reajuste: /reajuste/i, acrescimo: /acr[ée]scimo|supress[ãa]o|25\s?%/i, supressao: /acr[ée]scimo|supress[ãa]o|25\s?%/i,
+};
+const PADRAO_EMENTA = /manifesta[çc][ãa]o jur[ií]dica referencial|^mjr$|orienta[çc][ãa]o normativa|portaria normativa|^direito administrativo$|^licita[çc][õo]es e contratos$|validade|advocacia-geral da uni[ãa]o/i;
+function caixaDeFrase(s: string): string {
+  if (!ehMaiuscula(s)) return s;
+  const t = s.toLowerCase().replace(/\binciso ([ivxl]+)\b/g, (_, r: string) => `inciso ${r.toUpperCase()}`).replace(/\blei\b/g, "Lei");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+const frases = (t: string) => t.split(/(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9])/).map((x) => x.trim()).filter(Boolean);
+export function ementaDoParecer(texto: string, cobre: Alteracao[]): string | null {
+  const t = String(texto ?? "").replace(/\s+/g, " ");
+  const i = t.search(/EMENTA\s*:?/i);
+  if (i < 0) return null;
+  const resto = t.slice(i).replace(/^EMENTA\s*:?\s*/i, "");
+  const fimEmenta = resto.search(/\s(?:I\s*[.–-]\s*)?(?:RELAT[ÓO]RIO|INTRODU[ÇC][ÃA]O)\b|\s1\.\s/i);
+  const cabeca = (fimEmenta > 0 ? resto.slice(0, fimEmenta) : resto.slice(0, 600)).trim();
+  const partes = cabeca.split(/\.\s+(?=\S)|\.$/).map((x) => x.trim()).filter((x) => x && !PADRAO_EMENTA.test(x));
+  let objeto = partes.map((x) => caixaDeFrase(x.replace(/\s*-\s*MJR\b/i, ""))).join(". ").trim();
+  if (objeto && !/[.;]$/.test(objeto)) objeto += ".";
+  const corpo = fimEmenta > 0 ? resto.slice(fimEmenta) : "";
+  const extras: string[] = [];
+  for (const alt of cobre) {
+    const rx = PALAVRAS_ALTERACAO[alt];
+    // só quando a ementa não fala da alteração; nunca um trecho de inaplicabilidade (diria o contrário)
+    if (!rx || rx.test(objeto) || extras.some((x) => rx.test(x))) continue;
+    const f = frases(corpo).find((x) => rx.test(x) && x.length >= 40 && x.length <= 420 && !PADRAO_EMENTA.test(x)
+      && !/inaplicab|n[ãa]o se aplica|n[ãa]o alcan[çc]a|hip[óo]teses|vedad|exceto|salvo/i.test(x));
+    if (f) extras.push(f.replace(/^\d+\.\s*/, ""));
+  }
+  const final = [objeto, ...extras].filter(Boolean).join(" ").trim();
+  return final ? limparObjeto(final) : null;
+}
+
+/** 'PARECER REFERENCIAL Nº. 00006/2025/CONSER/...' → 'nº 00006/2025/CONSER/...' */
+export function numeroCurto(numero: string): string {
+  let t = String(numero).replace(/^\s*PARECER\s+REFERENCIAL\s*/i, "").trim();
+  t = t.replace(/^(n[º°o]?\.?|N[º°O]?\.?)\s*/, "").trim();
+  return `nº ${t}`;
+}
+/** 'ao PARECER REFERENCIAL nº X' ou 'aos PARECERES REFERENCIAIS nº X e nº Y' (citar do kit) */
+export function citarPareceres(ps: { numero: string }[]): string {
+  const nums = ps.map((p) => numeroCurto(p.numero));
+  return nums.length === 1 ? `ao PARECER REFERENCIAL ${nums[0]}` : `aos PARECERES REFERENCIAIS ${listaJuntada(nums)}`;
+}
+
 export interface AnalisePareceres {
   alteracoes: Alteracao[];
   pareceres: (ParecerReferencial & { fundamenta: Alteracao[]; motivo_texto: string })[];
@@ -122,7 +236,7 @@ export function analisarPareceres(d: Pick<DadosAditivo, "aditivo" | "pareceres_r
   // o campo antigo "parecer_referencial" (um só) ainda vale para prorrogação e reajuste, como no kit
   const antigo = (d as { parecer_referencial?: ParecerReferencial }).parecer_referencial;
   const lista = d.pareceres_referenciais ?? (antigo ? [{ ...antigo, cobre: antigo.cobre ?? (["prorrogacao", "reajuste"] as Alteracao[]) }] : []);
-  const todos = lista.filter((p) => p && String(p.numero ?? "").trim());
+  const todos = pareceresDoAditivo(lista);
   const vigentes: ParecerReferencial[] = [], vencidos: ParecerReferencial[] = [];
   for (const p of todos) { const v = dataBr(p.validade); (v && v < hoje ? vencidos : vigentes).push(p); }
   const cobertura: Partial<Record<Alteracao, string>> = {};
@@ -172,7 +286,7 @@ export interface ParecerCatalogo {
 }
 export const CATALOGO_PARECERES: ParecerCatalogo[] = [
   { numero: "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU", num: 4, ano: 2024, sigla: "CGSEM", situacao: "Prorrogação de serviço contínuo sem DEMO (Lei 14.133), com ou sem reajuste; renovado pelo Parecer 18/2026/CONSER", naturezas: ["servico_sem_demo"], leis: ["14133"], cobre: ["prorrogacao", "reajuste"], validade: "01/11/2028" },
-  { numero: "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU", num: 1, ano: 2023, sigla: "CGSEM", situacao: "Prorrogação de serviço contínuo sem DEMO (Lei 8.666)", naturezas: ["servico_sem_demo"], leis: ["8666"], cobre: ["prorrogacao"], validade: "27/09/2027" },
+  { numero: "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU", num: 1, ano: 2023, sigla: "CGSEM", situacao: "Prorrogação de serviço contínuo sem DEMO (Lei 8.666), com ou sem reajuste", naturezas: ["servico_sem_demo"], leis: ["8666"], cobre: ["prorrogacao", "reajuste"], validade: "27/09/2027" },
   { numero: "PARECER REFERENCIAL n. 3/2024/CGCOM-BSB/SCGP/CGU/AGU", num: 3, ano: 2024, sigla: "CGCOM", situacao: "Prorrogação de serviço contínuo com DEMO (Lei 14.133); não se aplica a reequilíbrio", naturezas: ["servico_com_demo"], leis: ["14133"], cobre: ["prorrogacao"], validade: "12/11/2028" },
   { numero: "PARECER REFERENCIAL n. 2/2024/DICOMEX/SCGP/CGU/AGU", num: 2, ano: 2024, sigla: "DICOMEX", situacao: "Prorrogação de serviço contínuo com DEMO (Lei 8.666)", naturezas: ["servico_com_demo"], leis: ["8666"], cobre: ["prorrogacao"], validade: "29/10/2028" },
   { numero: "PARECER REFERENCIAL n. 00005/2025/DISEMEX/SCGP/CGU/AGU", num: 5, ano: 2025, sigla: "DISEMEX", situacao: "Prorrogação de contrato de TIC sem DEMO", naturezas: ["tic"], leis: ["14133"], cobre: ["prorrogacao"], validade: "21/05/2027" },
@@ -197,8 +311,10 @@ export function pareceresSugeridos(alts: Alteracao[], natureza: NaturezaObjeto, 
     const c = CATALOGO_PARECERES.find((x) => x.cobre.includes(alt) && x.naturezas.includes(natureza) && x.leis.includes(lei));
     if (!c) continue;
     const a = acharNaAgu(c, agu);
+    // objeto: o da biblioteca de pareceres da SCON (redigido do próprio parecer); fora dela, a ementa da AGU limpa
+    const b = daBiblioteca(c.numero);
     escolhidos.push({
-      numero: c.numero, objeto: a?.assunto?.trim() || c.situacao, data: isoParaBr(a?.data) || null,
+      numero: c.numero, objeto: b?.objeto || limparObjeto(a?.assunto) || c.situacao, data: isoParaBr(a?.data) || b?.data || null,
       validade: isoParaBr(a?.validade) || c.validade, cobre: c.cobre, ...(c.limite ? { limite_percentual: c.limite } : {}),
       conferido: !!a, url: a?.url ?? null,
     });
@@ -211,10 +327,13 @@ export interface ItemLista { chave: string; texto: string; obrigatorioAnexar?: b
 export function itensDaLista(d: DadosAditivo, hoje: string): ItemLista[] {
   const L: ItemLista[] = [];
   const add = (chave: string, texto: string, cond = true) => { if (cond) L.push({ chave, texto }); };
-  add("anuencia_consulta", "Consulta formal à contratada quanto à anuência para a prorrogação contratual.");
-  add("anuencia_resposta", "Resposta da contratada contendo a anuência para a prorrogação contratual.");
+  // anuência: só com prorrogação, acréscimo > 25% ou supressão > 25% (no resto a contratada é obrigada a aceitar)
+  const ma = motivosAnuencia(d);
+  const para = ma.length ? `para ${listaJuntada(ma)}` : "";
+  add("anuencia_consulta", `Consulta formal à contratada quanto à anuência ${para}.`, ma.length > 0);
+  add("anuencia_resposta", `Resposta da contratada contendo a anuência ${para}.`, ma.length > 0);
   add("disp_orcamentaria", "Declaração de Disponibilidade Orçamentária.");
-  add("vantajosidade", "Declaração quanto à vantajosidade da prorrogação contratual.");
+  add("vantajosidade", "Declaração quanto à vantajosidade da prorrogação contratual.", temProrrogacao(d));
   add("parecer_tecnico", "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária.");
   add("mapa_riscos", "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP).");
   add("pesquisa_precos", "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis.");
@@ -228,13 +347,14 @@ export function itensDaLista(d: DadosAditivo, hoje: string): ItemLista[] {
   add("procuracao", "Procuração do representante competente para assinatura do Termo Aditivo.", !!d.representante_mudou);
   add("exclusividade", "Atestado de Exclusividade válido.", !!d.inexigibilidade);
   add("ficha_autorizacao", "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00).", passa1Milhao(d));
-  analisarPareceres(d, hoje).pareceres.forEach((p, i) => {
-    const suf = i === 0 ? "" : `_${i + 1}`;
+  const an = analisarPareceres(d, hoje);
+  an.pareceres.forEach((p, i) => {
     const num = p.numero.trim();
     const vig = [p.data ? `de ${p.data}` : "", p.validade ? `válido até ${p.validade}` : ""].filter(Boolean).join(", ");
-    add(`parecer_referencial${suf}`, `${num}${p.objeto ? `\nObjeto: ${p.objeto.trim()}` : ""}${vig ? `\nVigência: ${vig}.` : ""}\nMotivo: ${p.motivo_texto}`);
-    add(`atestado_adequacao${suf}`, `Atestado de adequação ao ${num}.`);
+    add(`parecer_referencial${i === 0 ? "" : `_${i + 1}`}`, `${num}${p.objeto ? `\nObjeto: ${p.objeto.trim()}` : ""}${vig ? `\nVigência: ${vig}.` : ""}\nMotivo: ${p.motivo_texto}`);
   });
+  // UM único atestado para todos os pareceres – só quando todas as alterações estão fundamentadas (senão vai para a CJU)
+  if (an.pareceres.length && !an.descobertas.length) add("atestado_adequacao", `Atestado de adequação do processo ${citarPareceres(an.pareceres)}.`);
   add("memoria_calculo", "Memória de Cálculo – Reajuste.", temReajuste(d));
   return L;
 }
@@ -266,12 +386,83 @@ export function resumoPesquisa(d: DadosAditivo): { totalContratado: number; tota
   return { totalContratado: tc, totalReferencia: tr, vantajosa: tc <= tr, poucos, acima };
 }
 
+// ── Declaração de Vantajosidade Econômica (seção 3I; gerar_declaracao_vantajosidade.py) ──
+const MASC_EM_A = new Set(["sistema", "programa", "problema", "tema", "mapa", "dia", "clima", "esquema", "projeto"]);
+const ehMaiuscula = (s: string) => s === s.toUpperCase() && s !== s.toLowerCase();
+const tirarPontas = (s: string, chars: string) => { let a = 0, b = s.length; while (a < b && chars.includes(s[a])) a++; while (b > a && chars.includes(s[b - 1])) b--; return s.slice(a, b); };
+/** Artigo definido pelo 1º substantivo do objeto ('Serviço' → o, 'Contratação' → a, 'Serviços' → os) */
+export function artigoPara(palavra: string): string {
+  const w = tirarPontas(palavra.toLowerCase(), " ,.;:–-");
+  const plural = w.endsWith("s") && w.length > 3;
+  let base = w;
+  if (plural) base = base.replace(/ções$/, "ção").replace(/ões$/, "ão").replace(/s$/, "");
+  const fem = !MASC_EM_A.has(base) && /(ção|são|dade|gem|ura|eza|ça|a)$/.test(base);
+  return (fem ? "a" : "o") + (plural ? "s" : "");
+}
+/** Objeto do contrato como entra em "cujo objeto é …" (frase_objeto do kit) */
+export function fraseObjetoVantajosidade(d: Pick<DadosAditivo, "vantajosidade" | "objeto_contrato">): string {
+  const v = d.vantajosidade;
+  if (String(v?.objeto ?? "").trim()) return String(v!.objeto).trim().replace(/\.+$/, "");
+  let obj = String(d.objeto_contrato ?? "").trim().replace(/\.+$/, "");
+  if (!obj) return "";
+  if (ehMaiuscula(obj)) obj = obj.toLowerCase();
+  const primeira = obj.split(/\s+/)[0];
+  if (["o", "a", "os", "as"].includes(primeira.toLowerCase())) return obj.charAt(0).toLowerCase() + obj.slice(1);
+  if (!ehMaiuscula(primeira)) obj = obj.charAt(0).toLowerCase() + obj.slice(1);
+  return `${artigoPara(primeira)} ${obj}`;
+}
+const ROMANOS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV"];
+/** Motivos em incisos I –, II – …: ';' nos intermediários e '.' no último; tira numeração digitada pelo fiscal */
+export function incisosVantajosidade(motivos: string[] | null | undefined): [string, string][] {
+  const limpos = (motivos ?? []).filter((m) => String(m ?? "").trim()).map((m) => String(m).replace(/\s+/g, " ").trim())
+    .map((m) => m.replace(/^(?:[IVX]+|\d+|[a-z])\s*[–\-).]\s*/, ""));
+  return limpos.map((m, i) => [i < ROMANOS.length ? ROMANOS[i] : String(i + 1), m.replace(/[ ;.]+$/, "") + (i === limpos.length - 1 ? "." : ";")]);
+}
+export const SUGESTOES_VANTAJOSIDADE = (indice: string) => [
+  `O índice oficial ${indice || "[índice do contrato]"} fixado no contrato é adequado e suficiente para refletir os valores atuais de mercado dos serviços prestados.`,
+  "Os preços do setor abarcado pela contratação estão atrelados às variações inflacionárias ordinárias, e não sujeitos a flutuações abruptas e imprevisíveis.",
+  "Os preços praticados no mercado, conforme a Pesquisa de Preços juntada aos autos, são superiores aos preços do contrato vigente.",
+];
+
+// ── .zip final (seção 3H; montar_zip.py) ─────────────────────────────────────
+export const NOMES_ITEM: Record<string, string> = {
+  anuencia_consulta: "Consulta de anuência à contratada", anuencia_resposta: "Resposta de anuência da contratada",
+  disp_orcamentaria: "Declaração de Disponibilidade Orçamentária", vantajosidade: "Declaração de Vantajosidade Econômica",
+  parecer_tecnico: "Parecer Técnico", mapa_riscos: "Mapa de Riscos", pesquisa_precos: "Pesquisa de Preços",
+  calculadora: "Calculadora do Cidadão", sicaf: "SICAF", consulta_cnpj: "Regularidade CEIS-CNEP-CNJ-TCU (CNPJ)",
+  consulta_cpf_socio: "Regularidade do CPF do sócio", procuracao: "Procuração", exclusividade: "Atestado de Exclusividade",
+  ficha_autorizacao: "Ficha de Autorização da Prorrogação", atestado_adequacao: "Atestado de Adequação ao Parecer Referencial",
+  memoria_calculo: "Memória de Cálculo – Reajuste",
+};
+/** Itens que o site gera (o resto é anexo do fiscal); boletins ficam no SILOMS e a Calculadora vai dentro do Parecer Técnico */
+export const GERADOS_PELO_SITE = ["disp_orcamentaria", "vantajosidade", "mapa_riscos", "pesquisa_precos", "ficha_autorizacao", "atestado_adequacao"];
+const SEM_ARQUIVO = ["bol_aci", "bol_od", "bol_fiscalizacao", "calculadora"];
+/** O que o .zip vai deixar de fora: item obrigatório sem arquivo e sem justificativa de NÃO anexado (montar_zip.py) */
+export function faltandoNoZip(d: DadosAditivo, hoje: string, temArquivo: (chave: string) => boolean): { n: number; chave: string; nome: string }[] {
+  const nao = d.nao_anexados ?? {};
+  return itensDaLista(d, hoje).map((it, i) => ({ n: i + 1, chave: it.chave, nome: NOMES_ITEM[it.chave] ?? it.chave }))
+    .filter((x) => !x.chave.startsWith("parecer_referencial") && !SEM_ARQUIVO.includes(x.chave) && !(x.chave in nao) && !temArquivo(x.chave));
+}
+/** Documentos que o site vai gerar para o caso (aplicaveis da ponte, em chaves da Lista) */
+export function geradosPrevistos(d: DadosAditivo, hoje: string): string[] {
+  const g = ["disp_orcamentaria"];
+  if (temProrrogacao(d) && d.vantajosidade?.motivos?.some((m) => String(m ?? "").trim())) g.push("vantajosidade");
+  if (d.riscos?.length) g.push("mapa_riscos");
+  if (d.pesquisa_precos) g.push("pesquisa_precos");
+  const an = analisarPareceres(d, hoje);
+  if (an.pareceres.length && !an.descobertas.length) g.push("atestado_adequacao");
+  if (passa1Milhao(d)) g.push("ficha_autorizacao");
+  return g;
+}
+
 // ── OM signatária e autoridade (Ficha) ───────────────────────────────────────
 const OMS_CEFA = ["GAP-MN", "PAMN", "PREFEITURA"];
+/** OM do CEFA (autoridade do campo 19 = Diretor de Administração da Aeronáutica): pelo nome (regra do kit) */
 export const eCefa = (om: { sigla?: string; nome?: string }) => {
   const alvo = `${om.sigla ?? ""} ${om.nome ?? ""}`.toUpperCase();
   return OMS_CEFA.some((x) => alvo.includes(x)) || alvo.includes("GRUPAMENTO DE APOIO DE MANAUS");
 };
+export const AUTORIDADE_CEFA = "Diretor de Administração da Aeronáutica";
 
 // ── Número do termo aditivo (aditivos já assinados + 1) ──────────────────────
 export function proximoAditivo(documentos: { tipo?: string; numero?: string | null }[] | undefined): number {
@@ -286,10 +477,20 @@ export function proximoAditivo(documentos: { tipo?: string; numero?: string | nu
 
 // ── Alertas (seção 4) ────────────────────────────────────────────────────────
 const EMPENHO: [keyof DadosAditivo["empenho"], string][] = [["gestao_unidade", "Gestão/Unidade"], ["fonte", "Fonte de Recursos"], ["programa_trabalho", "Programa de Trabalho"], ["plano_interno", "Plano Interno"], ["natureza_despesa", "Natureza de Despesa"]];
-export function alertasDoAditivo(d: DadosAditivo, e: EstadoAditivo, hoje: string, anexos: { sicaf: boolean; regularidade: boolean }): Alerta[] {
+export function alertasDoAditivo(d: DadosAditivo, e: EstadoAditivo, hoje: string, anexos: { sicaf: boolean; regularidade: boolean },
+  extra: { unidadeCadastrada?: boolean | null } = {}): Alerta[] {
   const a: Alerta[] = [];
   const alts = alteracoes(d);
   if (!alts.length) a.push({ nivel: "critico", texto: "Marque o que o aditivo vai fazer (prorrogação, reajuste, acréscimo ou supressão).", bloqueia: true, secao: "alteracoes" });
+  if (extra.unidadeCadastrada === false) a.push({ nivel: "atencao", texto: `A OM signatária ${d.om_signataria?.sigla || "?"} não está cadastrada em Reajustes › Configurações: cadastre antes de gerar os documentos (o site não usa os dados de outra unidade no lugar).`, secao: "oms" });
+  for (const k of ["acrescimo", "supressao"] as const) {
+    if (d.aditivo[k] && pctKit(d.aditivo[k]!.percentual) == null) a.push({ nivel: "atencao", texto: `${k === "acrescimo" ? "Acréscimo" : "Supressão"} sem o percentual: os itens de anuência da contratada entram na Lista por segurança. Informe o percentual.`, secao: "alteracoes" });
+  }
+  if (temProrrogacao(d)) {
+    if (!incisosVantajosidade(d.vantajosidade?.motivos).length) a.push({ nivel: "critico", texto: "Declaração de Vantajosidade: escreva pelo menos 1 motivo (a prorrogação exige a declaração).", bloqueia: !("vantajosidade" in (d.nao_anexados ?? {})), secao: "vantajosidade" });
+    const cab = String(d.vantajosidade?.om_cabecalho ?? "").trim();
+    if (cab && d.om_signataria?.nome && cab.toUpperCase() !== d.om_signataria.nome.trim().toUpperCase()) a.push({ nivel: "info", texto: `Declaração de Vantajosidade: cabeçalho ajustado manualmente ("${cab}").`, secao: "vantajosidade" });
+  }
   if (numero(d.valor_atual) == null) a.push({ nivel: "critico", texto: "Informe o valor atual do contrato (seção 1.3).", bloqueia: true, secao: "alteracoes" });
   if (d.aditivo.prorrogacao && (!d.aditivo.prorrogacao.meses || !d.aditivo.prorrogacao.inicio)) a.push({ nivel: "critico", texto: "Prorrogação sem o nº de meses ou a data de início do novo período.", bloqueia: true, secao: "alteracoes" });
   for (const k of ["acrescimo", "supressao"] as const) {
@@ -317,11 +518,12 @@ export function alertasDoAditivo(d: DadosAditivo, e: EstadoAditivo, hoje: string
   // SICAF (item 12) e regularidade (item 13)
   if (!e.sicaf && !("sicaf" in (d.nao_anexados ?? {}))) a.push({ nivel: "critico", texto: "Falta o PDF do SICAF (item 12): anexe, ou marque o item como NÃO anexado com justificativa. Sem ele o .zip sai sem o item 12.", secao: "sicaf" });
   if (e.sicaf && !e.sicaf.ok) a.push({ nivel: "critico", texto: `SICAF com pendências: ${e.sicaf.alertas.filter((x) => !x.startsWith("🟡")).join(" ")}`, secao: "sicaf" });
-  if (e.sicaf && !anexos.sicaf) a.push({ nivel: "info", texto: "O PDF do SICAF foi conferido antes, mas não está anexado nesta sessão: anexe de novo para ir junto no .zip.", secao: "sicaf" });
+  if (e.sicaf && !anexos.sicaf) a.push({ nivel: "info", texto: "O SICAF foi conferido, mas o PDF não está guardado no aditivo: anexe de novo para ir junto no .zip.", secao: "sicaf" });
   if (!e.regularidade && !("consulta_cnpj" in (d.nao_anexados ?? {}))) a.push({ nivel: "critico", texto: "Falta a consulta de regularidade (item 13): faça a consulta, ou marque o item como NÃO anexado com justificativa. Sem ela o .zip sai sem o item 13.", secao: "regularidade" });
   if (e.regularidade) {
     for (const [k, c] of Object.entries(e.regularidade.cadastros)) {
-      if (c.situacao === "consta") a.push({ nivel: "critico", texto: `Consta sanção no ${c.cadastro} – verificar antes do aditivo.`, secao: "regularidade" });
+      if (c.situacao === "consta") a.push({ nivel: "critico", texto: `CONSTA registro no ${c.cadastro} – verificar antes do aditivo.`, secao: "regularidade" });
+      else if (/positiva/i.test(e.regularidade.complementos?.[k] ?? "")) a.push({ nivel: "critico", texto: `CONSTA registro no ${c.cadastro} (certidão Positiva) – verificar antes do aditivo.`, secao: "regularidade" });
       else if (c.situacao !== "nada_consta" && !e.regularidade.complementos?.[k]) a.push({ nivel: "atencao", texto: `A consulta ao ${c.cadastro} falhou na Consulta Consolidada: anexe a certidão desse cadastro${c.automatico ? " (ou busque automaticamente)" : ""}.`, secao: "regularidade" });
     }
   }

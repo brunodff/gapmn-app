@@ -17,7 +17,12 @@ export interface Empenho {
 export interface ParecerReferencial {
   numero: string; objeto?: string | null; data?: string | null; validade?: string | null;
   cobre: Alteracao[]; limite_percentual?: number | null; motivo?: string | null;
+  /** o fiscal editou o objeto: o site (e o kit) não troca pelo da biblioteca de pareceres */
+  objeto_fixo?: boolean;
+  orgao_consultivo?: string | null; pdf?: string | null; fonte_objeto?: string | null;
 }
+/** Declaração de Vantajosidade Econômica (seção 3I): motivos do fiscal em incisos; cabeçalho e objeto só se ajustados */
+export interface Vantajosidade { motivos: string[]; om_cabecalho?: string | null; objeto?: string | null }
 export interface PrecoPesquisa { fonte: string; data: string; valor: number; valor_atualizado: number; excluido?: boolean; motivo_exclusao?: string }
 export interface ItemPesquisa {
   item: number; descricao: string; codigo: string; unidade: string; quantidade: number; preco_contratado: number | null; precos: PrecoPesquisa[];
@@ -53,7 +58,13 @@ export interface DadosAditivo {
   observacao: string;
   pesquisa_precos: PesquisaPrecosAditivo | null;
   riscos: Risco[];
+  /** vai no Atestado de adequação e na Declaração de Vantajosidade (o site copia do estado ao gerar) */
+  objeto_contrato?: string;
+  vantajosidade?: Vantajosidade | null;
 }
+
+/** PDF guardado no aditivo (Storage aditivos-docs), por item da Lista: vai no .zip mesmo em outra sessão */
+export interface AnexoGuardado { nome: string; caminho: string; tamanho: number; em: string; por: string | null }
 
 export type NaturezaObjeto = "servico_sem_demo" | "servico_com_demo" | "tic" | "bens" | "locacao_imovel" | "outro";
 export const NATUREZAS: [NaturezaObjeto, string][] = [
@@ -90,6 +101,10 @@ export interface EstadoAditivo {
   ultimo_empenho?: { ne?: string; data?: string; origem: string } | null;
   gerado_em?: string;
   arquivos_gerados?: string[];
+  /** PDFs guardados no aditivo, por chave da Lista (sicaf, consulta_cnpj, consulta_cpf_socio, memoria_calculo, procuracao…) */
+  anexos?: Record<string, AnexoGuardado[]>;
+  /** PDFs que compõem o item 13 (consolidada e certidões complementares), para montar de novo em outra sessão */
+  anexos_item13?: { consolidada?: AnexoGuardado | null; complementos?: Record<string, AnexoGuardado> };
 }
 
 export interface RegistroAditivo {

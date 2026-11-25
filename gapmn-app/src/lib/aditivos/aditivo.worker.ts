@@ -5,6 +5,10 @@ import pontePy from "./ponte_aditivo.py?raw";
 import pareceresPy from "./kit/pareceres.py?raw";
 import listaPy from "./kit/gerar_lista_verificacao.py?raw";
 import declaracaoPy from "./kit/gerar_declaracao_orcamentaria.py?raw";
+import vantajosidadePy from "./kit/gerar_declaracao_vantajosidade.py?raw";
+import atestadoPy from "./kit/gerar_atestado_adequacao.py?raw";
+import montarZipPy from "./kit/montar_zip.py?raw";
+import pareceresJson from "./kit/biblioteca_pareceres.json?raw";
 import mapaPy from "./kit/gerar_mapa_riscos.py?raw";
 import pesquisaPy from "./kit/gerar_pesquisa_precos.py?raw";
 import fichaPy from "./kit/gerar_ficha_autorizacao.py?raw";
@@ -16,8 +20,9 @@ import brasaoUrl from "./kit/brasao.png?url";
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 const KIT: [string, string][] = [
   ["pareceres.py", pareceresPy], ["gerar_lista_verificacao.py", listaPy], ["gerar_declaracao_orcamentaria.py", declaracaoPy],
+  ["gerar_declaracao_vantajosidade.py", vantajosidadePy], ["gerar_atestado_adequacao.py", atestadoPy], ["montar_zip.py", montarZipPy],
   ["gerar_mapa_riscos.py", mapaPy], ["gerar_pesquisa_precos.py", pesquisaPy], ["gerar_ficha_autorizacao.py", fichaPy],
-  ["verificar_sicaf.py", sicafPy], ["consultar_regularidade.py", regularidadePy], ["biblioteca_riscos.json", bibliotecaJson],
+  ["verificar_sicaf.py", sicafPy], ["consultar_regularidade.py", regularidadePy], ["biblioteca_riscos.json", bibliotecaJson], ["biblioteca_pareceres.json", pareceresJson],
 ];
 
 type Py = {
@@ -34,7 +39,7 @@ export type PedidoAditivo =
   | { id: number; tipo: "consolidada_texto"; texto: string }
   | { id: number; tipo: "consolidada_json"; json: unknown }
   | { id: number; tipo: "juntar"; pdfs: ArrayBuffer[] }
-  | { id: number; tipo: "gerar"; dados: unknown; extras: { nome: string; bytes: ArrayBuffer }[] };
+  | { id: number; tipo: "gerar"; dados: unknown; extras: { chave: string; nome: string; bytes: ArrayBuffer }[] };
 
 export type RespostaAditivo =
   | { id: number; tipo: "progresso"; etapa: string }
@@ -100,9 +105,11 @@ ctx.onmessage = async (ev: MessageEvent<PedidoAditivo>) => {
         avisar("Gerando os documentos do termo aditivo…");
         py.FS.mkdirTree("/tmp/extras");
         const extras = p.extras.map((x, i) => {
-          const caminho = `/tmp/extras/extra_${i + 1}`;
+          // a extensão vai no caminho: o montar_zip.py do kit dá ao arquivo do .zip a extensão do anexo
+          const ext = /\.[a-z0-9]{2,5}$/i.exec(x.nome)?.[0]?.toLowerCase() ?? ".pdf";
+          const caminho = `/tmp/extras/extra_${i + 1}${ext}`;
           py.FS.writeFile(caminho, new Uint8Array(x.bytes));
-          return { caminho, nome: x.nome };
+          return { caminho, chave: x.chave };
         });
         const destino = "/tmp/aditivo.zip";
         const r = JSON.parse(ponte.gerar(JSON.stringify(p.dados), destino, JSON.stringify(extras)));
