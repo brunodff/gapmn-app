@@ -139,6 +139,72 @@ export function parseCSV(texto: string): string[][] {
 }
 
 /**
+ * Lê o CSV aos pedaços, conforme chega, e guarda só os registros que `manter` aceitar. Com a planilha de
+ * 5 anos (23 MB) o texto inteiro + parseCSV estourava a memória da função (erro 546); assim só ficam na
+ * memória as linhas do exercício. `inicio` = começo do texto, para reconhecer uma página HTML.
+ */
+export async function lerCSVFiltrado(
+  corpo: ReadableStream<Uint8Array>, manter: (c: string[]) => boolean,
+): Promise<{ linhas: string[][]; inicio: string }> {
+  const linhas: string[][] = [];
+  const leitor = corpo.pipeThrough(new TextDecoderStream()).getReader();
+  let linha: string[] = [];
+  let campo = "";
+  let aspas = false;
+  let aspaPendente = false; // aspa no fim do pedaço: pode ser "" (aspa escapada) ou o fim do campo
+  let inicio = "";
+  const fechar = () => {
+    linha.push(campo.replace(/\r$/, ""));
+    if (manter(linha)) linhas.push(linha);
+    linha = []; campo = "";
+  };
+  for (;;) {
+    const { value, done } = await leitor.read();
+    if (done) break;
+    if (inicio.length < 200) inicio += value.slice(0, 200 - inicio.length);
+    for (let i = 0; i < value.length; i++) {
+      const c = value[i];
+      if (aspaPendente) {
+        aspaPendente = false;
+        if (c === '"') { campo += '"'; continue; }
+        aspas = false;
+      }
+      if (aspas) {
+        if (c === '"') {
+          if (i + 1 < value.length) { if (value[i + 1] === '"') { campo += '"'; i++; } else aspas = false; }
+          else aspaPendente = true;
+        } else campo += c;
+      } else if (c === '"') aspas = true;
+      else if (c === ",") { linha.push(campo); campo = ""; }
+      else if (c === "\n") fechar();
+      else campo += c;
+    }
+  }
+  if (campo || linha.length) fechar();
+  return { linhas, inicio };
+}
+
+/**
+ * Filtro para lerCSVFiltrado: só as linhas das NEs de `anoMin` em diante. As linhas sem NE (demais itens
+ * do lançamento) acompanham a NE de cima; título e cabeçalho (sem data) não interessam a lerNEs.
+ */
+export function linhasDesdeAno(anoMin: number): (c: string[]) => boolean {
+  let manter = false;
+  return (c) => {
+    if (c.length < 21 || !dataISO(c[0])) return false;
+    const m = /(\d{4})NE\d{6}\s*$/i.exec((c[1] ?? "").trim());
+    if (m) manter = Number(m[1]) >= anoMin;
+    return manter;
+  };
+}
+
+/** Ano mínimo das NEs que interessam ao envio: o do exercício; em janeiro, também o anterior. */
+export function anoMinimoEnvio(agora = new Date()): number {
+  const manaus = new Date(agora.getTime() - 4 * 3600 * 1000);
+  return manaus.getUTCMonth() === 0 ? manaus.getUTCFullYear() - 1 : manaus.getUTCFullYear();
+}
+
+/**
  * Lançamentos da planilha "Notas de Empenho" (21 colunas, A–U): A data, B NE (só na 1ª linha do
  * lançamento), C item, G valor atual do item, H observação, I UG, K natureza, O PAG, P/Q favorecido,
  * T situação da assinatura. As colunas R e S (assinante) não são lidas.

@@ -19,7 +19,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { lerNEs, parseCSV, pedidoDeEmail, planejar } from "../_shared/solicitacoesAuto.ts";
+import { anoMinimoEnvio, lerCSVFiltrado, lerNEs, linhasDesdeAno, pedidoDeEmail, planejar } from "../_shared/solicitacoesAuto.ts";
 
 const PLANILHA_NE =
   Deno.env.get("PLANILHA_NE_URL") ??
@@ -83,9 +83,11 @@ Deno.serve(async (req) => {
     // ── leitura ────────────────────────────────────────────────────────────────
     const resp = await fetch(PLANILHA_NE, { headers: { "Cache-Control": "no-cache" } });
     if (!resp.ok) throw new Error(`Planilha de empenhos respondeu ${resp.status}.`);
-    const texto = await resp.text();
-    if (/^\s*<(!doctype|html)/i.test(texto)) throw new Error("A planilha de empenhos não está publicada por link.");
-    const nes = lerNEs(parseCSV(texto));
+    // só as NEs do exercício (em janeiro, também as do ano anterior), lidas aos pedaços: a aba pode vir
+    // com vários anos (24/11/2026: 2022 a 2026, 23 MB) e o texto inteiro estourava a memória (546)
+    const { linhas, inicio } = await lerCSVFiltrado(resp.body, linhasDesdeAno(anoMinimoEnvio()));
+    if (/^\s*<(!doctype|html)/i.test(inicio)) throw new Error("A planilha de empenhos não está publicada por link.");
+    const nes = lerNEs(linhas);
     if (nes.length < 100) throw new Error(`A planilha veio com só ${nes.length} lançamentos: leitura suspensa por segurança.`);
 
     const solicitacoes = (await lerTudo(admin, "solicitacoes_empenho", COLUNAS)).map((s) => ({ ...s, valor: s.valor === null ? null : Number(s.valor) }));

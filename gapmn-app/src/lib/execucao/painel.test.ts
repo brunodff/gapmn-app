@@ -270,9 +270,12 @@ test("duas abas: anos anteriores entram antes do exercício, sem contar em dobro
   assert.equal(juntas[0][0], PLANILHA[0][0], "o título segue no topo");
   assert.equal(juntas[1][1], antiga[0][1], "os anos anteriores vêm antes do exercício");
   assert.equal(juntas.filter((c) => c[0] === "Emissão - Dia").length, PLANILHA.filter((c) => c[0] === "Emissão - Dia").length, "cabeçalho da outra aba não entra");
-  // se o relatório voltar a trazer 2025 na aba do exercício, a outra aba não repete esse ano
-  const comDoisAnos = [titulo, ...antiga, ...PLANILHA.slice(1)];
-  assert.equal(lerEmpenhos(juntarAnos(comDoisAnos, anteriores)).length, nes.length);
+  // se o relatório voltar a trazer 2025 (cortado) na aba do exercício, vale o 2025 inteiro da aba antiga
+  const cortada = [antiga[0]]; // só o 1º item (100): o 2º ficou fora do corte
+  const comDoisAnos = [titulo, ...cortada, ...PLANILHA.slice(1)];
+  const juntas2 = lerEmpenhos(juntarAnos(comDoisAnos, anteriores));
+  assert.equal(juntas2.length, nes.length);
+  assert.equal(juntas2.find((n) => n.ne === "2025NE000013")?.valor, 150, "2025 vem da aba antiga, sem dobrar");
   // sem a aba dos anos anteriores, fica o exercício
   assert.deepEqual(juntarAnos(PLANILHA, []), PLANILHA);
 });

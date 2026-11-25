@@ -4,7 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { aplicarModelo, extrairEmail, extrairResponsavel, lerNEs, pedidoDeEmail, planejar, type LinhaNE, type Solicitacao } from "./solicitacoesAuto.ts";
+import {
+  anoMinimoEnvio, aplicarModelo, extrairEmail, extrairResponsavel, lerCSVFiltrado, lerNEs, linhasDesdeAno, parseCSV, pedidoDeEmail, planejar,
+  type LinhaNE, type Solicitacao,
+} from "./solicitacoesAuto.ts";
 
 const OBS = "SOLICITACAO DE EMPENHO 26S0500. OBS: CONTRATO 010. CTT: 1T SILVA silva@fab.mil.br TELEFONE: (92) 3654-1234";
 
@@ -127,4 +130,36 @@ test("notificação desligada e encerrada não mandam e-mail", () => {
 
 test("modelo sem dado mostra traço", () => {
   assert.equal(aplicarModelo("{{pag}} / {{subprocesso}}", { numero: "26S1" }), "— / —");
+});
+
+test("leitura aos pedaços: só as NEs do exercício, igual a ler o texto inteiro", async () => {
+  const csv = (c: string[]) => c.map((v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(",");
+  const antiga = linha("03/02/2025", "NE000010", "1", "500"); antiga[1] = "120630000012025NE000010";
+  const obsComQuebra = 'SOLICITACAO DE EMPENHO 26S0501. OBS: "ITEM, A"\nCTT: 1T SOUZA souza@fab.mil.br';
+  const linhasCsv = [
+    ["Notas de Empenho", ...Array(20).fill("")],
+    antiga, linha("03/02/2025", "", "2", "70"),
+    linha("10/09/2026", "NE001000", "1", "100", "ASSINADA", obsComQuebra), linha("10/09/2026", "", "2", "50"),
+    linha("25/09/2026", "NE001001", "1", "30"),
+  ];
+  const texto = linhasCsv.map(csv).join("\r\n") + "\r\n";
+  const esperado = lerNEs(parseCSV(texto)).filter((n) => n.ne.startsWith("2026"));
+  assert.equal(esperado.length, 2);
+  assert.equal(esperado[0].valorNE, 150);
+  for (const tam of [1, 2, 3, 7, 64, 100000]) {
+    const bytes = new TextEncoder().encode(texto);
+    const corpo = new ReadableStream<Uint8Array>({
+      start(ctl) { for (let i = 0; i < bytes.length; i += tam) ctl.enqueue(bytes.slice(i, i + tam)); ctl.close(); },
+    });
+    const { linhas, inicio } = await lerCSVFiltrado(corpo, linhasDesdeAno(2026));
+    assert.deepEqual(lerNEs(linhas), esperado, `pedaços de ${tam} bytes`);
+    assert.ok(inicio.startsWith("Notas de Empenho"));
+  }
+});
+
+test("ano mínimo do envio: o exercício; em janeiro, também o anterior (hora de Manaus)", () => {
+  assert.equal(anoMinimoEnvio(new Date("2026-11-24T12:00:00Z")), 2026);
+  assert.equal(anoMinimoEnvio(new Date("2027-01-15T12:00:00Z")), 2026);
+  assert.equal(anoMinimoEnvio(new Date("2027-01-01T03:00:00Z")), 2026, "ainda 31/12 em Manaus");
+  assert.equal(anoMinimoEnvio(new Date("2027-02-01T12:00:00Z")), 2027);
 });

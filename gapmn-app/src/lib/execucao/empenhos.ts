@@ -85,8 +85,8 @@ export function neCurta(v: string): string | null {
 // ─── Ano das NEs ─────────────────────────────────────────────────────────────
 // A aba "Dados" da planilha traz só o exercício; 2022 a 2025 ficam na aba "Dados 2022-2025" (separadas em
 // 06/11/2026: a planilha inteira numa aba só derrubava a função do e-mail ao fiscal). Os painéis do exercício
-// (Orçamentário, Empenhos, Gerenciais, e-mail ao fiscal) leem só a primeira; o Painel de Execução e os
-// Contratos leem as duas, com juntarAnos.
+// (Empenhos, Gerenciais, e-mail ao fiscal) leem só a primeira, filtrada no ano corrente; o Painel de Execução
+// e os Contratos leem as duas, com juntarAnos (anos fechados sempre da aba antiga).
 
 const NE_ANO = /(\d{4})NE\d+/i;
 
@@ -116,26 +116,29 @@ export function linhasDoAno(linhas: readonly string[][], ano: number | null = an
 }
 
 /**
- * Junta a aba do exercício com a dos anos anteriores, na ordem da planilha original. Ano que já está na aba
- * do exercício não é lido da outra, para não contar em dobro se o relatório voltar a trazer anos anteriores.
+ * Junta a aba do exercício com a dos anos anteriores, na ordem da planilha original. Ano que está na aba dos
+ * anos anteriores sai de lá, completo, e não da aba do exercício: em 24/11/2026 o relatório voltou a trazer
+ * 2022 a 2026 na aba do exercício, cortado no dia 24 de cada mês, e a aba antiga continuava inteira.
  */
 export function juntarAnos(atual: readonly string[][], anteriores: readonly string[][]): string[][] {
   const ehDado = (c: readonly string[]) => DATA.test((c[0] ?? "").trim());
-  const jaTem = new Set<number>();
-  for (const c of atual) {
-    const m = NE_ANO.exec(c[1] ?? "");
-    if (m && ehDado(c)) jaTem.add(Number(m[1]));
-  }
-  let manter = false;
+  const antigos = new Set<number>();
   const antigas = anteriores.filter((c) => {
     if (!ehDado(c)) return false;
     const m = NE_ANO.exec(c[1] ?? "");
-    if (m) manter = !jaTem.has(Number(m[1]));
+    if (m) antigos.add(Number(m[1]));
+    return true;
+  });
+  let manter = true;
+  const doExercicio = atual.filter((c) => {
+    if (!ehDado(c)) return true;
+    const m = NE_ANO.exec(c[1] ?? "");
+    if (m) manter = !antigos.has(Number(m[1]));
     return manter;
   });
-  const i = atual.findIndex(ehDado);
-  const corte = i < 0 ? atual.length : i;
-  return [...atual.slice(0, corte), ...antigas, ...atual.slice(corte)];
+  const i = doExercicio.findIndex(ehDado);
+  const corte = i < 0 ? doExercicio.length : i;
+  return [...doExercicio.slice(0, corte), ...antigas, ...doExercicio.slice(corte)];
 }
 
 /** Parte fixa do PAG: 5 dígitos do órgão + 6 do sequencial + 4 do ano. Os dígitos verificadores às vezes vêm cortados. */
