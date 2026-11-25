@@ -34,6 +34,8 @@ export interface Reajuste {
   indice_pct: number | null; // percentual acumulado dos 12 meses (6 casas; INCC da FGV: 2)
   novo: boolean;             // true = pedido agora; false = já aplicado em apostilamento anterior
   documento?: string;        // reajuste já aplicado: documento que o aplicou
+  /** print da consulta do índice guardado (depósito reajustes-prints): o termo aditivo também usa */
+  print?: { caminho: string; nome: string; em: string } | null;
 }
 
 export interface ItemContrato {
@@ -96,6 +98,8 @@ export interface DadosReajuste {
   observacoes_extras: string[];
   /** checklist do fiscal, guardado com o cadastro (o app o entrega à parte ao motor) */
   checklist?: MarcacaoChecklist[];
+  /** "CLÁUSULA SEGUNDA – VIGÊNCIA E PRORROGAÇÃO, item 2.1" (lida no PDF do contrato; Parecer Técnico do termo aditivo) */
+  clausula_vigencia?: string;
   /** origem da data do orçamento quando vem dentro dos dados da carga (só conferência; não vai ao motor) */
   data_base_fonte?: Record<string, unknown>;
 }

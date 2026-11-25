@@ -21,6 +21,8 @@ export interface AchadosPdf {
   omContratante?: Achado<string>;
   /** sigla da OM, quando o contrato a escreve entre parênteses depois do nome ("… Tráfego Aéreo (CINDACTA IV)") */
   omSigla?: Achado<string>;
+  /** "CLÁUSULA SEGUNDA – VIGÊNCIA E PRORROGAÇÃO, item 2.1" (Parecer Técnico do termo aditivo, revisão 5.1 da SCON) */
+  vigencia?: Achado<string>;
   /** PDF sem texto (imagem escaneada): nada pôde ser lido */
   semTexto?: boolean;
 }
@@ -103,6 +105,17 @@ function acharClausula(t: string, tipo: TipoDoc): Achado<string> | undefined {
   const item = /(\d{1,2}\.\d{1,2})\.?\s+[^.]{0,160}?(interregno|reajustad|[íi]ndice)/i.exec(depois)?.[1];
   const doc = tipo === "TERMO DE REFERÊNCIA" ? "do Termo de Referência" : "do Contrato";
   return { valor: `a CLÁUSULA ${ordinal}${item ? `, item ${item}` : ""}, ${doc}`, trecho: trecho(t, cab.index, 160) };
+}
+
+/** Cláusula de vigência do contrato: o título ("CLÁUSULA SEGUNDA – VIGÊNCIA E PRORROGAÇÃO") e o item do prazo */
+function acharVigencia(t: string): Achado<string> | undefined {
+  const cab = new RegExp(String.raw`CL[ÁA]USULA\s+` + ORDINAL + String.raw`\s*[-–—:.]?\s*((?:D[OA]S?\s+)?(?:PRAZO\s+(?:DE\s+)?)?VIG[ÊE]NCIA(?:\s+E\s+(?:D[OA]\s+)?PRORROGA[ÇC][ÃA]O)?)`, "i").exec(t);
+  if (!cab) return undefined;
+  const ordinal = cab[1].toUpperCase().replace(/\s*-\s*/g, " ").replace(/\s+/g, " ");
+  const titulo = cab[2].toUpperCase().replace(/\s+/g, " ").trim();
+  const depois = t.slice(cab.index + cab[0].length, cab.index + cab[0].length + 1500);
+  const item = /(?:^|\s)(\d{1,2}\.\d{1,2})\.?\s+[^.]{0,200}?(vig[êe]ncia|prazo)/i.exec(depois)?.[1];
+  return { valor: `CLÁUSULA ${ordinal} – ${titulo}${item ? `, item ${item}` : ""}`, trecho: trecho(t, cab.index, 200) };
 }
 
 const mmaaaa = (mes: number, ano: number) => (mes >= 1 && mes <= 12 ? `${String(mes).padStart(2, "0")}/${ano < 100 ? 2000 + ano : ano}` : null);
@@ -245,6 +258,6 @@ export function extrairDoTexto(textoBruto: string, op: { cnpjEmpresa?: string } 
     r.endereco = acharEndereco(t, op.cnpjEmpresa);
     r.objeto = acharObjeto(t);
   }
-  if (tipo === "CONTRATO") Object.assign(r, acharPartes(t));
+  if (tipo === "CONTRATO") { Object.assign(r, acharPartes(t)); r.vigencia = acharVigencia(t); }
   return r;
 }

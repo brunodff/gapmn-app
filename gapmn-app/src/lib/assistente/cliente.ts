@@ -47,11 +47,16 @@ export async function perguntar(pergunta: string, historico: Turno[], aoConsulta
 }
 
 /** Link interno do app (/app?vista=…&busca=…) → tela e busca */
-export function lerLinkApp(link: string): { vista: string; busca: string | null; contrato: string | null; aditivo: string | null } | null {
+/** Parâmetros dos Reajustes que um link pode levar: aba e unidade nova (Configurações) e o termo aditivo que pede o reajuste */
+const EXTRAS_REAJUSTES = ["aba", "nova", "instrumento", "ta"];
+export function lerLinkApp(link: string): { vista: string; busca: string | null; contrato: string | null; aditivo: string | null; extras?: Record<string, string> } | null {
   try {
     const u = new URL(link, "https://gapmn.app");
     if (u.origin !== "https://gapmn.app" || u.pathname !== "/app") return null;
     const vista = u.searchParams.get("vista");
-    return vista ? { vista, busca: u.searchParams.get("busca"), contrato: u.searchParams.get("contrato"), aditivo: u.searchParams.get("aditivo") } : null;
+    if (!vista) return null;
+    const extras: Record<string, string> = {};
+    if (vista === "reajustes") for (const k of EXTRAS_REAJUSTES) { const v = u.searchParams.get(k); if (v) extras[k] = v; }
+    return { vista, busca: u.searchParams.get("busca"), contrato: u.searchParams.get("contrato"), aditivo: u.searchParams.get("aditivo"), ...(Object.keys(extras).length ? { extras } : {}) };
   } catch { return null; }
 }

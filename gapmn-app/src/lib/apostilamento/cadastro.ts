@@ -80,6 +80,8 @@ export function paraMotor(d: DadosReajuste): DadosReajuste {
   for (const k of ["contratante_paragrafo", "contratada_paragrafo", "om_ordenador", "data_declaracao"] as const) if (!x[k]) delete x[k];
   delete x.checklist; // vai à parte para o motor (motor.gerar / motor.checklist)
   delete x.data_base_fonte; // só para conferência na tela (carga do SILOMS)
+  delete x.clausula_vigencia; // só para o Parecer Técnico do termo aditivo
+  x.reajustes = (x.reajustes ?? []).map((r) => { const y = { ...r }; delete y.print; return y; }); // o print vai à parte
   // INCC: o parecer diz "conforme consulta abaixo:" (print da tabela da FGV); sem o "pesquisa abaixo" padrão
   // do cadastro, o motor aplica a regra dele
   if (ehFgv(x.indice?.nome) && (!x.indice.fonte_curta || x.indice.fonte_curta === "pesquisa abaixo")) delete x.indice.fonte_curta;

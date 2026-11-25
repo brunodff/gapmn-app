@@ -61,6 +61,32 @@ export interface DadosAditivo {
   /** vai no Atestado de adequação e na Declaração de Vantajosidade (o site copia do estado ao gerar) */
   objeto_contrato?: string;
   vantajosidade?: Vantajosidade | null;
+  // ── Parecer Técnico de Alteração Contratual (revisão 5.1, seção 3J) ──
+  /** "14133" | "8666" (o site copia do estado ao gerar) */
+  lei?: string;
+  contratada?: { nome: string } | null;
+  objeto_resumido?: string | null;
+  /** item 5: contrato inicial e cada documento assinado, com o valor que o contrato passou a ter depois dele */
+  historico?: HistoricoParecer[];
+  /** item 10: itens do contrato (do cadastro dos Reajustes), valor atual e valor após o aditivo (editáveis) */
+  itens?: ItemParecer[];
+  parecer_tecnico?: ParecerTecnico | null;
+}
+
+export interface HistoricoParecer { documento: string; valor: number | null; variacao?: number | null; data?: string | null }
+export interface ItemParecer { item: string; descricao: string; valor_atual: number | null; valor_apos?: number | null }
+export interface EtapaEscopo { etapa: string; entrega: string; recebimento: string; pagamento: string; valor: number | null }
+export interface ParecerTecnico {
+  numero?: string | null;
+  natureza?: "continuado" | "escopo";
+  base?: "anual" | "mensal" | "total";
+  clausula_vigencia?: string | null;
+  clausula_reajuste?: string | null;
+  /** null = automático (só com reajuste: "Consulta índice <índice>") */
+  anexos?: string[] | null;
+  /** null = as sugestões do site; lista = sai exatamente essa lista (o que o fiscal deixou na tela) */
+  motivos?: string[] | null;
+  cronograma_escopo?: EtapaEscopo[];
 }
 
 /** PDF guardado no aditivo (Storage aditivos-docs), por item da Lista: vai no .zip mesmo em outra sessão */

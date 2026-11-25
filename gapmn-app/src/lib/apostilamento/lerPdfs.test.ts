@@ -24,6 +24,14 @@ test("contrato no modelo da AGU: índice, cláusula com o item, data-base, repre
   assert.match(r.objeto?.valor ?? "", /^contratação de serviços continuados de limpeza/);
 });
 
+test("cláusula de vigência do contrato (Parecer Técnico do termo aditivo)", () => {
+  const t = `TERMO DE CONTRATO Nº 099/GAPMN/2025 CONTRATANTE CONTRATADA CLÁUSULA PRIMEIRA – OBJETO 1.1. Serviço de limpeza.
+CLÁUSULA SEGUNDA – VIGÊNCIA E PRORROGAÇÃO (art. 105) 2.1. O prazo de vigência da contratação é de 12 (doze) meses contados da assinatura, prorrogável na forma dos artigos 106 e 107 da Lei nº 14.133, de 2021.`;
+  assert.equal(extrairDoTexto(t).vigencia?.valor, "CLÁUSULA SEGUNDA – VIGÊNCIA E PRORROGAÇÃO, item 2.1");
+  const t2 = "CONTRATO Nº 1/2022 CONTRATANTE CONTRATADA CLÁUSULA TERCEIRA - DO PRAZO DE VIGÊNCIA 3.1 O presente contrato terá vigência de 12 meses.";
+  assert.equal(extrairDoTexto(t2).vigencia?.valor, "CLÁUSULA TERCEIRA – DO PRAZO DE VIGÊNCIA, item 3.1");
+});
+
 test("não confunde o representante do contratante com o da contratada", () => {
   const r = extrairDoTexto(CONTRATO, { cnpjEmpresa: "12.345.678/0001-90" });
   assert.notEqual(r.representante?.valor.nome, "FULANO DE TAL BELTRANO");

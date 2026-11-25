@@ -30,6 +30,8 @@ export default function Reajustes() {
   const aberto = params.get("contrato");
   const aba: Aba = params.get("aba") === "config" ? "config" : "painel";
   const novaUnidade = params.get("nova");
+  // "Fazer o reajuste no módulo Reajustes" do termo aditivo: abre com Instrumento = Termo Aditivo e o nº do TA
+  const taPedido = params.get("instrumento") === "aditivo" ? Number(params.get("ta")) || null : null;
 
   const [logado, setLogado] = useState(false);
   const [setor, setSetor] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export default function Reajustes() {
   const ir = (p: { contrato?: string; aba?: Aba; nova?: string }) => {
     // mantém o resto do endereço (vista=reajustes)
     const q = new URLSearchParams(params);
-    q.delete("contrato"); q.delete("aba"); q.delete("nova");
+    q.delete("contrato"); q.delete("aba"); q.delete("nova"); q.delete("instrumento"); q.delete("ta");
     if (p.contrato) q.set("contrato", p.contrato);
     if (p.aba === "config") q.set("aba", "config");
     if (p.nova) q.set("nova", p.nova);
@@ -143,7 +145,7 @@ export default function Reajustes() {
       {carregando ? <div className="p-6 text-sm text-slate-500">Carregando os contratos…</div>
         : aberto ? (contrato
           ? <DetalheComNE contratos={contratos} contrato={contrato} config={config} nomeUsuario={nome} ugGov={UG_GAPMN}
-              unidades={unidades} aoCadastrarUnidade={(sigla) => ir({ aba: "config", nova: sigla })}
+              unidades={unidades} aoCadastrarUnidade={(sigla) => ir({ aba: "config", nova: sigla })} taPedido={taPedido}
               aoVoltar={() => ir({})}
               aoSalvar={(r) => setCadastros((m) => new Map(m).set(r.numero_contrato, r))} />
           : <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Contrato {aberto} não encontrado. <button className="text-sky-700 hover:underline" onClick={() => ir({})}>Voltar ao painel</button></div>)

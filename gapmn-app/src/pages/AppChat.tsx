@@ -1353,13 +1353,14 @@ export default function AppChat() {
 
   // Reajustes fica no endereço (?vista=reajustes&contrato=…), para o link do contrato abrir direto nele;
   // Termos Aditivos também (?vista=aditivos&aditivo=<id>), e a Pesquisa de Preços de um aditivo (?vista=pesquisa-precos&aditivo=<id>).
-  function setView(v: View, contrato?: string, aditivo?: string | null) {
+  function setView(v: View, contrato?: string, aditivo?: string | null, extras?: Record<string, string>) {
     setViewRaw(v);
     setAlvo(a => ({ busca: "", n: a.n }));
     logActivity("page_view", v);
     const p = new URLSearchParams(params);
     p.delete("vista"); p.delete("contrato"); p.delete("aba"); p.delete("busca"); p.delete("aditivo");
-    if (v === "reajustes") { p.set("vista", "reajustes"); if (contrato) p.set("contrato", contrato); }
+    for (const k of ["nova", "instrumento", "ta"]) p.delete(k);
+    if (v === "reajustes") { p.set("vista", "reajustes"); if (contrato) p.set("contrato", contrato); for (const [k, x] of Object.entries(extras ?? {})) p.set(k, x); }
     if (v === "aditivos") { p.set("vista", "aditivos"); if (aditivo) p.set("aditivo", aditivo); }
     if (v === "pesquisa-precos" && aditivo) { p.set("vista", "pesquisa-precos"); p.set("aditivo", aditivo); }
     if (v === "reajuste-om") p.set("vista", "reajuste-om");
@@ -1374,7 +1375,7 @@ export default function AppChat() {
     if (!l) { window.open(link, "_blank", "noopener"); return; }
     const v = vistaDaUrl(l.vista);
     if (!v) return;
-    if (v === "reajustes") { setView("reajustes", l.contrato ?? undefined); return; }
+    if (v === "reajustes") { setView("reajustes", l.contrato ?? undefined, undefined, l.extras); return; }
     if (v === "aditivos" || (v === "pesquisa-precos" && l.aditivo)) { setView(v, undefined, l.aditivo); return; }
     setView(v);
     setAlvo(a => ({ busca: l.busca ?? "", n: a.n + 1 }));

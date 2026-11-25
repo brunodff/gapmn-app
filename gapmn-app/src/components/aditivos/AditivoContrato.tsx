@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Caixa, Campo, CampoNumero, Secao } from "../reajustes/campos";
 import {
-  alertasDoAditivo, alteracoes, analisarPareceres, brl, citarPareceres, daBiblioteca, eCefa, ementaDoParecer, faltandoNoZip, fimPrevisto,
+  aditivosAssinados, alertasDoAditivo, alteracoes, analisarPareceres, brl, citarPareceres, daBiblioteca, eCefa, ementaDoParecer, faltandoNoZip, fimPrevisto,
   fraseObjetoVantajosidade, fraseObservacaoParecer, geradosPrevistos, incisosVantajosidade, itensDaLista, numero, objetoDaFicha, pareceresDoAditivo,
   limparObjeto, pareceresSugeridos, passa1Milhao, valorNovo, AUTORIDADE_CEFA, GERADOS_PELO_SITE, NOMES, SUGESTOES_VANTAJOSIDADE, type AguParecer,
 } from "../../lib/aditivos/regras";
-import { bytesDeBase64, carregarAditivo, consultaAutomatica, omDaUnidade, pareceresAgu, salvarAditivo, cadastroReajuste } from "../../lib/aditivos/dados";
+import { bytesDeBase64, carregarAditivo, consultaAutomatica, omDaUnidade, parecerDoCadastro, pareceresAgu, salvarAditivo, cadastroReajuste } from "../../lib/aditivos/dados";
 import { kitAditivo, type DocumentoGerado } from "../../lib/aditivos/kitAditivo";
 import { ALTERACOES, NATUREZAS, type Alteracao, type AnexoGuardado, type DadosAditivo, type EstadoAditivo, type ParecerReferencial, type RegistroAditivo, type Vantajosidade } from "../../lib/aditivos/tipos";
 import MapaRiscos from "./MapaRiscos";
@@ -14,6 +14,10 @@ import { anexosVazios, apagarAnexos, baixarAnexo, guardarAnexo, type AnexosConsu
 import { MemoriaAditivo, PesquisaAditivo } from "./PesquisaMemoria";
 import { acharUnidade, type UnidadeApoiada } from "../../lib/apostilamento/unidades";
 import { carregarUnidades } from "../../lib/apostilamento/unidadesBanco";
+import { baixarPrint } from "../../lib/apostilamento/prints";
+import type { DadosReajuste } from "../../lib/apostilamento/tipos";
+import { alertasParecer } from "../../lib/aditivos/parecer";
+import ParecerTecnico from "./ParecerTecnico";
 
 /** Itens da Lista que o fiscal junta como PDF (anuência, parecer técnico, procuração…): os outros o site gera ou têm tela própria */
 const ITENS_COM_TELA = ["sicaf", "consulta_cnpj", "consulta_cpf_socio", "memoria_calculo", "bol_aci", "bol_od", "bol_fiscalizacao", "calculadora"];
@@ -41,6 +45,9 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
   const [listaArq, setListaArq] = useState<Record<string, Arquivo[]>>({});
   const [restaurando, setRestaurando] = useState(false);
   const [indiceContrato, setIndiceContrato] = useState("");
+  /** cadastro do contrato nos Reajustes (histórico, itens, cláusulas, documentos assinados e prints da Calculadora) */
+  const [cad, setCad] = useState<{ dados: DadosReajuste | null; carga: Record<string, unknown> | null } | null>(null);
+  const [printsCad, setPrintsCad] = useState<Arquivo[]>([]);
   const [geracao, setGeracao] = useState<{ docs: Record<string, DocumentoGerado>; zip: Blob; nome: string; faltando: string[] } | null>(null);
   const hoje = hojeISO();
 
@@ -50,7 +57,20 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
       if (!vivo) return;
       setReg(r); setD(r.dados); setE(r.estado); setAgu(a); setUnidades(u.unidades);
       void restaurarAnexos(r.estado, () => vivo);
-      void cadastroReajuste(r.numero_contrato).then((c) => vivo && setIndiceContrato(c.dados?.indice?.nome ?? "")).catch(() => undefined);
+      void cadastroReajuste(r.numero_contrato).then(async (c) => {
+        if (!vivo) return;
+        setCad(c); setIndiceContrato(c.dados?.indice?.nome ?? "");
+        // aditivo iniciado antes da rev5.1: o Parecer Técnico começa com o que o cadastro tem (salva junto na próxima vez)
+        if (!r.dados.historico) {
+          const p = parecerDoCadastro(c.dados, c.carga as Record<string, unknown> | null);
+          setD((x) => (x ? { ...x, contratada: x.contratada ?? p.contratada, objeto_resumido: x.objeto_resumido ?? p.objeto_resumido, historico: p.historico,
+            itens: x.itens ?? p.itens, parecer_tecnico: { numero: null, natureza: "continuado", anexos: null, motivos: null, cronograma_escopo: [], ...p.parecer, ...(x.parecer_tecnico ?? {}) } } : x));
+        }
+        // prints da Calculadora guardados no módulo Reajustes (reajustes pedidos agora)
+        const refs = (c.dados?.reajustes ?? []).filter((y) => y.novo && y.print).map((y) => y.print!);
+        const arqs = await Promise.all(refs.map(async (p) => { try { const f = await baixarPrint(p); return { nome: f.name, bytes: await f.arrayBuffer() }; } catch { return null; } }));
+        if (vivo) setPrintsCad(arqs.filter((x): x is Arquivo => !!x));
+      }).catch(() => undefined);
     }).catch((x) => vivo && setErro(x instanceof Error ? x.message : String(x)));
     return () => { vivo = false; };
   }, [id]);
@@ -66,13 +86,20 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
   }) : []), [d, e, agu]);
   const manuais = !!e?.pareceres_manuais;
   // o que vai ao kit: pareceres (sugeridos ou da SCON) e o objeto do contrato (Atestado e Declaração de Vantajosidade)
-  const dx = useMemo(() => (d && e ? { ...d, objeto_contrato: e.objeto_contrato, ...(manuais ? {} : { pareceres_referenciais: sugeridos }) } : null), [d, e, manuais, sugeridos]);
+  const dx = useMemo(() => (d && e ? { ...d, objeto_contrato: e.objeto_contrato, lei: e.lei, ...(manuais ? {} : { pareceres_referenciais: sugeridos }) } : null), [d, e, manuais, sugeridos]);
+  // prints da Calculadora: os trocados neste aditivo ou os do módulo Reajustes
+  const printsEfetivos = listaArq.calculadora_prints?.length ? listaArq.calculadora_prints : printsCad;
+  // nº do próximo TA = maior TA assinado + 1 (documentos da carga + histórico de valores)
+  const ta = useMemo(() => (cad ? aditivosAssinados((cad.carga as { documentos?: { tipo?: string; numero?: string | null }[] } | null)?.documentos, cad.dados?.historico_valores) : null), [cad]);
 
   const unidadeOm = useMemo(() => (unidades && d ? acharUnidade(unidades, d.om_signataria.sigla) : null), [unidades, d]);
   const an = useMemo(() => (dx ? analisarPareceres(dx, hoje) : null), [dx, hoje]);
   const itens = useMemo(() => (dx ? itensDaLista(dx, hoje) : []), [dx, hoje]);
   const alertas = useMemo(() => (dx && e ? alertasDoAditivo(dx, e, hoje, { sicaf: anexos.sicaf.length > 0, regularidade: !!(anexos.consolidada || anexos.item13) },
-    { unidadeCadastrada: unidades ? !!unidadeOm : null }) : []), [dx, e, hoje, anexos, unidades, unidadeOm]);
+    { unidadeCadastrada: unidades ? !!unidadeOm : null }).concat(alertasParecer(dx, printsEfetivos.length),
+      ta && ta.numeros.length && dx.numero_aditivo !== ta.proximo ? [{ nivel: "atencao" as const, texto: `Nº do termo aditivo: pelos TAs já assinados (${ta.numeros.map((x) => `${x}º`).join(", ")}) o próximo é o ${ta.proximo}º, e este está como ${dx.numero_aditivo ?? "?"}º.`, secao: "contrato" }] : [],
+      ta && ta.faltando.length ? [{ nivel: "info" as const, texto: `TA não localizado nos documentos nem no histórico: ${ta.faltando.map((x) => `${x}º`).join(", ")} (confira no SILOMS).`, secao: "contrato" }] : []) : []),
+    [dx, e, hoje, anexos, unidades, unidadeOm, printsEfetivos, ta]);
   const bloqueios = alertas.filter((a) => a.bloqueia);
   // o .zip: o que o site gera + o que está anexado (memória da aba, restaurada do que ficou guardado no aditivo)
   const temArquivo = (c: string) => (dx ? geradosPrevistos(dx, hoje).includes(c) : false) || (c === "sicaf" && anexos.sicaf.length > 0)
@@ -185,11 +212,14 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
     const { dados } = await cadastroReajuste(reg.numero_contrato);
     if (!dados) { setMsg({ ok: false, txt: "Sem cadastro nos Reajustes para este contrato." }); return; }
     const hist = (dados.historico_valores ?? []).filter((h) => h.valor != null);
+    const p = parecerDoCadastro(dados, null);
     mudar((x) => ({
       ...x, valor_atual: hist.length ? hist[hist.length - 1].valor : x.valor_atual,
+      historico: p.historico, itens: p.itens, contratada: p.contratada ?? x.contratada, objeto_resumido: p.objeto_resumido ?? x.objeto_resumido,
+      parecer_tecnico: { ...(x.parecer_tecnico ?? {}), base: p.parecer.base, clausula_vigencia: x.parecer_tecnico?.clausula_vigencia || p.parecer.clausula_vigencia, clausula_reajuste: x.parecer_tecnico?.clausula_reajuste || p.parecer.clausula_reajuste },
       empenho: dados.orcamento ? { ...x.empenho, gestao_unidade: dados.orcamento.gestao_unidade, fonte: dados.orcamento.fonte, programa_trabalho: dados.orcamento.programa_trabalho, acao: dados.orcamento.acao || null, plano_interno: dados.orcamento.plano_interno, natureza_despesa: dados.orcamento.natureza_despesa, exercicio: dados.orcamento.exercicio } : x.empenho,
     }));
-    setMsg({ ok: true, txt: "Valor atual e dotação do empenho trazidos do cadastro dos Reajustes (atualizado pelo Contratos.gov.br quando a SCON busca lá)." });
+    setMsg({ ok: true, txt: "Valor atual, dotação do empenho, histórico de valores, itens e cláusulas trazidos do cadastro dos Reajustes (atualizado pelo Contratos.gov.br quando a SCON busca lá)." });
   }
   function marcar(k: Alteracao, v: boolean) {
     mudar((x) => ({ ...x, aditivo: { ...x.aditivo, [k]: v ? (k === "prorrogacao" ? { modalidade: "com_valor", meses: 12, inicio: null } : k === "reajuste" ? { indice: null, percentual: null, valor: null } : { valor: null, percentual: null, descricao: null }) : null } }));
@@ -252,6 +282,8 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
       anexos.socio.forEach((a) => extras.push({ chave: "consulta_cpf_socio", ...a }));
       if (memoria && ad.reajuste) extras.push({ chave: "memoria_calculo", ...memoria });
       for (const [k, l] of Object.entries(listaArq)) l.forEach((a) => extras.push({ chave: k, ...a }));
+      // prints da Calculadora (Parecer Técnico, item 9): os do módulo Reajustes, se o aditivo não trocou
+      if (ad.reajuste && !listaArq.calculadora_prints?.length) printsCad.forEach((a) => extras.push({ chave: "calculadora_prints", ...a }));
       // unidade do CEFA que o kit não reconhece pelo nome: autoridade do campo 19 = DIRAD
       const dk = unidadeOm?.cefa && !eCefa(dx.om_signataria) && !dx.autoridade_superior?.trim() ? { ...dx, autoridade_superior: AUTORIDADE_CEFA } : dx;
       const r = await kitAditivo.gerar(dk, extras, (t) => setMsg({ ok: true, txt: t }));
@@ -285,7 +317,8 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
           <Campo rotulo="Nº do contrato" valor={d.contrato} onChange={(v) => mudar((x) => ({ ...x, contrato: v }))} />
           <Campo rotulo="PAG (processo)" valor={d.pag} onChange={(v) => mudar((x) => ({ ...x, pag: v }))} />
           <label className="block"><span className="block text-[11px] font-medium text-slate-600 mb-0.5">Nº do termo aditivo</span>
-            <CampoNumero valor={d.numero_aditivo} casas={0} onChange={(v) => mudar((x) => ({ ...x, numero_aditivo: v }))} /></label>
+            <CampoNumero valor={d.numero_aditivo} casas={0} onChange={(v) => mudar((x) => ({ ...x, numero_aditivo: v }))} />
+            {ta && ta.numeros.length > 0 && d.numero_aditivo !== ta.proximo && <button className="mt-0.5 block text-[11px] text-sky-700 underline" onClick={() => mudar((x) => ({ ...x, numero_aditivo: ta.proximo }))}>usar o {ta.proximo}º (maior TA assinado + 1)</button>}</label>
           <label className="block"><span className="block text-[11px] font-medium text-slate-600 mb-0.5">CNPJ da contratada</span>
             <input className={sel} value={e.cnpj} onChange={(ev) => mudarE({ cnpj: ev.target.value })} /></label>
           <div className="sm:col-span-2"><Campo rotulo="OM solicitante/responsável (cabeçalho da Lista)" valor={d.om_nome} onChange={(v) => mudar((x) => ({ ...x, om_nome: v }))} /></div>
@@ -492,32 +525,39 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
         </Secao>
       )}
 
-      <Secao titulo="6. Mapa de Riscos">
+      <Secao titulo="6. Parecer Técnico de Alteração Contratual (item 5 da Lista)">
+        <ParecerTecnico d={dx} onChange={mudar} prints={printsEfetivos} printsDoAditivo={!!listaArq.calculadora_prints?.length}
+          onTrocarPrints={(f) => void anexarItem("calculadora_prints", f)} onTirarPrint={(i) => removerItem("calculadora_prints", i)}
+          onAbrirReajustes={() => onAbrir(`/app?vista=reajustes&contrato=${encodeURIComponent(reg.numero_contrato)}&instrumento=aditivo&ta=${d.numero_aditivo ?? ""}`)}
+          onTrazerCadastro={() => void recarregarCadastro()} />
+      </Secao>
+
+      <Secao titulo="7. Mapa de Riscos">
         <MapaRiscos riscos={d.riscos} tipo={e.tipo_risco} onChange={(r) => mudar((x) => ({ ...x, riscos: r }))} onTipo={(t) => mudarE({ tipo_risco: t })} />
       </Secao>
 
-      <Secao titulo="7. SICAF (obrigatório)">
+      <Secao titulo="8. SICAF (obrigatório)">
         <Sicaf estado={e} anexos={anexos} onEstado={mudarE} onAnexos={aoAnexar} />
       </Secao>
 
-      <Secao titulo="8. Regularidade CEIS / CNEP / CNJ / TCU (obrigatório)">
+      <Secao titulo="9. Regularidade CEIS / CNEP / CNJ / TCU (obrigatório)">
         <Regularidade estado={e} anexos={anexos} contrato={d.contrato} consultaSocio={d.consulta_socio} onEstado={mudarE} onAnexos={aoAnexar} />
       </Secao>
 
-      <Secao titulo="9. Pesquisa de Preços (obrigatória)">
+      <Secao titulo="10. Pesquisa de Preços (obrigatória)">
         <PesquisaAditivo d={d} numeroContrato={reg.numero_contrato} onPesquisa={(p) => mudar((x) => ({ ...x, pesquisa_precos: p }))} onFazer={() => void irParaPesquisa()} />
       </Secao>
 
       {ad.reajuste && (
-        <Secao titulo="10. Memória de Cálculo + Calculadora do Cidadão (reajuste)">
+        <Secao titulo="11. Memória de Cálculo + Calculadora do Cidadão (reajuste)">
           <MemoriaAditivo d={d} numeroContrato={reg.numero_contrato} memoria={memoria} onMemoria={aoMemoria}
             onReajuste={(rj) => mudar((x) => ({ ...x, aditivo: { ...x.aditivo, reajuste: rj } }))}
-            onAbrirReajustes={() => onAbrir(`/app?vista=reajustes&contrato=${encodeURIComponent(reg.numero_contrato)}`)} />
+            onAbrirReajustes={() => onAbrir(`/app?vista=reajustes&contrato=${encodeURIComponent(reg.numero_contrato)}&instrumento=aditivo&ta=${d.numero_aditivo ?? ""}`)} />
         </Secao>
       )}
 
       {acimaMilhao && (
-        <Secao titulo="11. Ficha para a Autorização da Prorrogação (acima de R$ 1 milhão)">
+        <Secao titulo="12. Ficha para a Autorização da Prorrogação (acima de R$ 1 milhão)">
           <pre className="whitespace-pre-wrap rounded-md bg-slate-50 p-2 text-[11px] text-slate-700">{objetoDaFicha(dx)}</pre>
           <div className="mt-2"><Campo rotulo="9. Mérito administrativo (justificativa do fiscal) – obrigatório" valor={d.merito_administrativo} longo onChange={(v) => mudar((x) => ({ ...x, merito_administrativo: v }))} /></div>
           {!cefa && <div className="mt-2"><Campo rotulo="19. Cargo da autoridade que autoriza (OM fora do CEFA)" valor={d.autoridade_superior ?? ""} onChange={(v) => mudar((x) => ({ ...x, autoridade_superior: v || null }))} dica="GAP-MN e Prefeitura: Diretor de Administração da Aeronáutica (automático)." /></div>}

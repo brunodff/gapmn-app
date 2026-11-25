@@ -4,9 +4,10 @@ import { readFileSync } from "node:fs";
 import {
   CATALOGO_PARECERES, acharNaAgu, alertasDoAditivo, analisarPareceres, citarPareceres, ementaDoParecer, faltandoNoZip, fimPrevisto, fraseObjetoVantajosidade,
   fraseObservacaoParecer, geradosPrevistos, incisosVantajosidade, itensDaLista, limparObjeto, motivosAnuencia, normalizarFormatoAntigo,
-  objetoDaFicha, passa1Milhao, pareceresSugeridos, proximoAditivo, resumoPesquisa, temProrrogacao, temReajuste, valorNovo,
+  objetoDaFicha, passa1Milhao, pareceresSugeridos, proximoAditivo, aditivosAssinados, resumoPesquisa, temProrrogacao, temReajuste, valorNovo,
 } from "./regras.ts";
 import { fonteDoRegistro, pesquisaParaAditivo } from "./pesquisa.ts";
+import { clausulaParaParecer, inteiroExtenso, previaParecer, reaisExtenso } from "./parecer.ts";
 import type { DadosAditivo, EstadoAditivo } from "./tipos.ts";
 
 // Resposta do kit da SCON (Python, ponte_aditivo.conferir) para os exemplos do pacote de 24/11/2026
@@ -35,7 +36,20 @@ for (const ex of fixture.exemplos) {
     assert.equal(temProrrogacao(d), k4.tem_prorrogacao);
     assert.deepEqual(motivosAnuencia(ex.dados as unknown as DadosAditivo), k4.motivos_anuencia);
     assert.equal(fraseObjetoVantajosidade(d), k4.objeto_vantajosidade);
-    const mapa: Record<string, string> = { declaracao: "disp_orcamentaria", vantajosidade: "vantajosidade", mapa: "mapa_riscos", pesquisa: "pesquisa_precos", atestado: "atestado_adequacao", ficha: "ficha_autorizacao" };
+    const mapa: Record<string, string> = { declaracao: "disp_orcamentaria", vantajosidade: "vantajosidade", parecer: "parecer_tecnico", mapa: "mapa_riscos", pesquisa: "pesquisa_precos", atestado: "atestado_adequacao", ficha: "ficha_autorizacao" };
+    // Parecer Técnico (rev5.1): itens 5 a 11 iguais à prévia do kit (o formato antigo, sem o bloco "aditivo", o site não usa)
+    if (ex.dados.aditivo) {
+    const kp = (ex.conferir as { parecer: Record<string, unknown> }).parecer;
+    const tp = previaParecer(d);
+    assert.deepEqual([tp.lei, tp.inicio, tp.fim, tp.valor_atual, tp.valor_novo], [kp.lei, kp.inicio, kp.fim, kp.valor_atual, kp.valor_novo]);
+    assert.deepEqual(tp.historico, kp.historico);
+    assert.equal(tp.enquadramento, kp.enquadramento);
+    assert.deepEqual(tp.tipos, kp.tipos);
+    assert.deepEqual(tp.motivos, kp.motivos);
+    assert.equal(tp.parecer_fiscal, kp.parecer_fiscal);
+    assert.deepEqual(tp.itens.map((i) => [i.item, i.valor_atual, i.valor_apos]), (kp.itens as { item: string; valor_atual: number; valor_apos: number }[]).map((i) => [i.item, i.valor_atual, i.valor_apos]));
+    assert.equal(tp.valor_novo_extenso, kp.valor_novo_extenso);
+    }
     assert.deepEqual(geradosPrevistos(d, HOJE).sort(), k4.documentos.filter((x) => x !== "lista").map((x) => mapa[x]).sort());
     if (ex.dados.aditivo) {
       assert.equal(valorNovo(d), k.valor_novo);
@@ -120,7 +134,7 @@ CONTINUADA SEM MÃO DE OBRA EXCLUSIVA. ACRÉSCIMO OU SUPRESSÃO DE VALOR, COM FU
   assert.equal(itens.find((i) => i.chave === "atestado_adequacao")!.texto, "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00001/2023/CGSEM/SCGP/CGU/AGU e nº 00002/2023/CGSEM/SCGP/CGU/AGU.");
   const gerados = geradosPrevistos(claro, HOJE);
   const falta = faltandoNoZip(claro, HOJE, (c) => gerados.includes(c) || c === "sicaf" || c === "consulta_cnpj");
-  assert.deepEqual(falta.map((x) => `${x.n} ${x.chave}`), ["1 anuencia_consulta", "2 anuencia_resposta", "5 parecer_tecnico", "7 pesquisa_precos"]);
+  assert.deepEqual(falta.map((x) => `${x.n} ${x.chave}`), ["1 anuencia_consulta", "2 anuencia_resposta", "7 pesquisa_precos"]);
   // CJU: sem atestado
   const cju = normalizarFormatoAntigo(fixture.exemplos.find((e) => e.nome.startsWith("acrescimo"))!.dados) as unknown as DadosAditivo;
   assert.ok(!itensDaLista(cju, HOJE).some((i) => i.chave.startsWith("atestado")));
@@ -131,6 +145,21 @@ CONTINUADA SEM MÃO DE OBRA EXCLUSIVA. ACRÉSCIMO OU SUPRESSÃO DE VALOR, COM FU
   const nao = alertasDoAditivo({ ...claro, vantajosidade: null, nao_anexados: { vantajosidade: "já juntada" } }, est, HOJE, { sicaf: true, regularidade: true });
   assert.ok(!nao.some((x) => /Vantajosidade: escreva/.test(x.texto) && x.bloqueia));
   assert.ok(alertasDoAditivo(claro, est, HOJE, { sicaf: true, regularidade: true }, { unidadeCadastrada: false }).some((x) => /não está cadastrada/.test(x.texto) && !x.bloqueia));
+});
+
+test("Parecer Técnico (rev5.1): extenso, cláusula do cadastro e nº do próximo TA pelo maior assinado", () => {
+  assert.equal(inteiroExtenso(1_000_000), "um milhão");
+  assert.equal(inteiroExtenso(2_105_001), "dois milhões, cento e cinco mil e um");
+  assert.equal(reaisExtenso(107320.04), "cento e sete mil, trezentos e vinte reais e quatro centavos");
+  assert.equal(reaisExtenso(1_000_000), "um milhão de reais");
+  assert.equal(clausulaParaParecer("a CLÁUSULA SÉTIMA, item 7.2, do Contrato"), "CLÁUSULA SÉTIMA, item 7.2");
+  assert.equal(clausulaParaParecer("a cláusula de reajuste do Contrato"), null);
+  // CT 020/GAPMN/2022: carga com 1º, 2º e 4º TA; o 3º só no histórico → próximo é o 5º
+  const docs = [{ tipo: "TERMO_ADITIVO", numero: "1º Termo Aditivo" }, { tipo: "TERMO_ADITIVO", numero: "2º Termo Aditivo" }, { tipo: "TERMO_ADITIVO", numero: "4º Termo Aditivo" }];
+  assert.equal(proximoAditivo(docs), 5);
+  assert.deepEqual(aditivosAssinados(docs).faltando, [3]);
+  assert.deepEqual(aditivosAssinados(docs, [{ documento: "3º Termo Aditivo" }]).faltando, []);
+  assert.equal(proximoAditivo([{ tipo: "TERMO ADITIVO", numero: null }, { tipo: "TERMO ADITIVO", numero: null }]), 3);
 });
 
 test("pesquisa de preços → pesquisa_precos do kit (fonte, preços considerados e desconsiderados, preço contratado mantido)", () => {

@@ -12,6 +12,7 @@ import { motivoForaDaAutomacao, pendenciasCadastro, proximoApostilamento, situac
 import type { ConfigApostilamento, DadosReajuste, ItemContrato, MarcacaoChecklist, ResultadoChecagem, ResultadoGeracao } from "../../lib/apostilamento/tipos";
 import { Caixa, Campo, CampoNumero, Secao, brl } from "./campos";
 import { acharUnidade, configDaUnidade, configSemCadastro, pendenciasUnidade, type UnidadeApoiada } from "../../lib/apostilamento/unidades";
+import { baixarPrint, guardarPrint } from "../../lib/apostilamento/prints";
 
 type UltimaNE = { ne: string; pi: string; unidade: string } | null;
 type Props = {
@@ -33,6 +34,8 @@ type Props = {
   unidades?: UnidadeApoiada[];
   /** abre Configurações com o formulário da unidade (OM signatária sem cadastro) */
   aoCadastrarUnidade?: (sigla: string) => void;
+  /** vindo do termo aditivo ("Fazer o reajuste no módulo Reajustes"): instrumento Termo Aditivo com este nº */
+  taPedido?: number | null;
 };
 
 const INDICES = ["IPCA", "INPC", "IGP-M", "IGP-DI", "IPCA-E", "INCC"];
@@ -90,7 +93,7 @@ function baixar(arquivo: Blob, nome: string) {
 
 /** Tela do reajuste de um contrato: cadastro (salvo no banco), índice do Banco Central ou da FGV (INCC), prints
  *  da consulta do índice, checklist do fiscal, quadro de checagem e geração dos documentos pelo motor da SCON. */
-export default function ReajusteContrato({ contrato, config: configBase, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes, unidades, aoCadastrarUnidade }: Props) {
+export default function ReajusteContrato({ contrato, config: configBase, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes, unidades, aoCadastrarUnidade, taPedido }: Props) {
   const [d, setD] = useState<DadosReajuste | null>(null);
   const [dedicacao, setDedicacao] = useState(false);
   const [versao, setVersao] = useState<number | null>(null);
@@ -120,11 +123,21 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
       const feitos: string[] = [];
       const devidos = completarReajustesDevidos(base);
       if (devidos) { base = { ...base, reajustes: devidos }; feitos.push("reajustes devidos hoje incluídos"); }
-      if (base.numero_instrumento == null && c?.documentos) {
+      if (taPedido && (base.instrumento !== "Termo Aditivo" || base.numero_instrumento !== taPedido)) {
+        base = { ...base, instrumento: "Termo Aditivo", numero_instrumento: taPedido };
+        feitos.push(`instrumento Termo Aditivo nº ${taPedido} (pedido pelo termo aditivo)`);
+      } else if (base.numero_instrumento == null && c?.documentos) {
         base = { ...base, numero_instrumento: proximoApostilamento(c.documentos) };
         feitos.push(`nº do apostilamento ${base.numero_instrumento} (pelos já assinados)`);
       }
       setD(base);
+      // prints guardados dos reajustes pedidos agora (o parecer usa sem escolher de novo)
+      if (!armazem.local) {
+        const guardados = base.reajustes.filter((r) => r.novo && r.print);
+        Promise.all(guardados.map(async (r) => [r.n, await baixarPrint(r.print!)] as const))
+          .then((l) => { if (vivo && l.length) setPrints((p) => ({ ...Object.fromEntries(l), ...p })); })
+          .catch((e) => vivo && setMsg({ ok: false, txt: e instanceof Error ? e.message : String(e) }));
+      }
       if (!temCadastro || feitos.length) setAlterado(true);
       const r = await indicesFaltando(base);
       if (!vivo) return;
@@ -135,7 +148,7 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
     // o Python começa a carregar já (na primeira vez demora)
     motor.iniciar().catch(() => undefined);
     return () => { vivo = false; };
-  }, [contrato, armazem, padroes]);
+  }, [contrato, armazem, padroes, taPedido]);
 
   const muda = (f: (x: DadosReajuste) => DadosReajuste) => { setD((x) => (x ? f(x) : x)); setAlterado(true); setChecagem(null); setSimulacao(null); };
   const set = <K extends keyof DadosReajuste>(k: K, v: DadosReajuste[K]) => muda((x) => ({ ...x, [k]: v }));
@@ -194,6 +207,17 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
     setMsg({ ok: true, txt: armazem.local ? "Cadastro salvo neste navegador." : "Cadastro salvo." });
     aoSalvar({ numero_contrato: linha.numero_contrato, data_base: d.data_base, reajustes_aplicados: linha.reajustes_aplicados, dedicacao_exclusiva: dedicacao,
       atualizado_em: linha.atualizado_em, situacao_cadastro: linha.situacao_cadastro, pendencias });
+  }
+
+  /** Print da consulta do índice: vale na hora e fica guardado com o reajuste (salvando o cadastro) */
+  async function escolherPrint(i: number, n: number, f: File | undefined) {
+    setPrints((p) => { const q = { ...p }; if (f) q[n] = f; else delete q[n]; return q; });
+    if (!f || armazem.local) return;
+    try {
+      const ref = await guardarPrint(contrato.numero_contrato, n, f);
+      muda((x) => ({ ...x, reajustes: x.reajustes.map((y, j) => (j === i ? { ...y, print: ref } : y)) }));
+      setMsg({ ok: true, txt: `Print do ${n}º reajuste guardado. Salve o cadastro para ele ficar ligado a este reajuste.` });
+    } catch (e) { setMsg({ ok: false, txt: `${e instanceof Error ? e.message : String(e)}` }); }
   }
 
   async function rodar<T>(rotulo: string, f: (progresso: (e: string) => void) => Promise<T>): Promise<T | null> {
@@ -408,7 +432,8 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
                   </td>
                   <td className="py-1.5">
                     {r.novo && <>
-                      <input type="file" accept="image/png,image/jpeg" className="text-[11px] w-48" onChange={(e) => { const f = e.target.files?.[0]; setPrints((p) => { const q = { ...p }; if (f) q[r.n] = f; else delete q[r.n]; return q; }); }} />
+                      <input type="file" accept="image/png,image/jpeg" className="text-[11px] w-48" onChange={(e) => void escolherPrint(i, r.n, e.target.files?.[0])} />
+                      {prints[r.n] && <span className="block text-[10px] text-emerald-700">✓ {prints[r.n].name}{r.print ? " (guardado)" : ""}</span>}
                       {link && <a href={link} target="_blank" rel="noreferrer" className="block text-sky-700 hover:underline">{lf ? "Abrir consulta do índice (FGV) ↗" : "abrir a Calculadora já preenchida ↗"}</a>}
                       {lf && <span className="block text-[10px] text-slate-500">linha {lf.linha_tabela}, coluna Acumulado 12 meses ·{" "}
                         <a href={lf.url_google} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline">não abriu? buscar no Google</a></span>}
@@ -421,7 +446,7 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
           </tbody>
         </table>
         <button className="mt-2 text-xs text-sky-700 hover:underline" onClick={() => muda((x) => ({ ...x, reajustes: [...x.reajustes, { n: (x.reajustes.reduce((m, r) => Math.max(m, r.n), 0) || 0) + 1, indice_pct: null, novo: true }] }))}>+ reajuste</button>
-        <p className="text-[11px] text-slate-400 mt-1">Os já aplicados vêm antes dos pedidos agora. Os prints (um por reajuste pedido) vão como anexo do parecer; não ficam guardados — escolha de novo ao gerar.
+        <p className="text-[11px] text-slate-400 mt-1">Os já aplicados vêm antes dos pedidos agora. Os prints (um por reajuste pedido) vão como anexo do parecer e ficam guardados com o cadastro (salve depois de anexar): o Parecer Técnico do termo aditivo usa o mesmo print.
           {fgv && " INCC: vale o \"Acumulado 12 meses\" da linha do último mês do período, com 2 casas, como na tabela da FGV."}</p>
       </Secao>
 

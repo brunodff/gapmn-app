@@ -6,7 +6,8 @@ import type { DadosReajuste } from "../apostilamento/tipos";
 import { acharUnidade, unidadePadrao, type UnidadeApoiada } from "../apostilamento/unidades";
 import { carregarUnidades } from "../apostilamento/unidadesBanco";
 import { AUTORIDADE_CEFA, eCefa, isoParaBr, proximoAditivo, type AguParecer } from "./regras.ts";
-import type { DadosAditivo, EstadoAditivo, Lei, NaturezaObjeto, PesquisaPrecosAditivo, RegistroAditivo } from "./tipos.ts";
+import type { DadosAditivo, EstadoAditivo, Lei, NaturezaObjeto, ParecerTecnico, PesquisaPrecosAditivo, RegistroAditivo } from "./tipos.ts";
+import { clausulaParaParecer } from "./parecer.ts";
 
 /** Nomes por extenso das OMs mais comuns, quando a unidade ainda não tem cadastro */
 const NOMES_OM: Record<string, string> = {
@@ -55,6 +56,25 @@ export async function pareceresAgu(): Promise<AguParecer[]> {
   return (data ?? []) as AguParecer[];
 }
 
+/** Parecer Técnico (rev5.1): o que vem do cadastro do contrato nos Reajustes — contratada, objeto, histórico de valores
+ *  (item 5, com o contrato inicial primeiro), itens (item 10) e as cláusulas de vigência e de reajuste */
+export function parecerDoCadastro(dados: Partial<DadosReajuste> | null, carga: Record<string, any> | null = null): Pick<DadosAditivo, "contratada" | "objeto_resumido" | "historico" | "itens"> & { parecer: ParecerTecnico } { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const hist = (dados?.historico_valores ?? []).map((h) => ({ documento: String(h.documento ?? ""), valor: h.valor ?? null }));
+  if (!hist.some((h) => /^contrato/i.test(h.documento.trim()))) hist.unshift({ documento: "Contrato inicial", valor: null });
+  const base = String(dados?.base ?? "ANUAL").toLowerCase();
+  return {
+    contratada: dados?.empresa?.nome ? { nome: dados.empresa.nome } : carga?.siloms?.empresa_nome_contrato ? { nome: String(carga.siloms.empresa_nome_contrato) } : null,
+    objeto_resumido: dados?.objeto_resumido || carga?.siloms?.descricao_resumida || null,
+    historico: hist,
+    itens: (dados?.itens ?? []).map((i) => ({ item: String(i.item ?? ""), descricao: i.descricao ?? "", valor_atual: i.valor_base ?? null, valor_apos: null })),
+    parecer: {
+      base: base === "mensal" || base === "total" ? base : "anual",
+      clausula_vigencia: dados?.clausula_vigencia || null,
+      clausula_reajuste: clausulaParaParecer(dados?.indice?.clausula),
+    },
+  };
+}
+
 /** Dia seguinte a uma data dd/mm/aaaa (início do novo período = fim da vigência + 1) */
 function diaSeguinte(br: string | null | undefined): string | null {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(br ?? ""));
@@ -93,7 +113,7 @@ export function montarAditivo(numero_contrato: string, dados: Partial<DadosReaju
       pag: dados?.nup || s.pag || "",
       om_nome: nomeSolicitante || NOMES_OM[siglaNorm(solicitante)] || solicitante || sigNome,
       om_signataria: doCadastro?.om ?? { nome: sigNome, sigla: sigSigla, ug: "", artigo: artigoProvavel(sigNome) },
-      numero_aditivo: proximoAditivo(carga?.documentos),
+      numero_aditivo: proximoAditivo(carga?.documentos, dados?.historico_valores),
       empenho: {
         numero: carga?.ultimo_empenho?.ne ?? null,
         gestao_unidade: orc?.gestao_unidade ?? "", fonte: orc?.fonte ?? "", programa_trabalho: orc?.programa_trabalho ?? "", acao: orc?.acao || null,
@@ -105,6 +125,11 @@ export function montarAditivo(numero_contrato: string, dados: Partial<DadosReaju
       consulta_socio: false, representante_mudou: false, inexigibilidade: false,
       pareceres_referenciais: [], nao_anexados: {}, observacao: "", pesquisa_precos: null, riscos: [],
       objeto_contrato: objeto, vantajosidade: { motivos: [] },
+      ...(() => {
+        const p = parecerDoCadastro(dados, carga);
+        return { contratada: p.contratada, objeto_resumido: p.objeto_resumido, historico: p.historico, itens: p.itens,
+          parecer_tecnico: { numero: null, natureza: "continuado" as const, anexos: null, motivos: null, cronograma_escopo: [], ...p.parecer } };
+      })(),
     },
     estado: {
       natureza, lei, cnpj: dados?.empresa?.cnpj ?? "", objeto_contrato: objeto,

@@ -428,14 +428,14 @@ export const SUGESTOES_VANTAJOSIDADE = (indice: string) => [
 export const NOMES_ITEM: Record<string, string> = {
   anuencia_consulta: "Consulta de anuência à contratada", anuencia_resposta: "Resposta de anuência da contratada",
   disp_orcamentaria: "Declaração de Disponibilidade Orçamentária", vantajosidade: "Declaração de Vantajosidade Econômica",
-  parecer_tecnico: "Parecer Técnico", mapa_riscos: "Mapa de Riscos", pesquisa_precos: "Pesquisa de Preços",
+  parecer_tecnico: "Parecer Técnico de Alteração Contratual", mapa_riscos: "Mapa de Riscos", pesquisa_precos: "Pesquisa de Preços",
   calculadora: "Calculadora do Cidadão", sicaf: "SICAF", consulta_cnpj: "Regularidade CEIS-CNEP-CNJ-TCU (CNPJ)",
   consulta_cpf_socio: "Regularidade do CPF do sócio", procuracao: "Procuração", exclusividade: "Atestado de Exclusividade",
   ficha_autorizacao: "Ficha de Autorização da Prorrogação", atestado_adequacao: "Atestado de Adequação ao Parecer Referencial",
   memoria_calculo: "Memória de Cálculo – Reajuste",
 };
 /** Itens que o site gera (o resto é anexo do fiscal); boletins ficam no SILOMS e a Calculadora vai dentro do Parecer Técnico */
-export const GERADOS_PELO_SITE = ["disp_orcamentaria", "vantajosidade", "mapa_riscos", "pesquisa_precos", "ficha_autorizacao", "atestado_adequacao"];
+export const GERADOS_PELO_SITE = ["disp_orcamentaria", "vantajosidade", "parecer_tecnico", "mapa_riscos", "pesquisa_precos", "ficha_autorizacao", "atestado_adequacao"];
 const SEM_ARQUIVO = ["bol_aci", "bol_od", "bol_fiscalizacao", "calculadora"];
 /** O que o .zip vai deixar de fora: item obrigatório sem arquivo e sem justificativa de NÃO anexado (montar_zip.py) */
 export function faltandoNoZip(d: DadosAditivo, hoje: string, temArquivo: (chave: string) => boolean): { n: number; chave: string; nome: string }[] {
@@ -447,6 +447,7 @@ export function faltandoNoZip(d: DadosAditivo, hoje: string, temArquivo: (chave:
 export function geradosPrevistos(d: DadosAditivo, hoje: string): string[] {
   const g = ["disp_orcamentaria"];
   if (temProrrogacao(d) && d.vantajosidade?.motivos?.some((m) => String(m ?? "").trim())) g.push("vantajosidade");
+  g.push("parecer_tecnico"); // item 5: sempre (rev5.1)
   if (d.riscos?.length) g.push("mapa_riscos");
   if (d.pesquisa_precos) g.push("pesquisa_precos");
   const an = analisarPareceres(d, hoje);
@@ -464,15 +465,30 @@ export const eCefa = (om: { sigla?: string; nome?: string }) => {
 };
 export const AUTORIDADE_CEFA = "Diretor de Administração da Aeronáutica";
 
-// ── Número do termo aditivo (aditivos já assinados + 1) ──────────────────────
-export function proximoAditivo(documentos: { tipo?: string; numero?: string | null }[] | undefined): number {
-  let maior = 0;
+// ── Número do termo aditivo (maior nº de TA assinado + 1; rev5.1, seção 7.1) ─────
+/** Nº de um termo aditivo: "00004/2026", "4º Termo Aditivo", "4º TA" → 4 */
+function numeroDoAditivo(t: string): number | null {
+  const s = t.trim();
+  const m = /^0*(\d{1,3})\s*\//.exec(s) ?? /^0*(\d{1,3})\s*[ºª°o]?\s*(?:termo\s+aditivo|TA)\b/i.exec(s);
+  return m ? Number(m[1]) : null;
+}
+/** Números dos TAs assinados (documentos da carga + histórico de valores), o próximo e os que faltam no meio */
+export function aditivosAssinados(documentos: { tipo?: string; numero?: string | null }[] | undefined, historico?: { documento?: string | null }[]): { numeros: number[]; proximo: number; faltando: number[] } {
+  const nums = new Set<number>();
+  let semNumero = 0;
   for (const d of documentos ?? []) {
     if (!/ADITIVO/i.test(String(d.tipo ?? ""))) continue;
-    const n = /^0*(\d{1,3})\s*\//.exec(String(d.numero ?? "").trim());
-    maior = Math.max(maior, n ? Number(n[1]) : maior + 1);
+    const n = numeroDoAditivo(String(d.numero ?? ""));
+    if (n) nums.add(n); else semNumero++;
   }
-  return maior + 1;
+  for (const h of historico ?? []) { const n = numeroDoAditivo(String(h.documento ?? "")); if (n) nums.add(n); }
+  const numeros = [...nums].sort((a, b) => a - b);
+  const maior = Math.max(0, ...numeros, numeros.length ? 0 : semNumero);
+  const faltando = Array.from({ length: maior }, (_, i) => i + 1).filter((n) => numeros.length && !nums.has(n));
+  return { numeros, proximo: maior + 1, faltando };
+}
+export function proximoAditivo(documentos: { tipo?: string; numero?: string | null }[] | undefined, historico?: { documento?: string | null }[]): number {
+  return aditivosAssinados(documentos, historico).proximo;
 }
 
 // ── Alertas (seção 4) ────────────────────────────────────────────────────────

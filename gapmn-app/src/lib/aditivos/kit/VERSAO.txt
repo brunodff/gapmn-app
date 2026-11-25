@@ -1,13 +1,14 @@
-Kit de Termos Aditivos da SCON importado em 2026-11-25 de Automacao-Aditivos_gapmnapp
+Kit de Termos Aditivos da SCON importado em 2026-11-25 de Automacao-Aditivos_gapmnapp + Automacao-Aditivos_rev5.1_Parecer-Tecnico
 pareceres.py  sha256 021f96b96384
 gerar_lista_verificacao.py  sha256 03e2e081460a
 gerar_declaracao_orcamentaria.py  sha256 4d0d5fe1d5fd
 gerar_declaracao_vantajosidade.py  sha256 d3d199b011b8
+gerar_parecer_tecnico.py  sha256 5d4da2888363
 gerar_mapa_riscos.py  sha256 0d42865d0343
 gerar_pesquisa_precos.py  sha256 f67f84e16095
 gerar_ficha_autorizacao.py  sha256 276d1e7c8483
 gerar_atestado_adequacao.py  sha256 f1c9cdbedff1
-montar_zip.py  sha256 c62ac9dfee11
+montar_zip.py  sha256 1df5b8061de0
 verificar_sicaf.py  sha256 0fa82c848ee8
 consultar_regularidade.py  sha256 b2a2a13f1058
 biblioteca_riscos.json  sha256 f8666dfff876

@@ -26,6 +26,7 @@ from gerar_lista_verificacao import itens_da_lista
 GERADOS = {   # chave da Lista → início do nome do arquivo gerado pelos scripts
     "disp_orcamentaria": "Declaracao de Disponibilidade Orcamentaria",
     "vantajosidade": "Declaracao de Vantajosidade Economica",
+    "parecer_tecnico": "Parecer Tecnico de Alteracao Contratual",
     "mapa_riscos": "Mapa de Riscos",
     "pesquisa_precos": "Pesquisa de Precos",
     "ficha_autorizacao": "Ficha de Autorizacao da Prorrogacao",
@@ -34,7 +35,7 @@ GERADOS = {   # chave da Lista → início do nome do arquivo gerado pelos scrip
 NOMES = {
     "anuencia_consulta": "Consulta de anuencia a contratada", "anuencia_resposta": "Resposta de anuencia da contratada",
     "disp_orcamentaria": "Declaracao de Disponibilidade Orcamentaria", "vantajosidade": "Declaracao de Vantajosidade Economica",
-    "parecer_tecnico": "Parecer Tecnico", "mapa_riscos": "Mapa de Riscos", "pesquisa_precos": "Pesquisa de Precos",
+    "parecer_tecnico": "Parecer Tecnico de Alteracao Contratual", "mapa_riscos": "Mapa de Riscos", "pesquisa_precos": "Pesquisa de Precos",
     "calculadora": "Calculadora do Cidadao", "sicaf": "SICAF", "consulta_cnpj": "Regularidade CEIS-CNEP-CNJ-TCU - CNPJ",
     "consulta_cpf_socio": "Regularidade - CPF do socio", "procuracao": "Procuracao",
     "exclusividade": "Atestado de Exclusividade", "ficha_autorizacao": "Ficha de Autorizacao da Prorrogacao",

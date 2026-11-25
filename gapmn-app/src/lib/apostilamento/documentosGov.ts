@@ -73,6 +73,8 @@ export function aplicarAchados(d: DadosReajuste, contrato: AchadosPdf | null, tr
   if (ind && vazio(x.indice?.nome)) { x.indice = { ...x.indice, nome: ind.a.valor as string }; anota("indice.nome", "Índice", x.indice.nome, ind.o, ind.a.trecho); }
   const cl = dos("clausula");
   if (cl && vazio(x.indice?.clausula)) { x.indice = { ...x.indice, clausula: cl.a.valor as string }; anota("indice.clausula", "Cláusula do reajuste", x.indice.clausula, cl.o, cl.a.trecho); }
+  // cláusula de vigência: só do contrato (Parecer Técnico do termo aditivo)
+  if (contrato?.vigencia && vazio(x.clausula_vigencia)) { x.clausula_vigencia = contrato.vigencia.valor; anota("clausula_vigencia", "Cláusula de vigência", x.clausula_vigencia, oc, contrato.vigencia.trecho); }
   const db = dos("dataBase");
   if (db && vazio(x.data_base)) { x.data_base = db.a.valor as string; anota("data_base", "Data do orçamento", x.data_base, db.o, db.a.trecho); }
 

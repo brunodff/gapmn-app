@@ -24,6 +24,7 @@ DOCUMENTOS = [
     ("lista", "Lista de Verificação", "gerar_lista_verificacao"),
     ("declaracao", "Declaração de Disponibilidade Orçamentária", "gerar_declaracao_orcamentaria"),
     ("vantajosidade", "Declaração de Vantajosidade Econômica", "gerar_declaracao_vantajosidade"),
+    ("parecer", "Parecer Técnico de Alteração Contratual", "gerar_parecer_tecnico"),
     ("mapa", "Mapa de Riscos", "gerar_mapa_riscos"),
     ("pesquisa", "Pesquisa de Preços", "gerar_pesquisa_precos"),
     ("atestado", "Atestado de adequação ao(s) parecer(es) referencial(is)", "gerar_atestado_adequacao"),
@@ -61,6 +62,7 @@ def aplicaveis(d):
     chaves = ["lista", "declaracao"]
     if tem_prorrogacao(d) and (d.get("vantajosidade") or {}).get("motivos"):
         chaves.append("vantajosidade")
+    chaves.append("parecer")                     # item 5 da Lista: sempre (rev5.1)
     if d.get("riscos"):
         chaves.append("mapa")
     if d.get("pesquisa_precos"):
@@ -89,7 +91,39 @@ def conferir(dados_json):
         "objeto": objeto, "valor_atual": atual, "valor_novo": novo, "erros_ficha": erros, "avisos_ficha": avisos,
         "passa_1_milhao": passa_1_milhao(d), "tem_reajuste": tem_reajuste(d), "documentos": aplicaveis(d),
         "tem_prorrogacao": tem_prorrogacao(d), "motivos_anuencia": motivos_anuencia(d), "objeto_vantajosidade": frase_objeto(d),
+        "parecer": previa_parecer(d),
     }, ensure_ascii=False, default=str)
+
+
+def _plano(partes):
+    """Trechos do kit (str ou (texto, formato)) → texto corrido; o que falta sai entre ⟦ ⟧ (amarelo no documento)."""
+    return "".join(x if isinstance(x, str) else ("⟦" + x[0] + "⟧" if x[1].get("marca") else x[0]) for x in partes)
+
+
+def previa_parecer(d):
+    """O que o Parecer Técnico vai dizer, sem gerar o .docx (a tela mostra na hora e os testes comparam com a do app)."""
+    import gerar_parecer_tecnico as G
+    from gerar_ficha_autorizacao import objeto_e_valores
+    avisos, erros = [], []
+    dd = copy.deepcopy(d)
+    _, atual, novo = objeto_e_valores(dd, erros, avisos)
+    lei = G.lei_do(dd, avisos)
+    ini, fim = G.periodo(dd, avisos)
+    pt = dd.get("parecer_tecnico") or {}
+    motivos = ([str(m).strip() for m in pt["motivos"] if str(m or "").strip()] if pt.get("motivos")
+               else [_plano(m) for m in G.motivos_sugeridos(dd, lei, ini, fim, atual, novo, avisos)])
+    itens = [] if pt.get("natureza") == "escopo" else G.itens_tabela(dd, atual, novo, avisos)
+    return {
+        "lei": lei, "inicio": ini, "fim": fim, "valor_atual": atual, "valor_novo": novo,
+        "historico": [[r, v] for r, v in G.historico_linhas(dd, avisos)],
+        "enquadramento": G.artigos_enquadramento(dd, lei, avisos),
+        "tipos": [_plano(t) for t in G.tipos_alteracao(dd, lei, ini, fim, atual, avisos)],
+        "motivos": motivos,
+        "parecer_fiscal": _plano(G.parecer_fiscal(dd, lei, ini, fim, atual, novo)),
+        "itens": [{"item": i.get("item"), "valor_atual": i.get("valor_atual"), "valor_apos": i.get("valor_apos")} for i in itens],
+        "valor_novo_extenso": G.brl_ext(novo) if novo is not None else None,
+        "avisos": avisos,
+    }
 
 
 def gerar(dados_json, destino_zip, extras_json="[]"):
@@ -98,6 +132,11 @@ def gerar(dados_json, destino_zip, extras_json="[]"):
     chave viram um só). Devolve o resultado de cada documento, os arquivos do .zip e o que ficou faltando."""
     d = json.loads(dados_json)
     extras = json.loads(extras_json or "[]")
+    anexos = {}
+    for x in extras:
+        if os.path.exists(x["caminho"]):
+            anexos.setdefault(x["chave"], []).append(x["caminho"])
+    d["anexos"] = anexos                      # o Parecer Técnico lê os prints da Calculadora em anexos.calculadora_prints
     saida = tempfile.mkdtemp(prefix="aditivo_")
     try:
         resultados = {}
@@ -109,15 +148,9 @@ def gerar(dados_json, destino_zip, extras_json="[]"):
         arquivos, faltando = [], []
         if destino_zip:
             import montar_zip
-            anexos = {}
-            for x in extras:
-                if os.path.exists(x["caminho"]):
-                    anexos.setdefault(x["chave"], []).append(x["caminho"])
-            dz = copy.deepcopy(d)
-            dz["anexos"] = anexos
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                _, faltando = montar_zip.montar(dz, saida, destino_zip)
+                _, faltando = montar_zip.montar(copy.deepcopy(d), saida, destino_zip)
             with zipfile.ZipFile(destino_zip) as z:
                 arquivos = z.namelist()
         return json.dumps({"documentos": resultados, "arquivos": arquivos, "faltando": faltando}, ensure_ascii=False, default=str)
