@@ -1144,9 +1144,14 @@ export default function GerenciamentoContratos({ canImport = true, canEdit = tru
 
       {grupoAberto && (
         <GrupoContratos
-          contratos={contratos.map((c) => ({ id: c.id, numero: c.numero_contrato, fornecedor: c.fornecedor, descricao: c.descricao,
-            prev: previsoes.get(c.id), aLiquidar: siafi.porContrato.get(c.id)?.totais.aLiquidar ?? 0 }))}
+          contratos={contratos.map((c) => {
+            const ex = siafi.porContrato.get(c.id);
+            // NEs com o saldo do exercício e a adequação (UGR e PI da situação; natureza da planilha de itens), para o remanejamento
+            return { id: c.id, numero: c.numero_contrato, fornecedor: c.fornecedor, descricao: c.descricao, prev: previsoes.get(c.id), aLiquidar: ex?.totais.aLiquidar ?? 0,
+              nes: (ex?.nes ?? []).map((n) => ({ ne: n.ne, ano: n.ano, aLiquidarExercicio: n.exercicio.aLiquidar, dotacao: { ugr: n.unidade, pi: n.pi, nd: siafi.itens?.itens.get(n.ne)?.natureza ?? "" } })) };
+          })}
           hoje={hoje}
+          anoAtual={siafi.anoAtual}
           siafiOk={estadoSiafi === "ok"}
           onFechar={() => setGrupoAberto(false)}
           onAbrirContrato={abrirContratoDoGrupo}

@@ -2,12 +2,14 @@
  * Grupo de contratos: crédito necessário para cobrir X meses de faturas de vários contratos de uma vez
  * (ex.: limpeza + vigilância + manutenção por 3 meses). Mesma regra do card: fatura mensal × meses −
  * saldo a liquidar das NEs de cada contrato (lib/previsaoContratos.ts, coberturaMeses).
- * Os grupos ficam guardados neste navegador.
+ * Remanejamento (26/11/2026): o que sobra num contrato vai para os que faltam, na mesma UGR, ND e PI, anulando
+ * NE do exercício (lib/contratos/remanejamento.ts). Os grupos ficam guardados neste navegador.
  */
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { coberturaMeses, type PrevisaoContrato } from "../lib/previsaoContratos";
+import { planejarRemanejamento, textoDotacao, type NeDoContrato } from "../lib/contratos/remanejamento";
 
 export interface ContratoDoGrupo {
   id: string;
@@ -16,9 +18,11 @@ export interface ContratoDoGrupo {
   descricao: string | null;
   prev?: PrevisaoContrato;
   aLiquidar: number;
+  /** NEs do contrato com o saldo a liquidar do exercício e a adequação (UGR, ND, PI), para o remanejamento */
+  nes?: NeDoContrato[];
 }
 
-interface GrupoSalvo { id: string; nome: string; meses: number; alem: boolean; ids: string[]; salvo_em: string }
+interface GrupoSalvo { id: string; nome: string; meses: number; alem: boolean; ids: string[]; salvo_em: string; remanejar?: boolean }
 
 const CHAVE = "gapmn:grupos-contratos";
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -32,9 +36,11 @@ function gravarGrupos(g: GrupoSalvo[]): boolean {
   try { localStorage.setItem(CHAVE, JSON.stringify(g)); return true; } catch { return false; }
 }
 
-export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onAbrirContrato }: {
+export default function GrupoContratos({ contratos, hoje, anoAtual, siafiOk, onFechar, onAbrirContrato }: {
   contratos: ContratoDoGrupo[];
   hoje: Date;
+  /** exercício corrente (só NE dele é anulada para reempenhar) */
+  anoAtual: number;
   /** planilha de execução carregada: sem ela o "a liquidar" é desconhecido */
   siafiOk: boolean;
   onFechar: () => void;
@@ -45,6 +51,7 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
   const [nome, setNome] = useState("");
   const [meses, setMeses] = useState(3);
   const [alem, setAlem] = useState(false);
+  const [remanejar, setRemanejar] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [busca, setBusca] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -65,19 +72,26 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
     return ids.map((id) => porId.get(id)).filter((c): c is ContratoDoGrupo => !!c)
       .map((c) => ({ c, cob: coberturaMeses(c.prev, c.aLiquidar, hoje, meses, alem) }));
   }, [ids, contratos, hoje, meses, alem]);
+  // remanejamento: sobra de um contrato cobre os outros da mesma adequação (UGR, ND, PI), só com NE do exercício
+  const plano = useMemo(() => (!remanejar ? null : planejarRemanejamento(
+    linhas.filter((l) => l.cob).map(({ c, cob }) => ({ id: c.id, numero: c.numero, fatura: cob!.fatura, necessario: cob!.necessario, saldo: cob!.aLiquidar, nes: c.nes ?? [] })),
+    anoAtual,
+  )), [remanejar, linhas, anoAtual]);
+  const faltaDe = (l: (typeof linhas)[number]) => (plano?.porContrato.get(l.c.id)?.falta ?? l.cob?.falta ?? 0);
   const total = linhas.reduce((s, l) => ({
-    necessario: s.necessario + (l.cob?.necessario ?? 0), aLiquidar: s.aLiquidar + (l.cob?.aLiquidar ?? 0), falta: s.falta + (l.cob?.falta ?? 0),
-  }), { necessario: 0, aLiquidar: 0, falta: 0 });
+    necessario: s.necessario + (l.cob?.necessario ?? 0), aLiquidar: s.aLiquidar + (l.cob?.aLiquidar ?? 0), falta: s.falta + faltaDe(l),
+    semRemanejar: s.semRemanejar + (l.cob?.falta ?? 0),
+  }), { necessario: 0, aLiquidar: 0, falta: 0, semRemanejar: 0 });
   const faltando = ids.length - linhas.length; // contratos do grupo que não estão mais na lista
 
   const alterna = (id: string) => setIds((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
-  const novo = () => { setGrupoId(null); setNome(""); setMeses(3); setAlem(false); setIds([]); setMsg(null); };
-  function abrir(g: GrupoSalvo) { setGrupoId(g.id); setNome(g.nome); setMeses(g.meses); setAlem(g.alem); setIds(g.ids); setMsg(null); }
+  const novo = () => { setGrupoId(null); setNome(""); setMeses(3); setAlem(false); setRemanejar(false); setIds([]); setMsg(null); };
+  function abrir(g: GrupoSalvo) { setGrupoId(g.id); setNome(g.nome); setMeses(g.meses); setAlem(g.alem); setRemanejar(!!g.remanejar); setIds(g.ids); setMsg(null); }
 
   function salvar() {
     if (!nome.trim()) { setMsg("Dê um nome ao grupo."); return; }
     if (!ids.length) { setMsg("Escolha ao menos um contrato."); return; }
-    const g: GrupoSalvo = { id: grupoId ?? `${Date.now()}`, nome: nome.trim(), meses, alem, ids, salvo_em: new Date().toISOString() };
+    const g: GrupoSalvo = { id: grupoId ?? `${Date.now()}`, nome: nome.trim(), meses, alem, remanejar, ids, salvo_em: new Date().toISOString() };
     const prox = [...grupos.filter((x) => x.id !== g.id), g].sort((a, b) => a.nome.localeCompare(b.nome));
     setGrupoId(g.id);
     setGrupos(prox);
@@ -90,22 +104,39 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
     if (grupoId === g.id) novo();
   }
 
-  const tabela = () => [
-    ["Contrato", "Fornecedor", "Fatura mensal", "Meses", "Necessário", "A liquidar", "Falta"],
-    ...linhas.map(({ c, cob }) => [c.numero, c.fornecedor ?? "", cob?.fatura ?? 0, cob?.meses ?? 0, cob?.necessario ?? 0, cob?.aLiquidar ?? 0, cob?.falta ?? 0]),
-    ["Total", "", "", "", total.necessario, total.aLiquidar, total.falta],
+  const tabela = () => plano
+    ? [
+        ["Contrato", "Fornecedor", "Fatura mensal", "Meses", "Necessário", "A liquidar", "Remanejamento", "Saldo depois", "Falta"],
+        ...linhas.map((l) => { const r = plano.porContrato.get(l.c.id); return [l.c.numero, l.c.fornecedor ?? "", l.cob?.fatura ?? 0, l.cob?.meses ?? 0, l.cob?.necessario ?? 0, l.cob?.aLiquidar ?? 0, (r?.recebe ?? 0) - (r?.cede ?? 0), r?.saldoDepois ?? l.cob?.aLiquidar ?? 0, faltaDe(l)]; }),
+        ["Total", "", "", "", total.necessario, total.aLiquidar, 0, "", total.falta],
+      ]
+    : [
+        ["Contrato", "Fornecedor", "Fatura mensal", "Meses", "Necessário", "A liquidar", "Falta"],
+        ...linhas.map(({ c, cob }) => [c.numero, c.fornecedor ?? "", cob?.fatura ?? 0, cob?.meses ?? 0, cob?.necessario ?? 0, cob?.aLiquidar ?? 0, cob?.falta ?? 0]),
+        ["Total", "", "", "", total.necessario, total.aLiquidar, total.falta],
+      ];
+  /** As operações do remanejamento (anular e empenhar), para o Excel e para copiar */
+  const operacoes = () => !plano ? [] : [
+    ["Operação", "Contrato", "NE", "Valor", "UGR", "Natureza de despesa", "PI"],
+    ...plano.anulacoes.map((a) => ["Anular", a.numero, a.ne, a.valor, a.dotacao.ugr, a.dotacao.nd, a.dotacao.pi]),
+    ...plano.empenhos.map((e) => [e.reforcar ? "Reforçar" : "Empenhar (NE nova)", e.numero, e.reforcar ?? "", e.valor, e.dotacao.ugr, e.dotacao.nd, e.dotacao.pi]),
   ];
   function exportar() {
-    const ws = XLSX.utils.aoa_to_sheet([[`${nome || "Grupo de contratos"} — crédito para ${meses} ${meses === 1 ? "mês" : "meses"}`], [], ...tabela()]);
-    ws["!cols"] = [{ wch: 30 }, { wch: 40 }, { wch: 14 }, { wch: 7 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+    const ws = XLSX.utils.aoa_to_sheet([[`${nome || "Grupo de contratos"} — crédito para ${meses} ${meses === 1 ? "mês" : "meses"}${plano ? " (com remanejamento)" : ""}`], [], ...tabela()]);
+    ws["!cols"] = [{ wch: 30 }, { wch: 40 }, { wch: 14 }, { wch: 7 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Grupo");
+    if (plano && (plano.anulacoes.length || plano.avisos.length)) {
+      const wr = XLSX.utils.aoa_to_sheet([["Remanejamento — confira a fonte e o PTRES no SIAFI antes de anular"], [], ...operacoes(), [], ...plano.avisos.map((a) => [a])]);
+      wr["!cols"] = [{ wch: 20 }, { wch: 30 }, { wch: 16 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, wr, "Remanejamento");
+    }
     XLSX.writeFile(wb, `Grupo - ${(nome || "contratos").replace(/[\\/:*?"<>|]/g, "-")}.xlsx`);
   }
   async function copiar() {
     const br = (v: unknown) => (typeof v === "number" ? v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(v));
     try {
-      await navigator.clipboard.writeText(tabela().map((l) => l.map(br).join("\t")).join("\n"));
+      await navigator.clipboard.writeText([...tabela(), ...(plano?.anulacoes.length ? [[], ...operacoes()] : [])].map((l) => l.map(br).join("\t")).join("\n"));
       setMsg("Tabela copiada: cole no Excel ou no documento.");
     } catch { setMsg("O navegador não deixou copiar; use Exportar Excel."); }
   }
@@ -113,7 +144,8 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
   // no body (acima do menu lateral), com o tema escuro do app (svdark) só nas cores
   return createPortal(
     <div className="svdark fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", borderRadius: 0 }} onClick={onFechar}>
-      <div className="modal-card flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      {/* fundo pelo tema: no modo noite o .modal-card (AppChat) manda; no modo dia ele não existe e a janela ficava transparente */}
+      <div className="modal-card flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 shadow-2xl" style={{ background: "var(--gm-pop, #fff)", color: "var(--gm-txt, #0f172a)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
           <div>
             <div className="text-sm font-semibold text-slate-800">Grupo de contratos</div>
@@ -173,6 +205,10 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
               <input type="checkbox" checked={alem} onChange={(e) => setAlem(e.target.checked)} />
               contar também os meses depois do fim da vigência (supor prorrogação)
             </label>
+            <label className="inline-flex items-start gap-2 text-[11px] text-slate-600" title="Anula o saldo que sobra numa NE do exercício e empenha nos contratos que faltam, na mesma UGR, natureza de despesa e PI">
+              <input type="checkbox" className="mt-0.5" checked={remanejar} onChange={(e) => setRemanejar(e.target.checked)} />
+              <span><b>Remanejamento:</b> usar a sobra de um contrato para cobrir os outros da mesma adequação orçamentária (UGR, natureza de despesa e PI), anulando só NE do exercício {anoAtual}</span>
+            </label>
             {!siafiOk && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-700">Planilha de execução do SIAFI ainda não carregou: o "a liquidar" aparece como zero.</div>}
 
             <div className="overflow-auto rounded-lg border">
@@ -184,11 +220,13 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
                     <th className="px-2 py-1.5 text-right">Meses</th>
                     <th className="px-2 py-1.5 text-right">Necessário</th>
                     <th className="px-2 py-1.5 text-right">A liquidar</th>
+                    {plano && <th className="px-2 py-1.5 text-right" title="− anular desta NE · + empenhar neste contrato">Remanejar</th>}
+                    {plano && <th className="px-2 py-1.5 text-right">Saldo depois</th>}
                     <th className="px-2 py-1.5 text-right">Falta</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {linhas.map(({ c, cob }) => (
+                  {linhas.map((l) => { const { c, cob } = l; const r = plano?.porContrato.get(c.id); const mov = (r?.recebe ?? 0) - (r?.cede ?? 0); return (
                     <tr key={c.id}>
                       <td className="px-2 py-1.5">
                         <button onClick={() => onAbrirContrato?.(c.id)} className="text-left font-semibold text-sky-700 hover:underline" title="Abrir o contrato">{c.numero}</button>
@@ -200,10 +238,13 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
                       </td>
                       <td className="px-2 py-1.5 text-right">{fmt(cob?.necessario ?? 0)}</td>
                       <td className="px-2 py-1.5 text-right text-amber-700">{fmt(cob?.aLiquidar ?? 0)}</td>
-                      <td className={`px-2 py-1.5 text-right font-semibold ${(cob?.falta ?? 0) > 0.5 ? "text-red-600" : "text-green-700"}`}>{fmt(cob?.falta ?? 0)}</td>
+                      {plano && <td className={`whitespace-nowrap px-2 py-1.5 text-right font-semibold ${mov > 0.004 ? "text-sky-700" : mov < -0.004 ? "text-violet-700" : "text-slate-400"}`}
+                        title={r?.dotacoes.length ? r.dotacoes.map(textoDotacao).join(" | ") : "sem NE com UGR, ND e PI conhecidos"}>{Math.abs(mov) < 0.005 ? "–" : `${mov > 0 ? "+" : "−"} ${fmt(Math.abs(mov))}`}</td>}
+                      {plano && <td className="px-2 py-1.5 text-right">{fmt(r?.saldoDepois ?? cob?.aLiquidar ?? 0)}</td>}
+                      <td className={`px-2 py-1.5 text-right font-semibold ${faltaDe(l) > 0.5 ? "text-red-600" : "text-green-700"}`}>{fmt(faltaDe(l))}</td>
                     </tr>
-                  ))}
-                  {!linhas.length && <tr><td colSpan={6} className="p-4 text-center text-slate-400">Marque os contratos à esquerda.</td></tr>}
+                  ); })}
+                  {!linhas.length && <tr><td colSpan={plano ? 8 : 6} className="p-4 text-center text-slate-400">Marque os contratos à esquerda.</td></tr>}
                 </tbody>
                 {linhas.length > 0 && (
                   <tfoot className="border-t bg-slate-50 font-semibold">
@@ -212,6 +253,8 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
                       <td colSpan={2} />
                       <td className="px-2 py-1.5 text-right">{fmt(total.necessario)}</td>
                       <td className="px-2 py-1.5 text-right text-amber-700">{fmt(total.aLiquidar)}</td>
+                      {plano && <td className="px-2 py-1.5 text-right text-slate-500">{plano.total > 0.004 ? fmt(plano.total) : "–"}</td>}
+                      {plano && <td />}
                       <td className={`px-2 py-1.5 text-right ${total.falta > 0.5 ? "text-red-600" : "text-green-700"}`}>{fmt(total.falta)}</td>
                     </tr>
                   </tfoot>
@@ -223,9 +266,25 @@ export default function GrupoContratos({ contratos, hoje, siafiOk, onFechar, onA
             )}
             {faltando > 0 && <div className="text-[10px] text-slate-500">{faltando} contrato{faltando > 1 ? "s" : ""} do grupo não {faltando > 1 ? "estão" : "está"} mais na lista e ficou de fora.</div>}
 
+            {plano && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-slate-700">
+                <div className="mb-1 font-semibold text-sky-800">Remanejamento {plano.total > 0.004 ? `— ${fmt(plano.total)}` : ""}</div>
+                {!plano.anulacoes.length && <div className="text-slate-500">Nada a remanejar: nenhum contrato do grupo tem sobra em NE do exercício na mesma adequação de quem falta.</div>}
+                {plano.anulacoes.map((a) => (
+                  <div key={a.ne}>➖ Anular <b>{fmt(a.valor)}</b> da NE <b>{a.ne}</b> ({a.numero}) <span className="text-slate-500">· {textoDotacao(a.dotacao)}</span></div>
+                ))}
+                {plano.empenhos.map((e) => (
+                  <div key={e.contratoId}>➕ {e.reforcar ? <>Reforçar a NE <b>{e.reforcar}</b></> : "Emitir NE"} de <b>{fmt(e.valor)}</b> para o <b>{e.numero}</b> <span className="text-slate-500">· {textoDotacao(e.dotacao)}</span></div>
+                ))}
+                {plano.avisos.map((a, i) => <div key={i} className="mt-0.5 text-amber-700">⚠️ {a}</div>)}
+                <div className="mt-1 text-[10px] text-slate-500">UGR, natureza de despesa e PI vêm das planilhas do SIAFI; a fonte e o PTRES não vêm — confira no SIAFI antes de anular. O site só calcula: a anulação e o novo empenho são feitos no SILOMS/SIAFI.</div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-              <div className="text-[11px] text-red-700">Crédito necessário para {meses} {meses === 1 ? "mês" : "meses"}</div>
+              <div className="text-[11px] text-red-700">Crédito necessário para {meses} {meses === 1 ? "mês" : "meses"}{plano ? " (com o remanejamento)" : ""}</div>
               <div className="text-lg font-bold text-red-700">{fmt(total.falta)}</div>
+              {plano && total.semRemanejar - total.falta > 0.004 && <div className="text-[11px] text-red-700">sem remanejar seriam {fmt(total.semRemanejar)}</div>}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
