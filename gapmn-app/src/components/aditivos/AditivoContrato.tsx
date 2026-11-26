@@ -18,11 +18,23 @@ import { baixarPrint } from "../../lib/apostilamento/prints";
 import type { DadosReajuste } from "../../lib/apostilamento/tipos";
 import { alertasParecer } from "../../lib/aditivos/parecer";
 import ParecerTecnico from "./ParecerTecnico";
+import DemonstrativoSaldo from "./DemonstrativoSaldo";
+import TermoScon, { SO_SCON } from "./TermoScon";
+import { alertasSaldo, empenhosMarcados } from "../../lib/aditivos/saldo";
+import { contratadaDoCadastro, omParaTermo } from "../../lib/aditivos/termo";
+import { contratoNoGov, empenhosParaDemonstrativo, garantiaNosDocumentos } from "../../lib/aditivos/dados";
+import type { TermoGerado } from "../../lib/aditivos/kitAditivo";
+import { supabase } from "../../lib/supabase";
+
+/** Perfis que geram e editam os termos da SCON (o banco confere de novo: registrar_termo_scon) */
+const PERFIS_SCON = ["SCON", "ADMIN", "DEV"];
+const quando = (iso: string) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 
 /** Itens da Lista que o fiscal junta como PDF (anuência, parecer técnico, procuração…): os outros o site gera ou têm tela própria */
 const ITENS_COM_TELA = ["sicaf", "consulta_cnpj", "consulta_cpf_socio", "memoria_calculo", "bol_aci", "bol_od", "bol_fiscalizacao", "calculadora"];
 const anexavel = (chave: string) => !chave.startsWith("parecer_referencial") && !GERADOS_PELO_SITE.includes(chave) && !ITENS_COM_TELA.includes(chave);
 
+const INFO_EXCEPCIONAL = "Lei nº 8.666/1993, art. 57, § 4º: em caráter excepcional, devidamente justificado e mediante autorização da autoridade superior, o prazo dos serviços contínuos (art. 57, II – até 60 meses) pode ser prorrogado por até 12 meses. Usa-se quando o contrato já chegou ao limite de 60 meses. Sempre vai para análise jurídica (CJU): não há parecer referencial para esse caso. Na Lei 14.133 não existe essa figura: os contínuos podem ser prorrogados até 10 anos (art. 107).";
 const hojeISO = () => new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10);
 const botao = "rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50";
 const primario = "rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50";
@@ -49,7 +61,22 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
   const [cad, setCad] = useState<{ dados: DadosReajuste | null; carga: Record<string, unknown> | null } | null>(null);
   const [printsCad, setPrintsCad] = useState<Arquivo[]>([]);
   const [geracao, setGeracao] = useState<{ docs: Record<string, DocumentoGerado>; zip: Blob; nome: string; faltando: string[] } | null>(null);
+  const [setor, setSetor] = useState<string | null>(null);
+  const [termoPrevia, setTermoPrevia] = useState<TermoGerado | null>(null);
   const hoje = hojeISO();
+  const podeScon = !!setor && PERFIS_SCON.includes(setor);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const { data: s } = await supabase.auth.getSession();
+      const uid = s.session?.user.id;
+      if (!uid) return;
+      const { data } = await supabase.from("profiles").select("setor").eq("id", uid).maybeSingle();
+      if (vivo) setSetor(String((data as { setor?: string | null } | null)?.setor ?? "").toUpperCase() || null);
+    })().catch(() => undefined);
+    return () => { vivo = false; };
+  }, []);
 
   useEffect(() => {
     let vivo = true;
@@ -87,6 +114,8 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
   const manuais = !!e?.pareceres_manuais;
   // o que vai ao kit: pareceres (sugeridos ou da SCON) e o objeto do contrato (Atestado e Declaração de Vantajosidade)
   const dx = useMemo(() => (d && e ? { ...d, objeto_contrato: e.objeto_contrato, lei: e.lei, ...(manuais ? {} : { pareceres_referenciais: sugeridos }) } : null), [d, e, manuais, sugeridos]);
+  // Pesquisa de Preços feita fora do site (PDF): vale a anexada quando o fiscal escolheu ou quando não há a do site
+  const pesquisaExterna = !!listaArq.pesquisa_precos?.length && (e?.pesquisa_vale === "anexo" || !d?.pesquisa_precos);
   // prints da Calculadora: os trocados neste aditivo ou os do módulo Reajustes
   const printsEfetivos = listaArq.calculadora_prints?.length ? listaArq.calculadora_prints : printsCad;
   // nº do próximo TA = maior TA assinado + 1 (documentos da carga + histórico de valores)
@@ -95,16 +124,16 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
   const unidadeOm = useMemo(() => (unidades && d ? acharUnidade(unidades, d.om_signataria.sigla) : null), [unidades, d]);
   const an = useMemo(() => (dx ? analisarPareceres(dx, hoje) : null), [dx, hoje]);
   const itens = useMemo(() => (dx ? itensDaLista(dx, hoje) : []), [dx, hoje]);
-  const alertas = useMemo(() => (dx && e ? alertasDoAditivo(dx, e, hoje, { sicaf: anexos.sicaf.length > 0, regularidade: !!(anexos.consolidada || anexos.item13) },
-    { unidadeCadastrada: unidades ? !!unidadeOm : null }).concat(alertasParecer(dx, printsEfetivos.length),
+  const alertas = useMemo(() => (dx && e ? alertasDoAditivo(dx, e, hoje, { sicaf: anexos.sicaf.length > 0, regularidade: !!(anexos.consolidada || anexos.item13), pesquisaExterna },
+    { unidadeCadastrada: unidades ? !!unidadeOm : null }).concat(alertasParecer(dx, printsEfetivos.length), alertasSaldo(dx),
       ta && ta.numeros.length && dx.numero_aditivo !== ta.proximo ? [{ nivel: "atencao" as const, texto: `Nº do termo aditivo: pelos TAs já assinados (${ta.numeros.map((x) => `${x}º`).join(", ")}) o próximo é o ${ta.proximo}º, e este está como ${dx.numero_aditivo ?? "?"}º.`, secao: "contrato" }] : [],
       ta && ta.faltando.length ? [{ nivel: "info" as const, texto: `TA não localizado nos documentos nem no histórico: ${ta.faltando.map((x) => `${x}º`).join(", ")} (confira no SILOMS).`, secao: "contrato" }] : []) : []),
-    [dx, e, hoje, anexos, unidades, unidadeOm, printsEfetivos, ta]);
+    [dx, e, hoje, anexos, unidades, unidadeOm, printsEfetivos, ta, pesquisaExterna]);
   const bloqueios = alertas.filter((a) => a.bloqueia);
   // o .zip: o que o site gera + o que está anexado (memória da aba, restaurada do que ficou guardado no aditivo)
   const temArquivo = (c: string) => (dx ? geradosPrevistos(dx, hoje).includes(c) : false) || (c === "sicaf" && anexos.sicaf.length > 0)
     || (c === "consulta_cnpj" && !!(anexos.item13 || anexos.consolidada)) || (c === "consulta_cpf_socio" && anexos.socio.length > 0)
-    || (c === "memoria_calculo" && !!memoria) || !!listaArq[c]?.length;
+    || (c === "memoria_calculo" && !!memoria) || (c === "pesquisa_precos" ? pesquisaExterna : !!listaArq[c]?.length);
   const faltando = dx ? faltandoNoZip(dx, hoje, temArquivo) : [];
 
   // ── anexos guardados no aditivo (depósito aditivos-docs): cada anexo novo é enviado e o aditivo é salvo junto ──
@@ -123,7 +152,7 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
     const complementos: Record<string, Arquivo> = {};
     for (const [k, a] of Object.entries(i13.complementos ?? {})) { const x = await um(a); if (x) complementos[k] = x; }
     const outros: Record<string, Arquivo[]> = {};
-    for (const [k, l] of Object.entries(g)) if (anexavel(k)) outros[k] = await varios(l);
+    for (const [k, l] of Object.entries(g)) if (anexavel(k) || k === "pesquisa_precos") outros[k] = await varios(l);
     if (!vivo()) return;
     setAnexos((x) => ({ ...x, sicaf, item13, consolidada, complementos }));
     setMemoria(mem); setListaArq(outros); setRestaurando(false);
@@ -266,11 +295,31 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
     if (sujo && !(await salvar())) return;
     onAbrir(`/app?vista=pesquisa-precos&aditivo=${reg!.id}`);
   }
+  /** O que vai ao kit a partir do registro SALVO (revisão 7: nenhum documento sai com alteração não salva) */
+  function paraKit(r: RegistroAditivo): DadosAditivo {
+    const est = r.estado;
+    const sug = est.pareceres_manuais ? null : pareceresSugeridos(alteracoes(r.dados), est.natureza, est.lei, agu).map((p) => {
+      const q: ParecerReferencial & { conferido?: boolean; url?: string | null } = { ...p };
+      if (q.url && !daBiblioteca(q.numero)) q.pdf = q.url;
+      delete q.conferido; delete q.url; return q as ParecerReferencial;
+    });
+    const base: DadosAditivo = { ...r.dados, objeto_contrato: est.objeto_contrato, lei: est.lei, ...(sug ? { pareceres_referenciais: sug } : {}) };
+    // unidade do CEFA que o kit não reconhece pelo nome: autoridade do campo 19 = DIRAD
+    if (unidadeOm?.cefa && !eCefa(base.om_signataria) && !base.autoridade_superior?.trim()) base.autoridade_superior = AUTORIDADE_CEFA;
+    // Termo Aditivo: contratante (endereço, CNPJ, cidade, Ordenador) sempre do cadastro da unidade; contratada do contrato
+    base.om_signataria = omParaTermo(base.om_signataria, unidadeOm);
+    base.contratada = contratadaDoCadastro(base, cad?.dados ?? null);
+    if (base.contratada && !base.contratada.cnpj) base.contratada.cnpj = est.cnpj;
+    if (base.saldo_periodo) base.saldo_periodo = { ...base.saldo_periodo, empenhos: empenhosMarcados(base.saldo_periodo.empenhos).map(({ marcado: _m, origem: _o, ...x }) => x) }; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const pesqFora = !!listaArq.pesquisa_precos?.length && (est.pesquisa_vale === "anexo" || !r.dados.pesquisa_precos);
+    if (pesqFora) base.pesquisa_precos = null;
+    return base;
+  }
   async function gerar() {
     if (!dx || !reg || !e) return;
     await refs.current.fila; // anexos ainda sendo guardados
-    const r0 = sujo ? await salvar() : refs.current.reg ?? reg;
-    if (!r0) return;
+    if (sujo) { setMsg({ ok: false, txt: "Salve antes de baixar – os documentos saem exatamente com o que está salvo." }); return; }
+    const r0 = refs.current.reg ?? reg;
     setOcupado(true); setGeracao(null); setMsg({ ok: true, txt: "Preparando o kit da SCON (na primeira vez o navegador baixa o Python, cerca de 15 MB)…" });
     try {
       const ct = dx.contrato.replace(/\//g, "-");
@@ -281,20 +330,89 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
       if (i13) extras.push({ chave: "consulta_cnpj", ...i13 });
       anexos.socio.forEach((a) => extras.push({ chave: "consulta_cpf_socio", ...a }));
       if (memoria && ad.reajuste) extras.push({ chave: "memoria_calculo", ...memoria });
-      for (const [k, l] of Object.entries(listaArq)) l.forEach((a) => extras.push({ chave: k, ...a }));
+      // Pesquisa de Preços: só uma vai no .zip (a do site ou a anexada, conforme a escolha)
+      for (const [k, l] of Object.entries(listaArq)) if (k !== "pesquisa_precos" || pesquisaExterna) l.forEach((a) => extras.push({ chave: k, ...a }));
       // prints da Calculadora (Parecer Técnico, item 9): os do módulo Reajustes, se o aditivo não trocou
       if (ad.reajuste && !listaArq.calculadora_prints?.length) printsCad.forEach((a) => extras.push({ chave: "calculadora_prints", ...a }));
-      // unidade do CEFA que o kit não reconhece pelo nome: autoridade do campo 19 = DIRAD
-      const dk = unidadeOm?.cefa && !eCefa(dx.om_signataria) && !dx.autoridade_superior?.trim() ? { ...dx, autoridade_superior: AUTORIDADE_CEFA } : dx;
-      const r = await kitAditivo.gerar(dk, extras, (t) => setMsg({ ok: true, txt: t }));
+      const r = await kitAditivo.gerar(paraKit(r0), extras, (t) => setMsg({ ok: true, txt: t }));
       const nome = `Termo Aditivo ${dx.numero_aditivo ?? ""} - CT ${ct}.zip`;
       setGeracao({ docs: r.documentos, zip: r.zip, nome, faltando: r.faltando ?? [] });
       const falhas = Object.values(r.documentos).filter((x) => !x.ok);
       setMsg({ ok: !falhas.length, txt: falhas.length ? `${falhas.length} documento(s) não saíram: veja os erros abaixo.` : `${r.arquivos.length} arquivo(s) no .zip.` });
       baixarBlob(r.zip, nome);
-      const atualizado = await salvarAditivo(r0, dx, { ...(refs.current.e ?? e), gerado_em: new Date().toISOString(), arquivos_gerados: r.arquivos }, usuario, "gerado");
-      setReg(atualizado); setE(atualizado.estado); setSujo(false);
+      const atualizado = await salvarAditivo(r0, r0.dados, { ...r0.estado, gerado_em: new Date().toISOString(), arquivos_gerados: r.arquivos,
+        zip_de: { versao: r0.versao, salvo_em: r0.atualizado_em, salvo_por: r0.atualizado_nome } }, usuario, "gerado");
+      refs.current.reg = atualizado; refs.current.e = atualizado.estado;
+      setReg(atualizado); setD(atualizado.dados); setE(atualizado.estado); setSujo(false);
     } catch (x) { setMsg({ ok: false, txt: x instanceof Error ? x.message : String(x) }); } finally { setOcupado(false); }
+  }
+
+  /** Prévia do Termo Aditivo: o texto do documento que o kit gera com o aditivo salvo (todos podem ver) */
+  async function previaDoTermo() {
+    const r0 = refs.current.reg ?? reg;
+    if (!r0 || sujo) return;
+    setOcupado(true); setMsg({ ok: true, txt: "Montando a prévia do Termo Aditivo (na primeira vez o navegador baixa o Python)…" });
+    try {
+      const t = await kitAditivo.termo(paraKit(r0), (x) => setMsg({ ok: true, txt: x }));
+      setTermoPrevia(t);
+      setMsg({ ok: t.ok, txt: t.ok ? `Prévia pronta${t.avisos.length ? ` (${t.avisos.length} aviso(s))` : ""}.` : `O termo não saiu: ${t.erros.join("; ") || "veja os avisos"}` });
+    } catch (x) { setMsg({ ok: false, txt: x instanceof Error ? x.message : String(x) }); } finally { setOcupado(false); }
+  }
+  /** Termo Aditivo da SCON: o banco confere o perfil e registra de qual salvamento o termo saiu */
+  async function gerarTermo() {
+    await refs.current.fila;
+    const r0 = refs.current.reg ?? reg;
+    if (!r0) return;
+    if (sujo) { setMsg({ ok: false, txt: "Salve antes de baixar – os documentos saem exatamente com o que está salvo." }); return; }
+    setOcupado(true); setMsg(null);
+    try {
+      const { error } = await supabase.rpc("registrar_termo_scon", { p_tipo: "aditivo", p_numero_contrato: r0.numero_contrato, p_referencia: r0.id, p_versao: r0.versao, p_salvo_em: r0.atualizado_em, p_nome: usuario });
+      if (error) throw new Error(/Somente|42501|permission/i.test(`${error.message} ${error.code}`) ? SO_SCON + "." : /function|schema cache/i.test(error.message) ? "Falta a migração 20261126_termos_scon no banco." : error.message);
+      setMsg({ ok: true, txt: "Gerando o Termo Aditivo…" });
+      const t = await kitAditivo.termo(paraKit(r0), (x) => setMsg({ ok: true, txt: x }));
+      setTermoPrevia(t);
+      if (!t.ok || !t.docx) throw new Error(`O termo não saiu: ${t.erros.join("; ") || "veja os avisos"}`);
+      const nome = t.arquivos[0] ?? `Termo Aditivo ${r0.dados.numero_aditivo ?? ""}.docx`;
+      baixarBlob(t.docx, nome);
+      const atualizado = await salvarAditivo(r0, r0.dados, { ...r0.estado, termo_gerado: { em: new Date().toISOString(), por: usuario, versao: r0.versao, arquivo: nome } }, usuario);
+      refs.current.reg = atualizado; refs.current.e = atualizado.estado;
+      setReg(atualizado); setD(atualizado.dados); setE(atualizado.estado); setSujo(false);
+      setMsg({ ok: true, txt: `Termo Aditivo gerado com o aditivo salvo por ${r0.atualizado_nome ?? "—"} em ${quando(r0.atualizado_em)}${t.avisos.length ? ` · ${t.avisos.length} aviso(s) na prévia abaixo` : ""}.` });
+    } catch (x) { setMsg({ ok: false, txt: x instanceof Error ? x.message : String(x) }); } finally { setOcupado(false); }
+  }
+  const ugGov = () => (d?.om_signataria.ug || unidadeOm?.ug || "120630");
+  async function buscarEmpenhos(periodo: { inicio: string | null; fim: string | null }) {
+    const c = await contratoNoGov(reg!.numero_contrato, d!.pag, ugGov(), cad?.carga ?? null);
+    if (!c) throw new Error("não achei este contrato na UG do Contratos.gov.br");
+    return empenhosParaDemonstrativo(c, periodo);
+  }
+  async function buscarLicitacao() {
+    try {
+      setMsg({ ok: true, txt: "Buscando a compra do contrato no Contratos.gov.br (cerca de 40 s na primeira vez)…" });
+      const c = await contratoNoGov(reg!.numero_contrato, d!.pag, ugGov(), null, true);
+      const { licitacaoDoGov } = await import("../../lib/apostilamento/contratosGov");
+      const lic = c ? licitacaoDoGov(c.modalidade, c.licitacao_numero) : null;
+      if (!lic) { setMsg({ ok: false, txt: "O Contratos.gov.br não trouxe a modalidade e o número da compra: digite a licitação de origem." }); return; }
+      mudar((x) => ({ ...x, licitacao: lic }));
+      setMsg({ ok: true, txt: `Licitação de origem: ${lic} (Contratos.gov.br). Confira e salve.` });
+    } catch (x) { setMsg({ ok: false, txt: `Não consegui buscar: ${x instanceof Error ? x.message : String(x)}` }); }
+  }
+  async function lerGarantia() {
+    try {
+      setMsg({ ok: true, txt: "Lendo a garantia no PDF do contrato e no TR da compra…" });
+      const c = await contratoNoGov(reg!.numero_contrato, d!.pag, ugGov(), null, true);
+      if (!c) throw new Error("não achei este contrato na UG do Contratos.gov.br");
+      const g = await garantiaNosDocumentos(c);
+      if (!g) { setMsg({ ok: false, txt: "Não achei a cláusula de garantia no contrato nem no TR: informe à mão." }); return; }
+      mudar((x) => ({ ...x, termo_aditivo: { ...(x.termo_aditivo ?? {}), garantia: { ...(x.termo_aditivo?.garantia ?? {}), exige: g.exige, percentual: g.percentual, fonte: g.fonte, trecho: g.trecho } } }));
+      setMsg({ ok: true, txt: g.exige ? `Garantia de ${String(g.percentual).replace(".", ",")}% lida em ${g.fonte}: confira o trecho e salve.` : `${g.fonte}: não exige garantia (confira o trecho e salve).` });
+    } catch (x) { setMsg({ ok: false, txt: `Não li a garantia: ${x instanceof Error ? x.message : String(x)}` }); }
+  }
+  function trazerContratada() {
+    const c = contratadaDoCadastro({ contratada: null }, cad?.dados ?? null);
+    if (!c) { setMsg({ ok: false, txt: "O cadastro do contrato nos Reajustes não tem a empresa." }); return; }
+    mudar((x) => ({ ...x, contratada: { ...c, cnpj: c.cnpj || e?.cnpj || "" } }));
+    setMsg({ ok: true, txt: "Contratada trazida do cadastro do contrato (Reajustes): confira o representante e o endereço." });
   }
 
   const cefa = eCefa(d.om_signataria) || !!unidadeOm?.cefa;
@@ -307,7 +425,8 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
         <button className={botao} onClick={onVoltar}>← Aditivos</button>
         <h2 className="text-base font-bold text-slate-800">{d.numero_aditivo ?? "?"}º Termo Aditivo — Contrato {d.contrato}</h2>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${reg.situacao === "gerado" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>{reg.situacao === "gerado" ? "documentos gerados" : "rascunho"}</span>
-        <span className="text-[11px] text-slate-400">salvo por {reg.atualizado_nome ?? "—"} em {new Date(reg.atualizado_em).toLocaleString("pt-BR")}</span>
+        <span className="text-[11px] text-slate-500">Salvo por <b>{reg.atualizado_nome ?? "—"}</b> em {quando(reg.atualizado_em)}</span>
+        {sujo && <span className="text-[11px] font-semibold text-amber-600">alterações não salvas</span>}
       </div>
       {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-sky-200 bg-sky-50 text-sky-700" : "border-red-200 bg-red-50 text-red-700"}`}>{msg.txt}</div>}
       {restaurando && <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">Abrindo os anexos guardados neste aditivo…</div>}
@@ -366,6 +485,17 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
                   <CampoNumero valor={ad.prorrogacao.meses} casas={0} onChange={(v) => mudar((x) => ({ ...x, aditivo: { ...x.aditivo, prorrogacao: { ...x.aditivo.prorrogacao!, meses: v, fim: null } } }))} /></label>
                 <Campo rotulo="Início do novo período (dd/mm/aaaa)" valor={ad.prorrogacao.inicio ?? ""} onChange={(v) => mudar((x) => ({ ...x, aditivo: { ...x.aditivo, prorrogacao: { ...x.aditivo.prorrogacao!, inicio: v || null, fim: null } } }))} />
                 <Campo rotulo="Fim (calculado; editável)" valor={ad.prorrogacao.fim ?? fimPrevisto(ad.prorrogacao.inicio, ad.prorrogacao.meses) ?? ""} onChange={(v) => mudar((x) => ({ ...x, aditivo: { ...x.aditivo, prorrogacao: { ...x.aditivo.prorrogacao!, fim: v || null } } }))} />
+                <div className="sm:col-span-2">
+                  <span className="inline-flex items-center gap-1">
+                    <Caixa rotulo="Prorrogação excepcional" marcado={!!ad.prorrogacao.excepcional} onChange={(v) => mudar((x) => ({ ...x, aditivo: { ...x.aditivo, prorrogacao: { ...x.aditivo.prorrogacao!, excepcional: v } } }))} />
+                    <span className="mt-2 cursor-help rounded-full border border-slate-300 px-1.5 text-[10px] font-bold text-slate-500" title={INFO_EXCEPCIONAL}>i</span>
+                  </span>
+                  {ad.prorrogacao.excepcional && <>
+                    <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-800">{INFO_EXCEPCIONAL}</p>
+                    <div className="mt-1"><Campo rotulo="Justificativa da excepcionalidade (vai para o motivo do Parecer Técnico)" valor={ad.prorrogacao.justificativa ?? ""} longo
+                      placeholder="ex.: até a conclusão da nova contratação" onChange={(v) => mudar((x) => ({ ...x, aditivo: { ...x.aditivo, prorrogacao: { ...x.aditivo.prorrogacao!, justificativa: v || null } } }))} /></div>
+                  </>}
+                </div>
               </div>
             )}
             <Caixa rotulo="Reajuste" marcado={!!ad.reajuste} onChange={(v) => marcar("reajuste", v)} />
@@ -525,6 +655,12 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
         </Secao>
       )}
 
+      {ad.prorrogacao && (
+        <Secao titulo="5.1 Demonstrativo de Execução e Saldo do Período de Vigência (prorrogação)">
+          <DemonstrativoSaldo d={dx} onChange={mudar} onBuscarEmpenhos={buscarEmpenhos} />
+        </Secao>
+      )}
+
       <Secao titulo="6. Parecer Técnico de Alteração Contratual (item 5 da Lista)">
         <ParecerTecnico d={dx} onChange={mudar} prints={printsEfetivos} printsDoAditivo={!!listaArq.calculadora_prints?.length}
           onTrocarPrints={(f) => void anexarItem("calculadora_prints", f)} onTirarPrint={(i) => removerItem("calculadora_prints", i)}
@@ -546,6 +682,23 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
 
       <Secao titulo="10. Pesquisa de Preços (obrigatória)">
         <PesquisaAditivo d={d} numeroContrato={reg.numero_contrato} onPesquisa={(p) => mudar((x) => ({ ...x, pesquisa_precos: p }))} onFazer={() => void irParaPesquisa()} />
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2 text-xs">
+          {(listaArq.pesquisa_precos ?? []).map((a, j) => <span key={j} className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800">📎 Pesquisa de Preços anexada ({a.nome}) <button className="text-red-600" title="remover" onClick={() => removerItem("pesquisa_precos", j)}>✕</button></span>)}
+          <label className={`cursor-pointer ${botao}`}>📎 {listaArq.pesquisa_precos?.length ? "Trocar a pesquisa anexada" : "Anexar pesquisa feita fora do site (PDF)"}
+            <input type="file" accept="application/pdf" className="hidden" onChange={(ev) => {
+              const f = ev.target.files;
+              if (!f?.length) return;
+              (listaArq.pesquisa_precos ?? []).forEach(() => removerItem("pesquisa_precos", 0));
+              void anexarItem("pesquisa_precos", f); // lê os arquivos antes de limpar o campo
+              ev.target.value = "";
+            }} /></label>
+          {!!listaArq.pesquisa_precos?.length && d.pesquisa_precos && (
+            <span className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">Há as duas: qual vale (só uma vai no .zip)?
+              <label className="flex items-center gap-1"><input type="radio" checked={e.pesquisa_vale !== "anexo"} onChange={() => mudarE({ pesquisa_vale: "site" })} /> a feita no site</label>
+              <label className="flex items-center gap-1"><input type="radio" checked={e.pesquisa_vale === "anexo"} onChange={() => mudarE({ pesquisa_vale: "anexo" })} /> a anexada</label>
+            </span>)}
+          {pesquisaExterna && <span className="text-emerald-700">✔ Vale a pesquisa anexada: item da Lista marcado e vai no .zip com o número do item.</span>}
+        </div>
       </Secao>
 
       {ad.reajuste && (
@@ -572,6 +725,12 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
         </Secao>
       )}
 
+      <Secao titulo="📜 Termo Aditivo (Seção de Contratos)">
+        <TermoScon d={dx} an={an} unidade={unidadeOm} cadastro={cad?.dados ?? null} podeScon={podeScon} sujo={sujo} ocupado={ocupado} gerado={e.termo_gerado} previa={termoPrevia}
+          onChange={mudar} onTrazerContratada={trazerContratada} onBuscarLicitacao={buscarLicitacao} onLerGarantia={lerGarantia}
+          onPrevia={() => void previaDoTermo()} onGerar={() => void gerarTermo()} />
+      </Secao>
+
       <Secao titulo="Alertas e geração dos documentos">
         <ul className="space-y-1 text-xs">
           {alertas.length === 0 && <li className="text-emerald-700">Nenhum alerta.</li>}
@@ -584,15 +743,17 @@ export default function AditivoContrato({ id, usuario, onVoltar, onAbrir }: { id
               <div key={doc.nome} className={doc.ok ? "text-emerald-700" : "text-red-700"}>{doc.ok ? "✔" : "✖"} {doc.nome}{doc.erros.length ? `: ${doc.erros.join("; ")}` : ""}{doc.avisos.length ? <span className="text-amber-700"> · {doc.avisos.join("; ")}</span> : null}</div>
             ))}
             {geracao.faltando.length > 0 && <div className="text-amber-700">Ficaram fora do .zip: {geracao.faltando.join("; ")}.</div>}
-            <button className={botao} onClick={() => baixarBlob(geracao.zip, geracao.nome)}>⬇ Baixar de novo: {geracao.nome}</button>
+            <button className={botao} disabled={sujo} title={sujo ? "Salve antes de baixar" : undefined} onClick={() => baixarBlob(geracao.zip, geracao.nome)}>⬇ Baixar de novo: {geracao.nome}</button>
           </div>
         )}
       </Secao>
 
       <div className="sticky bottom-0 z-30 -mx-1 flex rounded-lg pr-20 flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-2" style={{ background: "var(--gm-pop, #fff)" }}>
         {bloqueios.length > 0 && <span className="mr-auto text-xs text-red-600">{bloqueios.length} pendência(s) impedem a geração.</span>}
-        <button className={botao} disabled={ocupado || !sujo} onClick={() => void salvar()}>{sujo ? "Salvar" : "Salvo"}</button>
-        <button className={primario} disabled={ocupado || bloqueios.length > 0} onClick={() => void gerar()}>{ocupado ? "Aguarde…" : "Gerar os documentos (.zip)"}</button>
+        {sujo && <span className={`${bloqueios.length ? "" : "mr-auto "}text-xs font-medium text-amber-600`}>Salve antes de baixar – os documentos saem exatamente com o que está salvo.</span>}
+        {!sujo && e.zip_de && <span className="text-[11px] text-slate-500">último .zip: do salvamento de {quando(e.zip_de.salvo_em)}{e.zip_de.salvo_por ? ` (${e.zip_de.salvo_por})` : ""}</span>}
+        <button className={sujo ? "rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50" : botao} disabled={ocupado || !sujo} onClick={() => void salvar()}>{sujo ? "💾 Salvar" : "Salvo"}</button>
+        <button className={primario} disabled={ocupado || bloqueios.length > 0 || sujo} title={sujo ? "Salve antes de baixar" : undefined} onClick={() => void gerar()}>{ocupado ? "Aguarde…" : "Gerar os documentos do fiscal (.zip)"}</button>
       </div>
     </div>
   );

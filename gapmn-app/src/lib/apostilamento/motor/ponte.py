@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import types
@@ -114,9 +115,11 @@ def checar(dados_json, cfg_json):
     return _json({"pode_gerar": not any(x["status"] == "FALTA" for x in q), "itens": q})
 
 
-def gerar(dados_json, cfg_json, prints_json, saida_zip="", checklist_json=""):
+def gerar(dados_json, cfg_json, prints_json, saida_zip="", checklist_json="", so=""):
     """Gera os documentos. Com `saida_zip`, grava o .zip nesse caminho; sem ele, só devolve o resumo.
-    Com `checklist_json` (as 8 marcações SIM/NÃO), o .zip leva também o "5 - Checklist do Fiscal"."""
+    Com `checklist_json` (as 8 marcações SIM/NÃO), o .zip leva também o "5 - Checklist do Fiscal".
+    so="fiscal": o .zip sem o Termo de Apostilamento (documento da SCON, revisão 7 de 25/11/2026);
+    so="termo": só o Termo de Apostilamento, gravado como .docx em `saida_zip`."""
     _aplicar_config(json.loads(cfg_json))
     dados = json.loads(dados_json)
     dados.pop("checklist", None)  # o checklist sai abaixo, com o ACI do parecer
@@ -131,6 +134,16 @@ def gerar(dados_json, cfg_json, prints_json, saida_zip="", checklist_json=""):
         raise ValueError(str(e))
     avisos = list(r["avisos"])
     arquivos = dict(r["arquivos"])
+    if so == "fiscal":
+        arquivos.pop("termo", None)
+    if so == "termo":
+        if "termo" not in arquivos:
+            raise ValueError("Com o instrumento Termo Aditivo, o termo sai na aba Termos Aditivos.")
+        arquivos = {"termo": arquivos["termo"]}
+        avisos += _paginas_finais(arquivos)
+        if saida_zip:
+            shutil.copy(arquivos["termo"], saida_zip)
+        return _json({"resumo": r["resumo"], "avisos": avisos, "arquivos": [os.path.basename(arquivos["termo"])]})
     if saida_zip:
         avisos += _paginas_finais(arquivos)
     if saida_zip and marcacoes:

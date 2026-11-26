@@ -98,6 +98,8 @@ export interface DadosReajuste {
   observacoes_extras: string[];
   /** checklist do fiscal, guardado com o cadastro (o app o entrega à parte ao motor) */
   checklist?: MarcacaoChecklist[];
+  /** licitação de origem ("Pregão nº 07/2020"), do Contratos.gov.br ou digitada (Termo Aditivo da SCON, revisão 7) */
+  licitacao?: string;
   /** "CLÁUSULA SEGUNDA – VIGÊNCIA E PRORROGAÇÃO, item 2.1" (lida no PDF do contrato; Parecer Técnico do termo aditivo) */
   clausula_vigencia?: string;
   /** origem da data do orçamento quando vem dentro dos dados da carga (só conferência; não vai ao motor) */

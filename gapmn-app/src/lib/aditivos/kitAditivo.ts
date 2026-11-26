@@ -39,6 +39,8 @@ function pedir(pedido: SemId<PedidoAditivo>, progresso?: (etapa: string) => void
 }
 
 export interface DocumentoGerado { nome: string; ok: boolean; arquivos: string[]; erros: string[]; avisos: string[]; saida: string }
+/** Termo Aditivo da SCON: o .docx e o texto dele (a prévia da tela), com os avisos do kit */
+export interface TermoGerado extends DocumentoGerado { texto: string[]; minuta: boolean; docx: Blob | null }
 export interface Conferencia {
   pareceres: { descobertas: string[]; pareceres: { numero: string; motivo_texto: string }[] };
   itens: { chave: string; texto: string }[]; objeto: string; valor_atual: number | null; valor_novo: number | null;
@@ -57,6 +59,12 @@ export const kitAditivo = {
     const copias = pdfs.map((b) => b.slice(0));
     const r = await pedir({ tipo: "juntar", pdfs: copias }, progresso, copias);
     return new Blob([r.arquivo!], { type: "application/pdf" });
+  },
+  /** Termo Aditivo (gerar_termo_aditivo.py): documento da SCON, à parte do .zip do fiscal */
+  termo: async (dados: DadosAditivo, progresso?: (etapa: string) => void): Promise<TermoGerado> => {
+    const r = await pedir({ tipo: "termo", dados }, progresso);
+    const res = r.resultado as Omit<TermoGerado, "docx" | "nome">;
+    return { ...res, nome: "Termo Aditivo", docx: r.arquivo ? new Blob([r.arquivo], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }) : null };
   },
   /** Gera os documentos que se aplicam e o .zip numerado pela Lista (montar_zip.py), com os anexos por item da Lista */
   gerar: async (dados: DadosAditivo, extras: { chave: string; nome: string; bytes: ArrayBuffer }[], progresso?: (etapa: string) => void) => {

@@ -8,6 +8,10 @@ import { carregarUnidades } from "../apostilamento/unidadesBanco";
 import { AUTORIDADE_CEFA, eCefa, isoParaBr, proximoAditivo, type AguParecer } from "./regras.ts";
 import type { DadosAditivo, EstadoAditivo, Lei, NaturezaObjeto, ParecerTecnico, PesquisaPrecosAditivo, RegistroAditivo } from "./tipos.ts";
 import { clausulaParaParecer } from "./parecer.ts";
+import { omParaTermo } from "./termo.ts";
+import { empenhoDoGov } from "./saldo.ts";
+import type { EmpenhoPeriodo } from "./tipos.ts";
+import { acharContratoGov, type ContratoGov } from "../apostilamento/contratosGov";
 
 /** Nomes por extenso das OMs mais comuns, quando a unidade ainda não tem cadastro */
 const NOMES_OM: Record<string, string> = {
@@ -46,7 +50,8 @@ export async function aditivosEmAndamento(): Promise<Pick<RegistroAditivo, "id" 
 /** OM signatária do aditivo pelo cadastro da unidade apoiada (nome, sigla, UG, artigo; CEFA/autoridade do campo 19) */
 export function omDaUnidade(u: UnidadeApoiada): { om: DadosAditivo["om_signataria"]; autoridade_superior: string | null } {
   const nome = u.nome || NOMES_OM[siglaNorm(u.sigla)] || u.sigla;
-  const om = { nome, sigla: u.sigla, ug: u.ug ?? "", artigo: u.artigo };
+  // endereço, CNPJ, cidade e Ordenador: o Termo Aditivo da SCON usa (revisão 7)
+  const om = omParaTermo({ nome, sigla: u.sigla, ug: u.ug ?? "", artigo: u.artigo }, u);
   // unidade do CEFA que o kit não reconhece pelo nome: a autoridade do campo 19 vai pronta (DIRAD)
   const autoridade = u.cefa ? (eCefa(om) ? null : AUTORIDADE_CEFA) : (u.autoridade_superior ?? null);
   return { om, autoridade_superior: autoridade };
@@ -63,7 +68,10 @@ export function parecerDoCadastro(dados: Partial<DadosReajuste> | null, carga: R
   if (!hist.some((h) => /^contrato/i.test(h.documento.trim()))) hist.unshift({ documento: "Contrato inicial", valor: null });
   const base = String(dados?.base ?? "ANUAL").toLowerCase();
   return {
-    contratada: dados?.empresa?.nome ? { nome: dados.empresa.nome } : carga?.siloms?.empresa_nome_contrato ? { nome: String(carga.siloms.empresa_nome_contrato) } : null,
+    // contratada completa: o Termo Aditivo da SCON usa CNPJ, endereço e representante (revisão 7)
+    contratada: dados?.empresa?.nome
+      ? { nome: dados.empresa.nome, cnpj: dados.empresa.cnpj ?? "", endereco: dados.empresa.endereco ?? "", representante: dados.empresa.representante ?? "", representante_feminino: !!dados.empresa.representante_feminino }
+      : carga?.siloms?.empresa_nome_contrato ? { nome: String(carga.siloms.empresa_nome_contrato) } : null,
     objeto_resumido: dados?.objeto_resumido || carga?.siloms?.descricao_resumida || null,
     historico: hist,
     itens: (dados?.itens ?? []).map((i) => ({ item: String(i.item ?? ""), descricao: i.descricao ?? "", valor_atual: i.valor_base ?? null, valor_apos: null })),
@@ -125,6 +133,7 @@ export function montarAditivo(numero_contrato: string, dados: Partial<DadosReaju
       consulta_socio: false, representante_mudou: false, inexigibilidade: false,
       pareceres_referenciais: [], nao_anexados: {}, observacao: "", pesquisa_precos: null, riscos: [],
       objeto_contrato: objeto, vantajosidade: { motivos: [] },
+      tipo_contrato: "Despesa", licitacao: dados?.licitacao || null,
       ...(() => {
         const p = parecerDoCadastro(dados, carga);
         return { contratada: p.contratada, objeto_resumido: p.objeto_resumido, historico: p.historico, itens: p.itens,
@@ -201,5 +210,29 @@ export async function consultaAutomatica<T = Record<string, unknown>>(corpo: Rec
   }
   return data as T;
 }
+// ── Contratos.gov.br para o aditivo (revisão 7): empenhos do período, licitação de origem e garantia ──
+/** O contrato no Contratos.gov.br: pelo id guardado no cadastro (rápido) ou pela lista da UG (cerca de 40 s) */
+export async function contratoNoGov(numero_contrato: string, pag: string, ug: string, carga: Record<string, unknown> | null, precisaCompra = false): Promise<ContratoGov | null> {
+  const salvo = (carga?.contratos_gov as { id?: number; numero?: string } | undefined) ?? null;
+  if (salvo?.id && !precisaCompra) return { id: salvo.id, numero: salvo.numero ?? numero_contrato } as ContratoGov;
+  const { listaDaUg } = await import("../apostilamento/contratosGovApi");
+  const lista = await listaDaUg(ug || "120630");
+  return acharContratoGov(numero_contrato, pag, null, lista);
+}
+/** NEs do contrato para o Demonstrativo de Saldo, já marcadas as emitidas dentro do período analisado */
+export async function empenhosParaDemonstrativo(c: ContratoGov, periodo: { inicio: string | null; fim: string | null }): Promise<EmpenhoPeriodo[]> {
+  const { empenhosDoContrato } = await import("../apostilamento/contratosGovApi");
+  const l = await empenhosDoContrato(c.id);
+  return (l ?? []).filter((e) => e.numero).map((e) => empenhoDoGov(e as unknown as Parameters<typeof empenhoDoGov>[0], periodo))
+    .sort((a, b) => a.numero.localeCompare(b.numero));
+}
+/** Garantia de execução lida no PDF do contrato ou, se ele não tratar, no TR da compra (a SCON confere) */
+export async function garantiaNosDocumentos(c: ContratoGov): Promise<{ exige: boolean; percentual: number | null; trecho: string; fonte: string; avisos: string[] } | null> {
+  const { lerDocumentosOficiais } = await import("../apostilamento/contratosGovApi");
+  const r = await lerDocumentosOficiais(c);
+  const g = r.contrato?.garantia ? { a: r.contrato.garantia, fonte: r.origemContrato } : r.tr?.garantia ? { a: r.tr.garantia, fonte: r.origemTr } : null;
+  return g ? { ...g.a.valor, trecho: g.a.trecho, fonte: g.fonte, avisos: r.avisos } : null;
+}
+
 export const bytesDeBase64 = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
 export { isoParaBr };

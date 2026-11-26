@@ -5,6 +5,7 @@ scripts/aditivos/importar_kit.mjs). Roda no navegador (Pyodide) e também no CPy
 Faz o papel do gerar_aditivo.py do kit (que chama os outros scripts por subprocesso, o que o navegador não tem):
 roda cada gerador que se aplica ao caso, guarda o que cada um escreveu (RESUMO, erros, avisos) e monta o .zip com o
 montar_zip.py do kit (numerado pela Lista, com os anexos do fiscal: SICAF, item 13, memória de cálculo…).
+O Termo Aditivo (revisão 7) é documento da SCON: sai à parte, pela função termo(), e não entra no .zip do fiscal.
 O SICAF e a Consulta Consolidada chegam como TEXTO (o app lê o PDF com o pdf.js): o kit lê .txt sem o pdfplumber.
 """
 import contextlib, copy, importlib, io, json, os, shutil, sys, tempfile, types, zipfile
@@ -20,10 +21,28 @@ try:
 except ImportError:
     sys.modules["pdfplumber"] = types.ModuleType("pdfplumber")
 
+def _extenso_com_sinal():
+    """O kit escreve por extenso só valor positivo: com negativo, o laço do inteiro_extenso não termina (o navegador
+    trava). O Demonstrativo de Saldo pode ter saldo negativo (o próprio kit alerta 🔴), então o negativo vira "menos …"."""
+    import gerar_parecer_tecnico as G
+    if getattr(G.reais_extenso, "com_sinal", False):
+        return
+    reais, inteiro = G.reais_extenso, G.inteiro_extenso
+
+    def reais_com_sinal(v):
+        return "menos " + reais(-float(v)) if float(v) < 0 else reais(v)
+
+    def inteiro_com_sinal(n):
+        return "menos " + inteiro(-n) if n < 0 else inteiro(n)
+    reais_com_sinal.com_sinal = True
+    G.reais_extenso, G.inteiro_extenso = reais_com_sinal, inteiro_com_sinal
+
+
 DOCUMENTOS = [
     ("lista", "Lista de Verificação", "gerar_lista_verificacao"),
     ("declaracao", "Declaração de Disponibilidade Orçamentária", "gerar_declaracao_orcamentaria"),
     ("vantajosidade", "Declaração de Vantajosidade Econômica", "gerar_declaracao_vantajosidade"),
+    ("demonstrativo", "Demonstrativo de Execução e Saldo", "gerar_demonstrativo_saldo"),
     ("parecer", "Parecer Técnico de Alteração Contratual", "gerar_parecer_tecnico"),
     ("mapa", "Mapa de Riscos", "gerar_mapa_riscos"),
     ("pesquisa", "Pesquisa de Preços", "gerar_pesquisa_precos"),
@@ -38,6 +57,7 @@ def _linhas(texto, marca):
 
 def _rodar(modulo, d, saida):
     """Roda o gerar() de um script do kit; erro de validação do kit = SystemExit(1) com a lista de ERROS."""
+    _extenso_com_sinal()
     out = io.StringIO()
     antes = set(os.listdir(saida))
     ok = True
@@ -62,6 +82,8 @@ def aplicaveis(d):
     chaves = ["lista", "declaracao"]
     if tem_prorrogacao(d) and (d.get("vantajosidade") or {}).get("motivos"):
         chaves.append("vantajosidade")
+    if tem_prorrogacao(d) and d.get("saldo_periodo"):   # Demonstrativo de Saldo (seção 3K): só com o bloco do fiscal
+        chaves.append("demonstrativo")
     chaves.append("parecer")                     # item 5 da Lista: sempre (rev5.1)
     if d.get("riscos"):
         chaves.append("mapa")
@@ -92,6 +114,8 @@ def conferir(dados_json):
         "passa_1_milhao": passa_1_milhao(d), "tem_reajuste": tem_reajuste(d), "documentos": aplicaveis(d),
         "tem_prorrogacao": tem_prorrogacao(d), "motivos_anuencia": motivos_anuencia(d), "objeto_vantajosidade": frase_objeto(d),
         "parecer": previa_parecer(d),
+        "demonstrativo": previa_demonstrativo(d) if (tem_prorrogacao(d) and d.get("saldo_periodo")) else None,
+        "termo": previa_termo(d) if d.get("aditivo") else None,
     }, ensure_ascii=False, default=str)
 
 
@@ -104,6 +128,7 @@ def previa_parecer(d):
     """O que o Parecer Técnico vai dizer, sem gerar o .docx (a tela mostra na hora e os testes comparam com a do app)."""
     import gerar_parecer_tecnico as G
     from gerar_ficha_autorizacao import objeto_e_valores
+    _extenso_com_sinal()
     avisos, erros = [], []
     dd = copy.deepcopy(d)
     _, atual, novo = objeto_e_valores(dd, erros, avisos)
@@ -124,6 +149,89 @@ def previa_parecer(d):
         "valor_novo_extenso": G.brl_ext(novo) if novo is not None else None,
         "avisos": avisos,
     }
+
+
+def texto_docx(caminho):
+    """Texto do .docx na ordem do documento (cabeçalho, parágrafos e linhas das tabelas com " | ")."""
+    from docx import Document
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+    doc = Document(caminho)
+    linhas = []
+    cab = " ".join(p.text for p in doc.sections[0].header.paragraphs if p.text.strip())
+    if cab:
+        linhas.append("[cabeçalho] " + cab)
+    for el in doc.element.body.iterchildren():
+        tag = el.tag.split("}")[-1]
+        if tag == "p":
+            t = Paragraph(el, doc).text
+            if t.strip():
+                linhas.append(t)
+        elif tag == "tbl":
+            for row in Table(el, doc).rows:
+                cel = []
+                for c in row.cells:                 # célula mesclada se repete: fica uma vez
+                    t = c.text.strip()
+                    if not cel or cel[-1] != t:
+                        cel.append(t)
+                linhas.append(" | ".join(cel))
+    return linhas
+
+
+def previa_demonstrativo(d):
+    """Quadro A–F, NEs, pendências e providências do Demonstrativo de Saldo (os testes comparam com a tela)."""
+    import gerar_demonstrativo_saldo as G
+    from gerar_ficha_autorizacao import objeto_e_valores
+    dd = copy.deepcopy(d)
+    avisos, erros = [], []
+    _, atual, _ = objeto_e_valores(copy.deepcopy(dd), erros, [])
+    ini, fim = G.periodo_analisado(dd, avisos)
+    q = G.calcular(dd, atual, avisos)
+    saida = tempfile.mkdtemp(prefix="saldo_")
+    try:
+        r = _rodar("gerar_demonstrativo_saldo", d, saida)
+        texto = texto_docx(os.path.join(saida, r["arquivos"][0])) if r["ok"] else []
+    finally:
+        shutil.rmtree(saida, ignore_errors=True)
+    i = next((k for k, t in enumerate(texto) if t.startswith("4. PROVIDÊNCIAS")), None)
+    prov = []
+    if i is not None:
+        for t in texto[i + 1:]:
+            if t.startswith("5. "):
+                break
+            prov.append(t)
+    return {"inicio": ini, "fim": fim, "quadro": {k: q[k] for k in "ABCDEF"},
+            "nes": [{k: e[k] for k in ("numero", "a_liquidar", "reservado", "anular")} for e in q["nes"]],
+            "pendentes": [{k: p[k] for k in ("valor", "empenho")} for p in q["pend"]],
+            "providencias": prov, "avisos": avisos, "texto": texto}
+
+
+def termo(dados_json, destino):
+    """Termo Aditivo (documento da SCON, gerar_termo_aditivo.py): grava o .docx em destino (pasta) e devolve o resultado
+    com o texto do documento (a prévia da tela) e se saiu com MINUTA."""
+    d = json.loads(dados_json)
+    saida = tempfile.mkdtemp(prefix="termo_")
+    try:
+        r = _rodar("gerar_termo_aditivo", d, saida)
+        r["texto"] = []
+        if r["ok"]:
+            origem = os.path.join(saida, r["arquivos"][0])
+            r["texto"] = texto_docx(origem)
+            os.makedirs(destino, exist_ok=True)
+            shutil.copy(origem, os.path.join(destino, r["arquivos"][0]))
+        r["minuta"] = "MINUTA" in r["texto"]
+        return json.dumps(r, ensure_ascii=False, default=str)
+    finally:
+        shutil.rmtree(saida, ignore_errors=True)
+
+
+def previa_termo(d):
+    destino = tempfile.mkdtemp(prefix="termo_previa_")
+    try:
+        r = json.loads(termo(json.dumps(d), destino))
+    finally:
+        shutil.rmtree(destino, ignore_errors=True)
+    return {k: r[k] for k in ("ok", "erros", "avisos", "texto", "minuta")}
 
 
 def gerar(dados_json, destino_zip, extras_json="[]"):

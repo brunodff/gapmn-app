@@ -23,6 +23,8 @@ export interface AchadosPdf {
   omSigla?: Achado<string>;
   /** "CLÁUSULA SEGUNDA – VIGÊNCIA E PRORROGAÇÃO, item 2.1" (Parecer Técnico do termo aditivo, revisão 5.1 da SCON) */
   vigencia?: Achado<string>;
+  /** garantia de execução: se exige e o percentual (Termo Aditivo da SCON, revisão 7) */
+  garantia?: Achado<{ exige: boolean; percentual: number | null }>;
   /** PDF sem texto (imagem escaneada): nada pôde ser lido */
   semTexto?: boolean;
 }
@@ -116,6 +118,18 @@ function acharVigencia(t: string): Achado<string> | undefined {
   const depois = t.slice(cab.index + cab[0].length, cab.index + cab[0].length + 1500);
   const item = /(?:^|\s)(\d{1,2}\.\d{1,2})\.?\s+[^.]{0,200}?(vig[êe]ncia|prazo)/i.exec(depois)?.[1];
   return { valor: `CLÁUSULA ${ordinal} – ${titulo}${item ? `, item ${item}` : ""}`, trecho: trecho(t, cab.index, 200) };
+}
+
+/** Garantia de execução do contrato (ou do TR): "não haverá exigência de garantia" ou "garantia … 5% (cinco por cento)" */
+function acharGarantia(t: string): Achado<{ exige: boolean; percentual: number | null }> | undefined {
+  const nao = /n[ãa]o\s+(?:ser[áa]|haver[áa])\s+(?:exigid[ao]\s+(?:a\s+)?|exig[êe]ncia\s+de\s+)?(?:presta[çc][ãa]o\s+de\s+)?garantia|sem\s+exig[êe]ncia\s+de\s+garantia|dispensad[ao]\s+(?:a\s+)?(?:presta[çc][ãa]o\s+de\s+)?garantia/i.exec(t);
+  if (nao) return { valor: { exige: false, percentual: null }, trecho: trecho(t, nao.index) };
+  for (const m of t.matchAll(/garantia[^%]{0,300}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/gi)) {
+    if (!/execu[çc][ãa]o|contratual|prestar|do contrato|valor/i.test(m[0])) continue;
+    const p = Number(m[1].replace(",", "."));
+    if (p > 0 && p <= 30) return { valor: { exige: true, percentual: p }, trecho: trecho(t, m.index ?? 0) };
+  }
+  return undefined;
 }
 
 const mmaaaa = (mes: number, ano: number) => (mes >= 1 && mes <= 12 ? `${String(mes).padStart(2, "0")}/${ano < 100 ? 2000 + ano : ano}` : null);
@@ -252,6 +266,7 @@ export function extrairDoTexto(textoBruto: string, op: { cnpjEmpresa?: string } 
     r.indice = acharIndice(t);
     r.clausula = acharClausula(t, tipo);
     r.dataBase = acharDataBase(t, tipo);
+    r.garantia = acharGarantia(t);
   }
   if (tipo === "CONTRATO" || tipo === "TERMO ADITIVO" || tipo === "APOSTILAMENTO") {
     r.representante = acharRepresentante(t, op.cnpjEmpresa);

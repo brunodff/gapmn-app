@@ -5,6 +5,8 @@ import { contarTipos, tipoDoContrato, TIPOS_CONTRATO, type TipoContrato } from "
 
 export type Cadastro = {
   numero_contrato: string; data_base: string | null; reajustes_aplicados: number; dedicacao_exclusiva: boolean; atualizado_em: string | null;
+  /** quem salvou por último (revisão 7) */
+  atualizado_nome?: string | null;
   situacao_cadastro?: string | null; pendencias?: string[] | null; carga_em?: string | null; fora?: boolean | null;
   /** motivo da carga do SILOMS para não haver reajuste por índice (adesão, credenciamento) */
   nao_aplicavel?: string | null;
@@ -115,7 +117,8 @@ export default function PainelReajustes({ contratos, cadastros, diasAlerta, aoAb
                     : l.motivo ?? "–"}
                 </td>
                 <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{l.proximo_aniversario ? `${l.proximo_aniversario} (${l.dias_para_proximo} d)` : "–"}</td>
-                <td className="px-3 py-2 whitespace-nowrap"><Situacao cad={l.cad} /></td>
+                <td className="px-3 py-2 whitespace-nowrap"><Situacao cad={l.cad} />
+                  {l.cad?.atualizado_em && <div className="text-[10.5px] text-slate-400">salvo por {l.cad.atualizado_nome ?? "—"} em {new Date(l.cad.atualizado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</div>}</td>
                 <td className="px-3 py-2 text-right">
                   <button onClick={() => aoAbrir(l.contrato)} className="rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 px-2 py-1">Abrir</button>
                 </td>

@@ -28,6 +28,16 @@ export interface EmpenhoGov {
 }
 
 /** "1.234,56" → 1234.56 · "20700" → 20700 */
+/** "Pregão" + "00007/2020" → "Pregão nº 07/2020" (licitação de origem, para o Termo Aditivo da SCON) */
+export function licitacaoDoGov(modalidade: string | null | undefined, numeroLic: string | null | undefined): string | null {
+  const m = String(modalidade ?? "").trim(), n = String(numeroLic ?? "").trim();
+  if (!m || !n) return null;
+  const x = /^0*(\d+)\/(\d{4})$/.exec(n);
+  const num = x ? `${x[1].padStart(2, "0")}/${x[2]}` : n;
+  const nome = m.charAt(0).toUpperCase() + m.slice(1).toLowerCase().replace(/eletr[oô]nico/, "Eletrônico");
+  return `${nome} nº ${num}`;
+}
+
 export function numBR(v: unknown): number | null {
   const s = String(v ?? "").trim();
   if (!s) return null;
@@ -110,6 +120,8 @@ export function dadosDoContratosGov(c: ContratoGov, itens: ItemGov[], historico:
   const dados: Partial<DadosReajuste> = {};
   if (c.processo) dados.nup = c.processo;
   dados.empresa = { nome: c.fornecedor?.nome ?? "", cnpj: c.fornecedor?.cnpj_cpf_idgener ?? "", endereco: "", representante: "" };
+  const lic = licitacaoDoGov(c.modalidade, c.licitacao_numero);
+  if (lic) dados.licitacao = lic;
   if (c.objeto) { dados.objeto_completo = c.objeto.replace(/\s+/g, " ").trim(); dados.objeto_resumido = resumirObjeto(c.objeto); }
 
   // itens: o valor total do item no Contratos.gov.br é o do período do contrato (base ANUAL num contrato de 12 meses)

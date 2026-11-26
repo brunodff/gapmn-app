@@ -145,10 +145,12 @@ def objeto_e_valores(d, erros, avisos):
             erros.append("Prorrogação sem o número de meses (aditivo.prorrogacao.meses).")
         prazo = f"{meses} ({extenso(meses)}) meses" if meses else "__ meses"
         if pr.get("modalidade") == "sem_valor":
-            linhas.append(f"Prorrogar a vigência do Contrato nº {ct} por mais {prazo}, em sentido estrito, "
+            exc = "excepcionalmente " if pr.get("excepcional") else ""
+            linhas.append(f"Prorrogar {exc}a vigência do Contrato nº {ct} por mais {prazo}, em sentido estrito, "
                           "sem renovação do valor contratual")
         else:
-            linhas.append(f"Prorrogar o Contrato nº {ct} por mais {prazo}, com renovação do valor contratual")
+            exc = "excepcionalmente " if pr.get("excepcional") else ""
+            linhas.append(f"Prorrogar {exc}o Contrato nº {ct} por mais {prazo}, com renovação do valor contratual")
     rj = ad.get("reajuste")
     if rj:
         idx = rj.get("indice") or "_____"

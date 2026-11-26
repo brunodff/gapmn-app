@@ -149,6 +149,7 @@ LEIS = {"14133": "da Lei nº 14.133/2021", "8666": "da Lei nº 8.666/1993"}
 ART = {
     "14133": {
         "prorrogacao": "art. 107", "prorrogacao_escopo": "art. 111", "prorrogacao_com_alteracao": "art. 106, art. 107",
+        "prorrogacao_excepcional": "art. 107",            # não há prorrogação excepcional na 14.133 (limite decenal)
         "reajuste": "art. 92, § 4º", "acrescimo": "art. 124, inciso I, alínea \"b\", e art. 125",
         "supressao": "art. 124, inciso I, alínea \"b\", e art. 125",
         "supressao_acordo": "art. 124, inciso II, alínea \"a\" (acordo entre as partes)",
@@ -156,6 +157,7 @@ ART = {
     },
     "8666": {
         "prorrogacao": "art. 57, inciso II", "prorrogacao_escopo": "art. 57, § 1º", "prorrogacao_com_alteracao": "art. 57, inciso II",
+        "prorrogacao_excepcional": "art. 57, § 4º",
         "reajuste": "art. 40, inciso XI, e art. 55, inciso III",
         "acrescimo": "art. 65, inciso I, alínea \"b\", e § 1º", "supressao": "art. 65, inciso I, alínea \"b\", e § 1º",
         "supressao_acordo": "art. 65, § 2º, inciso II (acordo entre as partes)",
@@ -311,8 +313,16 @@ def artigos_enquadramento(d, lei, avisos):
     frags = []
     alt_valor = any(ad.get(k) for k in ("acrescimo", "supressao"))
     if ad.get("prorrogacao"):
-        frags.append(A["prorrogacao_escopo"] if escopo else
-                     (A["prorrogacao_com_alteracao"] if alt_valor else A["prorrogacao"]))
+        if (ad["prorrogacao"] or {}).get("excepcional"):
+            frags.append(A["prorrogacao_excepcional"])
+            if lei == "14133":
+                avisos.append("🔴 Prorrogação excepcional marcada em contrato da Lei 14.133: essa figura é do art. 57, § 4º, "
+                              "da Lei 8.666; na 14.133 os contínuos podem ser prorrogados até 10 anos (art. 107) – conferir.")
+            if int((ad["prorrogacao"] or {}).get("meses") or 0) > 12:
+                avisos.append("🔴 Prorrogação excepcional acima de 12 meses: o art. 57, § 4º, permite até 12 meses.")
+        else:
+            frags.append(A["prorrogacao_escopo"] if escopo else
+                         (A["prorrogacao_com_alteracao"] if alt_valor else A["prorrogacao"]))
     if ad.get("reajuste"):
         frags.append(A["reajuste"])
     for k in ("acrescimo", "supressao"):
@@ -343,7 +353,10 @@ def art_de(chave, d, lei):
     A = ART[lei]
     pt = d.get("parecer_tecnico") or {}
     if chave == "prorrogacao":
-        f = A["prorrogacao_escopo"] if pt.get("natureza") == "escopo" else A["prorrogacao"]
+        if ((d.get("aditivo") or {}).get("prorrogacao") or {}).get("excepcional"):
+            f = A["prorrogacao_excepcional"]
+        else:
+            f = A["prorrogacao_escopo"] if pt.get("natureza") == "escopo" else A["prorrogacao"]
     elif chave == "supressao":
         x = (d.get("aditivo") or {}).get("supressao") or {}
         pct = num(x["percentual"]) if x.get("percentual") not in (None, "") else 0
@@ -373,7 +386,8 @@ def tipos_alteracao(d, lei, ini, fim, atual, avisos):
     if pr:
         m = int(pr.get("meses") or 0)
         prazo = meses_ext(m) if m else None
-        l = ["Prorrogação contratual por mais ", prazo or falta("__ meses"), ", de ", ini or falta("__/__/____"),
+        l = ["Prorrogação contratual " + ("excepcional " if pr.get("excepcional") else "") + "por mais ",
+             prazo or falta("__ meses"), ", de ", ini or falta("__/__/____"),
              " a ", fim or falta("__/__/____"), ", "]
         l.append("sem renovação do valor contratual (prorrogação em sentido estrito, apenas da vigência)"
                  if pr.get("modalidade") == "sem_valor" else "com renovação do valor contratual")
@@ -409,27 +423,45 @@ def motivos_sugeridos(d, lei, ini, fim, atual, novo, avisos):
     pr = ad.get("prorrogacao")
     if pr:
         m = int(pr.get("meses") or 0)
-        if escopo:
+        if pr.get("excepcional"):
+            just = str(pr.get("justificativa") or "").strip().rstrip(".")
+            abre = ["A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços "
+                    "contratados, essenciais ao atendimento das demandas da Contratante, tendo o contrato atingido o prazo "
+                    "máximo previsto no art. 57, inciso II, da Lei nº 8.666/1993, o que exige, em caráter excepcional, a "
+                    "sua prorrogação, ", just if just else falta("[justificar a excepcionalidade]"),
+                    ". O referido Termo Aditivo decorre da prorrogação excepcional do prazo de vigência da contratação "
+                    "por mais "]
+            if not just:
+                avisos.append("Item 9: justificar a prorrogação excepcional (aditivo.prorrogacao.justificativa).")
+            p = abre + [meses_ext(m) if m else falta("__ meses"), ", contemplando-se, nesta ocasião, o período de ",
+                        ini or falta("__/__/____"), " a ", fim or falta("__/__/____"), ", na forma do ",
+                        art_de("prorrogacao", d, lei), ", mediante justificativa e autorização da autoridade superior"]
+            p.append(", sem renovação do valor contratual." if pr.get("modalidade") == "sem_valor"
+                     else ", com renovação do valor contratual.")
+            out.append(p)
+            abre = None
+        elif escopo:
             abre = ("A celebração do presente Termo Aditivo justifica-se pela necessidade de conclusão do objeto "
                     "contratado, cuja execução ainda não foi finalizada, não sendo conveniente a sua interrupção. ")
         else:
             abre = ("A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços "
                     "contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo "
                     "conveniente a interrupção de sua execução. ")
-        p = [abre, "O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais ",
-             meses_ext(m) if m else falta("__ meses"), ", contemplando-se, nesta ocasião, o período de ",
-             ini or falta("__/__/____"), " a ", fim or falta("__/__/____"), ", na forma do ",
-             art_de("prorrogacao", d, lei), ", conforme previsto na "]
-        if cv:
-            p.append(cv)
-        else:
-            p.append(falta("CLÁUSULA ___, item ___ (cláusula de vigência)"))
-            avisos.append("Item 9: cláusula de vigência do contrato não informada (parecer_tecnico.clausula_vigencia) – "
-                          "ler no PDF do contrato.")
-        p.append(" do contrato")
-        p.append(", sem renovação do valor contratual." if pr.get("modalidade") == "sem_valor"
-                 else ", com renovação do valor contratual.")
-        out.append(p)
+        if abre is not None:
+            p = [abre, "O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais ",
+                 meses_ext(m) if m else falta("__ meses"), ", contemplando-se, nesta ocasião, o período de ",
+                 ini or falta("__/__/____"), " a ", fim or falta("__/__/____"), ", na forma do ",
+                 art_de("prorrogacao", d, lei), ", conforme previsto na "]
+            if cv:
+                p.append(cv)
+            else:
+                p.append(falta("CLÁUSULA ___, item ___ (cláusula de vigência)"))
+                avisos.append("Item 9: cláusula de vigência do contrato não informada (parecer_tecnico.clausula_vigencia) – "
+                              "ler no PDF do contrato.")
+            p.append(" do contrato")
+            p.append(", sem renovação do valor contratual." if pr.get("modalidade") == "sem_valor"
+                     else ", com renovação do valor contratual.")
+            out.append(p)
     rj = ad.get("reajuste")
     if rj:
         pct = pct_txt(rj.get("percentual"), 6)
@@ -480,7 +512,8 @@ def parecer_fiscal(d, lei, ini, fim, atual, novo):
     partes = []
     pr = ad.get("prorrogacao")
     if pr:
-        p = ["à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia ",
+        p = ["à prorrogação " + ("excepcional " if pr.get("excepcional") else "") +
+             "da vigência do contrato, cuja nova vigência passará a ser do dia ",
              ini or falta("__/__/____"), " até o dia ", fim or falta("__/__/____")]
         p.append(", em sentido estrito, sem renovação do valor contratual" if pr.get("modalidade") == "sem_valor"
                  else ", com renovação do valor contratual")
@@ -544,6 +577,59 @@ def itens_tabela(d, atual, novo, avisos):
         avisos.append(f"Item 10: a soma dos itens após o aditivo ({brl(soma_apos)}) difere do valor do termo "
                       f"({brl(novo)}) – conferir.")
     return itens
+
+
+def tabela_itens(doc, d, atual, novo, n_ta, ini, fim, meses, avisos, intro=None):
+    """Tabela ITEM | DESCRIÇÃO | VALOR ATUAL | VALOR APÓS O Xº TA | VALOR MENSAL (a mesma do Parecer e do Termo Aditivo)."""
+    pt = d.get("parecer_tecnico") or {}
+    pr = (d.get("aditivo") or {}).get("prorrogacao") or {}
+    itens = itens_tabela(d, atual, novo, avisos)
+    base = pt.get("base", "anual")
+    mostra_mensal = base == "anual" and not (pr and pr.get("modalidade") == "sem_valor")
+    if intro is None:
+        intro = "Cronograma físico-financeiro atualizado dos itens do contrato"
+        if ini and fim:
+            intro += f", para o período de {ini} a {fim}"
+        intro += ":"
+    if intro:
+        escrever(par(doc, after=4, junto=True), [intro])
+    cab = ["ITEM", "DESCRIÇÃO", "VALOR ATUAL (R$)", f"VALOR APÓS O {n_ta} TERMO ADITIVO (R$)"]
+    if mostra_mensal:
+        cab.append(f"VALOR MENSAL APÓS O {n_ta} TERMO ADITIVO (R$)")
+    t = doc.add_table(rows=1, cols=len(cab))
+    t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for c, txt in zip(t.rows[0].cells, cab):
+        celula(c, txt, True, WD_ALIGN_PARAGRAPH.CENTER, 8), sombrear(c)
+    R = WD_ALIGN_PARAGRAPH.RIGHT
+    tot_m = 0.0
+    for i in itens or [{"item": "___", "descricao": "___", "valor_atual": None, "valor_apos": None}]:
+        r = t.add_row().cells
+        celula(r[0], str(i.get("item") or ""), align=WD_ALIGN_PARAGRAPH.CENTER)
+        celula(r[1], str(i.get("descricao") or ""))
+        celula(r[2], brl(i["valor_atual"])[3:] if i.get("valor_atual") is not None else "___", align=R,
+               marca=i.get("valor_atual") is None)
+        celula(r[3], brl(i["valor_apos"])[3:] if i.get("valor_apos") is not None else "___", align=R,
+               marca=i.get("valor_apos") is None)
+        if mostra_mensal:
+            vm = round((i.get("valor_apos") or 0) / meses, 2) if i.get("valor_apos") is not None else None
+            tot_m += vm or 0
+            celula(r[4], brl(vm)[3:] if vm is not None else "___", align=R)
+    r = t.add_row().cells
+    r[0].merge(r[1])
+    celula(r[0], "TOTAL", True, R)
+    celula(r[2], brl(sum(i["valor_atual"] or 0 for i in itens))[3:] if itens else "___", True, R)
+    celula(r[3], brl(sum(i["valor_apos"] or 0 for i in itens))[3:] if itens else "___", True, R)
+    if mostra_mensal:
+        celula(r[4], brl(tot_m)[3:], True, R)
+    for c in r:
+        sombrear(c, "F2F2F2")
+    larguras(t, [1.3, 6.6, 3.0, 3.1, 3.0] if mostra_mensal else [1.3, 9.6, 3.1, 3.0])
+    manter_linhas(t)
+    if mostra_mensal:
+        p = par(doc, before=4, after=0)
+        escrever(p, [(f"Valor mensal = valor após o termo aditivo ÷ {meses} meses do novo período "
+                      "(execução mensal estimada).", {"italic": True})], size=9)
 
 
 # ================================================================ geração
@@ -708,50 +794,7 @@ def gerar(d, saida):
                 celula(c, str(v or "___"), align=WD_ALIGN_PARAGRAPH.CENTER)
         larguras(t, [5.0, 3.0, 3.0, 3.0, 3.0])
     else:
-        itens = itens_tabela(d, atual, novo, avisos)
-        base = pt.get("base", "anual")
-        mostra_mensal = base == "anual" and not (pr and pr.get("modalidade") == "sem_valor")
-        intro = "Cronograma físico-financeiro atualizado dos itens do contrato"
-        if ini and fim:
-            intro += f", para o período de {ini} a {fim}"
-        escrever(par(doc, after=4, junto=True), [intro + ":"])
-        cab = ["ITEM", "DESCRIÇÃO", "VALOR ATUAL (R$)", f"VALOR APÓS O {n_ta} TERMO ADITIVO (R$)"]
-        if mostra_mensal:
-            cab.append(f"VALOR MENSAL APÓS O {n_ta} TERMO ADITIVO (R$)")
-        t = doc.add_table(rows=1, cols=len(cab))
-        t.style = "Table Grid"
-        t.alignment = WD_TABLE_ALIGNMENT.CENTER
-        for c, txt in zip(t.rows[0].cells, cab):
-            celula(c, txt, True, WD_ALIGN_PARAGRAPH.CENTER, 8), sombrear(c)
-        R = WD_ALIGN_PARAGRAPH.RIGHT
-        tot_m = 0.0
-        for i in itens or [{"item": "___", "descricao": "___", "valor_atual": None, "valor_apos": None}]:
-            r = t.add_row().cells
-            celula(r[0], str(i.get("item") or ""), align=WD_ALIGN_PARAGRAPH.CENTER)
-            celula(r[1], str(i.get("descricao") or ""))
-            celula(r[2], brl(i["valor_atual"])[3:] if i.get("valor_atual") is not None else "___", align=R,
-                   marca=i.get("valor_atual") is None)
-            celula(r[3], brl(i["valor_apos"])[3:] if i.get("valor_apos") is not None else "___", align=R,
-                   marca=i.get("valor_apos") is None)
-            if mostra_mensal:
-                vm = round((i.get("valor_apos") or 0) / meses, 2) if i.get("valor_apos") is not None else None
-                tot_m += vm or 0
-                celula(r[4], brl(vm)[3:] if vm is not None else "___", align=R)
-        r = t.add_row().cells
-        r[0].merge(r[1])
-        celula(r[0], "TOTAL", True, R)
-        celula(r[2], brl(sum(i["valor_atual"] or 0 for i in itens))[3:] if itens else "___", True, R)
-        celula(r[3], brl(sum(i["valor_apos"] or 0 for i in itens))[3:] if itens else "___", True, R)
-        if mostra_mensal:
-            celula(r[4], brl(tot_m)[3:], True, R)
-        for c in r:
-            sombrear(c, "F2F2F2")
-        larguras(t, [1.3, 6.6, 3.0, 3.1, 3.0] if mostra_mensal else [1.3, 9.6, 3.1, 3.0])
-        manter_linhas(t)
-        if mostra_mensal:
-            p = par(doc, before=4, after=0)
-            escrever(p, [(f"Valor mensal = valor após o termo aditivo ÷ {meses} meses do novo período "
-                          "(execução mensal estimada).", {"italic": True})], size=9)
+        tabela_itens(doc, d, atual, novo, n_ta, ini, fim, meses, avisos)
     doc.paragraphs[-1].paragraph_format.space_after = Pt(12)
 
     # 11 – parecer do fiscal + assinaturas (juntos)

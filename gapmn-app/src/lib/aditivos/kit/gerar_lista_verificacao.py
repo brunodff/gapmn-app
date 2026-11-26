@@ -18,6 +18,7 @@ Itens condicionais (só entram quando se aplicam):
   18 Parecer(es) referencial(is) ........... um por parecer que fundamenta alguma alteração (pareceres.py)
   19 Atestado de adequação ................ UM só, citando todos os pareceres (se nenhuma alteração ficou sem parecer)
    4 Declaração de vantajosidade ........... só com prorrogação de vigência
+   5 Demonstrativo de Execução e Saldo ..... só com prorrogação de vigência (preenchido pelo fiscal)
   19 Memória de cálculo ........... reajuste = true
 A numeração é refeita na ordem acima, sem buracos.
 """
@@ -117,6 +118,11 @@ def itens_da_lista(d):
     add("disp_orcamentaria", [("Declaração de Disponibilidade Orçamentária.", False, False)])
     add("vantajosidade", [("Declaração quanto à vantajosidade da prorrogação contratual.", False, False)],
         tem_prorrogacao(d))                      # só quando há prorrogação de vigência
+    # Demonstrativo de Execução e Saldo do Período de Vigência (documento novo, 25/11/2026) – só com prorrogação
+    add("demonstrativo_saldo", [("Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela "
+                                 "fiscalização (notas de empenho do período, serviços executados pendentes de pagamento "
+                                 "e saldo a ser retirado do SILOMS e anulado no SIAFI).", False, False)],
+        tem_prorrogacao(d))
     add("parecer_tecnico", [("Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária.", False, False)])
     add("mapa_riscos", [("Mapa de Riscos para Termo Aditivo ", False, False),
                         ("(Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP).", False, True)])
@@ -125,8 +131,13 @@ def itens_da_lista(d):
                              "observando-se a " + d.get("norma_pesquisa_precos", "IN SEGES/ME nº 65/2021") + ", contendo os documentos "
                              "comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das "
                              "propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis.", False, True)])
-    add("calculadora", [("Calculadora do Cidadão ", False, False),
+    # com reajuste: comprovante do índice e, LOGO EM SEGUIDA, a Memória de Cálculo (pedido de 25/11/2026)
+    rj_ = (d.get("aditivo") or {}).get("reajuste") or {}
+    idx_ = str(rj_.get("indice") or (d.get("reajuste") or {}).get("indice") or "").strip()
+    fonte_ = ("FGV" if idx_.upper().startswith(("INCC", "IGP")) else "Calculadora do Cidadão (Banco Central do Brasil)")
+    add("calculadora", [(f"Comprovante do índice de reajuste{(' ' + idx_) if idx_ else ''} – {fonte_} ", False, False),
                         ("(consulta anexada ao Parecer Técnico).", False, True)], tem_reajuste(d))
+    add("memoria_calculo", [("Memória de Cálculo – Reajuste.", False, False)], tem_reajuste(d))
     add("bol_aci", [("Boletim de Designação do Agente de Controle Interno.", False, False)])
     add("bol_od", [("Boletim de Designação do Ordenador de Despesas.", False, False)])
     add("bol_fiscalizacao", [("Boletim de Designação da Fiscalização atualizado.", False, False)])
@@ -164,7 +175,6 @@ def itens_da_lista(d):
         import pareceres as P
         rot = "Atestado de adequação do processo " + P.citar(an["pareceres"])
         add("atestado_adequacao", [(rot + ".", False, False)])
-    add("memoria_calculo", [("Memória de Cálculo – Reajuste.", False, False)], tem_reajuste(d))
     return L
 
 def parecer_vencido(pr):

@@ -124,7 +124,7 @@ function Lista({ usuario, onAbrirAditivo }: { usuario: string | null; onAbrirAdi
         {!!aditivos?.length && (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[620px] text-left text-xs">
-              <thead className="text-[10.5px] uppercase text-slate-500"><tr><th className="p-1.5">Aditivo</th><th className="p-1.5">Contrato</th><th className="p-1.5">Situação</th><th className="p-1.5">Última alteração</th><th className="p-1.5" /></tr></thead>
+              <thead className="text-[10.5px] uppercase text-slate-500"><tr><th className="p-1.5">Aditivo</th><th className="p-1.5">Contrato</th><th className="p-1.5">Situação</th><th className="p-1.5">Salvo por</th><th className="p-1.5" /></tr></thead>
               <tbody>
                 {aditivos.map((l) => {
                   const c = nomeContrato.get(l.numero_contrato);
@@ -133,7 +133,7 @@ function Lista({ usuario, onAbrirAditivo }: { usuario: string | null; onAbrirAdi
                       <td className="p-1.5 font-semibold text-slate-800">{l.numero_aditivo ?? "?"}º TA</td>
                       <td className="p-1.5"><div className="text-slate-800">{c?.contrato ?? l.numero_contrato}</div><div className="max-w-[340px] truncate text-slate-500">{c?.empresa}{c?.objeto ? ` — ${c.objeto}` : ""}</div></td>
                       <td className="p-1.5"><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${l.situacao === "gerado" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>{l.situacao === "gerado" ? "documentos gerados" : "rascunho"}</span></td>
-                      <td className="p-1.5 text-slate-600">{new Date(l.atualizado_em).toLocaleString("pt-BR")}{l.atualizado_nome ? ` · ${l.atualizado_nome}` : ""}</td>
+                      <td className="p-1.5 text-slate-600">Salvo por <b>{l.atualizado_nome ?? "—"}</b> em {new Date(l.atualizado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td>
                       <td className="p-1.5 text-right whitespace-nowrap">
                         <button className={botao} onClick={() => onAbrirAditivo(l.id)}>Abrir</button>
                         <button className="ml-2 text-[11px] text-red-600 underline disabled:opacity-50" disabled={!!ocupado} onClick={() => (confirmar === l.id ? void apagar(l) : setConfirmar(l.id))} onBlur={() => setConfirmar(null)} title="Apaga este aditivo do site (os documentos já baixados não são afetados)">{ocupado === l.id ? "apagando…" : confirmar === l.id ? "clique de novo para apagar" : "apagar"}</button>

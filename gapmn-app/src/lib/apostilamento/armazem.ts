@@ -4,7 +4,11 @@ import { supabase } from "../supabase";
 import type { CargaGuardada } from "./carga";
 import type { DadosReajuste } from "./tipos";
 
-export interface RegistroCadastro { dados: DadosReajuste | null; dedicacao_exclusiva: boolean; versao: number | null; carga: CargaGuardada | null }
+export interface RegistroCadastro {
+  dados: DadosReajuste | null; dedicacao_exclusiva: boolean; versao: number | null; carga: CargaGuardada | null;
+  /** quem salvou por último e quando (revisão 7: "Salvo por … em …") */
+  atualizado_nome?: string | null; atualizado_em?: string | null;
+}
 export interface LinhaCadastro {
   numero_contrato: string; dados: DadosReajuste; reajustes_aplicados: number; dedicacao_exclusiva: boolean;
   situacao_cadastro: string; pendencias: string[];
@@ -19,11 +23,12 @@ export interface Armazem {
 export const armazemBanco: Armazem = {
   local: false,
   async carregar(numero) {
-    const { data, error } = await supabase.from("contratos_apostilamento").select("dados, dedicacao_exclusiva, versao, carga")
+    const { data, error } = await supabase.from("contratos_apostilamento").select("dados, dedicacao_exclusiva, versao, carga, atualizado_nome, atualizado_em")
       .eq("numero_contrato", numero).maybeSingle();
     if (error) return { registro: null, erro: error.message };
     if (!data) return { registro: null };
-    return { registro: { dados: (data.dados ?? null) as DadosReajuste | null, dedicacao_exclusiva: !!data.dedicacao_exclusiva, versao: data.versao, carga: (data.carga ?? null) as CargaGuardada | null } };
+    return { registro: { dados: (data.dados ?? null) as DadosReajuste | null, dedicacao_exclusiva: !!data.dedicacao_exclusiva, versao: data.versao, carga: (data.carga ?? null) as CargaGuardada | null,
+      atualizado_nome: (data.atualizado_nome as string | null) ?? null, atualizado_em: (data.atualizado_em as string | null) ?? null } };
   },
   async salvar(linha, versao, nomeUsuario) {
     const { data: s } = await supabase.auth.getSession();
@@ -50,7 +55,8 @@ export function armazemNavegador(ug: string): Armazem {
     async carregar(numero) {
       try {
         const s = localStorage.getItem(chave(numero));
-        return { registro: s ? (JSON.parse(s) as RegistroCadastro) : null };
+        const r = s ? (JSON.parse(s) as RegistroCadastro & { salvo_em?: string }) : null;
+        return { registro: r ? { ...r, atualizado_em: r.atualizado_em ?? r.salvo_em ?? null } : null };
       } catch { return { registro: null, erro: "o navegador não deixou ler o que foi guardado" }; }
     },
     async salvar(linha, versao) {

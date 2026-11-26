@@ -23,7 +23,7 @@ const doKit = (nome) => [...origens].reverse().map((o) => path.join(o, "kit", no
 
 const ARQUIVOS = [
   "pareceres.py", "gerar_lista_verificacao.py", "gerar_declaracao_orcamentaria.py", "gerar_declaracao_vantajosidade.py",
-  "gerar_parecer_tecnico.py",
+  "gerar_parecer_tecnico.py", "gerar_demonstrativo_saldo.py", "gerar_termo_aditivo.py",
   "gerar_mapa_riscos.py", "gerar_pesquisa_precos.py", "gerar_ficha_autorizacao.py", "gerar_atestado_adequacao.py",
   "montar_zip.py", "verificar_sicaf.py", "consultar_regularidade.py", "biblioteca_riscos.json", "biblioteca_pareceres.json",
   "brasao.png",

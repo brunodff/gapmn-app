@@ -1,5 +1,5 @@
 {
- "hoje": "2026-11-25",
+ "hoje": "2026-11-26",
  "exemplos": [
   {
    "nome": "BAMN_sem_valor_supressao",
@@ -93,6 +93,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -181,6 +185,65 @@
       "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
       "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
      ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Supressão de 30,50% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir.",
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Dotação: 'Gestão/Unidade' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Fonte de Recursos' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Programa de Trabalho' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Plano Interno' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Natureza de Despesa' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 001/GAPMN-BAMN/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "BASE AÉREA DE MANAUS",
+      "MINUTA",
+      "TERMO ADITIVO nº ___/____",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 001/GAPMN-BAMN/2025, QUE FAZEM ENTRE SI A BASE AÉREA DE MANAUS E A EMPRESA ___.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pela BASE AÉREA DE MANAUS, com sede na [endereço da unidade], inscrita no CNPJ sob o nº [CNPJ], neste ato representada pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominada CONTRATANTE, e a ___, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação e supressão, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 001/GAPMN-BAMN/2025 por mais 6 (seis) meses, passando de 15/02/2027 até o dia 14/08/2027, sem renovação do valor contratual (apenas da vigência), com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. SUPRIMIR 30,50% do valor inicial atualizado do contrato, no valor de R$ 120.000,00 (cento e vinte mil reais), referente a redução de 2 postos, mediante acordo entre as partes, com fundamento no art. 124, inciso II, alínea \"a\", da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 2.280.000,00 (dois milhões, duzentos e oitenta mil reais).",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2027, na classificação abaixo:",
+      "Gestão/Unidade: ___",
+      "Fonte de Recursos: ___",
+      "Programa de Trabalho: ___",
+      "Plano Interno: ___",
+      "Natureza de Despesa: ___",
+      "Nota de Empenho: ____NE______",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno da BAMN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas da BAMN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": true
     }
    }
   },
@@ -341,6 +404,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -430,6 +497,58 @@
       "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
       "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
      ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t4º Termo Aditivo ao Contrato de Despesa nº 020/GAPMN/2022",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº ___/____",
+      "QUARTO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 020/GAPMN/2022, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA ___.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a ___, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000000/2022-00 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação e acréscimo, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 020/GAPMN/2022 por mais 12 (doze) meses, passando de 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. ACRESCER 25,00% do valor inicial atualizado do contrato, no valor de R$ 21.464,01 (vinte e um mil, quatrocentos e sessenta e quatro reais e um centavo), referente a ampliação das linhas, com fundamento no art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 107.320,04 (cento e sete mil, trezentos e vinte reais e quatro centavos).",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
     }
    }
   },
@@ -589,6 +708,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -602,7 +725,11 @@
      },
      {
       "chave": "calculadora",
-      "texto": "Calculadora do Cidadão (consulta anexada ao Parecer Técnico)."
+      "texto": "Comprovante do índice de reajuste IPCA – Calculadora do Cidadão (Banco Central do Brasil) (consulta anexada ao Parecer Técnico)."
+     },
+     {
+      "chave": "memoria_calculo",
+      "texto": "Memória de Cálculo – Reajuste."
      },
      {
       "chave": "bol_aci",
@@ -635,10 +762,6 @@
      {
       "chave": "parecer_referencial",
       "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
-     },
-     {
-      "chave": "memoria_calculo",
-      "texto": "Memória de Cálculo – Reajuste."
      }
     ],
     "objeto": "I - Prorrogar o Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Reajustar o Contrato nº 010/GAPMN-2GDAAE/2025, conforme índice IPCA (4,724910%);\nIII - Acrescer o valor do Contrato nº 010/GAPMN-2GDAAE/2025 em R$ 336.000,00 – 32,00%, referente a ampliação do serviço.",
@@ -694,6 +817,68 @@
       "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato.",
       "Acréscimo de 32.00% passa do limite de 25% (art. 125 da Lei nº 14.133/2021) – só reforma permite 50% (Lei 14.133) – conferir; o aditivo vai para a CJU."
      ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Acréscimo de 32,00% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir.",
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 010/GAPMN-2GDAAE/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "MINUTA",
+      "TERMO ADITIVO nº ___/____",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 010/GAPMN-2GDAAE/2025, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA ___.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a ___, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, reajuste e acréscimo, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, passando de 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. REAJUSTAR os preços do contrato em 4,724910%, conforme índice IPCA, sobre o valor anual do contrato, passando de R$ 1.050.000,00 (um milhão e cinquenta mil reais) para R$ 1.099.612,56 (um milhão, noventa e nove mil, seiscentos e doze reais e cinquenta e seis centavos), com fundamento no art. 92, § 4º, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.3. ACRESCER 32,00% do valor inicial atualizado do contrato, no valor de R$ 336.000,00 (trezentos e trinta e seis mil reais), referente a ampliação do serviço, com fundamento no art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 1.435.612,56 (um milhão, quatrocentos e trinta e cinco mil, seiscentos e doze reais e cinquenta e seis centavos).",
+      "3. CLÁUSULA TERCEIRA – VALORES DOS ITENS (CRONOGRAMA FÍSICO-FINANCEIRO)",
+      "3.1. Em decorrência do reajuste, os valores dos itens do contrato passam a ser os seguintes:",
+      "ITEM | DESCRIÇÃO | VALOR ATUAL (R$) | VALOR APÓS O 1º TERMO ADITIVO (R$) | VALOR MENSAL APÓS O 1º TERMO ADITIVO (R$)",
+      "___",
+      "TOTAL | ___ | 0,00",
+      "Valor mensal = valor após o termo aditivo ÷ 12 meses do novo período (execução mensal estimada).",
+      "4. CLÁUSULA QUARTA – DOTAÇÃO ORÇAMENTÁRIA",
+      "4.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "5. CLÁUSULA QUINTA – GARANTIA DE EXECUÇÃO",
+      "5.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "5.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "6. CLÁUSULA SEXTA – RATIFICAÇÃO",
+      "6.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "7. CLÁUSULA SÉTIMA – PUBLICAÇÃO",
+      "7.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "7.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": true
     }
    }
   },
@@ -936,6 +1121,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -949,7 +1138,11 @@
      },
      {
       "chave": "calculadora",
-      "texto": "Calculadora do Cidadão (consulta anexada ao Parecer Técnico)."
+      "texto": "Comprovante do índice de reajuste IPCA – Calculadora do Cidadão (Banco Central do Brasil) (consulta anexada ao Parecer Técnico)."
+     },
+     {
+      "chave": "memoria_calculo",
+      "texto": "Memória de Cálculo – Reajuste."
      },
      {
       "chave": "bol_aci",
@@ -990,10 +1183,6 @@
      {
       "chave": "atestado_adequacao",
       "texto": "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00004/2024/CGSEM/SCGP/CGU/AGU e nº 00006/2025/CONSER/SCGP/CGU/AGU."
-     },
-     {
-      "chave": "memoria_calculo",
-      "texto": "Memória de Cálculo – Reajuste."
      }
     ],
     "objeto": "I - Prorrogar o Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Reajustar o Contrato nº 010/GAPMN-2GDAAE/2025, conforme índice IPCA (4,724910%);\nIII - Acrescer o valor do Contrato nº 010/GAPMN-2GDAAE/2025 em R$ 105.000,00 – 10,00%, referente a inclusão de 1 posto de atendimento.",
@@ -1046,6 +1235,66 @@
       "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
       "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
      ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 010/GAPMN-2GDAAE/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº ___/____",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 010/GAPMN-2GDAAE/2025, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA ___.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a ___, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, reajuste e acréscimo, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, passando de 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. REAJUSTAR os preços do contrato em 4,724910%, conforme índice IPCA, sobre o valor anual do contrato, passando de R$ 1.050.000,00 (um milhão e cinquenta mil reais) para R$ 1.099.612,56 (um milhão, noventa e nove mil, seiscentos e doze reais e cinquenta e seis centavos), com fundamento no art. 92, § 4º, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.3. ACRESCER 10,00% do valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), referente a inclusão de 1 posto de atendimento, com fundamento no art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos).",
+      "3. CLÁUSULA TERCEIRA – VALORES DOS ITENS (CRONOGRAMA FÍSICO-FINANCEIRO)",
+      "3.1. Em decorrência do reajuste, os valores dos itens do contrato passam a ser os seguintes:",
+      "ITEM | DESCRIÇÃO | VALOR ATUAL (R$) | VALOR APÓS O 1º TERMO ADITIVO (R$) | VALOR MENSAL APÓS O 1º TERMO ADITIVO (R$)",
+      "___",
+      "TOTAL | ___ | 0,00",
+      "Valor mensal = valor após o termo aditivo ÷ 12 meses do novo período (execução mensal estimada).",
+      "4. CLÁUSULA QUARTA – DOTAÇÃO ORÇAMENTÁRIA",
+      "4.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "5. CLÁUSULA QUINTA – GARANTIA DE EXECUÇÃO",
+      "5.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "5.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "6. CLÁUSULA SEXTA – RATIFICAÇÃO",
+      "6.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "7. CLÁUSULA SÉTIMA – PUBLICAÇÃO",
+      "7.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "7.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
     }
    }
   },
@@ -1105,6 +1354,10 @@
      {
       "chave": "vantajosidade",
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
      },
      {
       "chave": "parecer_tecnico",
@@ -1177,7 +1430,9 @@
       "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
       "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
      ]
-    }
+    },
+    "demonstrativo": null,
+    "termo": null
    }
   },
   {
@@ -1297,6 +1552,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -1400,6 +1659,64 @@
      "avisos": [
       "Supressão de 30,50% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir."
      ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Supressão de 30,50% passa de 25% (art. 125 da Lei 14.133/2021; 50% só para reforma) – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Dotação: 'Gestão/Unidade' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Fonte de Recursos' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Programa de Trabalho' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Plano Interno' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Natureza de Despesa' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 001/GAPMN-BAMN/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "BASE AÉREA DE MANAUS",
+      "MINUTA",
+      "TERMO ADITIVO nº ___/____",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 001/GAPMN-BAMN/2025, QUE FAZEM ENTRE SI A BASE AÉREA DE MANAUS E A EMPRESA EMPRESA EXEMPLO LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pela BASE AÉREA DE MANAUS, com sede na [endereço da unidade], inscrita no CNPJ sob o nº [CNPJ], neste ato representada pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominada CONTRATANTE, e a EMPRESA EXEMPLO LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação e supressão, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 001/GAPMN-BAMN/2025 por mais 6 (seis) meses, passando de 15/02/2027 até o dia 14/08/2027, sem renovação do valor contratual (apenas da vigência), com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. SUPRIMIR 30,50% do valor inicial atualizado do contrato, no valor de R$ 120.000,00 (cento e vinte mil reais), referente a redução de 2 postos, mediante acordo entre as partes, com fundamento no art. 124, inciso II, alínea \"a\", da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 2.280.000,00 (dois milhões, duzentos e oitenta mil reais).",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2027, na classificação abaixo:",
+      "Gestão/Unidade: ___",
+      "Fonte de Recursos: ___",
+      "Programa de Trabalho: ___",
+      "Plano Interno: ___",
+      "Natureza de Despesa: ___",
+      "Nota de Empenho: ____NE______",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno da BAMN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas da BAMN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": true
     }
    }
   },
@@ -1604,6 +1921,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -1719,6 +2040,57 @@
       "Item 5: falta o valor do contrato inicial – preencher.",
       "Item 5: falta o valor do contrato depois do 3º Termo Aditivo – preencher."
      ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t5º Termo Aditivo ao Contrato de Despesa nº 020/GAPMN/2022",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº ___/____",
+      "QUINTO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 020/GAPMN/2022, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA CLARO S.A..",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a CLARO S.A., inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.002600/2022-17 e em observância às disposições da Lei nº 8.666, de 21 de junho de 1993, da Lei de Diretrizes Orçamentárias vigente e do Decreto nº 7.983, de 8 de abril de 2013, resolvem celebrar o presente Termo Aditivo de prorrogação e acréscimo, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 020/GAPMN/2022 por mais 12 (doze) meses, passando de 29/10/2027 até o dia 28/10/2028, com renovação do valor contratual, com fundamento no art. 57, inciso II, da Lei nº 8.666, de 21 de junho de 1993.",
+      "1.2. ACRESCER 25,00% do valor inicial atualizado do contrato, no valor de R$ 21.464,01 (vinte e um mil, quatrocentos e sessenta e quatro reais e um centavo), referente a acrescentar 15 linhas telefônicas, com fundamento no art. 65, inciso I, alínea \"b\", e § 1º, da Lei nº 8.666, de 21 de junho de 1993.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 107.320,04 (cento e sete mil, trezentos e vinte reais e quatro centavos).",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2027/2028, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto no art. 56 da Lei nº 8.666, de 1993, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE providenciar a publicação deste instrumento, por extrato, no Diário Oficial da União, de acordo com o prescrito no artigo 61, parágrafo único, da Lei nº 8.666, de 1993.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
     }
    }
   },
@@ -1967,6 +2339,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -2063,6 +2439,56 @@
      "itens": [],
      "valor_novo_extenso": "R$ 1.050.000,00 (um milhão e cinquenta mil reais)",
      "avisos": []
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 010/GAPMN-2GDAAE/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº ___/____",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 010/GAPMN-2GDAAE/2025, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA SYSTEMSCOPY LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a SYSTEMSCOPY LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 010/GAPMN-2GDAAE/2025 por mais 6 (seis) meses, passando de 01/03/2027 até o dia 31/08/2027, sem renovação do valor contratual (apenas da vigência), com fundamento no art. 111, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O presente Termo Aditivo não altera o valor do contrato, cuja vigência é prorrogada sem renovação do valor contratual.",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
     }
    }
   },
@@ -2331,6 +2757,10 @@
       "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
      },
      {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
       "chave": "parecer_tecnico",
       "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
      },
@@ -2344,7 +2774,11 @@
      },
      {
       "chave": "calculadora",
-      "texto": "Calculadora do Cidadão (consulta anexada ao Parecer Técnico)."
+      "texto": "Comprovante do índice de reajuste IPCA – Calculadora do Cidadão (Banco Central do Brasil) (consulta anexada ao Parecer Técnico)."
+     },
+     {
+      "chave": "memoria_calculo",
+      "texto": "Memória de Cálculo – Reajuste."
      },
      {
       "chave": "bol_aci",
@@ -2385,10 +2819,6 @@
      {
       "chave": "atestado_adequacao",
       "texto": "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00004/2024/CGSEM/SCGP/CGU/AGU e nº 00006/2025/CONSER/SCGP/CGU/AGU."
-     },
-     {
-      "chave": "memoria_calculo",
-      "texto": "Memória de Cálculo – Reajuste."
      }
     ],
     "objeto": "I - Prorrogar o Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Reajustar o Contrato nº 010/GAPMN-2GDAAE/2025, conforme índice IPCA (4,724910%);\nIII - Acrescer o valor do Contrato nº 010/GAPMN-2GDAAE/2025 em R$ 105.000,00 – 10,00%, referente a inclusão de 1 posto de atendimento.",
@@ -2454,6 +2884,2558 @@
      ],
      "valor_novo_extenso": "R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos)",
      "avisos": []
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 010/GAPMN-2GDAAE/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº ___/____",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 010/GAPMN-2GDAAE/2025, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA SYSTEMSCOPY LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a SYSTEMSCOPY LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, reajuste e acréscimo, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, passando de 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. REAJUSTAR os preços do contrato em 4,724910%, conforme índice IPCA, sobre o valor anual do contrato, passando de R$ 1.050.000,00 (um milhão e cinquenta mil reais) para R$ 1.099.612,56 (um milhão, noventa e nove mil, seiscentos e doze reais e cinquenta e seis centavos), com fundamento no art. 92, § 4º, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.3. ACRESCER 10,00% do valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), referente a inclusão de 1 posto de atendimento, com fundamento no art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos).",
+      "3. CLÁUSULA TERCEIRA – VALORES DOS ITENS (CRONOGRAMA FÍSICO-FINANCEIRO)",
+      "3.1. Em decorrência do reajuste, os valores dos itens do contrato passam a ser os seguintes:",
+      "ITEM | DESCRIÇÃO | VALOR ATUAL (R$) | VALOR APÓS O 1º TERMO ADITIVO (R$) | VALOR MENSAL APÓS O 1º TERMO ADITIVO (R$)",
+      "1 | Locação de impressora multifuncional monocromática A4 | 630.000,00 | 722.767,54 | 60.230,63",
+      "2 | Locação de impressora multifuncional colorida A3 | 420.000,00 | 481.845,02 | 40.153,75",
+      "TOTAL | 1.050.000,00 | 1.204.612,56 | 100.384,38",
+      "Valor mensal = valor após o termo aditivo ÷ 12 meses do novo período (execução mensal estimada).",
+      "4. CLÁUSULA QUARTA – DOTAÇÃO ORÇAMENTÁRIA",
+      "4.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "5. CLÁUSULA QUINTA – GARANTIA DE EXECUÇÃO",
+      "5.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "5.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "6. CLÁUSULA SEXTA – RATIFICAÇÃO",
+      "6.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "7. CLÁUSULA SÉTIMA – PUBLICAÇÃO",
+      "7.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "7.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
+    }
+   }
+  },
+  {
+   "nome": "BAMN_043-2021_2TA_excepcional_MINUTA (reproducao do modelo)",
+   "dados": {
+    "contrato": "043/BAMN/2021",
+    "numero_aditivo": 2,
+    "pag": "67292.006089/2021-93",
+    "lei": "8666",
+    "tipo_contrato": "Despesa",
+    "licitacao": "Pregão nº 07/2020",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do",
+     "endereco": "Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177",
+     "cidade": "Manaus",
+     "ordenador": {
+      "nome": "NOME DO ORDENADOR",
+      "posto": "CEL INT",
+      "feminino": true,
+      "portaria": "PORTARIA nº 0000/GC1, de 1º de janeiro de 2025",
+      "publicacao": "BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025",
+      "matricula": "0000000"
+     }
+    },
+    "contratada": {
+     "nome": "AUTOPEL AUTOMAÇÃO COMERCIAL E INFORMÁTICA LTDA",
+     "endereco": "na Rua do Exemplo, 100, em Manaus-AM",
+     "representante": "REPRESENTANTE DA EMPRESA",
+     "representante_feminino": true
+    },
+    "objeto_contrato": "Serviços de outsourcing de impressão",
+    "valor_atual": 274849.3,
+    "valor_novo": 274849.3,
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "excepcional": true,
+      "meses": 6,
+      "inicio": "04/12/2026",
+      "fim": "04/06/2027",
+      "justificativa": "até a conclusão da nova contratação"
+     },
+     "reajuste": null,
+     "acrescimo": null,
+     "supressao": null
+    },
+    "pareceres_referenciais": [],
+    "empenho": {
+     "numero": "2026NE000554",
+     "gestao_unidade": "00001/120630",
+     "fonte": "1000000000",
+     "programa_trabalho": "228789",
+     "acao": null,
+     "plano_interno": "D0000420000",
+     "natureza_despesa": "339039",
+     "exercicio": 2026
+    },
+    "termo_aditivo": {
+     "numero": "001/2026",
+     "preco_complemento": "valor referente a 6 meses de vigência do contrato",
+     "garantia": {
+      "exige": true,
+      "percentual": 0.75,
+      "base": "termo"
+     }
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao"
+     ],
+     "pareceres": [],
+     "vencidos": [],
+     "descobertas": [
+      "prorrogação excepcional (art. 57, § 4º, da Lei nº 8.666/1993 – exige análise jurídica)"
+     ],
+     "vai_para_cju": true
+    },
+    "observacao_parecer": "não há parecer referencial vigente para este aditivo (prorrogação excepcional (art. 57, § 4º, da Lei nº 8.666/1993 – exige análise jurídica)); o termo aditivo deve ser submetido à análise jurídica",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     }
+    ],
+    "objeto": "I - Prorrogar excepcionalmente o Contrato nº 043/BAMN/2021 por mais 6 (seis) meses, com renovação do valor contratual.",
+    "valor_atual": 274849.3,
+    "valor_novo": 274849.3,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": false,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "parecer"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "os serviços de outsourcing de impressão",
+    "parecer": {
+     "lei": "8666",
+     "inicio": "04/12/2026",
+     "fim": "04/06/2027",
+     "valor_atual": 274849.3,
+     "valor_novo": 274849.3,
+     "historico": [],
+     "enquadramento": "art. 57, § 4º, da Lei nº 8.666/1993",
+     "tipos": [
+      "Prorrogação contratual excepcional por mais 6 (seis) meses, de 04/12/2026 a 04/06/2027, com renovação do valor contratual"
+     ],
+     "motivos": [
+      "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, essenciais ao atendimento das demandas da Contratante, tendo o contrato atingido o prazo máximo previsto no art. 57, inciso II, da Lei nº 8.666/1993, o que exige, em caráter excepcional, a sua prorrogação, até a conclusão da nova contratação. O referido Termo Aditivo decorre da prorrogação excepcional do prazo de vigência da contratação por mais 6 (seis) meses, contemplando-se, nesta ocasião, o período de 04/12/2026 a 04/06/2027, na forma do art. 57, § 4º, da Lei nº 8.666/1993, mediante justificativa e autorização da autoridade superior, com renovação do valor contratual."
+     ],
+     "parecer_fiscal": "A fiscalização do contrato atesta que a contratada vem cumprindo regularmente suas obrigações contratuais, exercendo suas atividades de forma satisfatória e prestando os serviços a contento da Administração. Diante disso, considerando o interesse da Administração na continuidade da prestação dos serviços, bem como a vantajosidade da manutenção da contratação, esta Fiscalização manifesta-se favoravelmente à prorrogação excepcional da vigência do contrato, cuja nova vigência passará a ser do dia 04/12/2026 até o dia 04/06/2027, com renovação do valor contratual, nos termos do art. 57, § 4º, da Lei nº 8.666/1993.",
+     "itens": [],
+     "valor_novo_extenso": "R$ 274.849,30 (duzentos e setenta e quatro mil, oitocentos e quarenta e nove reais e trinta centavos)",
+     "avisos": [
+      "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
+      "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
+     ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Endereço/CNPJ da unidade não cadastrados (Configurações)."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t2º Termo Aditivo ao Contrato de Despesa nº 043/BAMN/2021",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "MINUTA",
+      "TERMO ADITIVO nº 001/2026",
+      "SEGUNDO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 043/BAMN/2021, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA AUTOPEL AUTOMAÇÃO COMERCIAL E INFORMÁTICA LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177, inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, a Sra. NOME DO ORDENADOR CEL INT, nomeada pela PORTARIA nº 0000/GC1, de 1º de janeiro de 2025, publicada no BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025, portadora da Matrícula Funcional nº 0000000, doravante denominado CONTRATANTE, e a AUTOPEL AUTOMAÇÃO COMERCIAL E INFORMÁTICA LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada na Rua do Exemplo, 100, em Manaus-AM, doravante designada CONTRATADA, neste ato representada pela Sra. REPRESENTANTE DA EMPRESA, tendo em vista o que consta no Processo nº 67292.006089/2021-93 e em observância às disposições da Lei nº 8.666, de 21 de junho de 1993, da Lei de Diretrizes Orçamentárias vigente e do Decreto nº 7.983, de 8 de abril de 2013, resolvem celebrar o presente Termo Aditivo de prorrogação excepcional, decorrente do Pregão nº 07/2020, mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR de forma EXCEPCIONAL o prazo de vigência do Contrato nº 043/BAMN/2021 por mais 6 (seis) meses, passando de 04/12/2026 até o dia 04/06/2027, com renovação do valor contratual, com fundamento no art. 57, § 4º, da Lei nº 8.666, de 21 de junho de 1993.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 274.849,30 (duzentos e setenta e quatro mil, oitocentos e quarenta e nove reais e trinta centavos), valor referente a 6 meses de vigência do contrato.",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026/2027, na classificação abaixo:",
+      "Gestão/Unidade: 00001/120630",
+      "Fonte de Recursos: 1000000000",
+      "Programa de Trabalho: 228789",
+      "Plano Interno: D0000420000",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000554",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ 2.061,37 (dois mil e sessenta e um reais e trinta e sete centavos), correspondente a 0,75% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto no art. 56 da Lei nº 8.666, de 1993, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE providenciar a publicação deste instrumento, por extrato, no Diário Oficial da União, de acordo com o prescrito no artigo 61, parágrafo único, da Lei nº 8.666, de 1993.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\nREPRESENTANTE DA EMPRESA\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": true
+    }
+   }
+  },
+  {
+   "nome": "CLARO_020-GAPMN-2022_5TA (prorrogacao + acrescimo, 8666)",
+   "dados": {
+    "contrato": "020/GAPMN/2022",
+    "pag": "67298.002600/2022-17",
+    "om_nome": "Grupamento de Apoio de Manaus",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do",
+     "endereco": "Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177",
+     "cidade": "Manaus",
+     "ordenador": {
+      "nome": "NOME DO ORDENADOR",
+      "posto": "CEL INT",
+      "feminino": true,
+      "portaria": "PORTARIA nº 0000/GC1, de 1º de janeiro de 2025",
+      "publicacao": "BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025",
+      "matricula": "0000000"
+     }
+    },
+    "numero_aditivo": 5,
+    "objeto_contrato": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA PRESTAÇÃO DE SERVIÇO MÓVEL PESSOAL - SMP",
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "29/10/2027",
+      "fim": "28/10/2028"
+     },
+     "reajuste": null,
+     "acrescimo": {
+      "valor": 21464.01,
+      "percentual": 25,
+      "descricao": "acrescentar 15 linhas telefônicas"
+     },
+     "supressao": null
+    },
+    "valor_atual": 85856.03,
+    "pareceres_referenciais": [
+     {
+      "numero": "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU",
+      "objeto": "Prorrogação do prazo de vigência de contratos de serviços contínua sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 8.666/93. PARECER n. 00002/2024/COORD/E-CJU/SSEM/CGU/AGU, substituído pelo PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU, conforme DESPACHO Nº 00018/2026/CONSER/SCGP/CGU/AGU constante do NUP 00688.000881/2020-39",
+      "data": "27/09/2023",
+      "validade": "27/09/2027",
+      "cobre": [
+       "prorrogacao"
+      ]
+     },
+     {
+      "numero": "PARECER REFERENCIAL n. 00002/2023/CGSEM/SCGP/CGU/AGU",
+      "objeto": "alteração unilateral de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com fundamento no art. 65, inc. I, da Lei n. 8.666/93",
+      "data": "03/11/2023",
+      "validade": "03/11/2027",
+      "cobre": [
+       "acrescimo"
+      ]
+     }
+    ],
+    "nao_anexados": {},
+    "riscos": [
+     {
+      "nome": "Empresa não manter as condições de habilitação",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Dar causa à rescisão contratual em caso de não manutenção da regularidade fiscal e trabalhista.",
+      "acao_preventiva": "Mensalmente, a fiscalização fará consultas ao SICAF para acompanhar a situação da empresa.",
+      "acao_contingencia": "Notificar a empresa contratada sempre que ela estiver inadimplente quanto às regularidades fiscal, trabalhista e previdenciária, para que a situação seja regularizada."
+     },
+     {
+      "nome": "Prestação do serviço de forma inadequada ou descontinuada",
+      "probabilidade": "baixa",
+      "impacto": "medio",
+      "dano": "Prejuízo às atividades da OM atendida pelo serviço.",
+      "acao_preventiva": "Acompanhamento contínuo da execução, com registro das ocorrências no relatório de fiscalização.",
+      "acao_contingencia": "Contatar o preposto da empresa para regularização imediata e, persistindo a falha, notificar a empresa e propor a abertura de processo de apuração."
+     },
+     {
+      "nome": "Termo aditivo não ser assinado antes do fim da vigência",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Encerramento do contrato e interrupção do serviço, com necessidade de nova contratação.",
+      "acao_preventiva": "Iniciar a instrução do aditivo com antecedência e acompanhar os prazos do subprocesso.",
+      "acao_contingencia": "Comunicar de imediato à SCON e ao Ordenador de Despesas para priorizar a análise e a assinatura."
+     }
+    ],
+    "empenho": {
+     "numero": "2026NE000000",
+     "gestao_unidade": "120630",
+     "fonte": "1050000140",
+     "programa_trabalho": "168919",
+     "acao": null,
+     "plano_interno": "A0630340600",
+     "natureza_despesa": "339039",
+     "exercicio": 2026
+    },
+    "vantajosidade": {
+     "motivos": [
+      "Os preços praticados no mercado encontram-se mais caros do que os preços do contrato atual vigente."
+     ],
+     "objeto": null
+    },
+    "lei": "8666",
+    "contratada": {
+     "nome": "CLARO S.A.",
+     "endereco": "na Rua do Exemplo, 100, em Manaus-AM",
+     "representante": "REPRESENTANTE DA EMPRESA"
+    },
+    "objeto_resumido": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA PRESTAÇÃO DE SERVIÇO MÓVEL PESSOAL - SMP",
+    "historico": [
+     {
+      "documento": "Contrato inicial",
+      "valor": null
+     },
+     {
+      "documento": "1º Termo Aditivo",
+      "data": "21/09/2023",
+      "valor": 146143.3
+     },
+     {
+      "documento": "2º Termo Aditivo",
+      "valor": 146730.79
+     },
+     {
+      "documento": "3º Termo Aditivo",
+      "valor": null
+     },
+     {
+      "documento": "4º Termo Aditivo",
+      "data": "27/10/2026",
+      "valor": 85856.03
+     }
+    ],
+    "itens": [
+     {
+      "item": "1",
+      "descricao": "PACOTE DE SERVIÇOS SMP (VOZ, DADOS, SMS, ETC)",
+      "valor_atual": 85856.03
+     }
+    ],
+    "parecer_tecnico": {
+     "numero": null,
+     "clausula_vigencia": null,
+     "natureza": "continuado",
+     "base": "anual"
+    },
+    "termo_aditivo": {
+     "numero": null,
+     "garantia": {
+      "exige": null
+     }
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao",
+      "acrescimo"
+     ],
+     "pareceres": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 8.666/1993, com ou sem pedido de reajuste.",
+       "data": "27/09/2023",
+       "validade": "27/09/2027",
+       "cobre": [
+        "prorrogacao"
+       ],
+       "limite_percentual": null,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_1_2023_1a5f42.pdf",
+       "fonte_objeto": "Ementa e conclusão (item 9) do parecer",
+       "fundamenta": [
+        "prorrogacao"
+       ],
+       "motivo_texto": "Fundamenta a prorrogação de vigência deste termo aditivo."
+      },
+      {
+       "numero": "PARECER REFERENCIAL n. 00002/2023/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Alteração contratual unilateral fundamentada no art. 65, inciso I, da Lei nº 8.666/1993, em contratos de serviços continuados sem dedicação exclusiva de mão de obra: acréscimos ou supressões que o contratado fica obrigado a aceitar, nas mesmas condições contratuais, até o limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 65, § 1º).",
+       "data": "03/11/2023",
+       "validade": "03/11/2027",
+       "cobre": [
+        "acrescimo"
+       ],
+       "limite_percentual": 25,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_2_2023.pdf",
+       "fonte_objeto": "Ementa e item 4.1, alínea \"g\", do parecer",
+       "fundamenta": [
+        "acrescimo"
+       ],
+       "motivo_texto": "Fundamenta o acréscimo deste termo aditivo."
+      }
+     ],
+     "vencidos": [],
+     "descobertas": [],
+     "vai_para_cju": false
+    },
+    "observacao_parecer": null,
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00001/2023/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 8.666/1993, com ou sem pedido de reajuste.\nVigência: de 27/09/2023, válido até 27/09/2027.\nMotivo: Fundamenta a prorrogação de vigência deste termo aditivo."
+     },
+     {
+      "chave": "parecer_referencial_2",
+      "texto": "PARECER REFERENCIAL n. 00002/2023/CGSEM/SCGP/CGU/AGU\nObjeto: Alteração contratual unilateral fundamentada no art. 65, inciso I, da Lei nº 8.666/1993, em contratos de serviços continuados sem dedicação exclusiva de mão de obra: acréscimos ou supressões que o contratado fica obrigado a aceitar, nas mesmas condições contratuais, até o limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 65, § 1º).\nVigência: de 03/11/2023, válido até 03/11/2027.\nMotivo: Fundamenta o acréscimo deste termo aditivo."
+     },
+     {
+      "chave": "atestado_adequacao",
+      "texto": "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00001/2023/CGSEM/SCGP/CGU/AGU e nº 00002/2023/CGSEM/SCGP/CGU/AGU."
+     }
+    ],
+    "objeto": "I - Prorrogar o Contrato nº 020/GAPMN/2022 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Acrescer o valor do Contrato nº 020/GAPMN/2022 em R$ 21.464,01 – 25,00%, referente a acrescentar 15 linhas telefônicas.",
+    "valor_atual": 85856.03,
+    "valor_novo": 107320.04,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": false,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "vantajosidade",
+     "parecer",
+     "mapa",
+     "atestado"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "a contratação de empresa especializada para prestação de serviço móvel pessoal - smp",
+    "parecer": {
+     "lei": "8666",
+     "inicio": "29/10/2027",
+     "fim": "28/10/2028",
+     "valor_atual": 85856.03,
+     "valor_novo": 107320.04,
+     "historico": [
+      [
+       "CONTRATO INICIAL",
+       null
+      ],
+      [
+       "1º TERMO ADITIVO",
+       146143.3
+      ],
+      [
+       "2º TERMO ADITIVO",
+       146730.79
+      ],
+      [
+       "3º TERMO ADITIVO",
+       null
+      ],
+      [
+       "4º TERMO ADITIVO",
+       85856.03
+      ]
+     ],
+     "enquadramento": "art. 57, inciso II; e art. 65, inciso I, alínea \"b\", e § 1º, todos da Lei nº 8.666/1993",
+     "tipos": [
+      "Prorrogação contratual por mais 12 (doze) meses, de 29/10/2027 a 28/10/2028, com renovação do valor contratual",
+      "Acréscimo de 25,00% sobre o valor inicial atualizado do contrato, no valor de R$ 21.464,01 (vinte e um mil, quatrocentos e sessenta e quatro reais e um centavo), referente a acrescentar 15 linhas telefônicas"
+     ],
+     "motivos": [
+      "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo conveniente a interrupção de sua execução. O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais 12 (doze) meses, contemplando-se, nesta ocasião, o período de 29/10/2027 a 28/10/2028, na forma do art. 57, inciso II, da Lei nº 8.666/1993, conforme previsto na ⟦CLÁUSULA ___, item ___ (cláusula de vigência)⟧ do contrato, com renovação do valor contratual.",
+      "O acréscimo de 25,00% sobre o valor inicial atualizado do contrato, no montante de R$ 21.464,01 (vinte e um mil, quatrocentos e sessenta e quatro reais e um centavo), justifica-se pela necessidade de acrescentar 15 linhas telefônicas, observado o limite de 25% (vinte e cinco por cento) previsto no art. 65, § 1º, da Lei nº 8.666/1993. Com as alterações deste Termo Aditivo, o valor do contrato passa de R$ 85.856,03 (oitenta e cinco mil, oitocentos e cinquenta e seis reais e três centavos) para R$ 107.320,04 (cento e sete mil, trezentos e vinte reais e quatro centavos)."
+     ],
+     "parecer_fiscal": "A fiscalização do contrato atesta que a contratada vem cumprindo regularmente suas obrigações contratuais, exercendo suas atividades de forma satisfatória e prestando os serviços a contento da Administração. Diante disso, considerando o interesse da Administração na continuidade da prestação dos serviços, bem como a vantajosidade da manutenção da contratação, esta Fiscalização manifesta-se favoravelmente à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia 29/10/2027 até o dia 28/10/2028, com renovação do valor contratual, nos termos do art. 57, inciso II, da Lei nº 8.666/1993; e ao acréscimo de 25,00% sobre o valor inicial atualizado do contrato, no valor de R$ 21.464,01 (vinte e um mil, quatrocentos e sessenta e quatro reais e um centavo), nos termos do art. 65, inciso I, alínea \"b\", e § 1º, da Lei nº 8.666/1993, resultando no valor total do contrato de R$ 107.320,04 (cento e sete mil, trezentos e vinte reais e quatro centavos).",
+     "itens": [
+      {
+       "item": "1",
+       "valor_atual": 85856.03,
+       "valor_apos": 107320.04
+      }
+     ],
+     "valor_novo_extenso": "R$ 107.320,04 (cento e sete mil, trezentos e vinte reais e quatro centavos)",
+     "avisos": [
+      "Item 9: cláusula de vigência do contrato não informada (parecer_tecnico.clausula_vigencia) – ler no PDF do contrato.",
+      "Item 5: falta o valor do contrato inicial – preencher.",
+      "Item 5: falta o valor do contrato depois do 3º Termo Aditivo – preencher."
+     ]
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t5º Termo Aditivo ao Contrato de Despesa nº 020/GAPMN/2022",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº ___/____",
+      "QUINTO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 020/GAPMN/2022, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA CLARO S.A..",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177, inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, a Sra. NOME DO ORDENADOR CEL INT, nomeada pela PORTARIA nº 0000/GC1, de 1º de janeiro de 2025, publicada no BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025, portadora da Matrícula Funcional nº 0000000, doravante denominado CONTRATANTE, e a CLARO S.A., inscrita no CNPJ/MF sob o nº [CNPJ], sediada na Rua do Exemplo, 100, em Manaus-AM, doravante designada CONTRATADA, neste ato representada pelo Sr. REPRESENTANTE DA EMPRESA, tendo em vista o que consta no Processo nº 67298.002600/2022-17 e em observância às disposições da Lei nº 8.666, de 21 de junho de 1993, da Lei de Diretrizes Orçamentárias vigente e do Decreto nº 7.983, de 8 de abril de 2013, resolvem celebrar o presente Termo Aditivo de prorrogação e acréscimo, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 020/GAPMN/2022 por mais 12 (doze) meses, passando de 29/10/2027 até o dia 28/10/2028, com renovação do valor contratual, com fundamento no art. 57, inciso II, da Lei nº 8.666, de 21 de junho de 1993.",
+      "1.2. ACRESCER 25,00% do valor inicial atualizado do contrato, no valor de R$ 21.464,01 (vinte e um mil, quatrocentos e sessenta e quatro reais e um centavo), referente a acrescentar 15 linhas telefônicas, com fundamento no art. 65, inciso I, alínea \"b\", e § 1º, da Lei nº 8.666, de 21 de junho de 1993.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 107.320,04 (cento e sete mil, trezentos e vinte reais e quatro centavos).",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2027/2028, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto no art. 56 da Lei nº 8.666, de 1993, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE providenciar a publicação deste instrumento, por extrato, no Diário Oficial da União, de acordo com o prescrito no artigo 61, parágrafo único, da Lei nº 8.666, de 1993.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\nREPRESENTANTE DA EMPRESA\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
+    }
+   }
+  },
+  {
+   "nome": "reajuste_14133 (tabela de itens + PNCP)",
+   "dados": {
+    "contrato": "010/GAPMN-2GDAAE/2025",
+    "pag": "67298.000139/2025-01",
+    "om_nome": "2º Grupo de Defesa Antiaérea",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do",
+     "endereco": "Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177",
+     "cidade": "Manaus",
+     "ordenador": {
+      "nome": "NOME DO ORDENADOR",
+      "posto": "CEL INT",
+      "feminino": true,
+      "portaria": "PORTARIA nº 0000/GC1, de 1º de janeiro de 2025",
+      "publicacao": "BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025",
+      "matricula": "0000000"
+     }
+    },
+    "numero_aditivo": 1,
+    "empenho": {
+     "numero": "2026NE000000",
+     "gestao_unidade": "120630",
+     "fonte": "1050000140",
+     "programa_trabalho": "168919",
+     "acao": null,
+     "plano_interno": "A0630340600",
+     "natureza_despesa": "339039",
+     "exercicio": 2026
+    },
+    "consulta_socio": true,
+    "representante_mudou": false,
+    "inexigibilidade": false,
+    "nao_anexados": {},
+    "riscos": [
+     {
+      "nome": "Empresa não manter as condições de habilitação",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Dar causa à rescisão contratual em caso de não manutenção da regularidade fiscal e trabalhista.",
+      "acao_preventiva": "Mensalmente, a fiscalização fará consultas ao SICAF para acompanhar a situação da empresa.",
+      "acao_contingencia": "Notificar a empresa contratada sempre que ela estiver inadimplente quanto às regularidades fiscal, trabalhista e previdenciária, para que a situação seja regularizada."
+     },
+     {
+      "nome": "Prestação do serviço de forma inadequada ou descontinuada",
+      "probabilidade": "baixa",
+      "impacto": "medio",
+      "dano": "Prejuízo às atividades da OM atendida pelo serviço.",
+      "acao_preventiva": "Acompanhamento contínuo da execução, com registro das ocorrências no relatório de fiscalização.",
+      "acao_contingencia": "Contatar o preposto da empresa para regularização imediata e, persistindo a falha, notificar a empresa e propor a abertura de processo de apuração."
+     },
+     {
+      "nome": "Termo aditivo não ser assinado antes do fim da vigência",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Encerramento do contrato e interrupção do serviço, com necessidade de nova contratação.",
+      "acao_preventiva": "Iniciar a instrução do aditivo com antecedência e acompanhar os prazos do subprocesso.",
+      "acao_contingencia": "Comunicar de imediato à SCON e ao Ordenador de Despesas para priorizar a análise e a assinatura."
+     }
+    ],
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "01/01/2027"
+     },
+     "reajuste": {
+      "indice": "IPCA",
+      "percentual": "4,724910%",
+      "valor": 49612.56
+     },
+     "acrescimo": {
+      "valor": 105000.0,
+      "percentual": 10,
+      "descricao": "inclusão de 1 posto de atendimento"
+     },
+     "supressao": null
+    },
+    "valor_atual": 1050000.0,
+    "merito_administrativo": "Considerando que o serviço é de natureza contínua e essencial ao funcionamento da OM, que a contratada manifestou interesse na prorrogação, que a pesquisa de preços demonstrou a vantajosidade da manutenção do contrato e que a interrupção causaria prejuízo às atividades da unidade, propõe-se a prorrogação por mais 12 meses.",
+    "pareceres_referenciais": [
+     {
+      "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+      "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+      "data": "01/11/2024",
+      "validade": "01/11/2028",
+      "cobre": [
+       "prorrogacao",
+       "reajuste"
+      ]
+     },
+     {
+      "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
+      "objeto": "Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.",
+      "data": "03/09/2025",
+      "validade": "03/09/2027",
+      "cobre": [
+       "acrescimo",
+       "supressao"
+      ],
+      "limite_percentual": 25
+     }
+    ],
+    "pesquisa_precos": {
+     "fonte_tr": "Termo de Referência da contratação (exemplo fictício)",
+     "data_pesquisa": "24/11/2026",
+     "atualizacao": "IPCA até 10/2026",
+     "criterio": "mediana",
+     "itens": [
+      {
+       "item": 1,
+       "descricao": "Serviço de outsourcing de impressão – franquia mensal de páginas monocromáticas (exemplo)",
+       "codigo": "CATSER 00000",
+       "unidade": "mês",
+       "quantidade": 12,
+       "preco_contratado": 1394.17,
+       "precos": [
+        {
+         "fonte": "Compras.gov.br – UASG 000001 – Pregão 90001/2026",
+         "data": "10/03/2026",
+         "valor": 1420.0,
+         "valor_atualizado": 1441.3
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000002 – Pregão 90002/2026",
+         "data": "22/04/2026",
+         "valor": 1380.0,
+         "valor_atualizado": 1396.56
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000003 – Pregão 90003/2026",
+         "data": "05/06/2026",
+         "valor": 1510.0,
+         "valor_atualizado": 1521.33
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000004 – Pregão 90004/2026",
+         "data": "18/07/2026",
+         "valor": 690.0,
+         "valor_atualizado": 693.45,
+         "excluido": true,
+         "motivo_exclusao": "inexequível (menos de 50% da média)"
+        }
+       ]
+      },
+      {
+       "item": 2,
+       "descricao": "Página colorida excedente à franquia (exemplo)",
+       "codigo": "CATSER 00001",
+       "unidade": "página",
+       "quantidade": 6000,
+       "preco_contratado": 0.62,
+       "precos": [
+        {
+         "fonte": "Compras.gov.br – UASG 000005 – Pregão 90005/2026",
+         "data": "02/05/2026",
+         "valor": 0.6,
+         "valor_atualizado": 0.61
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000006 – Pregão 90006/2026",
+         "data": "14/08/2026",
+         "valor": 0.7,
+         "valor_atualizado": 0.7
+        }
+       ]
+      }
+     ]
+    },
+    "objeto_contrato": "Contratação de serviços de outsourcing de impressão",
+    "lei": "14133",
+    "contratada": {
+     "nome": "SYSTEMSCOPY LTDA",
+     "endereco": "na Rua do Exemplo, 100, em Manaus-AM",
+     "representante": "REPRESENTANTE DA EMPRESA"
+    },
+    "historico": [
+     {
+      "documento": "Contrato inicial",
+      "valor": 1000000.0
+     },
+     {
+      "documento": "1º Termo de Apostilamento",
+      "valor": 1050000.0
+     }
+    ],
+    "itens": [
+     {
+      "item": "1",
+      "descricao": "Locação de impressora multifuncional monocromática A4",
+      "valor_atual": 630000.0
+     },
+     {
+      "item": "2",
+      "descricao": "Locação de impressora multifuncional colorida A3",
+      "valor_atual": 420000.0
+     }
+    ],
+    "parecer_tecnico": {
+     "numero": "001/SCON/2026",
+     "clausula_vigencia": "CLÁUSULA SEGUNDA – DA VIGÊNCIA, item 2.1",
+     "clausula_reajuste": "CLÁUSULA DÉCIMA PRIMEIRA – DO REAJUSTE, item 11.1",
+     "natureza": "continuado"
+    },
+    "licitacao": "Pregão Eletrônico nº 90010/2025",
+    "termo_aditivo": {
+     "numero": "015/2026",
+     "garantia": {
+      "exige": true,
+      "percentual": 5,
+      "base": "termo"
+     }
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao",
+      "reajuste",
+      "acrescimo"
+     ],
+     "pareceres": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (",
+       "data": "01/11/2024",
+       "validade": "01/11/2028",
+       "cobre": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "limite_percentual": null,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_4_2024_c34a16.pdf",
+       "fonte_objeto": "Ementa e conclusão do parecer",
+       "fundamenta": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "motivo_texto": "Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+      },
+      {
+       "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
+       "objeto": "Alteração contratual unilateral quantitativa (acréscimo ou supressão de valor), com fundamento no art. 124, inciso I, alínea \"b\", da Lei nº 14.133/2021, em contratos de serviços de natureza continuada sem mão de obra exclusiva, com observância do limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 125).",
+       "data": "03/09/2025",
+       "validade": "03/09/2027",
+       "cobre": [
+        "acrescimo",
+        "supressao"
+       ],
+       "limite_percentual": 25,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_6_2025.pdf",
+       "fonte_objeto": "Ementa e item 3, alínea \"e\", do parecer",
+       "fundamenta": [
+        "acrescimo"
+       ],
+       "motivo_texto": "Fundamenta o acréscimo deste termo aditivo."
+      }
+     ],
+     "vencidos": [],
+     "descobertas": [],
+     "vai_para_cju": false
+    },
+    "observacao_parecer": null,
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "calculadora",
+      "texto": "Comprovante do índice de reajuste IPCA – Calculadora do Cidadão (Banco Central do Brasil) (consulta anexada ao Parecer Técnico)."
+     },
+     {
+      "chave": "memoria_calculo",
+      "texto": "Memória de Cálculo – Reajuste."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "consulta_cpf_socio",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CPF do sócio majoritário."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     },
+     {
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+     },
+     {
+      "chave": "parecer_referencial_2",
+      "texto": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU\nObjeto: Alteração contratual unilateral quantitativa (acréscimo ou supressão de valor), com fundamento no art. 124, inciso I, alínea \"b\", da Lei nº 14.133/2021, em contratos de serviços de natureza continuada sem mão de obra exclusiva, com observância do limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 125).\nVigência: de 03/09/2025, válido até 03/09/2027.\nMotivo: Fundamenta o acréscimo deste termo aditivo."
+     },
+     {
+      "chave": "atestado_adequacao",
+      "texto": "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00004/2024/CGSEM/SCGP/CGU/AGU e nº 00006/2025/CONSER/SCGP/CGU/AGU."
+     }
+    ],
+    "objeto": "I - Prorrogar o Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Reajustar o Contrato nº 010/GAPMN-2GDAAE/2025, conforme índice IPCA (4,724910%);\nIII - Acrescer o valor do Contrato nº 010/GAPMN-2GDAAE/2025 em R$ 105.000,00 – 10,00%, referente a inclusão de 1 posto de atendimento.",
+    "valor_atual": 1050000.0,
+    "valor_novo": 1204612.56,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": true,
+    "tem_reajuste": true,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "parecer",
+     "mapa",
+     "pesquisa",
+     "atestado",
+     "ficha"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "a contratação de serviços de outsourcing de impressão",
+    "parecer": {
+     "lei": "14133",
+     "inicio": "01/01/2027",
+     "fim": "31/12/2027",
+     "valor_atual": 1050000.0,
+     "valor_novo": 1204612.56,
+     "historico": [
+      [
+       "CONTRATO INICIAL",
+       1000000.0
+      ],
+      [
+       "1º TERMO DE APOSTILAMENTO",
+       1050000.0
+      ]
+     ],
+     "enquadramento": "art. 106, art. 107; art. 92, § 4º; e art. 124, inciso I, alínea \"b\", e art. 125, todos da Lei nº 14.133/2021",
+     "tipos": [
+      "Prorrogação contratual por mais 12 (doze) meses, de 01/01/2027 a 31/12/2027, com renovação do valor contratual",
+      "Reajuste de 4,724910%, conforme índice IPCA, sobre o valor anual do contrato",
+      "Acréscimo de 10,00% sobre o valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), referente a inclusão de 1 posto de atendimento"
+     ],
+     "motivos": [
+      "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo conveniente a interrupção de sua execução. O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais 12 (doze) meses, contemplando-se, nesta ocasião, o período de 01/01/2027 a 31/12/2027, na forma do art. 107, da Lei nº 14.133/2021, conforme previsto na CLÁUSULA SEGUNDA – DA VIGÊNCIA, item 2.1 do contrato, com renovação do valor contratual.",
+      "O presente Termo Aditivo contempla, ainda, a necessidade de reajuste pelo índice IPCA, conforme estabelece a CLÁUSULA DÉCIMA PRIMEIRA – DO REAJUSTE, item 11.1 do ajuste contratual. O reajuste corresponde ao percentual de 4,724910% sobre o valor nominal de R$ 1.050.000,00 (um milhão e cinquenta mil reais), resultando no valor corrigido de R$ 1.099.612,56 (um milhão, noventa e nove mil, seiscentos e doze reais e cinquenta e seis centavos), fonte de pesquisa: Calculadora do Cidadão (Banco Central do Brasil).",
+      "O acréscimo de 10,00% sobre o valor inicial atualizado do contrato, no montante de R$ 105.000,00 (cento e cinco mil reais), justifica-se pela necessidade de inclusão de 1 posto de atendimento, observado o limite de 25% (vinte e cinco por cento) previsto no art. 125, da Lei nº 14.133/2021. Com as alterações deste Termo Aditivo, o valor do contrato passa de R$ 1.050.000,00 (um milhão e cinquenta mil reais) para R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos)."
+     ],
+     "parecer_fiscal": "A fiscalização do contrato atesta que a contratada vem cumprindo regularmente suas obrigações contratuais, exercendo suas atividades de forma satisfatória e prestando os serviços a contento da Administração. Diante disso, considerando o interesse da Administração na continuidade da prestação dos serviços, bem como a vantajosidade da manutenção da contratação, esta Fiscalização manifesta-se favoravelmente à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, nos termos do art. 107, da Lei nº 14.133/2021; ao reajuste de 4,724910%, conforme índice IPCA, no valor de R$ 49.612,56 (quarenta e nove mil, seiscentos e doze reais e cinquenta e seis centavos), nos termos do art. 92, § 4º, da Lei nº 14.133/2021; e ao acréscimo de 10,00% sobre o valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), nos termos do art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133/2021, resultando no valor total do contrato de R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos).",
+     "itens": [
+      {
+       "item": "1",
+       "valor_atual": 630000.0,
+       "valor_apos": 722767.54
+      },
+      {
+       "item": "2",
+       "valor_atual": 420000.0,
+       "valor_apos": 481845.02
+      }
+     ],
+     "valor_novo_extenso": "R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos)",
+     "avisos": []
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Endereço/CNPJ da unidade não cadastrados (Configurações)."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 010/GAPMN-2GDAAE/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº 015/2026",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 010/GAPMN-2GDAAE/2025, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA SYSTEMSCOPY LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177, inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, a Sra. NOME DO ORDENADOR CEL INT, nomeada pela PORTARIA nº 0000/GC1, de 1º de janeiro de 2025, publicada no BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025, portadora da Matrícula Funcional nº 0000000, doravante denominado CONTRATANTE, e a SYSTEMSCOPY LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada na Rua do Exemplo, 100, em Manaus-AM, doravante designada CONTRATADA, neste ato representada pelo Sr. REPRESENTANTE DA EMPRESA, tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, reajuste e acréscimo, decorrente do Pregão Eletrônico nº 90010/2025, mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, passando de 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. REAJUSTAR os preços do contrato em 4,724910%, conforme índice IPCA, sobre o valor anual do contrato, passando de R$ 1.050.000,00 (um milhão e cinquenta mil reais) para R$ 1.099.612,56 (um milhão, noventa e nove mil, seiscentos e doze reais e cinquenta e seis centavos), com fundamento no art. 92, § 4º, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.3. ACRESCER 10,00% do valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), referente a inclusão de 1 posto de atendimento, com fundamento no art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos).",
+      "3. CLÁUSULA TERCEIRA – VALORES DOS ITENS (CRONOGRAMA FÍSICO-FINANCEIRO)",
+      "3.1. Em decorrência do reajuste, os valores dos itens do contrato passam a ser os seguintes:",
+      "ITEM | DESCRIÇÃO | VALOR ATUAL (R$) | VALOR APÓS O 1º TERMO ADITIVO (R$) | VALOR MENSAL APÓS O 1º TERMO ADITIVO (R$)",
+      "1 | Locação de impressora multifuncional monocromática A4 | 630.000,00 | 722.767,54 | 60.230,63",
+      "2 | Locação de impressora multifuncional colorida A3 | 420.000,00 | 481.845,02 | 40.153,75",
+      "TOTAL | 1.050.000,00 | 1.204.612,56 | 100.384,38",
+      "Valor mensal = valor após o termo aditivo ÷ 12 meses do novo período (execução mensal estimada).",
+      "4. CLÁUSULA QUARTA – DOTAÇÃO ORÇAMENTÁRIA",
+      "4.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "5. CLÁUSULA QUINTA – GARANTIA DE EXECUÇÃO",
+      "5.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ 60.230,63 (sessenta mil, duzentos e trinta reais e sessenta e três centavos), correspondente a 5,00% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "5.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "6. CLÁUSULA SEXTA – RATIFICAÇÃO",
+      "6.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "7. CLÁUSULA SÉTIMA – PUBLICAÇÃO",
+      "7.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "7.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\nREPRESENTANTE DA EMPRESA\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
+    }
+   }
+  },
+  {
+   "nome": "com_valor_exemplo_1200mil",
+   "dados": {
+    "contrato": "000/GAPMN/2025 (EXEMPLO)",
+    "numero_aditivo": 3,
+    "pag": "67298.000000/2025-00 (exemplo)",
+    "contratada": {
+     "nome": "EMPRESA EXEMPLO LTDA"
+    },
+    "objeto_contrato": "Prestação de serviços de manutenção predial (exemplo)",
+    "objeto_resumido": "Prestação de serviços de manutenção predial (exemplo)",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do"
+    },
+    "valor_atual": 1200000.0,
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "01/03/2026",
+      "fim": "28/02/2027"
+     },
+     "reajuste": null,
+     "acrescimo": null,
+     "supressao": null
+    },
+    "saldo_periodo": {
+     "inicio": "01/03/2025",
+     "fim": "28/02/2026",
+     "documento_periodo": "2º Termo Aditivo",
+     "empenhos": [
+      {
+       "numero": "2025NE000101",
+       "data": "05/03/2025",
+       "empenhado": 900000,
+       "liquidado": 800000,
+       "pago": 800000
+      },
+      {
+       "numero": "2026NE000015",
+       "data": "12/01/2026",
+       "empenhado": 300000,
+       "liquidado": 200000,
+       "pago": 150000
+      }
+     ],
+     "pendentes": [
+      {
+       "descricao": "Manutenção preventiva e corretiva – competência fevereiro/2026",
+       "periodo": "01/02/2026 a 28/02/2026",
+       "nf": "aguardando",
+       "valor": 50000,
+       "empenho": "2026NE000015"
+      }
+     ],
+     "observacoes": "A medição de fevereiro/2026 foi concluída em 28/02/2026 e está em fase de ateste; a nota fiscal ainda não foi entregue pela contratada."
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao"
+     ],
+     "pareceres": [],
+     "vencidos": [],
+     "descobertas": [
+      "prorrogação de vigência"
+     ],
+     "vai_para_cju": true
+    },
+    "observacao_parecer": "não há parecer referencial vigente para este aditivo (prorrogação de vigência); o termo aditivo deve ser submetido à análise jurídica",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     }
+    ],
+    "objeto": "I - Prorrogar o Contrato nº 000/GAPMN/2025 (EXEMPLO) por mais 12 (doze) meses, com renovação do valor contratual.",
+    "valor_atual": 1200000.0,
+    "valor_novo": 1200000.0,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": true,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "demonstrativo",
+     "parecer",
+     "ficha"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "a prestação de serviços de manutenção predial (exemplo)",
+    "parecer": {
+     "lei": "14133",
+     "inicio": "01/03/2026",
+     "fim": "28/02/2027",
+     "valor_atual": 1200000.0,
+     "valor_novo": 1200000.0,
+     "historico": [],
+     "enquadramento": "art. 107, da Lei nº 14.133/2021",
+     "tipos": [
+      "Prorrogação contratual por mais 12 (doze) meses, de 01/03/2026 a 28/02/2027, com renovação do valor contratual"
+     ],
+     "motivos": [
+      "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo conveniente a interrupção de sua execução. O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais 12 (doze) meses, contemplando-se, nesta ocasião, o período de 01/03/2026 a 28/02/2027, na forma do art. 107, da Lei nº 14.133/2021, conforme previsto na ⟦CLÁUSULA ___, item ___ (cláusula de vigência)⟧ do contrato, com renovação do valor contratual."
+     ],
+     "parecer_fiscal": "A fiscalização do contrato atesta que a contratada vem cumprindo regularmente suas obrigações contratuais, exercendo suas atividades de forma satisfatória e prestando os serviços a contento da Administração. Diante disso, considerando o interesse da Administração na continuidade da prestação dos serviços, bem como a vantajosidade da manutenção da contratação, esta Fiscalização manifesta-se favoravelmente à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia 01/03/2026 até o dia 28/02/2027, com renovação do valor contratual, nos termos do art. 107, da Lei nº 14.133/2021.",
+     "itens": [],
+     "valor_novo_extenso": "R$ 1.200.000,00 (um milhão e duzentos mil reais)",
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Item 9: cláusula de vigência do contrato não informada (parecer_tecnico.clausula_vigencia) – ler no PDF do contrato.",
+      "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
+      "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
+     ]
+    },
+    "demonstrativo": {
+     "inicio": "01/03/2025",
+     "fim": "28/02/2026",
+     "quadro": {
+      "A": 1200000.0,
+      "B": 1000000.0,
+      "C": 50000.0,
+      "D": 150000.0,
+      "E": 200000.0,
+      "F": 150000.0
+     },
+     "nes": [
+      {
+       "numero": "2025NE000101",
+       "a_liquidar": 100000.0,
+       "reservado": 0.0,
+       "anular": 100000.0
+      },
+      {
+       "numero": "2026NE000015",
+       "a_liquidar": 100000.0,
+       "reservado": 50000.0,
+       "anular": 50000.0
+      }
+     ],
+     "pendentes": [
+      {
+       "valor": 50000.0,
+       "empenho": "2026NE000015"
+      }
+     ],
+     "providencias": [
+      "a) Retirar do SILOMS o saldo de R$ 150.000,00 (cento e cinquenta mil reais), referente ao período de 01/03/2025 a 28/02/2026;",
+      "b) Anular no SIAFI o saldo sem uso das notas de empenho, no total de R$ 150.000,00 (cento e cinquenta mil reais): 2025NE000101 – R$ 100.000,00; 2026NE000015 – R$ 50.000,00;",
+      "c) Manter R$ 50.000,00 (cinquenta mil reais) nas notas de empenho para pagar os serviços do item 2 (2026NE000015 – R$ 50.000,00);",
+      "d) Registrar o novo período (01/03/2026 a 28/02/2027) somente com o valor do 3º Termo Aditivo, R$ 1.200.000,00 (um milhão e duzentos mil reais), sem somar o saldo do período anterior."
+     ],
+     "avisos": [],
+     "texto": [
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "DEMONSTRATIVO DE EXECUÇÃO E SALDO DO PERÍODO DE VIGÊNCIA",
+      "Contrato nº 000/GAPMN/2025 (EXEMPLO)",
+      "Processo nº 67298.000000/2025-00 (exemplo)",
+      "Contratada: EMPRESA EXEMPLO LTDA",
+      "Objeto: Prestação de serviços de manutenção predial (exemplo)",
+      "Período de vigência analisado: 01/03/2025 a 28/02/2026 (2º Termo Aditivo)",
+      "Em razão da prorrogação de vigência do contrato, esta fiscalização demonstra a execução financeira do período de vigência que se encerra, os serviços executados nesse período ainda pendentes de pagamento e o saldo a ser tratado pela Seção de Contratos no SILOMS e no SIAFI, para que o novo período (01/03/2026 a 28/02/2027) seja registrado somente com o valor do 3º Termo Aditivo, sem somar o saldo do período encerrado.",
+      "1. NOTAS DE EMPENHO DO PERÍODO",
+      "NOTA DE EMPENHO | EMISSÃO | EMPENHADO (R$) | LIQUIDADO (R$) | PAGO (R$) | SALDO A LIQUIDAR (R$)",
+      "2025NE000101 | 05/03/2025 | 900.000,00 | 800.000,00 | 100.000,00",
+      "2026NE000015 | 12/01/2026 | 300.000,00 | 200.000,00 | 150.000,00 | 100.000,00",
+      "TOTAL | 1.200.000,00 | 1.000.000,00 | 950.000,00 | 200.000,00",
+      "2. SERVIÇOS EXECUTADOS NO PERÍODO E AINDA NÃO PAGOS",
+      "SERVIÇO / COMPETÊNCIA | PERÍODO DE EXECUÇÃO | NOTA FISCAL | NE QUE VAI PAGAR | VALOR (R$)",
+      "Manutenção preventiva e corretiva – competência fevereiro/2026 | 01/02/2026 a 28/02/2026 | aguardando | 2026NE000015 | 50.000,00",
+      "TOTAL | 50.000,00",
+      "3. DEMONSTRATIVO DO SALDO",
+      " | DESCRIÇÃO | VALOR (R$)",
+      "A | Valor do contrato para o período de vigência analisado | 1.200.000,00",
+      "B | Executado e já liquidado (atestado) no período | 1.000.000,00",
+      "C | Executado no período e ainda não pago (item 2) | 50.000,00",
+      "D | Saldo do período sem utilização (A − B − C) | 150.000,00",
+      "E | Saldo a liquidar das notas de empenho do período (item 1) | 200.000,00",
+      "F | Saldo das notas de empenho sem uso (E − C) | 150.000,00",
+      "4. PROVIDÊNCIAS PARA A SEÇÃO DE CONTRATOS",
+      "a) Retirar do SILOMS o saldo de R$ 150.000,00 (cento e cinquenta mil reais), referente ao período de 01/03/2025 a 28/02/2026;",
+      "b) Anular no SIAFI o saldo sem uso das notas de empenho, no total de R$ 150.000,00 (cento e cinquenta mil reais): 2025NE000101 – R$ 100.000,00; 2026NE000015 – R$ 50.000,00;",
+      "c) Manter R$ 50.000,00 (cinquenta mil reais) nas notas de empenho para pagar os serviços do item 2 (2026NE000015 – R$ 50.000,00);",
+      "d) Registrar o novo período (01/03/2026 a 28/02/2027) somente com o valor do 3º Termo Aditivo, R$ 1.200.000,00 (um milhão e duzentos mil reais), sem somar o saldo do período anterior.",
+      "5. OBSERVAÇÕES DA FISCALIZAÇÃO: A medição de fevereiro/2026 foi concluída em 28/02/2026 e está em fase de ateste; a nota fiscal ainda não foi entregue pela contratada.",
+      "Data conforme assinatura eletrônica.",
+      "Gestor do Contrato"
+     ]
+    },
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Dotação: 'Gestão/Unidade' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Fonte de Recursos' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Programa de Trabalho' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Plano Interno' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Natureza de Despesa' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t3º Termo Aditivo ao Contrato de Despesa nº 000/GAPMN/2025 (EXEMPLO)",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "MINUTA",
+      "TERMO ADITIVO nº ___/____",
+      "TERCEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 000/GAPMN/2025 (EXEMPLO), QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA EMPRESA EXEMPLO LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a EMPRESA EXEMPLO LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000000/2025-00 (exemplo) e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 000/GAPMN/2025 (EXEMPLO) por mais 12 (doze) meses, passando de 01/03/2026 até o dia 28/02/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 1.200.000,00 (um milhão e duzentos mil reais).",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026/2027, na classificação abaixo:",
+      "Gestão/Unidade: ___",
+      "Fonte de Recursos: ___",
+      "Programa de Trabalho: ___",
+      "Plano Interno: ___",
+      "Natureza de Despesa: ___",
+      "Nota de Empenho: ____NE______",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": true
+    }
+   }
+  },
+  {
+   "nome": "sem_valor_saldo_continua",
+   "dados": {
+    "contrato": "000/GAPMN/2025 (EXEMPLO)",
+    "numero_aditivo": 3,
+    "pag": "67298.000000/2025-00 (exemplo)",
+    "contratada": {
+     "nome": "EMPRESA EXEMPLO LTDA"
+    },
+    "objeto_contrato": "Prestação de serviços de manutenção predial (exemplo)",
+    "objeto_resumido": "Prestação de serviços de manutenção predial (exemplo)",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do"
+    },
+    "valor_atual": 1200000.0,
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "sem_valor",
+      "meses": 12,
+      "inicio": "01/03/2026",
+      "fim": "28/02/2027"
+     },
+     "reajuste": null,
+     "acrescimo": null,
+     "supressao": null
+    },
+    "saldo_periodo": {
+     "inicio": "01/03/2025",
+     "fim": "28/02/2026",
+     "documento_periodo": "2º Termo Aditivo",
+     "empenhos": [
+      {
+       "numero": "2025NE000101",
+       "data": "05/03/2025",
+       "empenhado": 900000,
+       "liquidado": 800000,
+       "pago": 800000
+      },
+      {
+       "numero": "2026NE000015",
+       "data": "12/01/2026",
+       "empenhado": 300000,
+       "liquidado": 200000,
+       "pago": 150000
+      }
+     ],
+     "pendentes": [],
+     "observacoes": ""
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao"
+     ],
+     "pareceres": [],
+     "vencidos": [],
+     "descobertas": [
+      "prorrogação de vigência"
+     ],
+     "vai_para_cju": true
+    },
+    "observacao_parecer": "não há parecer referencial vigente para este aditivo (prorrogação de vigência); o termo aditivo deve ser submetido à análise jurídica",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     }
+    ],
+    "objeto": "I - Prorrogar a vigência do Contrato nº 000/GAPMN/2025 (EXEMPLO) por mais 12 (doze) meses, em sentido estrito, sem renovação do valor contratual.",
+    "valor_atual": 1200000.0,
+    "valor_novo": 1200000.0,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": true,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "demonstrativo",
+     "parecer",
+     "ficha"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "a prestação de serviços de manutenção predial (exemplo)",
+    "parecer": {
+     "lei": "14133",
+     "inicio": "01/03/2026",
+     "fim": "28/02/2027",
+     "valor_atual": 1200000.0,
+     "valor_novo": 1200000.0,
+     "historico": [],
+     "enquadramento": "art. 107, da Lei nº 14.133/2021",
+     "tipos": [
+      "Prorrogação contratual por mais 12 (doze) meses, de 01/03/2026 a 28/02/2027, sem renovação do valor contratual (prorrogação em sentido estrito, apenas da vigência)"
+     ],
+     "motivos": [
+      "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo conveniente a interrupção de sua execução. O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais 12 (doze) meses, contemplando-se, nesta ocasião, o período de 01/03/2026 a 28/02/2027, na forma do art. 107, da Lei nº 14.133/2021, conforme previsto na ⟦CLÁUSULA ___, item ___ (cláusula de vigência)⟧ do contrato, sem renovação do valor contratual."
+     ],
+     "parecer_fiscal": "A fiscalização do contrato atesta que a contratada vem cumprindo regularmente suas obrigações contratuais, exercendo suas atividades de forma satisfatória e prestando os serviços a contento da Administração. Diante disso, considerando o interesse da Administração na continuidade da prestação dos serviços, bem como a vantajosidade da manutenção da contratação, esta Fiscalização manifesta-se favoravelmente à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia 01/03/2026 até o dia 28/02/2027, em sentido estrito, sem renovação do valor contratual, nos termos do art. 107, da Lei nº 14.133/2021.",
+     "itens": [],
+     "valor_novo_extenso": "R$ 1.200.000,00 (um milhão e duzentos mil reais)",
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Item 9: cláusula de vigência do contrato não informada (parecer_tecnico.clausula_vigencia) – ler no PDF do contrato.",
+      "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
+      "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
+     ]
+    },
+    "demonstrativo": {
+     "inicio": "01/03/2025",
+     "fim": "28/02/2026",
+     "quadro": {
+      "A": 1200000.0,
+      "B": 1000000.0,
+      "C": 0,
+      "D": 200000.0,
+      "E": 200000.0,
+      "F": 200000.0
+     },
+     "nes": [
+      {
+       "numero": "2025NE000101",
+       "a_liquidar": 100000.0,
+       "reservado": 0.0,
+       "anular": 100000.0
+      },
+      {
+       "numero": "2026NE000015",
+       "a_liquidar": 100000.0,
+       "reservado": 0.0,
+       "anular": 100000.0
+      }
+     ],
+     "pendentes": [],
+     "providencias": [
+      "a) Prorrogação sem renovação do valor contratual: o saldo de R$ 200.000,00 (duzentos mil reais) permanece no contrato para o período prorrogado (01/03/2026 a 28/02/2027). Não retirar do SILOMS nem anular empenho por causa desta prorrogação."
+     ],
+     "avisos": [],
+     "texto": [
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "DEMONSTRATIVO DE EXECUÇÃO E SALDO DO PERÍODO DE VIGÊNCIA",
+      "Contrato nº 000/GAPMN/2025 (EXEMPLO)",
+      "Processo nº 67298.000000/2025-00 (exemplo)",
+      "Contratada: EMPRESA EXEMPLO LTDA",
+      "Objeto: Prestação de serviços de manutenção predial (exemplo)",
+      "Período de vigência analisado: 01/03/2025 a 28/02/2026 (2º Termo Aditivo)",
+      "Em razão da prorrogação de vigência do contrato, esta fiscalização demonstra a execução financeira do período de vigência que se encerra, os serviços executados nesse período ainda pendentes de pagamento e o saldo a ser tratado pela Seção de Contratos no SILOMS e no SIAFI, para registro do saldo que continua disponível no período prorrogado, uma vez que a prorrogação é sem renovação do valor contratual.",
+      "1. NOTAS DE EMPENHO DO PERÍODO",
+      "NOTA DE EMPENHO | EMISSÃO | EMPENHADO (R$) | LIQUIDADO (R$) | PAGO (R$) | SALDO A LIQUIDAR (R$)",
+      "2025NE000101 | 05/03/2025 | 900.000,00 | 800.000,00 | 100.000,00",
+      "2026NE000015 | 12/01/2026 | 300.000,00 | 200.000,00 | 150.000,00 | 100.000,00",
+      "TOTAL | 1.200.000,00 | 1.000.000,00 | 950.000,00 | 200.000,00",
+      "2. SERVIÇOS EXECUTADOS NO PERÍODO E AINDA NÃO PAGOS",
+      "Não há serviços executados no período pendentes de pagamento.",
+      "3. DEMONSTRATIVO DO SALDO",
+      " | DESCRIÇÃO | VALOR (R$)",
+      "A | Valor do contrato para o período de vigência analisado | 1.200.000,00",
+      "B | Executado e já liquidado (atestado) no período | 1.000.000,00",
+      "C | Executado no período e ainda não pago (item 2) | 0,00",
+      "D | Saldo do período sem utilização (A − B − C) | 200.000,00",
+      "E | Saldo a liquidar das notas de empenho do período (item 1) | 200.000,00",
+      "F | Saldo das notas de empenho sem uso (E − C) | 200.000,00",
+      "4. PROVIDÊNCIAS PARA A SEÇÃO DE CONTRATOS",
+      "a) Prorrogação sem renovação do valor contratual: o saldo de R$ 200.000,00 (duzentos mil reais) permanece no contrato para o período prorrogado (01/03/2026 a 28/02/2027). Não retirar do SILOMS nem anular empenho por causa desta prorrogação.",
+      "5. OBSERVAÇÕES DA FISCALIZAÇÃO: não há.",
+      "Data conforme assinatura eletrônica.",
+      "Gestor do Contrato"
+     ]
+    },
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Dotação: 'Gestão/Unidade' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Fonte de Recursos' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Programa de Trabalho' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Plano Interno' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Natureza de Despesa' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t3º Termo Aditivo ao Contrato de Despesa nº 000/GAPMN/2025 (EXEMPLO)",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "MINUTA",
+      "TERMO ADITIVO nº ___/____",
+      "TERCEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 000/GAPMN/2025 (EXEMPLO), QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA EMPRESA EXEMPLO LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a EMPRESA EXEMPLO LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000000/2025-00 (exemplo) e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 000/GAPMN/2025 (EXEMPLO) por mais 12 (doze) meses, passando de 01/03/2026 até o dia 28/02/2027, sem renovação do valor contratual (apenas da vigência), com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O presente Termo Aditivo não altera o valor do contrato, cuja vigência é prorrogada sem renovação do valor contratual.",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026/2027, na classificação abaixo:",
+      "Gestão/Unidade: ___",
+      "Fonte de Recursos: ___",
+      "Programa de Trabalho: ___",
+      "Plano Interno: ___",
+      "Natureza de Despesa: ___",
+      "Nota de Empenho: ____NE______",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": true
+    }
+   }
+  },
+  {
+   "nome": "lista_com_reajuste",
+   "dados": {
+    "contrato": "010/GAPMN-2GDAAE/2025",
+    "pag": "67298.000139/2025-01",
+    "om_nome": "2º Grupo de Defesa Antiaérea",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do",
+     "endereco": "Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177",
+     "cidade": "Manaus",
+     "ordenador": {
+      "nome": "NOME DO ORDENADOR",
+      "posto": "CEL INT",
+      "feminino": true,
+      "portaria": "PORTARIA nº 0000/GC1, de 1º de janeiro de 2025",
+      "publicacao": "BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025",
+      "matricula": "0000000"
+     }
+    },
+    "numero_aditivo": 1,
+    "empenho": {
+     "numero": "2026NE000000",
+     "gestao_unidade": "120630",
+     "fonte": "1050000140",
+     "programa_trabalho": "168919",
+     "acao": null,
+     "plano_interno": "A0630340600",
+     "natureza_despesa": "339039",
+     "exercicio": 2026
+    },
+    "consulta_socio": true,
+    "representante_mudou": false,
+    "inexigibilidade": false,
+    "nao_anexados": {},
+    "riscos": [
+     {
+      "nome": "Empresa não manter as condições de habilitação",
+      "probabilidade": "Média",
+      "impacto": "Alto",
+      "dano": "Dar causa à rescisão contratual em caso de não manutenção da regularidade fiscal e trabalhista.",
+      "acao_preventiva": "Mensalmente, a fiscalização fará consultas ao SICAF para acompanhar a situação da empresa.",
+      "acao_contingencia": "Notificar a empresa contratada sempre que ela estiver inadimplente quanto às regularidades fiscal, trabalhista e previdenciária, para que a situação seja regularizada."
+     },
+     {
+      "nome": "Prestação do serviço de forma inadequada ou descontinuada",
+      "probabilidade": "baixa",
+      "impacto": "medio",
+      "dano": "Prejuízo às atividades da OM atendida pelo serviço.",
+      "acao_preventiva": "Acompanhamento contínuo da execução, com registro das ocorrências no relatório de fiscalização.",
+      "acao_contingencia": "Contatar o preposto da empresa para regularização imediata e, persistindo a falha, notificar a empresa e propor a abertura de processo de apuração."
+     },
+     {
+      "nome": "Termo aditivo não ser assinado antes do fim da vigência",
+      "probabilidade": "Baixa",
+      "impacto": "Alto",
+      "dano": "Encerramento do contrato e interrupção do serviço, com necessidade de nova contratação.",
+      "acao_preventiva": "Iniciar a instrução do aditivo com antecedência e acompanhar os prazos do subprocesso.",
+      "acao_contingencia": "Comunicar de imediato à SCON e ao Ordenador de Despesas para priorizar a análise e a assinatura."
+     }
+    ],
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "01/01/2027"
+     },
+     "reajuste": {
+      "indice": "IPCA",
+      "percentual": "4,724910%",
+      "valor": 49612.56
+     },
+     "acrescimo": {
+      "valor": 105000.0,
+      "percentual": 10,
+      "descricao": "inclusão de 1 posto de atendimento"
+     },
+     "supressao": null
+    },
+    "valor_atual": 1050000.0,
+    "merito_administrativo": "Considerando que o serviço é de natureza contínua e essencial ao funcionamento da OM, que a contratada manifestou interesse na prorrogação, que a pesquisa de preços demonstrou a vantajosidade da manutenção do contrato e que a interrupção causaria prejuízo às atividades da unidade, propõe-se a prorrogação por mais 12 meses.",
+    "pareceres_referenciais": [
+     {
+      "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+      "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, com ou sem pedido de reajuste pela contratada, celebrados sob a égide da Lei n. 14.133/2021 (vigência renovada pelo Parecer nº 18/2026/CONSER/SCGP/CGU/AGU).",
+      "data": "01/11/2024",
+      "validade": "01/11/2028",
+      "cobre": [
+       "prorrogacao",
+       "reajuste"
+      ]
+     },
+     {
+      "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
+      "objeto": "Alteração unilateral quantitativa (acréscimo ou supressão de valor), com fulcro no art. 124, inciso I, alínea b, da Lei nº 14.133/2021, para serviços de natureza continuada sem mão de obra exclusiva.",
+      "data": "03/09/2025",
+      "validade": "03/09/2027",
+      "cobre": [
+       "acrescimo",
+       "supressao"
+      ],
+      "limite_percentual": 25
+     }
+    ],
+    "pesquisa_precos": {
+     "fonte_tr": "Termo de Referência da contratação (exemplo fictício)",
+     "data_pesquisa": "24/11/2026",
+     "atualizacao": "IPCA até 10/2026",
+     "criterio": "mediana",
+     "itens": [
+      {
+       "item": 1,
+       "descricao": "Serviço de outsourcing de impressão – franquia mensal de páginas monocromáticas (exemplo)",
+       "codigo": "CATSER 00000",
+       "unidade": "mês",
+       "quantidade": 12,
+       "preco_contratado": 1394.17,
+       "precos": [
+        {
+         "fonte": "Compras.gov.br – UASG 000001 – Pregão 90001/2026",
+         "data": "10/03/2026",
+         "valor": 1420.0,
+         "valor_atualizado": 1441.3
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000002 – Pregão 90002/2026",
+         "data": "22/04/2026",
+         "valor": 1380.0,
+         "valor_atualizado": 1396.56
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000003 – Pregão 90003/2026",
+         "data": "05/06/2026",
+         "valor": 1510.0,
+         "valor_atualizado": 1521.33
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000004 – Pregão 90004/2026",
+         "data": "18/07/2026",
+         "valor": 690.0,
+         "valor_atualizado": 693.45,
+         "excluido": true,
+         "motivo_exclusao": "inexequível (menos de 50% da média)"
+        }
+       ]
+      },
+      {
+       "item": 2,
+       "descricao": "Página colorida excedente à franquia (exemplo)",
+       "codigo": "CATSER 00001",
+       "unidade": "página",
+       "quantidade": 6000,
+       "preco_contratado": 0.62,
+       "precos": [
+        {
+         "fonte": "Compras.gov.br – UASG 000005 – Pregão 90005/2026",
+         "data": "02/05/2026",
+         "valor": 0.6,
+         "valor_atualizado": 0.61
+        },
+        {
+         "fonte": "Compras.gov.br – UASG 000006 – Pregão 90006/2026",
+         "data": "14/08/2026",
+         "valor": 0.7,
+         "valor_atualizado": 0.7
+        }
+       ]
+      }
+     ]
+    },
+    "objeto_contrato": "Contratação de serviços de outsourcing de impressão",
+    "lei": "14133",
+    "contratada": {
+     "nome": "SYSTEMSCOPY LTDA",
+     "endereco": "na Rua do Exemplo, 100, em Manaus-AM",
+     "representante": "REPRESENTANTE DA EMPRESA"
+    },
+    "historico": [
+     {
+      "documento": "Contrato inicial",
+      "valor": 1000000.0
+     },
+     {
+      "documento": "1º Termo de Apostilamento",
+      "valor": 1050000.0
+     }
+    ],
+    "itens": [
+     {
+      "item": "1",
+      "descricao": "Locação de impressora multifuncional monocromática A4",
+      "valor_atual": 630000.0
+     },
+     {
+      "item": "2",
+      "descricao": "Locação de impressora multifuncional colorida A3",
+      "valor_atual": 420000.0
+     }
+    ],
+    "parecer_tecnico": {
+     "numero": "001/SCON/2026",
+     "clausula_vigencia": "CLÁUSULA SEGUNDA – DA VIGÊNCIA, item 2.1",
+     "clausula_reajuste": "CLÁUSULA DÉCIMA PRIMEIRA – DO REAJUSTE, item 11.1",
+     "natureza": "continuado"
+    },
+    "licitacao": "Pregão Eletrônico nº 90010/2025",
+    "termo_aditivo": {
+     "numero": "015/2026",
+     "garantia": {
+      "exige": true,
+      "percentual": 5,
+      "base": "termo"
+     }
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao",
+      "reajuste",
+      "acrescimo"
+     ],
+     "pareceres": [
+      {
+       "numero": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU",
+       "objeto": "Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (",
+       "data": "01/11/2024",
+       "validade": "01/11/2028",
+       "cobre": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "limite_percentual": null,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_4_2024_c34a16.pdf",
+       "fonte_objeto": "Ementa e conclusão do parecer",
+       "fundamenta": [
+        "prorrogacao",
+        "reajuste"
+       ],
+       "motivo_texto": "Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+      },
+      {
+       "numero": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU",
+       "objeto": "Alteração contratual unilateral quantitativa (acréscimo ou supressão de valor), com fundamento no art. 124, inciso I, alínea \"b\", da Lei nº 14.133/2021, em contratos de serviços de natureza continuada sem mão de obra exclusiva, com observância do limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 125).",
+       "data": "03/09/2025",
+       "validade": "03/09/2027",
+       "cobre": [
+        "acrescimo",
+        "supressao"
+       ],
+       "limite_percentual": 25,
+       "orgao_consultivo": "Consultoria Nacional da União de Serviços",
+       "pdf": "https://cgu.agu.gov.br/referenciais/arquivos/ParecerReferencialSERVI%C3%87OS_6_2025.pdf",
+       "fonte_objeto": "Ementa e item 3, alínea \"e\", do parecer",
+       "fundamenta": [
+        "acrescimo"
+       ],
+       "motivo_texto": "Fundamenta o acréscimo deste termo aditivo."
+      }
+     ],
+     "vencidos": [],
+     "descobertas": [],
+     "vai_para_cju": false
+    },
+    "observacao_parecer": null,
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "calculadora",
+      "texto": "Comprovante do índice de reajuste IPCA – Calculadora do Cidadão (Banco Central do Brasil) (consulta anexada ao Parecer Técnico)."
+     },
+     {
+      "chave": "memoria_calculo",
+      "texto": "Memória de Cálculo – Reajuste."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     },
+     {
+      "chave": "consulta_cpf_socio",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CPF do sócio majoritário."
+     },
+     {
+      "chave": "ficha_autorizacao",
+      "texto": "Ficha para a Autorização da Prorrogação Contratual (atividade de custeio acima de R$ 1.000.000,00)."
+     },
+     {
+      "chave": "parecer_referencial",
+      "texto": "PARECER REFERENCIAL n. 00004/2024/CGSEM/SCGP/CGU/AGU\nObjeto: Prorrogação do prazo de vigência de contratos de serviços continuados sem dedicação exclusiva de mão de obra, celebrados sob a égide da Lei nº 14.133/2021, com ou sem pedido de reajuste pela contratada (\nVigência: de 01/11/2024, válido até 01/11/2028.\nMotivo: Fundamenta a prorrogação de vigência e o reajuste deste termo aditivo."
+     },
+     {
+      "chave": "parecer_referencial_2",
+      "texto": "PARECER REFERENCIAL Nº. 00006/2025/CONSER/SCGP/CGU/AGU\nObjeto: Alteração contratual unilateral quantitativa (acréscimo ou supressão de valor), com fundamento no art. 124, inciso I, alínea \"b\", da Lei nº 14.133/2021, em contratos de serviços de natureza continuada sem mão de obra exclusiva, com observância do limite máximo de 25% (vinte e cinco por cento) do valor inicial atualizado do contrato (art. 125).\nVigência: de 03/09/2025, válido até 03/09/2027.\nMotivo: Fundamenta o acréscimo deste termo aditivo."
+     },
+     {
+      "chave": "atestado_adequacao",
+      "texto": "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00004/2024/CGSEM/SCGP/CGU/AGU e nº 00006/2025/CONSER/SCGP/CGU/AGU."
+     }
+    ],
+    "objeto": "I - Prorrogar o Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, com renovação do valor contratual;\nII - Reajustar o Contrato nº 010/GAPMN-2GDAAE/2025, conforme índice IPCA (4,724910%);\nIII - Acrescer o valor do Contrato nº 010/GAPMN-2GDAAE/2025 em R$ 105.000,00 – 10,00%, referente a inclusão de 1 posto de atendimento.",
+    "valor_atual": 1050000.0,
+    "valor_novo": 1204612.56,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": true,
+    "tem_reajuste": true,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "parecer",
+     "mapa",
+     "pesquisa",
+     "atestado",
+     "ficha"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "a contratação de serviços de outsourcing de impressão",
+    "parecer": {
+     "lei": "14133",
+     "inicio": "01/01/2027",
+     "fim": "31/12/2027",
+     "valor_atual": 1050000.0,
+     "valor_novo": 1204612.56,
+     "historico": [
+      [
+       "CONTRATO INICIAL",
+       1000000.0
+      ],
+      [
+       "1º TERMO DE APOSTILAMENTO",
+       1050000.0
+      ]
+     ],
+     "enquadramento": "art. 106, art. 107; art. 92, § 4º; e art. 124, inciso I, alínea \"b\", e art. 125, todos da Lei nº 14.133/2021",
+     "tipos": [
+      "Prorrogação contratual por mais 12 (doze) meses, de 01/01/2027 a 31/12/2027, com renovação do valor contratual",
+      "Reajuste de 4,724910%, conforme índice IPCA, sobre o valor anual do contrato",
+      "Acréscimo de 10,00% sobre o valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), referente a inclusão de 1 posto de atendimento"
+     ],
+     "motivos": [
+      "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo conveniente a interrupção de sua execução. O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais 12 (doze) meses, contemplando-se, nesta ocasião, o período de 01/01/2027 a 31/12/2027, na forma do art. 107, da Lei nº 14.133/2021, conforme previsto na CLÁUSULA SEGUNDA – DA VIGÊNCIA, item 2.1 do contrato, com renovação do valor contratual.",
+      "O presente Termo Aditivo contempla, ainda, a necessidade de reajuste pelo índice IPCA, conforme estabelece a CLÁUSULA DÉCIMA PRIMEIRA – DO REAJUSTE, item 11.1 do ajuste contratual. O reajuste corresponde ao percentual de 4,724910% sobre o valor nominal de R$ 1.050.000,00 (um milhão e cinquenta mil reais), resultando no valor corrigido de R$ 1.099.612,56 (um milhão, noventa e nove mil, seiscentos e doze reais e cinquenta e seis centavos), fonte de pesquisa: Calculadora do Cidadão (Banco Central do Brasil).",
+      "O acréscimo de 10,00% sobre o valor inicial atualizado do contrato, no montante de R$ 105.000,00 (cento e cinco mil reais), justifica-se pela necessidade de inclusão de 1 posto de atendimento, observado o limite de 25% (vinte e cinco por cento) previsto no art. 125, da Lei nº 14.133/2021. Com as alterações deste Termo Aditivo, o valor do contrato passa de R$ 1.050.000,00 (um milhão e cinquenta mil reais) para R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos)."
+     ],
+     "parecer_fiscal": "A fiscalização do contrato atesta que a contratada vem cumprindo regularmente suas obrigações contratuais, exercendo suas atividades de forma satisfatória e prestando os serviços a contento da Administração. Diante disso, considerando o interesse da Administração na continuidade da prestação dos serviços, bem como a vantajosidade da manutenção da contratação, esta Fiscalização manifesta-se favoravelmente à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, nos termos do art. 107, da Lei nº 14.133/2021; ao reajuste de 4,724910%, conforme índice IPCA, no valor de R$ 49.612,56 (quarenta e nove mil, seiscentos e doze reais e cinquenta e seis centavos), nos termos do art. 92, § 4º, da Lei nº 14.133/2021; e ao acréscimo de 10,00% sobre o valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), nos termos do art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133/2021, resultando no valor total do contrato de R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos).",
+     "itens": [
+      {
+       "item": "1",
+       "valor_atual": 630000.0,
+       "valor_apos": 722767.54
+      },
+      {
+       "item": "2",
+       "valor_atual": 420000.0,
+       "valor_apos": 481845.02
+      }
+     ],
+     "valor_novo_extenso": "R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos)",
+     "avisos": []
+    },
+    "demonstrativo": null,
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Endereço/CNPJ da unidade não cadastrados (Configurações)."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t1º Termo Aditivo ao Contrato de Despesa nº 010/GAPMN-2GDAAE/2025",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "TERMO ADITIVO nº 015/2026",
+      "PRIMEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 010/GAPMN-2GDAAE/2025, QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA SYSTEMSCOPY LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na Avenida Rodrigo Otávio, 780, Bairro Crespo, CEP 69073-177, inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, a Sra. NOME DO ORDENADOR CEL INT, nomeada pela PORTARIA nº 0000/GC1, de 1º de janeiro de 2025, publicada no BOLETIM DO COMANDO DA AERONÁUTICA nº 0, de 1º de janeiro de 2025, portadora da Matrícula Funcional nº 0000000, doravante denominado CONTRATANTE, e a SYSTEMSCOPY LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada na Rua do Exemplo, 100, em Manaus-AM, doravante designada CONTRATADA, neste ato representada pelo Sr. REPRESENTANTE DA EMPRESA, tendo em vista o que consta no Processo nº 67298.000139/2025-01 e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, reajuste e acréscimo, decorrente do Pregão Eletrônico nº 90010/2025, mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 010/GAPMN-2GDAAE/2025 por mais 12 (doze) meses, passando de 01/01/2027 até o dia 31/12/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.2. REAJUSTAR os preços do contrato em 4,724910%, conforme índice IPCA, sobre o valor anual do contrato, passando de R$ 1.050.000,00 (um milhão e cinquenta mil reais) para R$ 1.099.612,56 (um milhão, noventa e nove mil, seiscentos e doze reais e cinquenta e seis centavos), com fundamento no art. 92, § 4º, da Lei nº 14.133, de 1º de abril de 2021.",
+      "1.3. ACRESCER 10,00% do valor inicial atualizado do contrato, no valor de R$ 105.000,00 (cento e cinco mil reais), referente a inclusão de 1 posto de atendimento, com fundamento no art. 124, inciso I, alínea \"b\", e art. 125, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 1.204.612,56 (um milhão, duzentos e quatro mil, seiscentos e doze reais e cinquenta e seis centavos).",
+      "3. CLÁUSULA TERCEIRA – VALORES DOS ITENS (CRONOGRAMA FÍSICO-FINANCEIRO)",
+      "3.1. Em decorrência do reajuste, os valores dos itens do contrato passam a ser os seguintes:",
+      "ITEM | DESCRIÇÃO | VALOR ATUAL (R$) | VALOR APÓS O 1º TERMO ADITIVO (R$) | VALOR MENSAL APÓS O 1º TERMO ADITIVO (R$)",
+      "1 | Locação de impressora multifuncional monocromática A4 | 630.000,00 | 722.767,54 | 60.230,63",
+      "2 | Locação de impressora multifuncional colorida A3 | 420.000,00 | 481.845,02 | 40.153,75",
+      "TOTAL | 1.050.000,00 | 1.204.612,56 | 100.384,38",
+      "Valor mensal = valor após o termo aditivo ÷ 12 meses do novo período (execução mensal estimada).",
+      "4. CLÁUSULA QUARTA – DOTAÇÃO ORÇAMENTÁRIA",
+      "4.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026, na classificação abaixo:",
+      "Gestão/Unidade: 120630",
+      "Fonte de Recursos: 1050000140",
+      "Programa de Trabalho: 168919",
+      "Plano Interno: A0630340600",
+      "Natureza de Despesa: 339039",
+      "Nota de Empenho: 2026NE000000",
+      "5. CLÁUSULA QUINTA – GARANTIA DE EXECUÇÃO",
+      "5.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ 60.230,63 (sessenta mil, duzentos e trinta reais e sessenta e três centavos), correspondente a 5,00% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "5.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "6. CLÁUSULA SEXTA – RATIFICAÇÃO",
+      "6.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "7. CLÁUSULA SÉTIMA – PUBLICAÇÃO",
+      "7.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "7.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\nREPRESENTANTE DA EMPRESA\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": false
+    }
+   }
+  },
+  {
+   "nome": "saldo_negativo_reserva_automatica",
+   "dados": {
+    "contrato": "000/GAPMN/2025 (EXEMPLO)",
+    "numero_aditivo": 3,
+    "pag": "67298.000000/2025-00 (exemplo)",
+    "contratada": {
+     "nome": "EMPRESA EXEMPLO LTDA"
+    },
+    "objeto_contrato": "Prestação de serviços de manutenção predial (exemplo)",
+    "objeto_resumido": "Prestação de serviços de manutenção predial (exemplo)",
+    "om_signataria": {
+     "nome": "Grupamento de Apoio de Manaus",
+     "sigla": "GAP-MN",
+     "ug": "120630",
+     "artigo": "do"
+    },
+    "valor_atual": 900000.0,
+    "aditivo": {
+     "prorrogacao": {
+      "modalidade": "com_valor",
+      "meses": 12,
+      "inicio": "01/03/2026",
+      "fim": "28/02/2027"
+     },
+     "reajuste": null,
+     "acrescimo": null,
+     "supressao": null
+    },
+    "saldo_periodo": {
+     "inicio": null,
+     "fim": "28/02/2026",
+     "documento_periodo": "2º Termo Aditivo",
+     "empenhos": [
+      {
+       "numero": "2025NE000101",
+       "data": "05/03/2025",
+       "empenhado": 900000,
+       "liquidado": 800000,
+       "pago": 800000
+      },
+      {
+       "numero": "2026NE000015",
+       "data": "12/01/2026",
+       "empenhado": 300000,
+       "liquidado": 200000,
+       "pago": 150000
+      },
+      {
+       "numero": "2026NE000020",
+       "data": "20/02/2026",
+       "empenhado": 30000,
+       "liquidado": 0,
+       "pago": 0,
+       "a_liquidar": null
+      }
+     ],
+     "pendentes": [
+      {
+       "descricao": "Competência fevereiro/2026",
+       "periodo": "01/02/2026 a 28/02/2026",
+       "nf": "",
+       "valor": 60000,
+       "empenho": ""
+      },
+      {
+       "descricao": "Serviço extra",
+       "periodo": "",
+       "nf": "123",
+       "valor": 10000,
+       "empenho": "2026NE999999"
+      },
+      {
+       "descricao": "Sem saldo",
+       "periodo": "",
+       "nf": "",
+       "valor": 500000,
+       "empenho": ""
+      }
+     ],
+     "observacoes": "A medição de fevereiro/2026 foi concluída em 28/02/2026 e está em fase de ateste; a nota fiscal ainda não foi entregue pela contratada."
+    }
+   },
+   "conferir": {
+    "pareceres": {
+     "alteracoes": [
+      "prorrogacao"
+     ],
+     "pareceres": [],
+     "vencidos": [],
+     "descobertas": [
+      "prorrogação de vigência"
+     ],
+     "vai_para_cju": true
+    },
+    "observacao_parecer": "não há parecer referencial vigente para este aditivo (prorrogação de vigência); o termo aditivo deve ser submetido à análise jurídica",
+    "itens": [
+     {
+      "chave": "anuencia_consulta",
+      "texto": "Consulta formal à contratada quanto à anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "anuencia_resposta",
+      "texto": "Resposta da contratada contendo a anuência para a prorrogação contratual."
+     },
+     {
+      "chave": "disp_orcamentaria",
+      "texto": "Declaração de Disponibilidade Orçamentária."
+     },
+     {
+      "chave": "vantajosidade",
+      "texto": "Declaração quanto à vantajosidade da prorrogação contratual."
+     },
+     {
+      "chave": "demonstrativo_saldo",
+      "texto": "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI)."
+     },
+     {
+      "chave": "parecer_tecnico",
+      "texto": "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária."
+     },
+     {
+      "chave": "mapa_riscos",
+      "texto": "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP)."
+     },
+     {
+      "chave": "pesquisa_precos",
+      "texto": "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis."
+     },
+     {
+      "chave": "bol_aci",
+      "texto": "Boletim de Designação do Agente de Controle Interno."
+     },
+     {
+      "chave": "bol_od",
+      "texto": "Boletim de Designação do Ordenador de Despesas."
+     },
+     {
+      "chave": "bol_fiscalizacao",
+      "texto": "Boletim de Designação da Fiscalização atualizado."
+     },
+     {
+      "chave": "sicaf",
+      "texto": "Comprovante de consulta à situação da contratada junto ao SICAF (a contratada deverá, ao menos, não estar impedida de licitar; possuir os níveis cadastrados I e II; nível III com certidões da Receita Federal, FGTS e Trabalhista válidas; e nível IV ao menos com certidão municipal válida)."
+     },
+     {
+      "chave": "consulta_cnpj",
+      "texto": "Comprovante de consulta de regularidade junto ao CEIS, CNJ e Lista de Licitantes Inidôneos (TCU) para o CNPJ da contratada."
+     }
+    ],
+    "objeto": "I - Prorrogar o Contrato nº 000/GAPMN/2025 (EXEMPLO) por mais 12 (doze) meses, com renovação do valor contratual.",
+    "valor_atual": 900000.0,
+    "valor_novo": 900000.0,
+    "erros_ficha": [],
+    "avisos_ficha": [],
+    "passa_1_milhao": false,
+    "tem_reajuste": false,
+    "documentos": [
+     "lista",
+     "declaracao",
+     "demonstrativo",
+     "parecer"
+    ],
+    "tem_prorrogacao": true,
+    "motivos_anuencia": [
+     "a prorrogação contratual"
+    ],
+    "objeto_vantajosidade": "a prestação de serviços de manutenção predial (exemplo)",
+    "parecer": {
+     "lei": "14133",
+     "inicio": "01/03/2026",
+     "fim": "28/02/2027",
+     "valor_atual": 900000.0,
+     "valor_novo": 900000.0,
+     "historico": [],
+     "enquadramento": "art. 107, da Lei nº 14.133/2021",
+     "tipos": [
+      "Prorrogação contratual por mais 12 (doze) meses, de 01/03/2026 a 28/02/2027, com renovação do valor contratual"
+     ],
+     "motivos": [
+      "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo conveniente a interrupção de sua execução. O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais 12 (doze) meses, contemplando-se, nesta ocasião, o período de 01/03/2026 a 28/02/2027, na forma do art. 107, da Lei nº 14.133/2021, conforme previsto na ⟦CLÁUSULA ___, item ___ (cláusula de vigência)⟧ do contrato, com renovação do valor contratual."
+     ],
+     "parecer_fiscal": "A fiscalização do contrato atesta que a contratada vem cumprindo regularmente suas obrigações contratuais, exercendo suas atividades de forma satisfatória e prestando os serviços a contento da Administração. Diante disso, considerando o interesse da Administração na continuidade da prestação dos serviços, bem como a vantajosidade da manutenção da contratação, esta Fiscalização manifesta-se favoravelmente à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia 01/03/2026 até o dia 28/02/2027, com renovação do valor contratual, nos termos do art. 107, da Lei nº 14.133/2021.",
+     "itens": [],
+     "valor_novo_extenso": "R$ 900.000,00 (novecentos mil reais)",
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Item 9: cláusula de vigência do contrato não informada (parecer_tecnico.clausula_vigencia) – ler no PDF do contrato.",
+      "Item 10: itens do contrato não informados (itens) – puxar do cadastro (nº e descrição do contrato).",
+      "Item 5: histórico de valores não informado (historico) – usar o do cadastro do contrato."
+     ]
+    },
+    "demonstrativo": {
+     "inicio": "01/03/2025",
+     "fim": "28/02/2026",
+     "quadro": {
+      "A": 900000.0,
+      "B": 1000000.0,
+      "C": 570000.0,
+      "D": -670000.0,
+      "E": 230000.0,
+      "F": 0.0
+     },
+     "nes": [
+      {
+       "numero": "2025NE000101",
+       "a_liquidar": 100000.0,
+       "reservado": 100000.0,
+       "anular": 0.0
+      },
+      {
+       "numero": "2026NE000015",
+       "a_liquidar": 100000.0,
+       "reservado": 100000.0,
+       "anular": 0.0
+      },
+      {
+       "numero": "2026NE000020",
+       "a_liquidar": 30000.0,
+       "reservado": 30000.0,
+       "anular": 0.0
+      }
+     ],
+     "pendentes": [
+      {
+       "valor": 60000.0,
+       "empenho": "2026NE000020"
+      },
+      {
+       "valor": 10000.0,
+       "empenho": "2026NE999999"
+      },
+      {
+       "valor": 500000.0,
+       "empenho": "2026NE000015"
+      }
+     ],
+     "providencias": [
+      "a) Retirar do SILOMS o saldo de R$ -670.000,00 (menos seiscentos e setenta mil reais), referente ao período de 01/03/2025 a 28/02/2026;",
+      "b) Não há saldo de nota de empenho a anular no SIAFI;",
+      "c) Manter R$ 570.000,00 (quinhentos e setenta mil reais) nas notas de empenho para pagar os serviços do item 2 (2025NE000101 – R$ 100.000,00; 2026NE000015 – R$ 100.000,00; 2026NE000020 – R$ 30.000,00);",
+      "d) Registrar o novo período (01/03/2026 a 28/02/2027) somente com o valor do 3º Termo Aditivo, R$ 900.000,00 (novecentos mil reais), sem somar o saldo do período anterior."
+     ],
+     "avisos": [
+      "Início do período analisado calculado (01/03/2025) – conferir com o termo que fixou o período.",
+      "Pendência 'Serviço extra' aponta a NE 2026NE999999, que não está na lista de empenhos.",
+      "🔴 Faltam R$ 340.000,00 de empenho para pagar 'Sem saldo' – pedir reforço de empenho.",
+      "🔴 Executado + a pagar (R$ 1.570.000,00) passa do valor do período (R$ 900.000,00) – conferir."
+     ],
+     "texto": [
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "DEMONSTRATIVO DE EXECUÇÃO E SALDO DO PERÍODO DE VIGÊNCIA",
+      "Contrato nº 000/GAPMN/2025 (EXEMPLO)",
+      "Processo nº 67298.000000/2025-00 (exemplo)",
+      "Contratada: EMPRESA EXEMPLO LTDA",
+      "Objeto: Prestação de serviços de manutenção predial (exemplo)",
+      "Período de vigência analisado: 01/03/2025 a 28/02/2026 (2º Termo Aditivo)",
+      "Em razão da prorrogação de vigência do contrato, esta fiscalização demonstra a execução financeira do período de vigência que se encerra, os serviços executados nesse período ainda pendentes de pagamento e o saldo a ser tratado pela Seção de Contratos no SILOMS e no SIAFI, para que o novo período (01/03/2026 a 28/02/2027) seja registrado somente com o valor do 3º Termo Aditivo, sem somar o saldo do período encerrado.",
+      "1. NOTAS DE EMPENHO DO PERÍODO",
+      "NOTA DE EMPENHO | EMISSÃO | EMPENHADO (R$) | LIQUIDADO (R$) | PAGO (R$) | SALDO A LIQUIDAR (R$)",
+      "2025NE000101 | 05/03/2025 | 900.000,00 | 800.000,00 | 100.000,00",
+      "2026NE000015 | 12/01/2026 | 300.000,00 | 200.000,00 | 150.000,00 | 100.000,00",
+      "2026NE000020 | 20/02/2026 | 30.000,00 | 0,00 | 30.000,00",
+      "TOTAL | 1.230.000,00 | 1.000.000,00 | 950.000,00 | 230.000,00",
+      "2. SERVIÇOS EXECUTADOS NO PERÍODO E AINDA NÃO PAGOS",
+      "SERVIÇO / COMPETÊNCIA | PERÍODO DE EXECUÇÃO | NOTA FISCAL | NE QUE VAI PAGAR | VALOR (R$)",
+      "Competência fevereiro/2026 | 01/02/2026 a 28/02/2026 | – | 2026NE000020 | 60.000,00",
+      "Serviço extra |  | 123 | 2026NE999999 | 10.000,00",
+      "Sem saldo |  | – | 2026NE000015 | 500.000,00",
+      "TOTAL | 570.000,00",
+      "3. DEMONSTRATIVO DO SALDO",
+      " | DESCRIÇÃO | VALOR (R$)",
+      "A | Valor do contrato para o período de vigência analisado | 900.000,00",
+      "B | Executado e já liquidado (atestado) no período | 1.000.000,00",
+      "C | Executado no período e ainda não pago (item 2) | 570.000,00",
+      "D | Saldo do período sem utilização (A − B − C) | -670.000,00",
+      "E | Saldo a liquidar das notas de empenho do período (item 1) | 230.000,00",
+      "F | Saldo das notas de empenho sem uso (E − C) | 0,00",
+      "4. PROVIDÊNCIAS PARA A SEÇÃO DE CONTRATOS",
+      "a) Retirar do SILOMS o saldo de R$ -670.000,00 (menos seiscentos e setenta mil reais), referente ao período de 01/03/2025 a 28/02/2026;",
+      "b) Não há saldo de nota de empenho a anular no SIAFI;",
+      "c) Manter R$ 570.000,00 (quinhentos e setenta mil reais) nas notas de empenho para pagar os serviços do item 2 (2025NE000101 – R$ 100.000,00; 2026NE000015 – R$ 100.000,00; 2026NE000020 – R$ 30.000,00);",
+      "d) Registrar o novo período (01/03/2026 a 28/02/2027) somente com o valor do 3º Termo Aditivo, R$ 900.000,00 (novecentos mil reais), sem somar o saldo do período anterior.",
+      "5. OBSERVAÇÕES DA FISCALIZAÇÃO: A medição de fevereiro/2026 foi concluída em 28/02/2026 e está em fase de ateste; a nota fiscal ainda não foi entregue pela contratada.",
+      "Data conforme assinatura eletrônica.",
+      "Gestor do Contrato"
+     ]
+    },
+    "termo": {
+     "ok": true,
+     "erros": [],
+     "avisos": [
+      "Lei do contrato não informada (lei = 14133 ou 8666): usei a Lei 14.133/2021 – conferir.",
+      "Número do termo aditivo não informado (termo_aditivo.numero – controle da SCON).",
+      "Endereço/CNPJ da unidade não cadastrados (Configurações).",
+      "Dados do Ordenador não cadastrados (Configurações da unidade).",
+      "Representante da empresa não informado (cadastro do contrato).",
+      "Endereço da contratada não informado (cadastro do contrato).",
+      "Licitação de origem não informada (licitacao, ex.: 'Pregão nº 07/2020').",
+      "Dotação: 'Gestão/Unidade' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Fonte de Recursos' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Programa de Trabalho' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Plano Interno' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Dotação: 'Natureza de Despesa' vazio (mesmo dado da Declaração de Disponibilidade Orçamentária).",
+      "Garantia: informe se o contrato/TR exige (termo_aditivo.garantia.exige) e o percentual – a cláusula saiu com o percentual em branco."
+     ],
+     "texto": [
+      "[cabeçalho] 1/1\t3º Termo Aditivo ao Contrato de Despesa nº 000/GAPMN/2025 (EXEMPLO)",
+      "MINISTÉRIO DA DEFESA",
+      "COMANDO DA AERONÁUTICA",
+      "GRUPAMENTO DE APOIO DE MANAUS",
+      "MINUTA",
+      "TERMO ADITIVO nº ___/____",
+      "TERCEIRO TERMO ADITIVO AO CONTRATO DE DESPESA Nº 000/GAPMN/2025 (EXEMPLO), QUE FAZEM ENTRE SI O GRUPAMENTO DE APOIO DE MANAUS E A EMPRESA EMPRESA EXEMPLO LTDA.",
+      "A União, Ministério da Defesa, por intermédio do Comando da Aeronáutica, representada pelo GRUPAMENTO DE APOIO DE MANAUS, com sede na [endereço da unidade], inscrito no CNPJ sob o nº [CNPJ], neste ato representado pelo seu Ordenador de Despesas, o Sr. [NOME E POSTO DO ORDENADOR], nomeado pela [portaria de nomeação], publicada no [BCA], portador da Matrícula Funcional nº [matrícula], doravante denominado CONTRATANTE, e a EMPRESA EXEMPLO LTDA, inscrita no CNPJ/MF sob o nº [CNPJ], sediada [endereço da contratada], doravante designada CONTRATADA, neste ato representada pelo Sr. [REPRESENTANTE DA EMPRESA], tendo em vista o que consta no Processo nº 67298.000000/2025-00 (exemplo) e em observância às disposições da Lei nº 14.133, de 1º de abril de 2021, da Lei de Diretrizes Orçamentárias vigente e demais legislação aplicável, resolvem celebrar o presente Termo Aditivo de prorrogação, decorrente do [Pregão nº __/____], mediante as cláusulas e condições a seguir enunciadas:",
+      "1. CLÁUSULA PRIMEIRA – OBJETO",
+      "1.1. PRORROGAR o prazo de vigência do Contrato nº 000/GAPMN/2025 (EXEMPLO) por mais 12 (doze) meses, passando de 01/03/2026 até o dia 28/02/2027, com renovação do valor contratual, com fundamento no art. 107, da Lei nº 14.133, de 1º de abril de 2021.",
+      "2. CLÁUSULA SEGUNDA – PREÇO",
+      "2.1. O valor do presente Termo Aditivo perfaz o total de R$ 900.000,00 (novecentos mil reais).",
+      "3. CLÁUSULA TERCEIRA – DOTAÇÃO ORÇAMENTÁRIA",
+      "3.1. As despesas decorrentes desta contratação estão programadas em dotação orçamentária própria, prevista no orçamento da União, para o exercício de 2026/2027, na classificação abaixo:",
+      "Gestão/Unidade: ___",
+      "Fonte de Recursos: ___",
+      "Programa de Trabalho: ___",
+      "Plano Interno: ___",
+      "Natureza de Despesa: ___",
+      "Nota de Empenho: ____NE______",
+      "4. CLÁUSULA QUARTA – GARANTIA DE EXECUÇÃO",
+      "4.1. No prazo de 10 (dez) dias úteis após a assinatura do Termo Aditivo, prestará garantia no valor de R$ ___, correspondente a __% do valor do Termo Aditivo, que será liberada de acordo com as condições previstas no Termo de Referência, conforme disposto nos arts. 96 a 100 da Lei nº 14.133, de 2021, desde que cumpridas as obrigações contratuais.",
+      "4.2. A validade da garantia, qualquer que seja a modalidade escolhida, deverá abranger um período de 90 dias após o término da vigência contratual, conforme item 3.1 do Anexo VII-F da IN SEGES/MPDG nº 5/2017.",
+      "5. CLÁUSULA QUINTA – RATIFICAÇÃO",
+      "5.1. Ficam mantidas as demais cláusulas e condições do contrato originário, naquilo que não contrariem o presente Termo Aditivo.",
+      "6. CLÁUSULA SEXTA – PUBLICAÇÃO",
+      "6.1. Incumbirá à CONTRATANTE divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma prevista no art. 94 da Lei nº 14.133, de 2021, bem como no respectivo sítio oficial na Internet, em atenção ao art. 91, caput, da Lei nº 14.133, de 2021, e ao art. 8º, § 2º, da Lei nº 12.527, de 2011, c/c art. 7º, § 3º, inciso V, do Decreto nº 7.724, de 2012.",
+      "6.2. Para firmeza e validade do pactuado, o presente Termo Aditivo foi lavrado em 2 (duas) vias de igual teor, que, depois de lido e achado em ordem, vai assinado pelos contraentes.",
+      "Manaus, data conforme assinatura digital.",
+      "Assinaturas",
+      "Pela CONTRATANTE | Pela CONTRATADA",
+      "__________________________________\nGestor do Contrato | __________________________________\n___\nRepresentante da Empresa",
+      "__________________________________\nAgente de Controle Interno do GAP-MN | __________________________________\nTestemunha de Assinatura",
+      "__________________________________\nOrdenador de Despesas do GAP-MN | __________________________________\nTestemunha de Assinatura"
+     ],
+     "minuta": true
     }
    }
   }

@@ -50,11 +50,19 @@ export const motor = {
   /** Gera sem o .zip: só os valores e os avisos (botão Conferir). */
   simular: async (dados: DadosReajuste, config: ConfigApostilamento, progresso?: (etapa: string) => void) =>
     (await pedir({ tipo: "gerar", dados, config: paraMotor(config), prints: [], zip: false }, progresso)).resultado as ResultadoGeracao,
-  /** Gera o .zip; com `checklist` (as 8 marcações), ele leva também o "5 - Checklist do Fiscal". */
+  /** Gera o .zip do fiscal (sem o Termo de Apostilamento, que é da SCON); com `checklist` (as 8 marcações), ele leva
+   *  também o "5 - Checklist do Fiscal". */
   gerar: async (dados: DadosReajuste, config: ConfigApostilamento, prints: File[], progresso?: (etapa: string) => void, checklist?: MarcacaoChecklist[]) => {
     const arquivos = await Promise.all(prints.map(async (f) => ({ nome: f.name, bytes: await f.arrayBuffer() })));
-    const r = await pedir({ tipo: "gerar", dados, config: paraMotor(config), prints: arquivos, zip: true, checklist }, progresso, arquivos.map((a) => a.bytes));
+    const r = await pedir({ tipo: "gerar", dados, config: paraMotor(config), prints: arquivos, zip: true, checklist, so: "fiscal" }, progresso, arquivos.map((a) => a.bytes));
     return { ...(r.resultado as ResultadoGeracao), zip: new Blob([r.zip!], { type: "application/zip" }) };
+  },
+  /** Só o Termo de Apostilamento (.docx), documento da SCON (revisão 7) */
+  termo: async (dados: DadosReajuste, config: ConfigApostilamento, prints: File[], progresso?: (etapa: string) => void) => {
+    const arquivos = await Promise.all(prints.map(async (f) => ({ nome: f.name, bytes: await f.arrayBuffer() })));
+    const r = await pedir({ tipo: "gerar", dados, config: paraMotor(config), prints: arquivos, zip: true, so: "termo" }, progresso, arquivos.map((a) => a.bytes));
+    const res = r.resultado as ResultadoGeracao;
+    return { ...res, docx: new Blob([r.zip!], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), arquivo: res.arquivos[0] ?? "Termo de Apostilamento.docx" };
   },
   /** Só o checklist do fiscal (.docx). */
   checklist: async (dados: DadosReajuste, config: ConfigApostilamento, marcacoes: MarcacaoChecklist[], progresso?: (etapa: string) => void) => {

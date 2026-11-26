@@ -5,11 +5,37 @@
 export type Alteracao = "prorrogacao" | "reajuste" | "acrescimo" | "supressao";
 export const ALTERACOES: Alteracao[] = ["prorrogacao", "reajuste", "acrescimo", "supressao"];
 
-export interface Prorrogacao { modalidade: "com_valor" | "sem_valor"; meses: number | null; inicio: string | null; fim?: string | null }
+export interface Prorrogacao {
+  modalidade: "com_valor" | "sem_valor"; meses: number | null; inicio: string | null; fim?: string | null;
+  /** prorrogação excepcional (art. 57, § 4º, da Lei 8.666; revisão 7): sempre vai para a CJU */
+  excepcional?: boolean; justificativa?: string | null;
+}
 export interface ReajusteAditivo { indice: string | null; percentual: string | null; valor: number | null }
 export interface AlteracaoValor { valor: number | null; percentual: number | null; descricao: string | null }
 
-export interface OmSignataria { nome: string; sigla: string; ug: string; artigo: "do" | "da" }
+export interface Ordenador { nome: string; posto: string; feminino: boolean; portaria: string; publicacao: string; matricula: string }
+/** OM que assina o contrato: do cadastro da unidade (Reajustes › Configurações). Endereço, CNPJ, cidade e Ordenador só
+ *  no Termo Aditivo (revisão 7): o site completa com o cadastro na hora de gerar */
+export interface OmSignataria { nome: string; sigla: string; ug: string; artigo: "do" | "da"; endereco?: string; cnpj?: string; cidade?: string; ordenador?: Ordenador }
+export interface Contratada { nome: string; cnpj?: string; endereco?: string; representante?: string; representante_feminino?: boolean }
+/** Termo Aditivo (documento da SCON, revisão 7, seção 3L) */
+export interface TermoAditivoScon {
+  numero?: string | null;
+  /** null = automático (MINUTA só quando vai para a CJU) */
+  minuta?: boolean | null;
+  preco_complemento?: string | null;
+  /** null = automático ("2026/2027" quando o novo período atravessa o ano) */
+  exercicio?: string | null;
+  /** fonte e trecho: de onde o site leu (PDF do contrato ou TR), para a SCON conferir */
+  garantia?: { exige: boolean | null; percentual?: number | null; base?: "termo" | "contrato"; valor_base?: number | null; fonte?: string | null; trecho?: string | null };
+}
+/** Demonstrativo de Execução e Saldo do Período de Vigência (seção 3K): preenchido pelo fiscal, só com prorrogação */
+export interface EmpenhoPeriodo { numero: string; data: string; empenhado: number | null; liquidado: number | null; pago: number | null; a_liquidar?: number | null; marcado?: boolean; origem?: string }
+export interface PendentePeriodo { descricao: string; periodo: string; nf: string; valor: number | null; empenho: string }
+export interface SaldoPeriodo {
+  inicio?: string | null; fim?: string | null; documento_periodo?: string | null; valor_periodo?: number | null;
+  empenhos: EmpenhoPeriodo[]; liquidado?: number | null; pendentes: PendentePeriodo[]; observacoes?: string; om_cabecalho?: string | null;
+}
 export interface Empenho {
   numero?: string | null; gestao_unidade: string; fonte: string; programa_trabalho: string; acao: string | null;
   plano_interno: string; natureza_despesa: string; exercicio: number | string | null;
@@ -64,7 +90,13 @@ export interface DadosAditivo {
   // ── Parecer Técnico de Alteração Contratual (revisão 5.1, seção 3J) ──
   /** "14133" | "8666" (o site copia do estado ao gerar) */
   lei?: string;
-  contratada?: { nome: string } | null;
+  contratada?: Contratada | null;
+  // ── Termo Aditivo da SCON e Demonstrativo de Saldo (revisão 7) ──
+  tipo_contrato?: string | null;
+  /** licitação de origem ("Pregão nº 07/2020"), do cadastro do contrato */
+  licitacao?: string | null;
+  termo_aditivo?: TermoAditivoScon | null;
+  saldo_periodo?: SaldoPeriodo | null;
   objeto_resumido?: string | null;
   /** item 5: contrato inicial e cada documento assinado, com o valor que o contrato passou a ter depois dele */
   historico?: HistoricoParecer[];
@@ -129,6 +161,12 @@ export interface EstadoAditivo {
   arquivos_gerados?: string[];
   /** PDFs guardados no aditivo, por chave da Lista (sicaf, consulta_cnpj, consulta_cpf_socio, memoria_calculo, procuracao…) */
   anexos?: Record<string, AnexoGuardado[]>;
+  /** Pesquisa de Preços: "site" (a feita no site) ou "anexo" (PDF feito fora do site, guardado em anexos.pesquisa_precos) */
+  pesquisa_vale?: "site" | "anexo" | null;
+  /** Termo Aditivo da SCON: quando foi gerado, por quem, e de qual salvamento (versão do registro) */
+  termo_gerado?: { em: string; por: string | null; versao: number; arquivo: string } | null;
+  /** salvamento usado em cada geração do .zip do fiscal (conferência da SCON) */
+  zip_de?: { versao: number; salvo_em: string; salvo_por: string | null } | null;
   /** PDFs que compõem o item 13 (consolidada e certidões complementares), para montar de novo em outra sessão */
   anexos_item13?: { consolidada?: AnexoGuardado | null; complementos?: Record<string, AnexoGuardado> };
 }

@@ -7,6 +7,8 @@ import listaPy from "./kit/gerar_lista_verificacao.py?raw";
 import declaracaoPy from "./kit/gerar_declaracao_orcamentaria.py?raw";
 import vantajosidadePy from "./kit/gerar_declaracao_vantajosidade.py?raw";
 import parecerPy from "./kit/gerar_parecer_tecnico.py?raw";
+import demonstrativoPy from "./kit/gerar_demonstrativo_saldo.py?raw";
+import termoPy from "./kit/gerar_termo_aditivo.py?raw";
 import atestadoPy from "./kit/gerar_atestado_adequacao.py?raw";
 import montarZipPy from "./kit/montar_zip.py?raw";
 import pareceresJson from "./kit/biblioteca_pareceres.json?raw";
@@ -21,7 +23,7 @@ import brasaoUrl from "./kit/brasao.png?url";
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 const KIT: [string, string][] = [
   ["pareceres.py", pareceresPy], ["gerar_lista_verificacao.py", listaPy], ["gerar_declaracao_orcamentaria.py", declaracaoPy],
-  ["gerar_declaracao_vantajosidade.py", vantajosidadePy], ["gerar_parecer_tecnico.py", parecerPy], ["gerar_atestado_adequacao.py", atestadoPy], ["montar_zip.py", montarZipPy],
+  ["gerar_declaracao_vantajosidade.py", vantajosidadePy], ["gerar_parecer_tecnico.py", parecerPy], ["gerar_demonstrativo_saldo.py", demonstrativoPy], ["gerar_termo_aditivo.py", termoPy], ["gerar_atestado_adequacao.py", atestadoPy], ["montar_zip.py", montarZipPy],
   ["gerar_mapa_riscos.py", mapaPy], ["gerar_pesquisa_precos.py", pesquisaPy], ["gerar_ficha_autorizacao.py", fichaPy],
   ["verificar_sicaf.py", sicafPy], ["consultar_regularidade.py", regularidadePy], ["biblioteca_riscos.json", bibliotecaJson], ["biblioteca_pareceres.json", pareceresJson],
 ];
@@ -40,7 +42,8 @@ export type PedidoAditivo =
   | { id: number; tipo: "consolidada_texto"; texto: string }
   | { id: number; tipo: "consolidada_json"; json: unknown }
   | { id: number; tipo: "juntar"; pdfs: ArrayBuffer[] }
-  | { id: number; tipo: "gerar"; dados: unknown; extras: { chave: string; nome: string; bytes: ArrayBuffer }[] };
+  | { id: number; tipo: "gerar"; dados: unknown; extras: { chave: string; nome: string; bytes: ArrayBuffer }[] }
+  | { id: number; tipo: "termo"; dados: unknown };
 
 export type RespostaAditivo =
   | { id: number; tipo: "progresso"; etapa: string }
@@ -100,6 +103,19 @@ ctx.onmessage = async (ev: MessageEvent<PedidoAditivo>) => {
         const final = recortar(py.FS.readFile("/tmp/juntar/final.pdf"));
         for (const c of [...caminhos, "/tmp/juntar/final.pdf"]) py.FS.unlink(c);
         ok(true, final);
+        return;
+      }
+      case "termo": {
+        // Termo Aditivo da SCON (revisão 7): documento à parte, fora do .zip do fiscal
+        avisar("Gerando o Termo Aditivo…");
+        const r = JSON.parse(ponte.termo(JSON.stringify(p.dados), "/tmp/termo")) as { ok: boolean; arquivos: string[] };
+        let docx: ArrayBuffer | undefined;
+        if (r.ok && r.arquivos[0]) {
+          const c = `/tmp/termo/${r.arquivos[0]}`;
+          docx = recortar(py.FS.readFile(c));
+          py.FS.unlink(c);
+        }
+        ok(r, docx);
         return;
       }
       case "gerar": {

@@ -36,7 +36,11 @@ type Props = {
   aoCadastrarUnidade?: (sigla: string) => void;
   /** vindo do termo aditivo ("Fazer o reajuste no módulo Reajustes"): instrumento Termo Aditivo com este nº */
   taPedido?: number | null;
+  /** perfil SCON (ADMIN e DEV também): gera o Termo de Apostilamento (o banco confere de novo). Outras OMs: sempre */
+  podeTermoScon?: boolean;
 };
+const SO_SCON = "Somente a Seção de Contratos gera o termo";
+const quando = (iso: string) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 
 const INDICES = ["IPCA", "INPC", "IGP-M", "IGP-DI", "IPCA-E", "INCC"];
 const ICONE = { OK: "✅", ATENCAO: "⚠️", FALTA: "❌" } as const;
@@ -93,7 +97,7 @@ function baixar(arquivo: Blob, nome: string) {
 
 /** Tela do reajuste de um contrato: cadastro (salvo no banco), índice do Banco Central ou da FGV (INCC), prints
  *  da consulta do índice, checklist do fiscal, quadro de checagem e geração dos documentos pelo motor da SCON. */
-export default function ReajusteContrato({ contrato, config: configBase, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes, unidades, aoCadastrarUnidade, taPedido }: Props) {
+export default function ReajusteContrato({ contrato, config: configBase, nomeUsuario, ultimaNE, aoVoltar, aoSalvar, armazem = armazemBanco, ugGov, contratoGov, padroes, unidades, aoCadastrarUnidade, taPedido, podeTermoScon }: Props) {
   const [d, setD] = useState<DadosReajuste | null>(null);
   const [dedicacao, setDedicacao] = useState(false);
   const [versao, setVersao] = useState<number | null>(null);
@@ -106,6 +110,9 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
   const [colar, setColar] = useState<string | null>(null);
   const [buscandoIdx, setBuscandoIdx] = useState<number | null>(null);
   const [carga, setCarga] = useState<CargaGuardada | null>(null);
+  const [salvo, setSalvo] = useState<{ nome: string | null; em: string } | null>(null);
+  // outras OMs (cadastro no navegador): a própria OM gera o termo; no GAP-MN, só a SCON
+  const podeTermo = armazem.local || !!podeTermoScon;
 
   // carrega o cadastro (ou começa pelo que o app já sabe do contrato) e deixa o reajuste pronto:
   // reajustes devidos hoje, nº do apostilamento pelos já assinados e índices do Banco Central
@@ -120,6 +127,7 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
       const temCadastro = !!(data?.dados && Object.keys(data.dados).length);
       let base: DadosReajuste = temCadastro ? { ...dadosIniciais(contrato), ...(data!.dados as DadosReajuste) } : { ...dadosIniciais(contrato), ...padroes };
       if (temCadastro) { setDedicacao(!!data!.dedicacao_exclusiva); setVersao(data!.versao); }
+      setSalvo(data?.atualizado_em ? { nome: data.atualizado_nome ?? null, em: data.atualizado_em } : null);
       const feitos: string[] = [];
       const devidos = completarReajustesDevidos(base);
       if (devidos) { base = { ...base, reajustes: devidos }; feitos.push("reajustes devidos hoje incluídos"); }
@@ -189,7 +197,10 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
   const avisosCk = avisosChecklist(d.checklist);
   // o checklist não mexe nos valores: não apaga a checagem nem a conferência
   const mudaChecklist = (l: MarcacaoChecklist[]) => { setD((x) => (x ? { ...x, checklist: l } : x)); setAlterado(true); };
-  const nDocs = (d.instrumento.toLowerCase().startsWith("termo aditivo") ? 3 : 4) + (comChecklist ? 1 : 0);
+  const instrumentoAditivo = d.instrumento.toLowerCase().startsWith("termo aditivo");
+  // documentos do fiscal: Memória, Declaração e Parecer (+ checklist); o Termo de Apostilamento é da SCON (revisão 7)
+  const nDocs = 3 + (comChecklist ? 1 : 0);
+  const SALVE = "Salve antes de baixar – os documentos saem exatamente com o que está salvo.";
 
   async function salvar() {
     if (!d) return;
@@ -204,6 +215,7 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
     setOcupado(null);
     if (erro) { setMsg({ ok: false, txt: `Não salvou: ${erro}` }); return; }
     setAlterado(false);
+    setSalvo({ nome: nomeUsuario || null, em: linha.atualizado_em });
     setMsg({ ok: true, txt: armazem.local ? "Cadastro salvo neste navegador." : "Cadastro salvo." });
     aoSalvar({ numero_contrato: linha.numero_contrato, data_base: d.data_base, reajustes_aplicados: linha.reajustes_aplicados, dedicacao_exclusiva: dedicacao,
       atualizado_em: linha.atualizado_em, situacao_cadastro: linha.situacao_cadastro, pendencias });
@@ -243,18 +255,39 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
   }
   async function gerar() {
     if (!d) return;
+    if (alterado) { setMsg({ ok: false, txt: SALVE }); return; }
     const q = await checar();
     if (!q?.pode_gerar) { if (q) setMsg({ ok: false, txt: "Há campos marcados com ❌ no quadro de checagem." }); return; }
     const r = await rodar("Gerando os documentos…", (p) => motor.gerar(paraMotor(d), config, printsNovos, p, comChecklist ? ck : undefined));
     if (!r) return;
     setSimulacao(r);
     baixar(r.zip, `Apostilamento - CT ${contrato.numero_contrato.replace(/\//g, "-")}.zip`);
-    setMsg({ ok: true, txt: `Documentos gerados: ${r.arquivos.length} arquivos no .zip baixado.` });
+    setMsg({ ok: true, txt: `Documentos do fiscal gerados: ${r.arquivos.length} arquivos no .zip baixado${instrumentoAditivo ? "" : " (o Termo de Apostilamento sai no botão da SCON)"}.` });
+  }
+
+  /** Termo de Apostilamento: documento da SCON, em botão próprio; o banco confere o perfil e registra o salvamento usado */
+  async function gerarTermo() {
+    if (!d) return;
+    if (alterado) { setMsg({ ok: false, txt: SALVE }); return; }
+    if (!podeTermo) { setMsg({ ok: false, txt: `${SO_SCON}.` }); return; }
+    const q = await checar();
+    if (!q?.pode_gerar) { if (q) setMsg({ ok: false, txt: "Há campos marcados com ❌ no quadro de checagem." }); return; }
+    if (!armazem.local) {
+      const { supabase } = await import("../../lib/supabase");
+      const { error } = await supabase.rpc("registrar_termo_scon", { p_tipo: "apostilamento", p_numero_contrato: contrato.numero_contrato, p_referencia: String(d.numero_instrumento ?? ""),
+        p_versao: versao, p_salvo_em: salvo?.em ?? null, p_nome: nomeUsuario || null });
+      if (error) { setMsg({ ok: false, txt: /Somente|42501|permission/i.test(`${error.message} ${error.code}`) ? `${SO_SCON}.` : /function|schema cache/i.test(error.message) ? "Falta a migração 20261126_termos_scon no banco." : error.message }); return; }
+    }
+    const r = await rodar("Gerando o Termo de Apostilamento…", (p) => motor.termo(paraMotor(d), config, printsNovos, p));
+    if (!r) return;
+    baixar(r.docx, r.arquivo);
+    setMsg({ ok: true, txt: `Termo de Apostilamento gerado com o cadastro salvo${salvo ? ` por ${salvo.nome ?? "—"} em ${quando(salvo.em)}` : ""}: ${r.arquivo}.` + (r.avisos.length ? ` Confira: ${r.avisos.join(" ")}` : "") });
   }
 
   /** Só o checklist do fiscal (.docx), sem gerar os outros documentos de novo; os avisos não impedem */
   async function gerarChecklist() {
     if (!d) return;
+    if (alterado) { setMsg({ ok: false, txt: SALVE }); return; }
     const r = await rodar("Gerando o checklist…", (p) => motor.checklist(paraMotor(d), config, ck, p));
     if (!r) return;
     baixar(r.docx, r.arquivo);
@@ -296,7 +329,8 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
         <button onClick={() => { if (!alterado || confirm("Há alterações não salvas. Sair mesmo assim?")) aoVoltar(); }} className="text-sm text-sky-700 hover:underline">← Painel</button>
         <h2 className="text-lg font-semibold text-slate-800">Contrato {contrato.numero_contrato}</h2>
         <span className="text-xs text-slate-500">{contrato.fornecedor}</span>
-        {alterado && <span className="text-xs text-amber-600">alterações não salvas</span>}
+        {salvo && <span className="text-xs text-slate-500">Salvo por <b>{salvo.nome ?? "—"}</b> em {quando(salvo.em)}</span>}
+        {alterado && <span className="text-xs font-semibold text-amber-600">alterações não salvas</span>}
       </div>
 
       {unidades && (unidade
@@ -347,6 +381,9 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
         <div className="grid md:grid-cols-2 gap-3 mt-3">
           <Campo rotulo="Objeto completo (cláusula do objeto)" valor={d.objeto_completo} onChange={(v) => set("objeto_completo", v)} longo />
           <Campo rotulo="Objeto resumido" valor={d.objeto_resumido} onChange={(v) => set("objeto_resumido", v)} longo placeholder="Contratação de serviços de outsourcing de impressão" />
+        </div>
+        <div className="grid md:grid-cols-3 gap-3 mt-3">
+          <Campo rotulo="Licitação de origem (Termo Aditivo)" valor={d.licitacao ?? ""} onChange={(v) => set("licitacao", v)} placeholder="Pregão nº 07/2020" dica="o Contratos.gov.br traz a modalidade e o número" />
         </div>
         <Caixa rotulo="Dedicação exclusiva de mão de obra (repactuação — fica fora do painel e desta automação)" marcado={dedicacao} onChange={(v) => { setDedicacao(v); setAlterado(true); }} />
       </Secao>
@@ -557,7 +594,7 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
       </Secao>
 
       <Secao titulo="8. Checklist do Fiscal (lista de verificação de documentos)"
-        direita={<button onClick={gerarChecklist} disabled={!!ocupado} className="text-xs text-sky-700 hover:underline disabled:opacity-40">Gerar só o checklist (.docx)</button>}>
+        direita={<button onClick={gerarChecklist} disabled={!!ocupado || alterado} title={alterado ? SALVE : undefined} className="text-xs text-sky-700 hover:underline disabled:opacity-40">Gerar só o checklist (.docx)</button>}>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="text-slate-500"><tr>
@@ -620,12 +657,18 @@ export default function ReajusteContrato({ contrato, config: configBase, nomeUsu
 
       <div className="sticky bottom-0 z-20 -mx-4 border-t border-slate-200 px-4 py-3" style={{ background: "rgba(6,14,31,0.97)" }}>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={salvar} disabled={!!ocupado} className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-3 py-2 text-sm disabled:opacity-50">Salvar cadastro</button>
+          <button onClick={salvar} disabled={!!ocupado} className={alterado ? "rounded-lg bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 text-sm font-semibold disabled:opacity-50" : "rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-3 py-2 text-sm disabled:opacity-50"}>{alterado ? "💾 Salvar cadastro" : "Salvar cadastro"}</button>
           <button onClick={checar} disabled={!!ocupado} className="rounded-lg border border-sky-300 text-sky-700 hover:bg-sky-50 px-3 py-2 text-sm disabled:opacity-50">Checar dados</button>
           <button onClick={conferir} disabled={!!ocupado} className="rounded-lg border border-sky-300 text-sky-700 hover:bg-sky-50 px-3 py-2 text-sm disabled:opacity-50">Conferir valores</button>
-          <button onClick={gerar} disabled={!!ocupado} className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 text-sm font-medium disabled:opacity-50">
-            Gerar os {nDocs} documentos (.zip){novos.length ? ` · ${printsNovos.length}/${novos.length} prints` : ""}
+          <button onClick={gerar} disabled={!!ocupado || alterado} title={alterado ? SALVE : undefined} className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 text-sm font-medium disabled:opacity-50">
+            Gerar os documentos do fiscal (.zip, {nDocs}){novos.length ? ` · ${printsNovos.length}/${novos.length} prints` : ""}
           </button>
+          {instrumentoAditivo
+            ? <span className="text-xs text-slate-400">O termo sai na aba Termos Aditivos.</span>
+            : <button onClick={gerarTermo} disabled={!!ocupado || alterado || !podeTermo} title={!podeTermo ? SO_SCON : alterado ? SALVE : undefined}
+                className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 text-sm font-medium disabled:opacity-50">📜 Gerar Termo de Apostilamento (SCON)</button>}
+          {alterado && <span className="text-xs font-medium text-amber-500">{SALVE}</span>}
+          {!alterado && !podeTermo && !instrumentoAditivo && <span className="text-xs text-slate-400">{SO_SCON}.</span>}
           {ocupado && <span className="text-xs text-slate-500 animate-pulse">{ocupado}</span>}
           {!ocupado && msg && <span className={`text-xs ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.txt}</span>}
         </div>

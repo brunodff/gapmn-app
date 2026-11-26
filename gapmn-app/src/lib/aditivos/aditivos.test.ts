@@ -9,6 +9,9 @@ import {
 import { fonteDoRegistro, pesquisaParaAditivo } from "./pesquisa.ts";
 import { clausulaParaParecer, inteiroExtenso, previaParecer, reaisExtenso } from "./parecer.ts";
 import type { DadosAditivo, EstadoAditivo } from "./tipos.ts";
+import { calcularSaldo, empenhoDoGov, previaSaldo } from "./saldo.ts";
+import { exercicioDotacao, licitacaoDoGov, minutaDoTermo, valorGarantia } from "./termo.ts";
+import { brlExt } from "./parecer.ts";
 
 // Resposta do kit da SCON (Python, ponte_aditivo.conferir) para os exemplos do pacote de 24/11/2026
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/exemplos.json", import.meta.url), "utf8")) as {
@@ -36,7 +39,7 @@ for (const ex of fixture.exemplos) {
     assert.equal(temProrrogacao(d), k4.tem_prorrogacao);
     assert.deepEqual(motivosAnuencia(ex.dados as unknown as DadosAditivo), k4.motivos_anuencia);
     assert.equal(fraseObjetoVantajosidade(d), k4.objeto_vantajosidade);
-    const mapa: Record<string, string> = { declaracao: "disp_orcamentaria", vantajosidade: "vantajosidade", parecer: "parecer_tecnico", mapa: "mapa_riscos", pesquisa: "pesquisa_precos", atestado: "atestado_adequacao", ficha: "ficha_autorizacao" };
+    const mapa: Record<string, string> = { declaracao: "disp_orcamentaria", vantajosidade: "vantajosidade", demonstrativo: "demonstrativo_saldo", parecer: "parecer_tecnico", mapa: "mapa_riscos", pesquisa: "pesquisa_precos", atestado: "atestado_adequacao", ficha: "ficha_autorizacao" };
     // Parecer Técnico (rev5.1): itens 5 a 11 iguais à prévia do kit (o formato antigo, sem o bloco "aditivo", o site não usa)
     if (ex.dados.aditivo) {
     const kp = (ex.conferir as { parecer: Record<string, unknown> }).parecer;
@@ -49,6 +52,26 @@ for (const ex of fixture.exemplos) {
     assert.equal(tp.parecer_fiscal, kp.parecer_fiscal);
     assert.deepEqual(tp.itens.map((i) => [i.item, i.valor_atual, i.valor_apos]), (kp.itens as { item: string; valor_atual: number; valor_apos: number }[]).map((i) => [i.item, i.valor_atual, i.valor_apos]));
     assert.equal(tp.valor_novo_extenso, kp.valor_novo_extenso);
+    }
+    // Demonstrativo de Saldo (seção 3K): quadro A–F, reservas, providências e avisos iguais ao documento do kit
+    const kd = (ex.conferir as { demonstrativo: { inicio: string; fim: string; quadro: Record<string, number | null>; nes: unknown[]; pendentes: unknown[]; providencias: string[]; avisos: string[] } | null }).demonstrativo;
+    if (kd) {
+      const s = previaSaldo(d);
+      assert.deepEqual([s.inicio, s.fim], [kd.inicio, kd.fim]);
+      assert.deepEqual({ A: s.quadro.A, B: s.quadro.B, C: s.quadro.C, D: s.quadro.D, E: s.quadro.E, F: s.quadro.F }, kd.quadro);
+      assert.deepEqual(s.quadro.nes.map((e) => ({ numero: e.numero, a_liquidar: e.a_liquidar, reservado: e.reservado, anular: e.anular })), kd.nes);
+      assert.deepEqual(s.quadro.pend.map((p) => ({ valor: p.valor, empenho: p.empenho })), kd.pendentes);
+      assert.deepEqual(s.providencias.map((t) => t.replace(/[⟦⟧]/g, "")), kd.providencias);
+      assert.deepEqual(s.avisos, kd.avisos);
+    }
+    // Termo Aditivo (seção 3L): MINUTA, exercício da dotação e garantia como no documento do kit
+    const kt = (ex.conferir as { termo: { ok: boolean; minuta: boolean; texto: string[] } | null }).termo;
+    if (kt?.ok) {
+      assert.equal(minutaDoTermo(d, an), kt.minuta, "MINUTA");
+      const ex2 = exercicioDotacao(d);
+      if (ex2) assert.ok(kt.texto.some((t) => t.includes(`para o exercício de ${ex2},`)), `exercício ${ex2}`);
+      const g = valorGarantia(d);
+      if (g != null && d.termo_aditivo?.garantia?.exige) assert.ok(kt.texto.some((t) => t.includes(`prestará garantia no valor de ${brlExt(g)}`)), `garantia ${g}`);
     }
     assert.deepEqual(geradosPrevistos(d, HOJE).sort(), k4.documentos.filter((x) => x !== "lista").map((x) => mapa[x]).sort());
     if (ex.dados.aditivo) {
@@ -134,7 +157,8 @@ CONTINUADA SEM MÃO DE OBRA EXCLUSIVA. ACRÉSCIMO OU SUPRESSÃO DE VALOR, COM FU
   assert.equal(itens.find((i) => i.chave === "atestado_adequacao")!.texto, "Atestado de adequação do processo aos PARECERES REFERENCIAIS nº 00001/2023/CGSEM/SCGP/CGU/AGU e nº 00002/2023/CGSEM/SCGP/CGU/AGU.");
   const gerados = geradosPrevistos(claro, HOJE);
   const falta = faltandoNoZip(claro, HOJE, (c) => gerados.includes(c) || c === "sicaf" || c === "consulta_cnpj");
-  assert.deepEqual(falta.map((x) => `${x.n} ${x.chave}`), ["1 anuencia_consulta", "2 anuencia_resposta", "7 pesquisa_precos"]);
+  // prorrogação sem o Demonstrativo de Saldo preenchido (revisão 7): o item 5 também falta
+  assert.deepEqual(falta.map((x) => `${x.n} ${x.chave}`), ["1 anuencia_consulta", "2 anuencia_resposta", "5 demonstrativo_saldo", "8 pesquisa_precos"]);
   // CJU: sem atestado
   const cju = normalizarFormatoAntigo(fixture.exemplos.find((e) => e.nome.startsWith("acrescimo"))!.dados) as unknown as DadosAditivo;
   assert.ok(!itensDaLista(cju, HOJE).some((i) => i.chave.startsWith("atestado")));
@@ -174,4 +198,39 @@ test("pesquisa de preços → pesquisa_precos do kit (fonte, preços considerado
   assert.equal(p.itens[0].codigo, "CATSER 12345");
   assert.equal(p.itens[0].preco_contratado, 1300);
   assert.deepEqual(p.itens[0].precos.map((x) => [x.data, x.valor, x.valor_atualizado, !!x.excluido]), [["12/05/2026", 1350, 1371.2, false], ["01/06/2026", 9000, 9000, true]]);
+});
+
+test("revisão 7: empenhos do Contratos.gov.br, reserva sem NE indicada, licitação e prorrogação excepcional", () => {
+  const per = { inicio: "01/03/2025", fim: "28/02/2026" };
+  const ne = empenhoDoGov({ numero: "2025NE000101", data_emissao: "2025-03-05", empenhado: "900.000,00", aliquidar: "100.000,00", liquidado: "800.000,00", pago: "800.000,00", rpinscrito: "0,00" }, per);
+  assert.deepEqual([ne.data, ne.empenhado, ne.liquidado, ne.a_liquidar, ne.marcado], ["05/03/2025", 900000, 800000, 100000, true]);
+  // NE de exercício anterior em restos a pagar: soma o RP liquidado/pago e o "a liquidar" é o do RP
+  const rp = empenhoDoGov({ numero: "2024NE000900", data_emissao: "2024-12-10", empenhado: "50.000,00", liquidado: "30.000,00", pago: "30.000,00", rpinscrito: "20.000,00", rpaliquidar: "5.000,00", rpliquidado: "15.000,00", rppago: "15.000,00" }, per);
+  assert.deepEqual([rp.liquidado, rp.pago, rp.a_liquidar, rp.marcado], [45000, 45000, 5000, false]);
+  // pendência sem NE: reserva na NE mais recente com saldo; o que faltar pede reforço
+  const d = { valor_atual: 1000, saldo_periodo: { empenhos: [
+    { numero: "2025NE1", data: "05/03/2025", empenhado: 600, liquidado: 500, pago: 500 },
+    { numero: "2026NE1", data: "10/01/2026", empenhado: 300, liquidado: 250, pago: 250 },
+    { numero: "2026NE9", data: "11/01/2026", empenhado: 10, liquidado: 0, pago: 0, marcado: false },
+  ], pendentes: [{ descricao: "fevereiro", periodo: "", nf: "", valor: 120, empenho: "" }] } } as unknown as DadosAditivo;
+  const av: string[] = [];
+  const q = calcularSaldo(d, av);
+  assert.deepEqual([q.B, q.C, q.D, q.E, q.F], [750, 120, 130, 150, 30]);
+  assert.deepEqual(q.nes.map((e) => [e.numero, e.reservado, e.anular]), [["2025NE1", 70, 30], ["2026NE1", 50, 0]]);
+  assert.equal(q.pend[0].empenho, "2026NE1");
+  assert.deepEqual(av, []);
+  assert.equal(licitacaoDoGov("Pregão", "00007/2020"), "Pregão nº 07/2020");
+  assert.equal(licitacaoDoGov("PREGÃO ELETRÔNICO", "90010/2025"), "Pregão Eletrônico nº 90010/2025");
+  // excepcional: sem parecer referencial, alerta acima de 12 meses e na Lei 14.133
+  const exc = fixture.exemplos.find((e) => e.nome.startsWith("BAMN_043"))!.dados as unknown as DadosAditivo;
+  const longo = { riscos: [], nao_anexados: {}, ...exc, lei: "14133", aditivo: { ...exc.aditivo, prorrogacao: { ...exc.aditivo.prorrogacao!, meses: 18 } } } as DadosAditivo;
+  const al = alertasDoAditivo(longo, { lei: "14133" } as EstadoAditivo, HOJE, { sicaf: true, regularidade: true }).map((a) => a.texto);
+  assert.ok(al.some((t) => t.startsWith("Prorrogação excepcional acima de 12 meses")));
+  assert.ok(al.some((t) => t.startsWith("Prorrogação excepcional marcada em contrato da Lei 14.133")));
+  assert.equal(analisarPareceres(exc, HOJE).vai_para_cju, true);
+});
+
+test("valor negativo por extenso (saldo do Demonstrativo): 'menos …', como a ponte", () => {
+  assert.equal(brlExt(-1.5), "R$ -1,50 (menos um real e cinquenta centavos)");
+  assert.equal(inteiroExtenso(-2), "menos dois");
 });

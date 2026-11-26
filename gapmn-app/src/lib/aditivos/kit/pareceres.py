@@ -142,6 +142,10 @@ def analisar(d, hoje=None):
     cobertura, descobertas = {}, []
     for alt in alts:
         pct = _num((ad.get(alt) or {}).get("percentual")) if alt in ("acrescimo", "supressao") else None
+        if alt == "prorrogacao" and (ad.get("prorrogacao") or {}).get("excepcional"):
+            # prorrogação EXCEPCIONAL (art. 57, § 4º, da Lei 8.666): nenhum parecer referencial cobre → CJU
+            descobertas.append("prorrogação excepcional (art. 57, § 4º, da Lei nº 8.666/1993 – exige análise jurídica)")
+            continue
         candidatos = [p for p in vigentes if alt in (p.get("cobre") or [])]
         ok = None
         for p in candidatos:

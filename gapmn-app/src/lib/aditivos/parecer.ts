@@ -26,6 +26,7 @@ function ate999(n: number): string {
 }
 export function inteiroExtenso(n: number): string {
   if (n === 0) return "zero";
+  if (n < 0) return `menos ${inteiroExtenso(-n)}`;
   const grupos: number[] = [];
   for (let x = n; x; x = Math.floor(x / 1000)) grupos.push(x % 1000);
   const nomes = [["", ""], ["mil", "mil"], ["milhão", "milhões"], ["bilhão", "bilhões"]];
@@ -46,6 +47,8 @@ export function inteiroExtenso(n: number): string {
   return out;
 }
 export function reaisExtenso(v: number): string {
+  // negativo (saldo do Demonstrativo): "menos …" (o kit trava com negativo; a ponte faz o mesmo)
+  if (v < 0) return `menos ${reaisExtenso(-v)}`;
   const x = Math.round((v + 1e-9) * 100) / 100;
   const r = Math.trunc(x);
   const c = Math.round((x - r) * 100);
@@ -65,10 +68,10 @@ function pctTxt(p: unknown, casas = 2): string | null {
 // ── leis e artigos ───────────────────────────────────────────────────────────
 const LEIS: Record<Lei, string> = { "14133": "da Lei nº 14.133/2021", "8666": "da Lei nº 8.666/1993" };
 const ART: Record<Lei, Record<string, string>> = {
-  "14133": { prorrogacao: "art. 107", prorrogacao_escopo: "art. 111", prorrogacao_com_alteracao: "art. 106, art. 107", reajuste: "art. 92, § 4º",
+  "14133": { prorrogacao: "art. 107", prorrogacao_escopo: "art. 111", prorrogacao_com_alteracao: "art. 106, art. 107", prorrogacao_excepcional: "art. 107", reajuste: "art. 92, § 4º",
     acrescimo: "art. 124, inciso I, alínea \"b\", e art. 125", supressao: "art. 124, inciso I, alínea \"b\", e art. 125",
     supressao_acordo: "art. 124, inciso II, alínea \"a\" (acordo entre as partes)", limite: "art. 125" },
-  "8666": { prorrogacao: "art. 57, inciso II", prorrogacao_escopo: "art. 57, § 1º", prorrogacao_com_alteracao: "art. 57, inciso II",
+  "8666": { prorrogacao: "art. 57, inciso II", prorrogacao_escopo: "art. 57, § 1º", prorrogacao_com_alteracao: "art. 57, inciso II", prorrogacao_excepcional: "art. 57, § 4º",
     reajuste: "art. 40, inciso XI, e art. 55, inciso III", acrescimo: "art. 65, inciso I, alínea \"b\", e § 1º", supressao: "art. 65, inciso I, alínea \"b\", e § 1º",
     supressao_acordo: "art. 65, § 2º, inciso II (acordo entre as partes)", limite: "art. 65, § 1º" },
 };
@@ -85,12 +88,14 @@ export function leiDoParecer(d: Pick<DadosAditivo, "lei" | "pareceres_referencia
 }
 const pctDe = (x: { percentual?: unknown } | null | undefined) => (x && !vazio(x.percentual) ? num(x.percentual) : null);
 const escopo = (d: DadosAditivo) => d.parecer_tecnico?.natureza === "escopo";
+/** Prorrogação excepcional (art. 57, § 4º, da Lei 8.666; revisão 7 da SCON): sempre vai para a CJU */
+export const excepcional = (d: Pick<DadosAditivo, "aditivo">) => !!d.aditivo?.prorrogacao?.excepcional;
 
 export function enquadramento(d: DadosAditivo, lei: Lei): string {
   const ad = d.aditivo ?? {}, A = ART[lei];
   const frags: string[] = [];
   const altValor = !!(ad.acrescimo || ad.supressao);
-  if (ad.prorrogacao) frags.push(escopo(d) ? A.prorrogacao_escopo : altValor ? A.prorrogacao_com_alteracao : A.prorrogacao);
+  if (ad.prorrogacao) frags.push(excepcional(d) ? A.prorrogacao_excepcional : escopo(d) ? A.prorrogacao_escopo : altValor ? A.prorrogacao_com_alteracao : A.prorrogacao);
   if (ad.reajuste) frags.push(A.reajuste);
   for (const k of ["acrescimo", "supressao"] as const) {
     if (!ad[k]) continue;
@@ -105,7 +110,7 @@ export function enquadramento(d: DadosAditivo, lei: Lei): string {
 function artDe(chave: "prorrogacao" | "reajuste" | "acrescimo" | "supressao", d: DadosAditivo, lei: Lei): string {
   const A = ART[lei];
   let f: string;
-  if (chave === "prorrogacao") f = escopo(d) ? A.prorrogacao_escopo : A.prorrogacao;
+  if (chave === "prorrogacao") f = excepcional(d) ? A.prorrogacao_excepcional : escopo(d) ? A.prorrogacao_escopo : A.prorrogacao;
   else if (chave === "supressao") f = (pctDe(d.aditivo?.supressao) ?? 0) > LIMITE_ANUENCIA ? A.supressao_acordo : A.supressao;
   else f = A[chave];
   return `${f}, ${LEIS[lei]}`;
@@ -139,7 +144,7 @@ export function tiposAlteracao(d: DadosAditivo, ini: string | null, fim: string 
   const pr = ad.prorrogacao;
   if (pr) {
     const m = Number(pr.meses) || 0;
-    linhas.push(`Prorrogação contratual por mais ${m ? mesesExt(m) : falta("__ meses")}, de ${ini || falta("__/__/____")} a ${fim || falta("__/__/____")}, `
+    linhas.push(`Prorrogação contratual ${pr.excepcional ? "excepcional " : ""}por mais ${m ? mesesExt(m) : falta("__ meses")}, de ${ini || falta("__/__/____")} a ${fim || falta("__/__/____")}, `
       + (pr.modalidade === "sem_valor" ? "sem renovação do valor contratual (prorrogação em sentido estrito, apenas da vigência)" : "com renovação do valor contratual"));
   }
   const rj = ad.reajuste;
@@ -163,10 +168,16 @@ export function motivosSugeridos(d: DadosAditivo, lei: Lei, ini: string | null, 
   const pr = ad.prorrogacao;
   if (pr) {
     const m = Number(pr.meses) || 0;
+    if (pr.excepcional) {
+      const just = String(pr.justificativa ?? "").trim().replace(/\.+$/, "");
+      out.push("A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, essenciais ao atendimento das demandas da Contratante, tendo o contrato atingido o prazo máximo previsto no art. 57, inciso II, da Lei nº 8.666/1993, o que exige, em caráter excepcional, a sua prorrogação, "
+        + `${just || falta("[justificar a excepcionalidade]")}. O referido Termo Aditivo decorre da prorrogação excepcional do prazo de vigência da contratação por mais ${m ? mesesExt(m) : falta("__ meses")}, contemplando-se, nesta ocasião, o período de ${ini || falta("__/__/____")} a ${fim || falta("__/__/____")}, na forma do ${artDe("prorrogacao", d, lei)}, mediante justificativa e autorização da autoridade superior${pr.modalidade === "sem_valor" ? ", sem renovação do valor contratual." : ", com renovação do valor contratual."}`);
+    } else {
     const abre = escopo(d)
       ? "A celebração do presente Termo Aditivo justifica-se pela necessidade de conclusão do objeto contratado, cuja execução ainda não foi finalizada, não sendo conveniente a sua interrupção. "
       : "A celebração do presente Termo Aditivo justifica-se pela necessidade de continuidade dos serviços contratados, os quais se mostram essenciais ao atendimento das demandas da Contratante, não sendo conveniente a interrupção de sua execução. ";
     out.push(`${abre}O referido Termo Aditivo decorre da prorrogação do prazo de vigência da contratação por mais ${m ? mesesExt(m) : falta("__ meses")}, contemplando-se, nesta ocasião, o período de ${ini || falta("__/__/____")} a ${fim || falta("__/__/____")}, na forma do ${artDe("prorrogacao", d, lei)}, conforme previsto na ${cv || falta("CLÁUSULA ___, item ___ (cláusula de vigência)")} do contrato${pr.modalidade === "sem_valor" ? ", sem renovação do valor contratual." : ", com renovação do valor contratual."}`);
+    }
   }
   const rj = ad.reajuste;
   if (rj) {
@@ -197,7 +208,7 @@ export function parecerFiscal(d: DadosAditivo, lei: Lei, ini: string | null, fim
   const ad = d.aditivo ?? {};
   const partes: string[] = [];
   const pr = ad.prorrogacao;
-  if (pr) partes.push(`à prorrogação da vigência do contrato, cuja nova vigência passará a ser do dia ${ini || falta("__/__/____")} até o dia ${fim || falta("__/__/____")}`
+  if (pr) partes.push(`à prorrogação ${pr.excepcional ? "excepcional " : ""}da vigência do contrato, cuja nova vigência passará a ser do dia ${ini || falta("__/__/____")} até o dia ${fim || falta("__/__/____")}`
     + (pr.modalidade === "sem_valor" ? ", em sentido estrito, sem renovação do valor contratual" : ", com renovação do valor contratual") + `, nos termos do ${artDe("prorrogacao", d, lei)}`);
   const rj = ad.reajuste;
   if (rj) partes.push(`ao reajuste de ${pctTxt(rj.percentual, 6) || falta("XX,XXXXXX%")}, conforme índice ${rj.indice || falta("XXXX")}`
@@ -264,7 +275,8 @@ export function alertasParecer(d: DadosAditivo, prints: number): Alerta[] {
   if (!(d.historico ?? []).length) add("histórico de valores (item 5) vazio — traga do cadastro dos Reajustes.");
   const semValor = p.historico.filter(([, v]) => v == null).map(([r]) => r.toLowerCase());
   if (semValor.length) add(`falta o valor do contrato depois de: ${semValor.join(", ")} (item 5).`);
-  if (ad.prorrogacao && !String(pt.clausula_vigencia ?? "").trim()) add("informe a cláusula de vigência do contrato (item 9).");
+  if (ad.prorrogacao && !ad.prorrogacao.excepcional && !String(pt.clausula_vigencia ?? "").trim()) add("informe a cláusula de vigência do contrato (item 9).");
+  if (ad.prorrogacao?.excepcional && !String(ad.prorrogacao.justificativa ?? "").trim()) add("justifique a prorrogação excepcional (item 9).");
   if (ad.reajuste) {
     if (!String(pt.clausula_reajuste ?? "").trim()) add("informe a cláusula de reajuste do contrato (item 9).");
     if (!String(ad.reajuste.percentual ?? "").trim()) add("reajuste sem o percentual (todas as casas da Calculadora do Cidadão).");

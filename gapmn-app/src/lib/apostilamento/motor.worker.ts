@@ -20,7 +20,7 @@ type Py = {
 export type Pedido =
   | { id: number; tipo: "iniciar" }
   | { id: number; tipo: "checar"; dados: unknown; config: unknown }
-  | { id: number; tipo: "gerar"; dados: unknown; config: unknown; prints: { nome: string; bytes: ArrayBuffer }[]; zip: boolean; checklist?: unknown }
+  | { id: number; tipo: "gerar"; dados: unknown; config: unknown; prints: { nome: string; bytes: ArrayBuffer }[]; zip: boolean; checklist?: unknown; so?: "fiscal" | "termo" }
   | { id: number; tipo: "checklist"; dados: unknown; config: unknown; checklist: unknown };
 
 export type Resposta =
@@ -94,9 +94,9 @@ ctx.onmessage = async (ev: MessageEvent<Pedido>) => {
       py.FS.writeFile(c, new Uint8Array(f.bytes));
       return c;
     });
-    const destino = p.zip ? "/tmp/apostilamento.zip" : "";
+    const destino = p.zip ? (p.so === "termo" ? "/tmp/termo.docx" : "/tmp/apostilamento.zip") : "";
     const r = JSON.parse(ponte.gerar(JSON.stringify(p.dados), JSON.stringify(p.config), JSON.stringify(caminhos), destino,
-      p.checklist ? JSON.stringify(p.checklist) : ""));
+      p.checklist ? JSON.stringify(p.checklist) : "", p.so ?? ""));
     if (!destino) { ctx.postMessage({ id: p.id, tipo: "ok", resultado: r } satisfies Resposta); return; }
     const bytes = py.FS.readFile(destino);
     py.FS.unlink(destino);

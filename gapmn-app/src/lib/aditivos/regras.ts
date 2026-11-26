@@ -119,9 +119,10 @@ export function objetoDaFicha(d: Pick<DadosAditivo, "aditivo" | "contrato">): st
   if (ad.prorrogacao) {
     const meses = Number(ad.prorrogacao.meses) || 0;
     const prazo = meses ? `${meses} (${extenso(meses)}) meses` : "__ meses";
+    const exc = ad.prorrogacao.excepcional ? "excepcionalmente " : "";
     linhas.push(ad.prorrogacao.modalidade === "sem_valor"
-      ? `Prorrogar a vigência do Contrato nº ${ct} por mais ${prazo}, em sentido estrito, sem renovação do valor contratual`
-      : `Prorrogar o Contrato nº ${ct} por mais ${prazo}, com renovação do valor contratual`);
+      ? `Prorrogar ${exc}a vigência do Contrato nº ${ct} por mais ${prazo}, em sentido estrito, sem renovação do valor contratual`
+      : `Prorrogar ${exc}o Contrato nº ${ct} por mais ${prazo}, com renovação do valor contratual`);
   }
   if (ad.reajuste) linhas.push(`Reajustar o Contrato nº ${ct}, conforme índice ${ad.reajuste.indice || "_____"}${ad.reajuste.percentual ? ` (${ad.reajuste.percentual})` : ""}`);
   for (const [chave, verbo] of [["acrescimo", "Acrescer"], ["supressao", "Suprimir"]] as const) {
@@ -223,6 +224,7 @@ export function citarPareceres(ps: { numero: string }[]): string {
   return nums.length === 1 ? `ao PARECER REFERENCIAL ${nums[0]}` : `aos PARECERES REFERENCIAIS ${listaJuntada(nums)}`;
 }
 
+export const PRORROGACAO_EXCEPCIONAL = "prorrogação excepcional (art. 57, § 4º, da Lei nº 8.666/1993 – exige análise jurídica)";
 export interface AnalisePareceres {
   alteracoes: Alteracao[];
   pareceres: (ParecerReferencial & { fundamenta: Alteracao[]; motivo_texto: string })[];
@@ -243,6 +245,8 @@ export function analisarPareceres(d: Pick<DadosAditivo, "aditivo" | "pareceres_r
   const descobertas: string[] = [];
   for (const alt of alts) {
     const pct = alt === "acrescimo" || alt === "supressao" ? numero((ad[alt] as { percentual?: unknown } | null)?.percentual) : null;
+    // prorrogação EXCEPCIONAL (art. 57, § 4º, da Lei 8.666; revisão 7): nenhum parecer referencial cobre → CJU
+    if (alt === "prorrogacao" && ad.prorrogacao?.excepcional) { descobertas.push(PRORROGACAO_EXCEPCIONAL); continue; }
     let ok: ParecerReferencial | null = null;
     for (const p of vigentes.filter((x) => (x.cobre ?? []).includes(alt))) {
       let lim = numero(p.limite_percentual);
@@ -324,6 +328,8 @@ export function pareceresSugeridos(alts: Alteracao[], natureza: NaturezaObjeto, 
 
 // ── Lista de Verificação (seção 2.3; itens_da_lista do kit) ──────────────────
 export interface ItemLista { chave: string; texto: string; obrigatorioAnexar?: boolean }
+/** INCC e IGP: FGV; os outros índices: Calculadora do Cidadão (item da Lista, revisão 7) */
+export const fonteDoIndice = (indice: string) => (/^(INCC|IGP)/i.test(indice.trim()) ? "FGV" : "Calculadora do Cidadão (Banco Central do Brasil)");
 export function itensDaLista(d: DadosAditivo, hoje: string): ItemLista[] {
   const L: ItemLista[] = [];
   const add = (chave: string, texto: string, cond = true) => { if (cond) L.push({ chave, texto }); };
@@ -334,10 +340,13 @@ export function itensDaLista(d: DadosAditivo, hoje: string): ItemLista[] {
   add("anuencia_resposta", `Resposta da contratada contendo a anuência ${para}.`, ma.length > 0);
   add("disp_orcamentaria", "Declaração de Disponibilidade Orçamentária.");
   add("vantajosidade", "Declaração quanto à vantajosidade da prorrogação contratual.", temProrrogacao(d));
+  add("demonstrativo_saldo", "Demonstrativo de Execução e Saldo do Período de Vigência, elaborado pela fiscalização (notas de empenho do período, serviços executados pendentes de pagamento e saldo a ser retirado do SILOMS e anulado no SIAFI).", temProrrogacao(d));
   add("parecer_tecnico", "Parecer Técnico sobre Alteração de Contrato aprovado pelo Ordenador de Despesas da UG Signatária.");
   add("mapa_riscos", "Mapa de Riscos para Termo Aditivo (Gerenciamento de Riscos da fase de Gestão do Contrato, conforme arts. 20 e 26 da IN nº 05/2017 SEGES/MP).");
   add("pesquisa_precos", "Pesquisa de Preços – pesquisa de preços praticados pelo mercado do ramo do objeto, baseada em critérios aceitáveis, observando-se a IN SEGES/ME nº 65/2021, contendo os documentos comprobatórios para calcular o custo global, com a verificação da congruência entre os preços das propostas, de forma a evitar valores desarrazoados ou evidentemente inexequíveis.");
-  add("calculadora", "Calculadora do Cidadão (consulta anexada ao Parecer Técnico).", temReajuste(d));
+  const idx = String(d.aditivo?.reajuste?.indice || (d as { reajuste?: { indice?: string } }).reajuste?.indice || "").trim();
+  add("calculadora", `Comprovante do índice de reajuste${idx ? ` ${idx}` : ""} – ${fonteDoIndice(idx)} (consulta anexada ao Parecer Técnico).`, temReajuste(d));
+  add("memoria_calculo", "Memória de Cálculo – Reajuste.", temReajuste(d));
   add("bol_aci", "Boletim de Designação do Agente de Controle Interno.");
   add("bol_od", "Boletim de Designação do Ordenador de Despesas.");
   add("bol_fiscalizacao", "Boletim de Designação da Fiscalização atualizado.");
@@ -355,7 +364,6 @@ export function itensDaLista(d: DadosAditivo, hoje: string): ItemLista[] {
   });
   // UM único atestado para todos os pareceres – só quando todas as alterações estão fundamentadas (senão vai para a CJU)
   if (an.pareceres.length && !an.descobertas.length) add("atestado_adequacao", `Atestado de adequação do processo ${citarPareceres(an.pareceres)}.`);
-  add("memoria_calculo", "Memória de Cálculo – Reajuste.", temReajuste(d));
   return L;
 }
 
@@ -428,6 +436,7 @@ export const SUGESTOES_VANTAJOSIDADE = (indice: string) => [
 export const NOMES_ITEM: Record<string, string> = {
   anuencia_consulta: "Consulta de anuência à contratada", anuencia_resposta: "Resposta de anuência da contratada",
   disp_orcamentaria: "Declaração de Disponibilidade Orçamentária", vantajosidade: "Declaração de Vantajosidade Econômica",
+  demonstrativo_saldo: "Demonstrativo de Execução e Saldo",
   parecer_tecnico: "Parecer Técnico de Alteração Contratual", mapa_riscos: "Mapa de Riscos", pesquisa_precos: "Pesquisa de Preços",
   calculadora: "Calculadora do Cidadão", sicaf: "SICAF", consulta_cnpj: "Regularidade CEIS-CNEP-CNJ-TCU (CNPJ)",
   consulta_cpf_socio: "Regularidade do CPF do sócio", procuracao: "Procuração", exclusividade: "Atestado de Exclusividade",
@@ -435,7 +444,7 @@ export const NOMES_ITEM: Record<string, string> = {
   memoria_calculo: "Memória de Cálculo – Reajuste",
 };
 /** Itens que o site gera (o resto é anexo do fiscal); boletins ficam no SILOMS e a Calculadora vai dentro do Parecer Técnico */
-export const GERADOS_PELO_SITE = ["disp_orcamentaria", "vantajosidade", "parecer_tecnico", "mapa_riscos", "pesquisa_precos", "ficha_autorizacao", "atestado_adequacao"];
+export const GERADOS_PELO_SITE = ["disp_orcamentaria", "vantajosidade", "demonstrativo_saldo", "parecer_tecnico", "mapa_riscos", "pesquisa_precos", "ficha_autorizacao", "atestado_adequacao"];
 const SEM_ARQUIVO = ["bol_aci", "bol_od", "bol_fiscalizacao", "calculadora"];
 /** O que o .zip vai deixar de fora: item obrigatório sem arquivo e sem justificativa de NÃO anexado (montar_zip.py) */
 export function faltandoNoZip(d: DadosAditivo, hoje: string, temArquivo: (chave: string) => boolean): { n: number; chave: string; nome: string }[] {
@@ -447,6 +456,7 @@ export function faltandoNoZip(d: DadosAditivo, hoje: string, temArquivo: (chave:
 export function geradosPrevistos(d: DadosAditivo, hoje: string): string[] {
   const g = ["disp_orcamentaria"];
   if (temProrrogacao(d) && d.vantajosidade?.motivos?.some((m) => String(m ?? "").trim())) g.push("vantajosidade");
+  if (temProrrogacao(d) && d.saldo_periodo) g.push("demonstrativo_saldo");
   g.push("parecer_tecnico"); // item 5: sempre (rev5.1)
   if (d.riscos?.length) g.push("mapa_riscos");
   if (d.pesquisa_precos) g.push("pesquisa_precos");
@@ -493,7 +503,7 @@ export function proximoAditivo(documentos: { tipo?: string; numero?: string | nu
 
 // ── Alertas (seção 4) ────────────────────────────────────────────────────────
 const EMPENHO: [keyof DadosAditivo["empenho"], string][] = [["gestao_unidade", "Gestão/Unidade"], ["fonte", "Fonte de Recursos"], ["programa_trabalho", "Programa de Trabalho"], ["plano_interno", "Plano Interno"], ["natureza_despesa", "Natureza de Despesa"]];
-export function alertasDoAditivo(d: DadosAditivo, e: EstadoAditivo, hoje: string, anexos: { sicaf: boolean; regularidade: boolean },
+export function alertasDoAditivo(d: DadosAditivo, e: EstadoAditivo, hoje: string, anexos: { sicaf: boolean; regularidade: boolean; pesquisaExterna?: boolean },
   extra: { unidadeCadastrada?: boolean | null } = {}): Alerta[] {
   const a: Alerta[] = [];
   const alts = alteracoes(d);
@@ -509,6 +519,12 @@ export function alertasDoAditivo(d: DadosAditivo, e: EstadoAditivo, hoje: string
   }
   if (numero(d.valor_atual) == null) a.push({ nivel: "critico", texto: "Informe o valor atual do contrato (seção 1.3).", bloqueia: true, secao: "alteracoes" });
   if (d.aditivo.prorrogacao && (!d.aditivo.prorrogacao.meses || !d.aditivo.prorrogacao.inicio)) a.push({ nivel: "critico", texto: "Prorrogação sem o nº de meses ou a data de início do novo período.", bloqueia: true, secao: "alteracoes" });
+  const pr = d.aditivo.prorrogacao;
+  if (pr?.excepcional) {
+    if ((Number(pr.meses) || 0) > 12) a.push({ nivel: "critico", texto: "Prorrogação excepcional acima de 12 meses: o art. 57, § 4º, da Lei 8.666/1993 permite até 12 meses.", secao: "alteracoes" });
+    if (e.lei === "14133" || d.lei === "14133") a.push({ nivel: "critico", texto: "Prorrogação excepcional marcada em contrato da Lei 14.133: essa figura é do art. 57, § 4º, da Lei 8.666; na 14.133 os contínuos podem ser prorrogados até 10 anos (art. 107) – conferir.", secao: "alteracoes" });
+    if (!String(pr.justificativa ?? "").trim()) a.push({ nivel: "atencao", texto: "Prorrogação excepcional sem a justificativa da excepcionalidade (vai para o motivo do Parecer Técnico).", secao: "alteracoes" });
+  }
   for (const k of ["acrescimo", "supressao"] as const) {
     const pct = numero(d.aditivo[k]?.percentual);
     if (pct != null && pct > LIMITE_LEI) a.push({ nivel: "critico", texto: `${k === "acrescimo" ? "Acréscimo" : "Supressão"} de ${pct2(pct)}: passa de ${LIMITE_LEI}% (art. 125 da Lei 14.133/2021; 50% só para reforma de edifício/equipamento).`, secao: "alteracoes" });
@@ -550,8 +566,9 @@ export function alertasDoAditivo(d: DadosAditivo, e: EstadoAditivo, hoje: string
     if (!eCefa(d.om_signataria ?? {}) && !d.autoridade_superior?.trim()) a.push({ nivel: "critico", texto: "Ficha de Autorização: informe o cargo da autoridade do campo 19 (OM fora do CEFA).", bloqueia: true, secao: "ficha" });
   }
   // Pesquisa de preços (obrigatória)
-  const rp = resumoPesquisa(d);
-  if (!rp && !("pesquisa_precos" in (d.nao_anexados ?? {}))) a.push({ nivel: "atencao", texto: "Pesquisa de Preços ainda não feita (obrigatória em todo aditivo): faça na aba Pesquisa de Preços ou marque NÃO com justificativa.", secao: "pesquisa" });
+  // pesquisa feita fora do site (PDF anexado e escolhido): marca o item e tira o alerta
+  const rp = anexos.pesquisaExterna ? null : resumoPesquisa(d);
+  if (!rp && !anexos.pesquisaExterna && !("pesquisa_precos" in (d.nao_anexados ?? {}))) a.push({ nivel: "atencao", texto: "Pesquisa de Preços ainda não feita (obrigatória em todo aditivo): faça na aba Pesquisa de Preços ou marque NÃO com justificativa.", secao: "pesquisa" });
   if (rp) {
     if (rp.poucos.length) a.push({ nivel: "atencao", texto: `Item(ns) ${rp.poucos.join(", ")} com menos de 3 preços válidos: justificar.`, secao: "pesquisa" });
     if (!rp.vantajosa) a.push({ nivel: "critico", texto: "Total contratado acima do mercado: negociar redução com a contratada ou justificar a vantajosidade antes da prorrogação.", secao: "pesquisa" });

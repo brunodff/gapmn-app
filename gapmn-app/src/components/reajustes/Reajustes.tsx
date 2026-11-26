@@ -74,7 +74,7 @@ export default function Reajustes() {
           .select("id, numero_contrato, pag_nup, fornecedor, cnpj, descricao, data_orcamento, data_inicio, data_final, vl_contratual, status")
           .order("numero_contrato"),
         supabase.from("contratos_apostilamento")
-          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga, nao_aplicavel:carga->siloms->>reajuste_nao_aplicavel, vig_siloms:carga->siloms->>vigencia_fim"),
+          .select("numero_contrato, data_base:dados->>data_base, reajustes_aplicados, dedicacao_exclusiva, atualizado_em, atualizado_nome, situacao_cadastro, pendencias, carga_em, fora:carga->fora_da_carga, nao_aplicavel:carga->siloms->>reajuste_nao_aplicavel, vig_siloms:carga->siloms->>vigencia_fim"),
         carregarUnidades(),
       ]);
       if (!vivo) return;
@@ -145,9 +145,9 @@ export default function Reajustes() {
       {carregando ? <div className="p-6 text-sm text-slate-500">Carregando os contratos…</div>
         : aberto ? (contrato
           ? <DetalheComNE contratos={contratos} contrato={contrato} config={config} nomeUsuario={nome} ugGov={UG_GAPMN}
-              unidades={unidades} aoCadastrarUnidade={(sigla) => ir({ aba: "config", nova: sigla })} taPedido={taPedido}
+              unidades={unidades} aoCadastrarUnidade={(sigla) => ir({ aba: "config", nova: sigla })} taPedido={taPedido} podeTermoScon={lote}
               aoVoltar={() => ir({})}
-              aoSalvar={(r) => setCadastros((m) => new Map(m).set(r.numero_contrato, r))} />
+              aoSalvar={(r) => setCadastros((m) => new Map(m).set(r.numero_contrato, { ...r, atualizado_nome: nome }))} />
           : <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Contrato {aberto} não encontrado. <button className="text-sky-700 hover:underline" onClick={() => ir({})}>Voltar ao painel</button></div>)
         : aba === "config"
           ? <UnidadesApoiadas unidades={unidades} tabela={tabelaUnidades} nomeUsuario={nome} aoMudar={() => void recarregarUnidades()}

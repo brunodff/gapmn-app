@@ -28,6 +28,9 @@ export function listaDaUg(ug: string): Promise<ContratoGov[]> {
   return p;
 }
 
+/** Empenhos de um contrato como a API devolve (empenhado, liquidado, pago, restos a pagar em texto "1.234,56") */
+export const empenhosDoContrato = (id: number) => rota<Record<string, string | null>[]>(`${id}/empenhos`);
+
 /** Itens, termos e empenhos de um contrato, já convertidos para o cadastro do reajuste */
 export async function cadastroDoContrato(c: ContratoGov): Promise<ResultadoGov> {
   const [itens, historico, empenhos] = await Promise.all([
